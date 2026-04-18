@@ -54,9 +54,11 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: deploy
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: GHCR_PAT
           script: |
-            sudo -u sn-deploy -i bash -c '
-              podman pull ghcr.io/${{ github.repository }}:latest
+            sudo -u sn-deploy -i bash -c "
+              echo '$GHCR_PAT' | podman login ghcr.io -u ixiondt --password-stdin 2>/dev/null
+              podman pull ghcr.io/ixiondt/sentinel:latest
               podman stop sentinel-app 2>/dev/null || true
               podman rm sentinel-app 2>/dev/null || true
               podman run -d \
@@ -69,5 +71,7 @@ jobs:
                 -e NEXT_TELEMETRY_DISABLED=1 \
                 --restart always \
                 -m 1g \
-                ghcr.io/${{ github.repository }}:latest
-            '
+                ghcr.io/ixiondt/sentinel:latest
+            "
+        env:
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
