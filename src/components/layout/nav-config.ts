@@ -11,6 +11,7 @@ import {
   Search,
   Settings,
   Sparkles,
+  Users,
   Wallet,
 } from "lucide-react";
 
@@ -112,6 +113,14 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["feed", "forum", "posts", "social"],
   },
   {
+    href: "/dashboard/admin",
+    label: "Admin",
+    description: "Manage user accounts, roles, and platform administration.",
+    icon: Users,
+    matchPaths: ["/dashboard/settings"],
+    keywords: ["users", "admin", "management", "settings"],
+  },
+  {
     href: "/dashboard/settings",
     label: "Settings",
     description: "Configure risk, webhooks, and the operational defaults of the desk.",
@@ -158,6 +167,10 @@ export function getPageMeta(pathname: string) {
 // ─── Sub-navigation tabs for hub pages ──────────────────────────
 
 export const SUB_NAV: Record<string, SubNavTab[]> = {
+  admin: [
+    { href: "/dashboard/admin", label: "Users" },
+    { href: "/dashboard/settings", label: "Settings" },
+  ],
   analysis: [
     { href: "/dashboard/analysis", label: "Analysis" },
     { href: "/dashboard/heatmap", label: "Heatmap" },

@@ -190,6 +190,36 @@ export const createCommentSchema = z.object({
   content: z.string().min(1, "Comment is required").max(1000, "Comment must be 1000 characters or fewer"),
 });
 
+// ─── Admin User Management ──────────────────────────────────────
+
+export const adminCreateUserSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters").max(100),
+  email: z.string().email("Invalid email address"),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[a-zA-Z]/, "Password must contain at least one letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
+  role: z.enum(["user", "admin"]).default("user"),
+});
+
+export const adminUpdateUserSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(2).max(100).optional(),
+  email: z.string().email("Invalid email address").optional(),
+  role: z.enum(["user", "admin"]).optional(),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[a-zA-Z]/, "Password must contain at least one letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+    .optional(),
+});
+
+export const adminDeleteUserSchema = z.object({
+  id: z.string().uuid(),
+});
+
 // ─── Inferred Types ───────────────────────────────────────────────
 
 export type RegisterInput = z.infer<typeof registerSchema>;
@@ -207,6 +237,9 @@ export type CreateForumThreadInput = z.infer<typeof createForumThreadSchema>;
 export type CreateForumReplyInput = z.infer<typeof createForumReplySchema>;
 export type CreateSocialPostInput = z.infer<typeof createSocialPostSchema>;
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
+export type AdminCreateUserInput = z.infer<typeof adminCreateUserSchema>;
+export type AdminUpdateUserInput = z.infer<typeof adminUpdateUserSchema>;
+export type AdminDeleteUserInput = z.infer<typeof adminDeleteUserSchema>;
 
 // ─── Dashboard Layout ────────────────────────────────────────────
 

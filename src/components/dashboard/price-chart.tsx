@@ -58,26 +58,26 @@ function makeChartOptions(container: HTMLElement, height: number) {
     width: container.clientWidth,
     height,
     layout: {
-      background: { type: ColorType.Solid as const, color: "#0c111a" },
-      textColor: "#aab6cf",
+      background: { type: ColorType.Solid as const, color: "#ffffff" },
+      textColor: "#64748b",
       fontFamily: "'Aptos', 'Segoe UI', sans-serif",
       fontSize: 11,
     },
     grid: {
-      vertLines: { color: "#223046" },
-      horzLines: { color: "#223046" },
+      vertLines: { color: "#e2e8f0" },
+      horzLines: { color: "#e2e8f0" },
     },
     crosshair: {
       mode: CrosshairMode.Normal,
-      vertLine: { color: "#3d506f", labelBackgroundColor: "#131925" },
-      horzLine: { color: "#3d506f", labelBackgroundColor: "#131925" },
+      vertLine: { color: "#3d506f", labelBackgroundColor: "#1e293b" },
+      horzLine: { color: "#3d506f", labelBackgroundColor: "#1e293b" },
     },
     rightPriceScale: {
-      borderColor: "#223046",
+      borderColor: "#e2e8f0",
       scaleMargins: { top: 0.1, bottom: 0.2 },
     },
     timeScale: {
-      borderColor: "#223046",
+      borderColor: "#e2e8f0",
       timeVisible: true,
       secondsVisible: false,
     },
@@ -281,16 +281,16 @@ function RsiSubChart({
       width: ref.current.clientWidth,
       height: 100,
       layout: {
-        background: { type: ColorType.Solid as const, color: "#0c111a" },
-        textColor: "#aab6cf",
+        background: { type: ColorType.Solid as const, color: "#ffffff" },
+        textColor: "#64748b",
         fontFamily: "'Aptos', 'Segoe UI', sans-serif",
         fontSize: 10,
       },
       grid: {
-        vertLines: { color: "#223046" },
-        horzLines: { color: "#223046" },
+        vertLines: { color: "#e2e8f0" },
+        horzLines: { color: "#e2e8f0" },
       },
-      rightPriceScale: { borderColor: "#223046" },
+      rightPriceScale: { borderColor: "#e2e8f0" },
       timeScale: { visible: false },
     });
 
@@ -351,16 +351,16 @@ function MacdSubChart({
       width: ref.current.clientWidth,
       height: 120,
       layout: {
-        background: { type: ColorType.Solid as const, color: "#0c111a" },
-        textColor: "#aab6cf",
+        background: { type: ColorType.Solid as const, color: "#ffffff" },
+        textColor: "#64748b",
         fontFamily: "'Aptos', 'Segoe UI', sans-serif",
         fontSize: 10,
       },
       grid: {
-        vertLines: { color: "#223046" },
-        horzLines: { color: "#223046" },
+        vertLines: { color: "#e2e8f0" },
+        horzLines: { color: "#e2e8f0" },
       },
-      rightPriceScale: { borderColor: "#223046" },
+      rightPriceScale: { borderColor: "#e2e8f0" },
       timeScale: { visible: false },
     });
 

@@ -8,6 +8,8 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SubNav } from "@/components/layout/sub-nav";
+import { SUB_NAV } from "@/components/layout/nav-config";
 import { Webhook, Plus, Trash2, TestTube, Check, X, Shield } from "lucide-react";
 
 const RISK_TOLERANCE_OPTIONS = [
@@ -205,6 +207,8 @@ export default function SettingsPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-3xl">
+      <SubNav tabs={SUB_NAV.admin} />
+
       <PageIntro
         eyebrow="Desk Controls"
         title="Settings"
