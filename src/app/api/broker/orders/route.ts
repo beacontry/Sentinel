@@ -4,12 +4,7 @@ import { db } from "@/lib/db";
 import { brokerConnections } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { placeBrokerOrderSchema } from "@/lib/validators";
-
-function getAlpacaBaseUrl(environment: string): string {
-  return environment === "live"
-    ? "https://api.alpaca.markets"
-    : "https://paper-api.alpaca.markets";
-}
+import { createBrokerClient, BrokerError } from "@/lib/brokers";
 
 async function getActiveConnection(userId: string) {
   const [connection] = await db
@@ -40,70 +35,41 @@ export async function GET() {
       );
     }
 
-    if (connection.broker !== "alpaca") {
-      return NextResponse.json(
-        { error: `${connection.broker} is not yet supported` },
-        { status: 400 }
-      );
-    }
+    const client = createBrokerClient(
+      connection.broker,
+      connection.apiKey,
+      connection.apiSecret,
+      connection.environment
+    );
 
-    const baseUrl = getAlpacaBaseUrl(connection.environment);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const orders = await client.getOrders(50);
 
-    try {
-      const res = await fetch(
-        `${baseUrl}/v2/orders?status=all&limit=50&direction=desc`,
-        {
-          headers: {
-            "APCA-API-KEY-ID": connection.apiKey,
-            "APCA-API-SECRET-KEY": connection.apiSecret,
-          },
-          signal: controller.signal,
-        }
-      );
-
-      if (!res.ok) {
-        console.error("Alpaca orders fetch failed:", res.status);
-        return NextResponse.json(
-          { error: "Failed to fetch orders" },
-          { status: 502 }
-        );
-      }
-
-      let orders: Record<string, unknown>[];
-      try {
-        orders = await res.json();
-      } catch {
-        return NextResponse.json({ error: "Invalid response from broker" }, { status: 502 });
-      }
-
-      return NextResponse.json({
-        orders: orders.map((o) => ({
-          id: o.id,
-          symbol: o.symbol,
-          side: o.side,
-          type: o.type,
-          qty: o.qty,
-          filledQty: o.filled_qty,
-          filledAvgPrice: o.filled_avg_price,
-          status: o.status,
-          timeInForce: o.time_in_force,
-          limitPrice: o.limit_price,
-          stopPrice: o.stop_price,
-          submittedAt: o.submitted_at,
-          filledAt: o.filled_at,
-          canceledAt: o.canceled_at,
-        })),
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
+    return NextResponse.json({
+      orders: orders.map((o) => ({
+        id: o.id,
+        symbol: o.symbol,
+        side: o.side,
+        type: o.type,
+        qty: o.qty,
+        filledQty: o.filledQty,
+        filledAvgPrice: o.filledPrice,
+        status: o.status,
+        timeInForce: o.timeInForce,
+        limitPrice: o.limitPrice,
+        stopPrice: o.stopPrice,
+        submittedAt: o.submittedAt,
+        filledAt: o.filledAt,
+        canceledAt: o.canceledAt,
+      })),
+    });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    if (message.includes("abort")) {
-      return NextResponse.json({ error: "Connection timed out" }, { status: 504 });
+    if (err instanceof BrokerError) {
+      return NextResponse.json(
+        { error: err.userMessage },
+        { status: err.statusCode }
+      );
     }
+    const message = err instanceof Error ? err.message : "Unknown error";
     console.error("Broker orders error:", message);
     return NextResponse.json({ error: "Failed to fetch orders" }, { status: 500 });
   }
@@ -139,91 +105,48 @@ export async function POST(request: Request) {
       );
     }
 
-    if (connection.broker !== "alpaca") {
-      return NextResponse.json(
-        { error: `${connection.broker} is not yet supported` },
-        { status: 400 }
-      );
-    }
+    const client = createBrokerClient(
+      connection.broker,
+      connection.apiKey,
+      connection.apiSecret,
+      connection.environment
+    );
 
-    const baseUrl = getAlpacaBaseUrl(connection.environment);
-
-    const orderPayload: Record<string, string> = {
+    const order = await client.placeOrder({
       symbol: parsed.data.symbol,
-      side: parsed.data.side,
+      side: parsed.data.side as "buy" | "sell",
       qty: parsed.data.qty,
-      type: parsed.data.type,
-      time_in_force: parsed.data.timeInForce,
-    };
+      type: parsed.data.type as "market" | "limit" | "stop" | "stop_limit",
+      timeInForce: parsed.data.timeInForce,
+      limitPrice: parsed.data.limitPrice,
+      stopPrice: parsed.data.stopPrice,
+    });
 
-    if (parsed.data.limitPrice) orderPayload.limit_price = parsed.data.limitPrice;
-    if (parsed.data.stopPrice) orderPayload.stop_price = parsed.data.stopPrice;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    try {
-      const res = await fetch(`${baseUrl}/v2/orders`, {
-        method: "POST",
-        headers: {
-          "APCA-API-KEY-ID": connection.apiKey,
-          "APCA-API-SECRET-KEY": connection.apiSecret,
-          "Content-Type": "application/json",
+    return NextResponse.json(
+      {
+        order: {
+          id: order.id,
+          symbol: order.symbol,
+          side: order.side,
+          type: order.type,
+          qty: order.qty,
+          status: order.status,
+          timeInForce: order.timeInForce,
+          limitPrice: order.limitPrice,
+          stopPrice: order.stopPrice,
+          submittedAt: order.submittedAt,
         },
-        body: JSON.stringify(orderPayload),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => "Unknown error");
-        console.error("Alpaca order placement failed:", res.status, errorText);
-
-        // Parse Alpaca error for user-friendly message
-        let userError = "Failed to place order";
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.message) {
-            userError = errorData.message;
-          }
-        } catch {
-          // Use generic error
-        }
-
-        return NextResponse.json({ error: userError }, { status: 400 });
-      }
-
-      let order: Record<string, unknown>;
-      try {
-        order = await res.json();
-      } catch {
-        return NextResponse.json({ error: "Invalid response from broker" }, { status: 502 });
-      }
-
-      return NextResponse.json(
-        {
-          order: {
-            id: order.id,
-            symbol: order.symbol,
-            side: order.side,
-            type: order.type,
-            qty: order.qty,
-            status: order.status,
-            timeInForce: order.time_in_force,
-            limitPrice: order.limit_price,
-            stopPrice: order.stop_price,
-            submittedAt: order.submitted_at,
-          },
-        },
-        { status: 201 }
-      );
-    } finally {
-      clearTimeout(timeout);
-    }
+      },
+      { status: 201 }
+    );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    if (message.includes("abort")) {
-      return NextResponse.json({ error: "Connection timed out" }, { status: 504 });
+    if (err instanceof BrokerError) {
+      return NextResponse.json(
+        { error: err.userMessage },
+        { status: err.statusCode }
+      );
     }
+    const message = err instanceof Error ? err.message : "Unknown error";
     console.error("Broker order error:", message);
     return NextResponse.json({ error: "Failed to place order" }, { status: 500 });
   }
