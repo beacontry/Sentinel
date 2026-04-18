@@ -1,0 +1,201 @@
+@import "tailwindcss";
+
+@theme {
+  /* Typography */
+  --font-display: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-body: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), "JetBrains Mono", monospace;
+
+  /* ── Surfaces ──
+     Dark hierarchy matching S6 Planner's depth system.
+     Higher elevation = lighter. Cool-tinted neutrals. */
+  --color-bg-primary: hsl(220, 20%, 10%);
+  --color-bg-secondary: hsl(220, 18%, 14%);
+  --color-bg-surface: hsl(220, 16%, 18%);
+  --color-bg-elevated: hsl(220, 16%, 20%);
+  --color-bg-hover: hsl(220, 14%, 24%);
+
+  /* ── Borders ── */
+  --color-border: hsl(220, 15%, 22%);
+  --color-border-hover: hsl(220, 15%, 30%);
+
+  /* ── Text ── */
+  --color-text-primary: hsl(220, 15%, 90%);
+  --color-text-secondary: hsl(220, 10%, 65%);
+  --color-text-muted: hsl(220, 8%, 45%);
+
+  /* ── Accent (emerald) ── */
+  --color-accent: hsl(152, 60%, 36%);
+  --color-accent-hover: hsl(152, 60%, 42%);
+  --color-accent-muted: hsl(152, 40%, 20%);
+
+  /* ── Trading semantics ── */
+  --color-bullish: #22c55e;
+  --color-bullish-muted: rgba(34, 197, 94, 0.10);
+  --color-bearish: #ef4444;
+  --color-bearish-muted: rgba(239, 68, 68, 0.10);
+  --color-warning: #f59e0b;
+  --color-warning-muted: rgba(245, 158, 11, 0.10);
+  --color-neutral: hsl(220, 8%, 45%);
+
+  /* ── Signals ── */
+  --color-strong-buy: hsl(152, 60%, 36%);
+  --color-buy: #22c55e;
+  --color-hold: hsl(220, 8%, 45%);
+  --color-sell: #ef4444;
+  --color-strong-sell: #dc2626;
+
+  /* ── Spacing scale (4pt base) ── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+  --space-4xl: 64px;
+}
+
+/* ── Base reset ── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+  background-color: var(--color-bg-primary);
+}
+
+body {
+  min-height: 100vh;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-kerning: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+a { color: inherit; text-decoration: none; }
+
+code, pre, .font-mono {
+  font-family: var(--font-mono);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--color-bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-border-hover); }
+
+::selection {
+  background-color: hsl(152, 60%, 36% / 0.25);
+  color: var(--color-text-primary);
+}
+
+input, textarea, select, button {
+  font-family: var(--font-body);
+}
+
+/* ── Keyframes ── */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 hsl(152, 60%, 36% / 0.4); }
+  50% { box-shadow: 0 0 12px 4px hsl(152, 60%, 36% / 0.2); }
+}
+
+/* ── Animation utilities ── */
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out both;
+}
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s ease-out both;
+}
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out both;
+}
+.animate-slide-up {
+  animation: slide-up 0.25s ease-out both;
+}
+.animate-slide-in-left {
+  animation: slide-in-left 0.25s ease-out both;
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.35s ease-out both;
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Stagger delays */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.10s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.20s; }
+.stagger-5 { animation-delay: 0.25s; }
+.stagger-6 { animation-delay: 0.30s; }
+.stagger-7 { animation-delay: 0.35s; }
+.stagger-8 { animation-delay: 0.40s; }
+
+/* ── Glass effect ── */
+.glass {
+  background: hsl(220, 18%, 14% / 0.80);
+  backdrop-filter: blur(12px);
+  border: 1px solid hsl(220, 15%, 30% / 0.40);
+  border-radius: 12px;
+}
+
+/* ── Focus ring ── */
+.focus-ring {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-bg-primary), 0 0 0 4px var(--color-accent);
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

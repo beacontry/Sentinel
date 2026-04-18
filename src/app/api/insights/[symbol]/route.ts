@@ -1,0 +1,46 @@
+import { NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
+import { rateLimit } from "@/lib/rate-limiter";
+import { getQuickInsight } from "@/lib/quick-insights";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ symbol: string }> }
+) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Rate limit: 10 req/min per user
+  const { allowed } = rateLimit(`insight:${session.userId}`, 10, 60);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Try again in a minute." },
+      { status: 429 }
+    );
+  }
+
+  const { symbol } = await params;
+  const upperSymbol = symbol.toUpperCase();
+
+  if (!/^[A-Z]{1,10}$/.test(upperSymbol)) {
+    return NextResponse.json({ error: "Invalid symbol" }, { status: 400 });
+  }
+
+  try {
+    const result = await getQuickInsight(upperSymbol);
+
+    return NextResponse.json(
+      { symbol: upperSymbol, ...result },
+      { headers: { "Cache-Control": "private, max-age=60" } }
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("Insight fetch error:", message);
+    return NextResponse.json(
+      { error: "Failed to generate insight" },
+      { status: 500 }
+    );
+  }
+}
