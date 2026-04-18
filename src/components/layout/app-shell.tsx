@@ -54,20 +54,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
             {/* Logo */}
-            <div style={{ padding: "20px 20px 12px" }}>
-              <Link href="/dashboard" className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-white">
-                  <Radar className="h-5 w-5" />
+            <div style={{ padding: "14px 16px 10px" }}>
+              <Link href="/dashboard" className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
+                  <Radar className="h-4 w-4" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 600, color: "#fff" }}>Sentinel</div>
-                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Trading Intelligence</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>Sentinel</div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Trading Intelligence</div>
                 </div>
               </Link>
             </div>
 
             {/* Nav items */}
-            <nav style={{ flex: 1, overflowY: "auto", padding: "8px 16px" }}>
+            <nav style={{ flex: 1, overflowY: "auto", padding: "4px 10px" }}>
               {NAV_ITEMS.map((item) => {
                 const active = isActivePath(item, pathname);
                 return (
@@ -77,18 +77,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 12,
-                      padding: "10px 12px",
-                      borderRadius: 8,
-                      fontSize: 14,
+                      gap: 10,
+                      padding: "7px 10px",
+                      borderRadius: 6,
+                      fontSize: 13,
                       color: active ? "#fff" : "rgba(255,255,255,0.7)",
                       backgroundColor: active ? "rgba(255,255,255,0.1)" : "transparent",
                       fontWeight: active ? 500 : 400,
                       textDecoration: "none",
-                      marginBottom: 2,
+                      marginBottom: 1,
                     }}
                   >
-                    <item.icon style={{ width: 18, height: 18, flexShrink: 0 }} strokeWidth={1.75} />
+                    <item.icon style={{ width: 16, height: 16, flexShrink: 0 }} strokeWidth={1.75} />
                     <span>{item.label}</span>
                   </Link>
                 );
@@ -96,17 +96,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </nav>
 
             {/* Footer */}
-            <div style={{ padding: "8px 16px 16px" }}>
+            <div style={{ padding: "4px 10px 12px" }}>
               <button
                 type="button"
                 onClick={toggleChat}
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 12,
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  fontSize: 14,
+                  gap: 10,
+                  padding: "7px 10px",
+                  borderRadius: 6,
+                  fontSize: 13,
                   width: "100%",
                   border: "none",
                   cursor: "pointer",
@@ -114,7 +114,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   backgroundColor: isChatOpen ? "rgba(255,255,255,0.1)" : "transparent",
                 }}
               >
-                <Sparkles style={{ width: 18, height: 18 }} />
+                <Sparkles style={{ width: 16, height: 16 }} />
                 AI Assistant
               </button>
               <button
@@ -123,19 +123,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 12,
-                  padding: "10px 12px",
-                  borderRadius: 8,
-                  fontSize: 14,
+                  gap: 10,
+                  padding: "7px 10px",
+                  borderRadius: 6,
+                  fontSize: 13,
                   width: "100%",
                   border: "none",
                   cursor: "pointer",
                   color: "rgba(255,255,255,0.7)",
                   backgroundColor: "transparent",
-                  marginTop: 2,
+                  marginTop: 1,
                 }}
               >
-                <LogOut style={{ width: 18, height: 18 }} />
+                <LogOut style={{ width: 16, height: 16 }} />
                 Sign out
               </button>
             </div>
@@ -167,19 +167,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Logo */}
-            <div style={{ padding: "8px 20px 12px" }}>
-              <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-white">
-                  <Radar className="h-5 w-5" />
+            <div style={{ padding: "8px 16px 10px" }}>
+              <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
+                  <Radar className="h-4 w-4" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 600, color: "#fff" }}>Sentinel</div>
-                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>Trading Intelligence</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>Sentinel</div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Trading Intelligence</div>
                 </div>
               </Link>
             </div>
 
-            <nav style={{ flex: 1, overflowY: "auto", padding: "8px 16px" }}>
+            <nav style={{ flex: 1, overflowY: "auto", padding: "4px 10px" }}>
               {NAV_ITEMS.map((item) => {
                 const active = isActivePath(item, pathname);
                 return (
@@ -190,47 +190,47 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 12,
-                      padding: "10px 12px",
-                      borderRadius: 8,
-                      fontSize: 14,
+                      gap: 10,
+                      padding: "7px 10px",
+                      borderRadius: 6,
+                      fontSize: 13,
                       color: active ? "#fff" : "rgba(255,255,255,0.7)",
                       backgroundColor: active ? "rgba(255,255,255,0.1)" : "transparent",
                       fontWeight: active ? 500 : 400,
                       textDecoration: "none",
-                      marginBottom: 2,
+                      marginBottom: 1,
                     }}
                   >
-                    <item.icon style={{ width: 18, height: 18, flexShrink: 0 }} strokeWidth={1.75} />
+                    <item.icon style={{ width: 16, height: 16, flexShrink: 0 }} strokeWidth={1.75} />
                     <span>{item.label}</span>
                   </Link>
                 );
               })}
             </nav>
 
-            <div style={{ padding: "8px 16px 16px" }}>
+            <div style={{ padding: "4px 10px 12px" }}>
               <button
                 type="button"
                 onClick={() => { toggleChat(); setMobileOpen(false); }}
                 style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
-                  borderRadius: 8, fontSize: 14, width: "100%", border: "none", cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 10, padding: "7px 10px",
+                  borderRadius: 6, fontSize: 13, width: "100%", border: "none", cursor: "pointer",
                   color: "rgba(255,255,255,0.7)", backgroundColor: "transparent",
                 }}
               >
-                <Sparkles style={{ width: 18, height: 18 }} />
+                <Sparkles style={{ width: 16, height: 16 }} />
                 AI Assistant
               </button>
               <button
                 type="button"
                 onClick={handleLogout}
                 style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
-                  borderRadius: 8, fontSize: 14, width: "100%", border: "none", cursor: "pointer",
-                  color: "rgba(255,255,255,0.7)", backgroundColor: "transparent", marginTop: 2,
+                  display: "flex", alignItems: "center", gap: 10, padding: "7px 10px",
+                  borderRadius: 6, fontSize: 13, width: "100%", border: "none", cursor: "pointer",
+                  color: "rgba(255,255,255,0.7)", backgroundColor: "transparent", marginTop: 1,
                 }}
               >
-                <LogOut style={{ width: 18, height: 18 }} />
+                <LogOut style={{ width: 16, height: 16 }} />
                 Sign out
               </button>
             </div>

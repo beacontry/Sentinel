@@ -28,77 +28,81 @@ export function BacktestChart({ equityCurve }: BacktestChartProps) {
     }
 
     const container = containerRef.current;
-    const chart = createChart(container, {
-      width: container.clientWidth,
-      height: 300,
-      layout: {
-        background: { type: ColorType.Solid, color: "#0a0e17" },
-        textColor: "#94a3b8",
-        fontFamily: "'IBM Plex Sans', sans-serif",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: "#1e293b" },
-        horzLines: { color: "#1e293b" },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: { color: "#334155", labelBackgroundColor: "#1a1f2e" },
-        horzLine: { color: "#334155", labelBackgroundColor: "#1a1f2e" },
-      },
-      rightPriceScale: {
-        borderColor: "#1e293b",
-        scaleMargins: { top: 0.1, bottom: 0.1 },
-      },
-      timeScale: {
-        borderColor: "#1e293b",
-        timeVisible: true,
-      },
-    });
-    chartRef.current = chart;
 
-    const lastValue = equityCurve[equityCurve.length - 1]?.value ?? 10000;
-    const isProfit = lastValue >= 10000;
+    try {
+      const chart = createChart(container, {
+        width: container.clientWidth,
+        height: 300,
+        layout: {
+          background: { type: ColorType.Solid, color: "#ffffff" },
+          textColor: "#64748b",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: 11,
+        },
+        grid: {
+          vertLines: { color: "#e2e8f0" },
+          horzLines: { color: "#e2e8f0" },
+        },
+        crosshair: {
+          mode: CrosshairMode.Normal,
+          vertLine: { color: "#cbd5e1", labelBackgroundColor: "#1e293b" },
+          horzLine: { color: "#cbd5e1", labelBackgroundColor: "#1e293b" },
+        },
+        rightPriceScale: {
+          borderColor: "#e2e8f0",
+          scaleMargins: { top: 0.1, bottom: 0.1 },
+        },
+        timeScale: {
+          borderColor: "#e2e8f0",
+          timeVisible: true,
+        },
+      });
+      chartRef.current = chart;
 
-    const series = chart.addSeries(LineSeries, {
-      color: isProfit ? "#22c55e" : "#ef4444",
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: true,
-      crosshairMarkerVisible: true,
-    });
+      const lastValue = equityCurve[equityCurve.length - 1]?.value ?? 10000;
+      const isProfit = lastValue >= 10000;
 
-    const data: LineData[] = equityCurve.map((p) => ({
-      time: (Math.floor(new Date(p.date).getTime() / 1000)) as Time,
-      value: p.value,
-    }));
+      const series = chart.addSeries(LineSeries, {
+        color: isProfit ? "#059669" : "#dc2626",
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: true,
+      });
 
-    series.setData(data);
+      const data: LineData[] = equityCurve.map((p) => ({
+        time: (Math.floor(new Date(p.date).getTime() / 1000)) as Time,
+        value: p.value,
+      }));
 
-    // Starting capital reference line
-    series.createPriceLine({
-      price: 10000,
-      color: "#64748b",
-      lineWidth: 1,
-      lineStyle: 2,
-      axisLabelVisible: true,
-      title: "",
-    });
+      series.setData(data);
 
-    chart.timeScale().fitContent();
+      series.createPriceLine({
+        price: 10000,
+        color: "#94a3b8",
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: "",
+      });
 
-    const ro = new ResizeObserver((entries) => {
-      for (const e of entries) {
-        chart.applyOptions({ width: e.contentRect.width });
-      }
-    });
-    ro.observe(container);
+      chart.timeScale().fitContent();
 
-    return () => {
-      ro.disconnect();
-      chart.remove();
-      chartRef.current = null;
-    };
+      const ro = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          chart.applyOptions({ width: e.contentRect.width });
+        }
+      });
+      ro.observe(container);
+
+      return () => {
+        ro.disconnect();
+        chart.remove();
+        chartRef.current = null;
+      };
+    } catch (err) {
+      console.error("Chart init failed:", err);
+    }
   }, [equityCurve]);
 
   return (

@@ -367,7 +367,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
           {!chatOpen ? (
             <button
               onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
-              className="group flex w-full items-center gap-3 rounded-2xl border border-accent/20 bg-accent/5 p-4 text-left transition-all hover:border-accent/30 hover:bg-accent/10"
+              className="group flex w-full items-center gap-3 rounded-2xl border border-accent/20 bg-accent/10 p-4 text-left transition-all hover:border-accent/30 hover:bg-accent/10"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/15 text-accent">
                 <Sparkles className="h-5 w-5" />
@@ -382,7 +382,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
               </div>
             </button>
           ) : (
-            <div className="rounded-2xl border border-accent/20 bg-accent/[0.03] p-5 space-y-4">
+            <div className="rounded-2xl border border-accent/20 bg-accent/10 p-5 space-y-4">
               {/* Header */}
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-accent/15 text-accent">

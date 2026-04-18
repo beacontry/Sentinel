@@ -48,7 +48,14 @@
       "Bash(curl -s \"https://finnhub.io/api/v1/calendar/earnings?from=2026-03-25&to=2026-05-07&token=d7c55tpr01quh9fci4m0d7c55tpr01quh9fci4mg\")",
       "Bash(python3 -c 'import sys,json;d=json.load\\(sys.stdin\\);earns=d.get\\('\\\\''earningsCalendar'\\\\'',[]\\);print\\('\\\\''Total:'\\\\'',len\\(earns\\)\\);sofi=[e for e in earns if e['\\\\''symbol'\\\\'']=='\\\\''SOFI'\\\\''];print\\('\\\\''SOFI:'\\\\'',sofi\\);dates={};:*)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(ssh deploy@192.241.132.219 \"cat /opt/apps/scripts/deploy.sh\")",
+      "Bash(ssh deploy@192.241.132.219 \"cat /opt/apps/shared/caddy/Caddyfile\")",
+      "Bash(ssh:*)",
+      "Bash(gh repo:*)",
+      "Bash(openssl rand:*)",
+      "Bash(curl -sI https://sentinel.guardcybersolutionsllc.com/)",
+      "Bash(curl:*)"
     ]
   }
 }
