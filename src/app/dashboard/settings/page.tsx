@@ -72,8 +72,8 @@ const RISK_PRESETS: Record<RiskTolerance, {
 
 const BROKER_OPTIONS = [
   { value: "alpaca", label: "Alpaca" },
-  { value: "ibkr", label: "IBKR (coming soon)" },
-  { value: "tradier", label: "Tradier (coming soon)" },
+  { value: "ibkr", label: "Interactive Brokers" },
+  { value: "tradier", label: "Tradier" },
 ];
 
 const ENVIRONMENT_OPTIONS = [
@@ -83,8 +83,26 @@ const ENVIRONMENT_OPTIONS = [
 
 const BROKER_LABELS: Record<string, string> = {
   alpaca: "Alpaca",
-  ibkr: "IBKR",
+  ibkr: "Interactive Brokers",
   tradier: "Tradier",
+};
+
+const BROKER_FIELD_LABELS: Record<string, { apiKey: string; apiSecret: string; help: string }> = {
+  alpaca: {
+    apiKey: "API Key",
+    apiSecret: "API Secret",
+    help: "Get your API keys from app.alpaca.markets \u2192 Paper Trading \u2192 API Keys",
+  },
+  ibkr: {
+    apiKey: "Gateway URL",
+    apiSecret: "Account ID",
+    help: "Enter your Client Portal Gateway URL and Account ID. Run the gateway on your local machine.",
+  },
+  tradier: {
+    apiKey: "Access Token",
+    apiSecret: "Account ID",
+    help: "Get your access token from developer.tradier.com",
+  },
 };
 
 // ─── Page ───────────────────────────────────────────────────────────
@@ -687,19 +705,37 @@ export default function SettingsPage() {
           />
 
           <Input
-            label="API Key"
+            label={BROKER_FIELD_LABELS[brokerForm.broker]?.apiKey ?? "API Key"}
             value={brokerForm.apiKey}
             onChange={(e) => setBrokerForm((f) => ({ ...f, apiKey: e.target.value }))}
-            placeholder={editingBroker ? "Leave blank to keep existing" : "Your API key"}
+            placeholder={
+              editingBroker
+                ? "Leave blank to keep existing"
+                : brokerForm.broker === "ibkr"
+                  ? "https://localhost:5000"
+                  : brokerForm.broker === "tradier"
+                    ? "Your access token"
+                    : "Your API key"
+            }
           />
 
           <Input
-            label="API Secret"
-            type="password"
+            label={BROKER_FIELD_LABELS[brokerForm.broker]?.apiSecret ?? "API Secret"}
+            type={brokerForm.broker === "ibkr" ? "text" : "password"}
             value={brokerForm.apiSecret}
             onChange={(e) => setBrokerForm((f) => ({ ...f, apiSecret: e.target.value }))}
-            placeholder={editingBroker ? "Leave blank to keep existing" : "Your API secret"}
+            placeholder={
+              editingBroker
+                ? "Leave blank to keep existing"
+                : brokerForm.broker === "ibkr" || brokerForm.broker === "tradier"
+                  ? "Your account ID"
+                  : "Your API secret"
+            }
           />
+
+          <p className="text-xs text-text-muted">
+            {BROKER_FIELD_LABELS[brokerForm.broker]?.help}
+          </p>
 
           <Select
             label="Environment"
@@ -755,7 +791,7 @@ export default function SettingsPage() {
             variant="secondary"
             onClick={handleTestBroker}
             loading={brokerTesting}
-            disabled={!brokerForm.apiKey || !brokerForm.apiSecret || brokerForm.broker !== "alpaca"}
+            disabled={!brokerForm.apiKey || !brokerForm.apiSecret}
           >
             <TestTube className="w-4 h-4" />
             Test
@@ -763,7 +799,6 @@ export default function SettingsPage() {
           <Button
             onClick={handleSaveBroker}
             loading={brokerSaving}
-            disabled={brokerForm.broker !== "alpaca"}
           >
             {editingBroker ? "Update" : "Save"}
           </Button>

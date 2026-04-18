@@ -3,12 +3,7 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { brokerConnections } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-
-function getAlpacaBaseUrl(environment: string): string {
-  return environment === "live"
-    ? "https://api.alpaca.markets"
-    : "https://paper-api.alpaca.markets";
-}
+import { createBrokerClient, BrokerError } from "@/lib/brokers";
 
 export async function GET() {
   const session = await getSession();
@@ -36,101 +31,81 @@ export async function GET() {
       );
     }
 
-    if (connection.broker !== "alpaca") {
+    const client = createBrokerClient(
+      connection.broker,
+      connection.apiKey,
+      connection.apiSecret,
+      connection.environment
+    );
+
+    // Fetch account and positions in parallel
+    const [accountResult, positionsResult] = await Promise.allSettled([
+      client.getAccount(),
+      client.getPositions(),
+    ]);
+
+    if (accountResult.status === "rejected") {
+      const err = accountResult.reason;
+      console.error("Broker account fetch failed:", err?.message ?? err);
+      const userMessage =
+        err instanceof BrokerError ? err.userMessage : "Failed to fetch account data";
+      return NextResponse.json({ error: userMessage }, { status: 502 });
+    }
+
+    const account = accountResult.value;
+    const positions =
+      positionsResult.status === "fulfilled" ? positionsResult.value : [];
+
+    if (positionsResult.status === "rejected") {
+      console.warn("Positions fetch failed gracefully:", positionsResult.reason?.message);
+    }
+
+    // Update lastConnectedAt
+    await db
+      .update(brokerConnections)
+      .set({ lastConnectedAt: new Date() })
+      .where(eq(brokerConnections.id, connection.id))
+      .catch((err: Error) => {
+        console.warn("Failed to update lastConnectedAt:", err.message);
+      });
+
+    return NextResponse.json({
+      broker: connection.broker,
+      environment: connection.environment,
+      label: connection.label,
+      account: {
+        id: account.id,
+        accountNumber: account.accountNumber,
+        status: account.status,
+        buyingPower: account.buyingPower,
+        equity: account.equity,
+        cash: account.cash,
+        portfolioValue: account.portfolioValue,
+        lastEquity: account.lastEquity,
+        daytradeCount: account.daytradeCount,
+        daytradeLimit: account.daytradeBuyingPower,
+        patternDayTrader: account.patternDayTrader,
+      },
+      positions: positions.map((p) => ({
+        symbol: p.symbol,
+        qty: p.qty,
+        side: p.side,
+        avgEntryPrice: p.avgEntryPrice,
+        currentPrice: p.currentPrice,
+        marketValue: p.marketValue,
+        unrealizedPl: p.unrealizedPnl,
+        unrealizedPlpc: p.unrealizedPnlPct,
+        changeToday: p.changeToday,
+      })),
+    });
+  } catch (err) {
+    if (err instanceof BrokerError) {
       return NextResponse.json(
-        { error: `${connection.broker} is not yet supported` },
-        { status: 400 }
+        { error: err.userMessage },
+        { status: err.statusCode }
       );
     }
-
-    const baseUrl = getAlpacaBaseUrl(connection.environment);
-    const headers = {
-      "APCA-API-KEY-ID": connection.apiKey,
-      "APCA-API-SECRET-KEY": connection.apiSecret,
-    };
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    try {
-      // Fetch account and positions in parallel
-      const [accountRes, positionsRes] = await Promise.allSettled([
-        fetch(`${baseUrl}/v2/account`, { headers, signal: controller.signal }),
-        fetch(`${baseUrl}/v2/positions`, { headers, signal: controller.signal }),
-      ]);
-
-      if (accountRes.status === "rejected" || !accountRes.value.ok) {
-        const status = accountRes.status === "fulfilled" ? accountRes.value.status : 0;
-        console.error("Alpaca account fetch failed:", status);
-        return NextResponse.json(
-          { error: status === 403 ? "Invalid API credentials" : "Failed to fetch account data" },
-          { status: 502 }
-        );
-      }
-
-      let accountData: Record<string, unknown>;
-      try {
-        accountData = await accountRes.value.json();
-      } catch {
-        return NextResponse.json({ error: "Invalid response from broker" }, { status: 502 });
-      }
-
-      let positions: Record<string, unknown>[] = [];
-      if (positionsRes.status === "fulfilled" && positionsRes.value.ok) {
-        try {
-          positions = await positionsRes.value.json();
-        } catch {
-          // Positions fetch failed gracefully — return empty
-          console.warn("Failed to parse positions response");
-        }
-      }
-
-      // Update lastConnectedAt
-      await db
-        .update(brokerConnections)
-        .set({ lastConnectedAt: new Date() })
-        .where(eq(brokerConnections.id, connection.id))
-        .catch((err: Error) => {
-          console.warn("Failed to update lastConnectedAt:", err.message);
-        });
-
-      return NextResponse.json({
-        broker: connection.broker,
-        environment: connection.environment,
-        label: connection.label,
-        account: {
-          id: accountData.id,
-          accountNumber: accountData.account_number,
-          status: accountData.status,
-          buyingPower: accountData.buying_power,
-          equity: accountData.equity,
-          cash: accountData.cash,
-          portfolioValue: accountData.portfolio_value,
-          lastEquity: accountData.last_equity,
-          daytradeCount: accountData.daytrade_count,
-          daytradeLimit: accountData.daytrading_buying_power,
-          patternDayTrader: accountData.pattern_day_trader,
-        },
-        positions: positions.map((p) => ({
-          symbol: p.symbol,
-          qty: p.qty,
-          side: p.side,
-          avgEntryPrice: p.avg_entry_price,
-          currentPrice: p.current_price,
-          marketValue: p.market_value,
-          unrealizedPl: p.unrealized_pl,
-          unrealizedPlpc: p.unrealized_plpc,
-          changeToday: p.change_today,
-        })),
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-  } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    if (message.includes("abort")) {
-      return NextResponse.json({ error: "Connection timed out" }, { status: 504 });
-    }
     console.error("Broker account error:", message);
     return NextResponse.json({ error: "Failed to fetch account data" }, { status: 500 });
   }
