@@ -220,6 +220,46 @@ export const adminDeleteUserSchema = z.object({
   id: z.string().uuid(),
 });
 
+// ─── Broker Connections ──────────────────────────────────────────
+
+export const createBrokerConnectionSchema = z.object({
+  broker: z.enum(["alpaca", "ibkr", "tradier"]),
+  label: z.string().min(1, "Label is required").max(100).default("Default"),
+  apiKey: z.string().min(1, "API key is required").max(500),
+  apiSecret: z.string().min(1, "API secret is required").max(500),
+  environment: z.enum(["paper", "live"]).default("paper"),
+});
+
+export const updateBrokerConnectionSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().min(1).max(100).optional(),
+  apiKey: z.string().min(1).max(500).optional(),
+  apiSecret: z.string().min(1).max(500).optional(),
+  environment: z.enum(["paper", "live"]).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const deleteBrokerConnectionSchema = z.object({
+  id: z.string().uuid(),
+});
+
+export const testBrokerConnectionSchema = z.object({
+  broker: z.enum(["alpaca", "ibkr", "tradier"]),
+  apiKey: z.string().min(1, "API key is required").max(500),
+  apiSecret: z.string().min(1, "API secret is required").max(500),
+  environment: z.enum(["paper", "live"]).default("paper"),
+});
+
+export const placeBrokerOrderSchema = z.object({
+  symbol: z.string().min(1, "Symbol is required").max(10).transform((s) => s.toUpperCase().trim()),
+  side: z.enum(["buy", "sell"]),
+  qty: z.string().min(1, "Quantity is required"),
+  type: z.enum(["market", "limit", "stop", "stop_limit"]).default("market"),
+  timeInForce: z.enum(["day", "gtc", "ioc", "fok"]).default("day"),
+  limitPrice: z.string().optional(),
+  stopPrice: z.string().optional(),
+});
+
 // ─── Inferred Types ───────────────────────────────────────────────
 
 export type RegisterInput = z.infer<typeof registerSchema>;
@@ -240,6 +280,10 @@ export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 export type AdminCreateUserInput = z.infer<typeof adminCreateUserSchema>;
 export type AdminUpdateUserInput = z.infer<typeof adminUpdateUserSchema>;
 export type AdminDeleteUserInput = z.infer<typeof adminDeleteUserSchema>;
+export type CreateBrokerConnectionInput = z.infer<typeof createBrokerConnectionSchema>;
+export type UpdateBrokerConnectionInput = z.infer<typeof updateBrokerConnectionSchema>;
+export type TestBrokerConnectionInput = z.infer<typeof testBrokerConnectionSchema>;
+export type PlaceBrokerOrderInput = z.infer<typeof placeBrokerOrderSchema>;
 
 // ─── Dashboard Layout ────────────────────────────────────────────
 
