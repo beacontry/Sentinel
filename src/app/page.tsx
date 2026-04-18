@@ -86,11 +86,11 @@ const deskModules = [
 
 export default function LandingPage() {
   return (
-    <div className="relative min-h-screen overflow-hidden px-4 py-4 lg:px-8 lg:py-6">
+    <div className="relative min-h-screen overflow-hidden px-4 py-4" style={{ paddingLeft: "clamp(1rem, 5vw, 6rem)", paddingRight: "clamp(1rem, 5vw, 6rem)" }}>
       <div className="pointer-events-none absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 40px), repeating-linear-gradient(currentColor 0 1px, transparent 1px 40px)' }} />
 
-      <div className="mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-none flex-col gap-5">
-        <header className="flex items-center justify-between rounded-[16px] border border-border/80 bg-bg-surface/60 px-4 py-3 backdrop-blur-md sm:px-5">
+      <div className="flex min-h-[calc(100vh-2rem)] w-full flex-col gap-5">
+        <header className="flex items-center justify-between rounded-[16px] border border-border bg-bg-secondary px-4 py-3 backdrop-blur-md sm:px-5">
           <div className="flex items-center gap-3 sm:gap-4">
             <div className="flex h-11 w-11 items-center justify-center rounded-[12px] border border-accent/25 bg-accent/12 text-accent">
               <Shield className="h-5 w-5" />
@@ -106,7 +106,7 @@ export default function LandingPage() {
           </div>
           <Link
             href="/login"
-            className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] border border-border/80 px-4 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:bg-bg-elevated/60 hover:text-text-primary"
+            className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] border border-border px-4 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:bg-bg-elevated hover:text-text-primary"
           >
             Sign In
           </Link>
@@ -116,8 +116,8 @@ export default function LandingPage() {
           <section className="surface-panel relative w-full overflow-hidden rounded-xl px-5 py-6 sm:px-6 lg:px-8 lg:py-8">
             <div className="pointer-events-none absolute inset-0 opacity-[0.02]" style={{ backgroundImage: 'repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 36px), repeating-linear-gradient(currentColor 0 1px, transparent 1px 36px)' }} />
 
-            <div className="relative mx-auto w-full max-w-[94rem]">
-              <div className="mx-auto flex max-w-5xl flex-col items-center text-center">
+            <div className="relative w-full">
+              <div className="flex flex-col items-center text-center">
                 <div className="inline-flex rounded-[10px] border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] uppercase tracking-[0.08em] text-accent">
                   Built for conviction, not dashboards
                 </div>
@@ -142,18 +142,18 @@ export default function LandingPage() {
                   </Link>
                   <Link
                     href="/login"
-                    className="inline-flex min-h-[52px] items-center justify-center rounded-[12px] border border-border/80 px-6 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:bg-bg-elevated/60 hover:text-text-primary"
+                    className="inline-flex min-h-[52px] items-center justify-center rounded-[12px] border border-border px-6 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:bg-bg-elevated hover:text-text-primary"
                   >
                     Return to Workspace
                   </Link>
                 </div>
               </div>
 
-              <div className="mx-auto mt-8 grid max-w-5xl gap-3 md:grid-cols-3">
+              <div className="mt-8 grid gap-3 md:grid-cols-3">
                 {deskMetrics.map((metric) => (
                   <div
                     key={metric.label}
-                    className="rounded-[14px] border border-border/70 bg-bg-surface/68 p-4 text-center"
+                    className="rounded-[14px] border border-border bg-bg-secondary p-4 text-center"
                   >
                     <div className="font-mono text-3xl leading-none text-text-primary">
                       {metric.value}
@@ -168,9 +168,9 @@ export default function LandingPage() {
                 ))}
               </div>
 
-              <div className="mt-8 grid gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
+              <div className="mt-8 grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
                 <div className="surface-muted rounded-[18px] p-4">
-                  <div className="flex items-center justify-between border-b border-border/60 pb-3">
+                  <div className="flex items-center justify-between border-b border-border pb-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.08em] text-accent">
                         Desk Routing
@@ -185,10 +185,10 @@ export default function LandingPage() {
                     {workflowSteps.map((step, index) => (
                       <div
                         key={step.title}
-                        className="rounded-[12px] border border-border/60 bg-bg-primary/28 p-3"
+                        className="rounded-[12px] border border-border bg-bg-elevated p-3"
                       >
                         <div className="flex items-start gap-3">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-border/70 bg-bg-surface/70 font-mono text-[11px] text-text-muted">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-border bg-bg-secondary font-mono text-[11px] text-text-muted">
                             0{index + 1}
                           </div>
                           <div>
@@ -210,7 +210,7 @@ export default function LandingPage() {
 
                 <div className="relative min-h-[29rem] overflow-hidden rounded-xl border border-border bg-bg-surface p-5">
                   <div className="pointer-events-none absolute inset-0 bg-accent/[0.03]" style={{ maskImage: 'linear-gradient(180deg, black 0%, transparent 28%)' }} />
-                  <div className="relative flex items-center justify-between border-b border-border/60 pb-3">
+                  <div className="relative flex items-center justify-between border-b border-border pb-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.08em] text-accent">
                         Live Desk Preview
@@ -222,8 +222,8 @@ export default function LandingPage() {
                     <Workflow className="h-4 w-4 text-text-muted" />
                   </div>
 
-                  <div className="relative mt-4 rounded-[18px] border border-border/70 bg-bg-primary/34 p-4">
-                    <div className="flex items-center justify-between border-b border-border/50 pb-3">
+                  <div className="relative mt-4 rounded-[18px] border border-border bg-bg-elevated p-4">
+                    <div className="flex items-center justify-between border-b border-border pb-3">
                       <div>
                         <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
                           Market Focus
@@ -232,13 +232,13 @@ export default function LandingPage() {
                           Conviction + Risk
                         </div>
                       </div>
-                      <div className="rounded-[10px] border border-border/60 bg-bg-surface/70 px-3 py-1 font-mono text-[11px] text-bullish">
+                      <div className="rounded-[10px] border border-border bg-bg-secondary px-3 py-1 font-mono text-[11px] text-bullish">
                         LIVE
                       </div>
                     </div>
 
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-[14px] border border-border/60 bg-bg-surface/62 p-3">
+                      <div className="rounded-[14px] border border-border bg-bg-secondary p-3">
                         <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
                           Watchlist
                         </div>
@@ -246,7 +246,7 @@ export default function LandingPage() {
                           {["AAPL", "NVDA", "MSFT"].map((symbol) => (
                             <div
                               key={symbol}
-                              className="flex items-center justify-between border-b border-border/45 pb-2 last:border-b-0 last:pb-0"
+                              className="flex items-center justify-between border-b border-border pb-2 last:border-b-0 last:pb-0"
                             >
                               <span className="font-mono text-[13px] text-text-primary">
                                 {symbol}
@@ -259,7 +259,7 @@ export default function LandingPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-[14px] border border-border/60 bg-bg-surface/62 p-3">
+                      <div className="rounded-[14px] border border-border bg-bg-secondary p-3">
                         <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
                           Scan Queue
                         </div>
@@ -271,7 +271,7 @@ export default function LandingPage() {
                           ].map((item) => (
                             <div
                               key={item}
-                              className="rounded-[10px] border border-border/55 bg-bg-primary/30 px-2.5 py-2 text-sm text-text-secondary"
+                              className="rounded-[10px] border border-border bg-bg-elevated px-2.5 py-2 text-sm text-text-secondary"
                             >
                               {item}
                             </div>
@@ -279,7 +279,7 @@ export default function LandingPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-[14px] border border-border/60 bg-bg-surface/62 p-3">
+                      <div className="rounded-[14px] border border-border bg-bg-secondary p-3">
                         <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
                           P&amp;L / Status
                         </div>
@@ -295,7 +295,7 @@ export default function LandingPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-[14px] border border-border/60 bg-bg-surface/62 p-3">
+                      <div className="rounded-[14px] border border-border bg-bg-secondary p-3">
                         <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
                           Review Loop
                         </div>
@@ -304,7 +304,7 @@ export default function LandingPage() {
                             (item) => (
                               <div
                                 key={item}
-                                className="flex items-center justify-between border-b border-border/45 pb-2 last:border-b-0 last:pb-0"
+                                className="flex items-center justify-between border-b border-border pb-2 last:border-b-0 last:pb-0"
                               >
                                 <span className="text-sm text-text-secondary">{item}</span>
                                 <span className="h-2 w-2 rounded-full bg-accent" />
@@ -323,7 +323,7 @@ export default function LandingPage() {
                       ].map((line) => (
                         <div
                           key={line}
-                          className="flex items-center justify-between rounded-[10px] border border-border/55 bg-bg-surface/58 px-3 py-2"
+                          className="flex items-center justify-between rounded-[10px] border border-border bg-bg-secondary px-3 py-2"
                         >
                           <span className="text-sm text-text-secondary">{line}</span>
                           <ArrowRight className="h-3.5 w-3.5 text-text-muted" />
@@ -334,9 +334,9 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_20rem]">
-                <div className="rounded-[18px] border border-border/70 bg-bg-primary/26 p-4">
-                  <div className="flex items-center justify-between border-b border-border/60 pb-3">
+              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_18rem]">
+                <div className="rounded-[18px] border border-border bg-bg-elevated p-4">
+                  <div className="flex items-center justify-between border-b border-border pb-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.08em] text-accent">
                         Operational Spread
@@ -348,7 +348,7 @@ export default function LandingPage() {
                     <Activity className="h-4 w-4 text-text-muted" />
                   </div>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div className="rounded-[12px] border border-border/60 bg-bg-surface/65 p-3">
+                    <div className="rounded-[12px] border border-border bg-bg-secondary p-3">
                       <div className="flex items-center gap-2">
                         <ScanSearch className="h-4 w-4 text-accent" />
                         <div className="text-sm font-medium text-text-primary">Research stack</div>
@@ -358,7 +358,7 @@ export default function LandingPage() {
                         bench instead of separate pages with duplicated chrome.
                       </p>
                     </div>
-                    <div className="rounded-[12px] border border-border/60 bg-bg-surface/65 p-3">
+                    <div className="rounded-[12px] border border-border bg-bg-secondary p-3">
                       <div className="flex items-center gap-2">
                         <BarChart3 className="h-4 w-4 text-accent" />
                         <div className="text-sm font-medium text-text-primary">Execution stack</div>
@@ -368,7 +368,7 @@ export default function LandingPage() {
                         to the same symbol state and position context.
                       </p>
                     </div>
-                    <div className="rounded-[12px] border border-border/60 bg-bg-surface/65 p-3">
+                    <div className="rounded-[12px] border border-border bg-bg-secondary p-3">
                       <div className="flex items-center gap-2">
                         <FileText className="h-4 w-4 text-accent" />
                         <div className="text-sm font-medium text-text-primary">Review stack</div>
@@ -378,7 +378,7 @@ export default function LandingPage() {
                         loop instead of becoming orphaned screens.
                       </p>
                     </div>
-                    <div className="rounded-[12px] border border-border/60 bg-bg-surface/65 p-3">
+                    <div className="rounded-[12px] border border-border bg-bg-secondary p-3">
                       <div className="flex items-center gap-2">
                         <Users className="h-4 w-4 text-accent" />
                         <div className="text-sm font-medium text-text-primary">Conversation stack</div>
@@ -391,7 +391,7 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <div className="rounded-[18px] border border-border/70 bg-bg-primary/26 p-4">
+                <div className="rounded-[18px] border border-border bg-bg-elevated p-4">
                   <div className="text-[10px] uppercase tracking-[0.08em] text-accent">
                     Current Desk Mix
                   </div>
@@ -399,7 +399,7 @@ export default function LandingPage() {
                     {deskModules.map((module) => (
                       <div
                         key={module.name}
-                        className="flex items-center justify-between rounded-[12px] border border-border/60 bg-bg-surface/60 px-3 py-2"
+                        className="flex items-center justify-between rounded-[12px] border border-border bg-bg-secondary px-3 py-2"
                       >
                         <span className="font-mono text-[13px] text-text-primary">{module.name}</span>
                         <span className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
@@ -418,7 +418,7 @@ export default function LandingPage() {
                   return (
                     <div
                       key={card.title}
-                      className="rounded-[14px] border border-border/70 bg-bg-surface/68 p-4 text-center"
+                      className="rounded-[14px] border border-border bg-bg-secondary p-4 text-center"
                     >
                       <div className="flex justify-center">
                         <Icon className="h-4 w-4 text-accent" />

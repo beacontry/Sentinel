@@ -532,7 +532,7 @@ export default function ScreenerPage() {
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border bg-bg-elevated/50">
+                <tr className="border-b border-border bg-bg-elevated">
                   <th className="text-left px-4 py-3">
                     <SortHeader field="symbol" label="Symbol" />
                   </th>
@@ -567,7 +567,7 @@ export default function ScreenerPage() {
                 {sortedResults.map((r) => (
                   <tr
                     key={r.symbol}
-                    className="border-b border-border/50 hover:bg-bg-elevated/30 transition-colors"
+                    className="border-b border-border hover:bg-bg-elevated/30 transition-colors"
                   >
                     <td className="px-4 py-3 font-mono font-bold text-text-primary">
                       {r.symbol}

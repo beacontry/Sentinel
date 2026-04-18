@@ -1,4 +1,4 @@
-import { getFinnhubClient } from "./finnhub";
+import { getFinnhubClient, type FinnhubEarning } from "./finnhub";
 import type { EconomicEvent } from "@/types";
 
 // --- Hardcoded Recurring US Events ---
@@ -170,9 +170,21 @@ export async function getEconomicCalendar(from: string, to: string): Promise<Eco
 
   if (client.isConfigured) {
     try {
-      const result = await client.getEarningsCalendar(from, to);
-      const earnings = result.earningsCalendar ?? [];
-      earningsEvents = earnings.map((e) => {
+      // Fetch earnings in weekly chunks to avoid Finnhub's 1500-result cap
+      const chunks: FinnhubEarning[] = [];
+      const startMs = fromDate.getTime();
+      const endMs = toDate.getTime();
+      const weekMs = 7 * 86400000;
+
+      for (let chunkStart = startMs; chunkStart < endMs; chunkStart += weekMs) {
+        const chunkEnd = Math.min(chunkStart + weekMs - 86400000, endMs);
+        const chunkFrom = new Date(chunkStart).toISOString().slice(0, 10);
+        const chunkTo = new Date(chunkEnd).toISOString().slice(0, 10);
+        const result = await client.getEarningsCalendar(chunkFrom, chunkTo);
+        chunks.push(...(result.earningsCalendar ?? []));
+      }
+
+      earningsEvents = chunks.map((e) => {
         let time: string | null = null;
         if (e.hour === "bmo") time = "Pre-market";
         else if (e.hour === "amc") time = "After-close";

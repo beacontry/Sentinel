@@ -208,8 +208,8 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
             onClick={() => toggleIndicator(key)}
             className={`rounded-full border px-2.5 py-1 text-xs font-mono transition-all
               ${visible[key]
-                ? "border-current bg-bg-surface/70 opacity-100"
-                : "border-border/70 opacity-50 hover:opacity-80"
+                ? "border-current bg-bg-secondary opacity-100"
+                : "border-border opacity-50 hover:opacity-80"
               }`}
             style={{ color }}
           >
@@ -220,7 +220,7 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
 
       <div
         ref={containerRef}
-        className="overflow-hidden rounded-xl border border-border/80 bg-bg-surface"
+        className="overflow-hidden rounded-xl border border-border bg-bg-surface"
       />
 
       {showRsi && (
@@ -245,7 +245,7 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
           className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all
             ${showRsi
               ? "border-accent/30 bg-accent/12 text-accent"
-              : "border-border/70 text-text-muted hover:border-border-hover hover:text-text-secondary"
+              : "border-border text-text-muted hover:border-border-hover hover:text-text-secondary"
             }`}
         >
           RSI
@@ -255,7 +255,7 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
           className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all
             ${showMacd
               ? "border-accent/30 bg-accent/12 text-accent"
-              : "border-border/70 text-text-muted hover:border-border-hover hover:text-text-secondary"
+              : "border-border text-text-muted hover:border-border-hover hover:text-text-secondary"
             }`}
         >
           MACD
@@ -326,7 +326,7 @@ function RsiSubChart({
   return (
     <div className="relative">
       <span className="absolute top-1 left-2 text-[10px] font-mono text-text-muted z-10">RSI (14)</span>
-      <div ref={ref} className="overflow-hidden rounded-xl border border-border/80 bg-bg-surface" />
+      <div ref={ref} className="overflow-hidden rounded-xl border border-border bg-bg-surface" />
     </div>
   );
 }
@@ -425,7 +425,7 @@ function MacdSubChart({
   return (
     <div className="relative">
       <span className="absolute top-1 left-2 text-[10px] font-mono text-text-muted z-10">MACD (12,26,9)</span>
-      <div ref={ref} className="overflow-hidden rounded-xl border border-border/80 bg-bg-surface" />
+      <div ref={ref} className="overflow-hidden rounded-xl border border-border bg-bg-surface" />
     </div>
   );
 }

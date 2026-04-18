@@ -293,7 +293,7 @@ export default function ChatPage() {
                       setInput(prompt);
                       inputRef.current?.focus();
                     }}
-                    className="rounded-xl border border-border/50 bg-bg-surface/50 px-4 py-3 text-left text-[13px] text-text-secondary transition-all hover:border-border hover:bg-bg-surface hover:text-text-primary"
+                    className="rounded-xl border border-border bg-bg-secondary px-4 py-3 text-left text-[13px] text-text-secondary transition-all hover:border-border hover:bg-bg-surface hover:text-text-primary"
                   >
                     {prompt}
                   </button>
@@ -316,7 +316,7 @@ export default function ChatPage() {
                     className={`max-w-[85%] rounded-xl px-4 py-3 text-sm leading-relaxed ${
                       msg.role === "user"
                         ? "bg-accent/15 text-text-primary border border-accent/20"
-                        : "bg-bg-surface text-text-primary border border-border/50"
+                        : "bg-bg-surface text-text-primary border border-border"
                     }`}
                   >
                     <div className="whitespace-pre-line">{msg.content}</div>
@@ -334,7 +334,7 @@ export default function ChatPage() {
                   <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15">
                     <Sparkles className="h-4 w-4 text-accent" />
                   </div>
-                  <div className="rounded-xl border border-border/50 bg-bg-surface px-4 py-3">
+                  <div className="rounded-xl border border-border bg-bg-surface px-4 py-3">
                     <div className="flex items-center gap-2 text-xs text-text-muted">
                       <div className="flex gap-1">
                         <span className="h-1.5 w-1.5 rounded-full bg-accent/60 animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -352,7 +352,7 @@ export default function ChatPage() {
         </div>
 
         {/* Input */}
-        <div className="shrink-0 border-t border-border bg-bg-secondary/50 p-4">
+        <div className="shrink-0 border-t border-border bg-bg-secondary p-4">
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <textarea
               ref={inputRef}

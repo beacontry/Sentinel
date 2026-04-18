@@ -54,7 +54,7 @@ export function SignalFeed({
 }: SignalFeedProps) {
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between border-b border-border/70 px-4 py-4">
+      <div className="flex items-center justify-between border-b border-border px-4 py-4">
         <div className="flex items-center gap-2">
           <Radio className="w-4 h-4 text-accent" />
           <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
@@ -100,7 +100,7 @@ export function SignalFeed({
                     ${
                       isSelected
                         ? "border-accent/30 bg-accent/5 shadow-sm"
-                        : "border-transparent hover:border-border hover:bg-bg-elevated/70"
+                        : "border-transparent hover:border-border hover:bg-bg-elevated"
                     }`}
                 >
                   <div

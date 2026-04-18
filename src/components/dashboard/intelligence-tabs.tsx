@@ -28,7 +28,7 @@ export function IntelligenceTabs({ symbol, analysis }: IntelligenceTabsProps) {
 
   if (!symbol) {
     return (
-      <div className="flex h-full flex-col border-t border-border/70 bg-bg-secondary/65">
+      <div className="flex h-full flex-col border-t border-border bg-bg-secondary">
         <Tabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab} className="shrink-0 px-3 pt-3" />
         <div className="flex-1 flex items-center justify-center text-xs text-text-muted">
           Select a symbol to view intelligence
@@ -38,7 +38,7 @@ export function IntelligenceTabs({ symbol, analysis }: IntelligenceTabsProps) {
   }
 
   return (
-    <div className="flex h-full flex-col border-t border-border/70 bg-bg-secondary/65">
+    <div className="flex h-full flex-col border-t border-border bg-bg-secondary">
       <Tabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab} className="shrink-0 px-3 pt-3" />
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">

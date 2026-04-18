@@ -50,7 +50,7 @@ export function CockpitWatchlist({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between border-b border-border/70 px-4 py-4">
+      <div className="flex items-center justify-between border-b border-border px-4 py-4">
         <div className="flex items-center gap-2">
           <Eye className="w-3.5 h-3.5 text-accent" />
           <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
@@ -82,7 +82,7 @@ export function CockpitWatchlist({
                 <div
                   key={sym}
                   className={`group flex min-h-[46px] items-center justify-between rounded-[18px] border px-3 py-2 transition-colors
-                    ${isSelected ? "border-accent/30 bg-accent/10" : "border-transparent hover:border-border/70 hover:bg-bg-elevated/70"} cursor-pointer`}
+                    ${isSelected ? "border-accent/30 bg-accent/10" : "border-transparent hover:border-border hover:bg-bg-elevated"} cursor-pointer`}
                   onClick={() => onSelectSymbol(sym)}
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -119,7 +119,7 @@ export function CockpitWatchlist({
       </div>
 
       {recentActivity.length > 0 && (
-        <div className="shrink-0 border-t border-border/70">
+        <div className="shrink-0 border-t border-border">
           <div className="flex items-center gap-2 px-4 py-2">
             <Clock className="w-3 h-3 text-text-muted" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
@@ -131,7 +131,7 @@ export function CockpitWatchlist({
               <button
                 key={item.symbol + item.time}
                 onClick={() => onSelectSymbol(item.symbol)}
-                className="flex min-h-[34px] w-full items-center justify-between rounded-[14px] px-2.5 py-1 text-[10px] transition-colors hover:bg-bg-elevated/70"
+                className="flex min-h-[34px] w-full items-center justify-between rounded-[14px] px-2.5 py-1 text-[10px] transition-colors hover:bg-bg-elevated"
               >
                 <span className="font-mono text-text-secondary">
                   {item.symbol}

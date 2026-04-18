@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { X } from "lucide-react";
 import type { WidgetSize } from "@/lib/widget-registry";
 
@@ -38,29 +37,24 @@ export function WidgetWrapper({
       className={`${sizeClasses[size]} animate-fade-in-up ${className}`}
       style={{ animationDelay: `${index * 0.06}s` }}
     >
-      <Card className={`h-full p-0 ${editMode ? "border-accent/30" : ""}`}>
-        <CardHeader>
-          <h3 className="text-sm font-semibold text-text-primary">
-            {title}
-          </h3>
+      <div className={`rounded-2xl border border-border bg-bg-secondary p-4 h-full ${editMode ? "border-accent/30" : ""}`}>
+        <div className="mb-4 flex items-center justify-between">
+          <div className="text-sm font-semibold text-text-primary">{title}</div>
           <div className="flex items-center gap-1">
             {headerAction}
             {editMode && onRemove && (
               <button
                 onClick={onRemove}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted
-                  transition-colors duration-150 hover:bg-bearish/10 hover:text-bearish cursor-pointer"
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-text-muted hover:bg-bearish/10 hover:text-bearish cursor-pointer transition-colors"
                 aria-label={`Remove ${title}`}
               >
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
           </div>
-        </CardHeader>
-        <CardContent>
-          {children}
-        </CardContent>
-      </Card>
+        </div>
+        {children}
+      </div>
     </div>
   );
 }

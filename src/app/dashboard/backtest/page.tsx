@@ -557,7 +557,7 @@ export default function BacktestPage() {
                     return (
                       <tr
                         key={i}
-                        className="border-b border-border/50 hover:bg-bg-elevated/50 transition-colors"
+                        className="border-b border-border hover:bg-bg-elevated transition-colors"
                       >
                         <td className="py-2 pr-4 text-text-secondary">
                           {new Date(trade.entryDate).toLocaleDateString()}

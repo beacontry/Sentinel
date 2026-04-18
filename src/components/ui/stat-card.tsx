@@ -19,25 +19,25 @@ export function StatCard({ label, value, subtext, tone = "neutral", icon: Icon, 
 
   const iconBg =
     tone === "positive"
-      ? "bg-bullish/15 text-bullish"
+      ? "bg-bullish/10 text-bullish"
       : tone === "negative"
-        ? "bg-bearish/15 text-bearish"
-        : "bg-bg-surface text-text-muted";
+        ? "bg-bearish/10 text-bearish"
+        : "bg-accent/10 text-accent";
 
   return (
-    <div className={`rounded-xl border border-border bg-bg-secondary p-5 ${className}`}>
+    <div className={`rounded-xl border border-border bg-bg-secondary p-4 shadow-sm ${className}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wider text-text-muted">{label}</p>
-          <p className={`mt-1 text-2xl font-bold font-mono ${toneColor}`}>{value}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">{label}</p>
+          <p className={`mt-1.5 text-2xl font-semibold font-mono ${toneColor}`}>{value}</p>
           {subtext && (
-            <p className={`mt-1 text-xs ${tone === "positive" ? "text-bullish" : tone === "negative" ? "text-bearish" : "text-text-secondary"}`}>
+            <p className={`mt-1 text-sm ${tone === "positive" ? "text-bullish" : tone === "negative" ? "text-bearish" : "text-text-secondary"}`}>
               {subtext}
             </p>
           )}
         </div>
         {Icon && (
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg}`}>
             <Icon className="h-5 w-5" />
           </div>
         )}

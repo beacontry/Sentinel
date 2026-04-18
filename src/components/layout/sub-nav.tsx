@@ -14,19 +14,17 @@ export function SubNav({ tabs }: SubNavProps) {
   if (tabs.length <= 1) return null;
 
   return (
-    <div className="flex items-center gap-1 overflow-x-auto border-b border-border mb-6">
+    <div className="mb-6 flex flex-wrap gap-1 overflow-x-auto">
       {tabs.map((tab) => {
         const active = pathname === tab.href;
         return (
           <Link
             key={tab.href}
             href={tab.href}
-            className={`relative shrink-0 px-3 py-2.5 text-sm font-medium transition-colors duration-150 whitespace-nowrap ${
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
               active
-                ? "text-accent"
-                : "text-text-muted hover:text-text-secondary"
-            } after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full after:transition-colors after:duration-150 ${
-              active ? "after:bg-accent" : "after:bg-transparent"
+                ? "bg-accent text-white shadow-sm"
+                : "text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
             }`}
           >
             {tab.label}
