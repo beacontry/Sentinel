@@ -1,416 +1,384 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardHeader } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { CalendarDays, Filter, AlertTriangle } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, Globe, X } from "lucide-react";
 import type { EconomicEvent } from "@/types";
 
-type DateRange = "week" | "month" | "30days";
-type Importance = "high" | "medium" | "low";
-type Category = "fomc" | "cpi" | "jobs" | "gdp" | "earnings";
-
-function getDateRange(range: DateRange): { from: string; to: string } {
-  const now = new Date();
-  const from = new Date(now);
-  const to = new Date(now);
-
-  switch (range) {
-    case "week": {
-      // Start of this week (Monday)
-      const day = now.getDay();
-      const diffToMon = day === 0 ? -6 : 1 - day;
-      from.setDate(now.getDate() + diffToMon);
-      to.setDate(from.getDate() + 6);
-      break;
-    }
-    case "month": {
-      from.setDate(1);
-      to.setMonth(to.getMonth() + 1, 0); // Last day of current month
-      break;
-    }
-    case "30days": {
-      to.setDate(now.getDate() + 30);
-      break;
-    }
-  }
-
-  return {
-    from: from.toISOString().slice(0, 10),
-    to: to.toISOString().slice(0, 10),
-  };
-}
-
-function formatDateHeader(dateStr: string): string {
-  const date = new Date(dateStr + "T12:00:00");
-  return date.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-function isToday(dateStr: string): boolean {
-  return dateStr === new Date().toISOString().slice(0, 10);
-}
-
-function isPast(dateStr: string): boolean {
-  return dateStr < new Date().toISOString().slice(0, 10);
-}
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const categoryColors: Record<string, string> = {
-  fomc: "bg-accent/20 text-accent",
-  cpi: "bg-warning/20 text-warning",
-  jobs: "bg-bullish/20 text-bullish",
-  gdp: "bg-warning/20 text-warning",
-  earnings: "bg-accent/20 text-accent",
-  other: "bg-bg-elevated text-text-muted",
+  fomc: "bg-accent/80",
+  cpi: "bg-warning/80",
+  jobs: "bg-bullish/80",
+  gdp: "bg-warning/60",
+  earnings: "bg-accent/60",
+  other: "bg-text-muted/40",
+};
+
+const categoryBadge: Record<string, string> = {
+  fomc: "border-accent/30 bg-accent/10 text-accent",
+  cpi: "border-warning/30 bg-warning/10 text-warning",
+  jobs: "border-bullish/30 bg-bullish/10 text-bullish",
+  gdp: "border-warning/30 bg-warning/10 text-warning",
+  earnings: "border-accent/30 bg-accent/10 text-accent",
+  other: "border-border bg-bg-elevated text-text-muted",
 };
 
 const categoryLabels: Record<string, string> = {
-  fomc: "FOMC",
-  cpi: "CPI",
-  jobs: "Jobs",
-  gdp: "GDP",
-  earnings: "Earnings",
-  other: "Other",
+  fomc: "FOMC", cpi: "CPI", jobs: "Jobs", gdp: "GDP", earnings: "Earnings", other: "Other",
 };
 
-const DATE_RANGE_LABELS: Record<DateRange, string> = {
-  week: "This week",
-  month: "This month",
-  "30days": "Next 30 days",
+const importanceDot: Record<string, string> = {
+  high: "bg-bearish", medium: "bg-warning", low: "bg-text-muted",
 };
 
-const importanceBarColors: Record<string, string> = {
-  high: "bg-bearish",
-  medium: "bg-warning",
-  low: "bg-neutral",
-};
+function getMonthDays(year: number, month: number) {
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+
+  // Monday = 0, Sunday = 6
+  let startDow = firstDay.getDay() - 1;
+  if (startDow < 0) startDow = 6;
+
+  const days: { date: string; day: number; inMonth: boolean }[] = [];
+
+  // Previous month padding
+  for (let i = startDow - 1; i >= 0; i--) {
+    const d = new Date(year, month, -i);
+    days.push({ date: fmt(d), day: d.getDate(), inMonth: false });
+  }
+
+  // Current month
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    const dt = new Date(year, month, d);
+    days.push({ date: fmt(dt), day: d, inMonth: true });
+  }
+
+  // Next month padding to fill grid
+  const remaining = 7 - (days.length % 7);
+  if (remaining < 7) {
+    for (let i = 1; i <= remaining; i++) {
+      const d = new Date(year, month + 1, i);
+      days.push({ date: fmt(d), day: d.getDate(), inMonth: false });
+    }
+  }
+
+  return days;
+}
+
+function fmt(d: Date): string {
+  // Use local date parts to avoid timezone offset issues
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 export default function CalendarPage() {
+  const today = new Date();
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
   const [events, setEvents] = useState<EconomicEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState<DateRange>("30days");
-  const [importanceFilter, setImportanceFilter] = useState<Set<Importance>>(
-    new Set(["high", "medium", "low"])
-  );
-  const [categoryFilter, setCategoryFilter] = useState<Set<Category>>(
-    new Set(["fomc", "cpi", "jobs", "gdp", "earnings"])
-  );
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  const todayStr = fmt(new Date());
+  const monthLabel = new Date(year, month).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const days = getMonthDays(year, month);
+
+  function prevMonth() {
+    if (month === 0) { setYear(year - 1); setMonth(11); }
+    else setMonth(month - 1);
+    setSelectedDate(null);
+  }
+
+  function nextMonth() {
+    if (month === 11) { setYear(year + 1); setMonth(0); }
+    else setMonth(month + 1);
+    setSelectedDate(null);
+  }
+
+  function goToday() {
+    setYear(today.getFullYear());
+    setMonth(today.getMonth());
+    setSelectedDate(null);
+  }
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
     try {
-      const { from, to } = getDateRange(dateRange);
-      const res = await fetch(
-        `/api/economic-calendar?from=${from}&to=${to}`
-      );
+      // Fetch from start of previous month to end of next month to cover all visible days
+      const from = fmt(new Date(year, month, -6));
+      const to = fmt(new Date(year, month + 1, 7));
+      const res = await fetch(`/api/economic-calendar?from=${from}&to=${to}`);
       if (res.ok) {
         const data = await res.json();
         setEvents(data.events ?? []);
       }
     } catch {
-      // Silent failure — events stay empty
+      // Silent
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, [year, month]);
 
-  useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+  useEffect(() => { loadEvents(); }, [loadEvents]);
 
-  function toggleImportance(level: Importance) {
-    setImportanceFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(level)) {
-        // Don't allow removing all filters
-        if (next.size > 1) next.delete(level);
-      } else {
-        next.add(level);
-      }
-      return next;
-    });
+  // Index events by date
+  const eventsByDate = new Map<string, EconomicEvent[]>();
+  for (const e of events) {
+    const existing = eventsByDate.get(e.date);
+    if (existing) existing.push(e);
+    else eventsByDate.set(e.date, [e]);
   }
 
-  function toggleCategory(cat: Category) {
-    setCategoryFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(cat)) {
-        if (next.size > 1) next.delete(cat);
-      } else {
-        next.add(cat);
-      }
-      return next;
-    });
-  }
-
-  // Filter events
-  const filtered = events.filter(
-    (e) =>
-      importanceFilter.has(e.importance) &&
-      categoryFilter.has(e.category as Category)
-  );
-
-  // Group by date
-  const grouped = new Map<string, EconomicEvent[]>();
-  for (const event of filtered) {
-    const existing = grouped.get(event.date);
-    if (existing) {
-      existing.push(event);
-    } else {
-      grouped.set(event.date, [event]);
-    }
-  }
-
-  // Sort dates
-  const sortedDates = Array.from(grouped.keys()).sort();
-  const highImpactCount = filtered.filter((event) => event.importance === "high").length;
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const selectedEvents = selectedDate ? eventsByDate.get(selectedDate) ?? [] : [];
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.macro} />
-      <PageIntro
-        eyebrow="Macro Briefing"
-        title="Economic Calendar"
-        description="Track the dates that can actually move the tape, from central bank decisions to earnings-heavy macro prints."
-        stats={[
-          { label: "Window", value: DATE_RANGE_LABELS[dateRange] },
-          { label: "Matched events", value: filtered.length, tone: "brand" },
-          { label: "High impact", value: highImpactCount, tone: highImpactCount > 0 ? "bearish" : "neutral" },
-          { label: "Trading days", value: sortedDates.length },
-        ]}
-      />
 
-      {/* Filters */}
-      <Card>
-        <div className="space-y-4">
-          {/* Date range */}
-          <div>
-            <label className="text-xs font-medium text-text-secondary mb-2 block">
-              Date Range
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {([
-                ["week", "This Week"],
-                ["month", "This Month"],
-                ["30days", "Next 30 Days"],
-              ] as [DateRange, string][]).map(([value, label]) => (
-                <Button
-                  key={value}
-                  variant={dateRange === value ? "primary" : "outline"}
-                  size="sm"
-                  onClick={() => setDateRange(value)}
-                >
-                  {label}
-                </Button>
-              ))}
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Economic Calendar</h1>
+        <p className="mt-1 text-sm text-text-secondary">
+          Macro events that can reset intraday conditions and shift sentiment.
+        </p>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        {/* Calendar grid */}
+        <Card className="p-0">
+          {/* Month header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <button onClick={prevMonth} className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <h2 className="text-lg font-semibold min-w-[180px] text-center">{monthLabel}</h2>
+              <button onClick={nextMonth} className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors">
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
+            <button
+              onClick={goToday}
+              className="rounded-full border border-border px-3 py-1 text-xs font-medium text-text-secondary hover:border-border-hover hover:text-text-primary transition-colors"
+            >
+              Today
+            </button>
           </div>
 
-          {/* Importance filter */}
-          <div>
-            <label className="text-xs font-medium text-text-secondary mb-2 flex items-center gap-1.5">
-              <Filter className="w-3 h-3" />
-              Importance
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {([
-                ["high", "High", "bg-bearish"],
-                ["medium", "Medium", "bg-warning"],
-                ["low", "Low", "bg-neutral"],
-              ] as [Importance, string, string][]).map(([value, label, dotColor]) => (
-                <button
-                  key={value}
-                  onClick={() => toggleImportance(value)}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium
-                    transition-all min-h-[44px] cursor-pointer
-                    ${
-                      importanceFilter.has(value)
-                        ? "bg-bg-elevated border border-border text-text-primary"
-                        : "bg-bg-secondary border border-transparent text-text-muted"
-                    }`}
-                >
-                  <span className={`w-2 h-2 rounded-full ${dotColor}`} />
-                  {label}
-                </button>
-              ))}
-            </div>
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 border-b border-border">
+            {WEEKDAYS.map((d) => (
+              <div key={d} className="py-2 text-center text-[11px] uppercase tracking-[0.12em] text-text-muted">
+                {d}
+              </div>
+            ))}
           </div>
 
-          {/* Category filter */}
-          <div>
-            <label className="text-xs font-medium text-text-secondary mb-2 flex items-center gap-1.5">
-              <Filter className="w-3 h-3" />
-              Category
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {(["fomc", "cpi", "jobs", "gdp", "earnings"] as Category[]).map(
-                (cat) => (
+          {/* Day cells */}
+          {loading ? (
+            <div className="flex items-center justify-center py-32">
+              <div className="h-6 w-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-7">
+              {days.map((day, i) => {
+                const dayEvents = eventsByDate.get(day.date) ?? [];
+                const isToday = day.date === todayStr;
+                const isSelected = day.date === selectedDate;
+                const hasHigh = dayEvents.some((e) => e.importance === "high");
+                const isPast = day.date < todayStr;
+
+                return (
                   <button
-                    key={cat}
-                    onClick={() => toggleCategory(cat)}
-                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium
-                      transition-all min-h-[44px] cursor-pointer
-                      ${
-                        categoryFilter.has(cat)
-                          ? categoryColors[cat] + " border border-current/20"
-                          : "bg-bg-secondary border border-transparent text-text-muted"
-                      }`}
+                    key={`${day.date}-${i}`}
+                    onClick={() => setSelectedDate(isSelected ? null : day.date)}
+                    className={`relative flex flex-col items-start p-2 min-h-[80px] lg:min-h-[100px] border-b border-r border-border text-left transition-colors
+                      ${!day.inMonth ? "opacity-30" : ""}
+                      ${isPast && day.inMonth ? "opacity-60" : ""}
+                      ${isSelected ? "bg-accent/5" : "hover:bg-bg-elevated"}
+                    `}
                   >
-                    {categoryLabels[cat]}
+                    {/* Day number */}
+                    <span className={`text-sm font-mono font-medium leading-none
+                      ${isToday
+                        ? "flex h-7 w-7 items-center justify-center rounded-full bg-accent text-black"
+                        : isSelected
+                          ? "text-accent"
+                          : "text-text-primary"
+                      }
+                    `}>
+                      {day.day}
+                    </span>
+
+                    {/* Event indicators */}
+                    {dayEvents.length > 0 && (
+                      <div className="mt-1.5 w-full space-y-0.5">
+                        {/* Category summary bars */}
+                        {(() => {
+                          const cats = new Map<string, number>();
+                          for (const e of dayEvents) {
+                            cats.set(e.category, (cats.get(e.category) ?? 0) + 1);
+                          }
+                          const entries = Array.from(cats.entries()).slice(0, 3);
+                          return entries.map(([cat, count]) => (
+                            <div key={cat} className="flex items-center gap-1">
+                              <div className={`h-1 flex-1 rounded-full ${categoryColors[cat] ?? categoryColors.other}`} />
+                              {count > 1 && <span className="text-[8px] font-mono text-text-muted">{count}</span>}
+                            </div>
+                          ));
+                        })()}
+                        {dayEvents.length > 3 && (
+                          <span className="text-[8px] font-mono text-text-muted">{dayEvents.length} events</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* High impact indicator */}
+                    {hasHigh && (
+                      <div className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-bearish" />
+                    )}
                   </button>
-                )
-              )}
+                );
+              })}
+            </div>
+          )}
+
+          {/* Legend */}
+          <div className="flex flex-wrap items-center gap-4 px-5 py-3 border-t border-border text-[10px] uppercase tracking-[0.12em] text-text-muted">
+            {Object.entries(categoryLabels).map(([key, label]) => (
+              <div key={key} className="flex items-center gap-1.5">
+                <div className={`h-2 w-4 rounded-full ${categoryColors[key]}`} />
+                {label}
+              </div>
+            ))}
+            <div className="flex items-center gap-1.5">
+              <div className="h-1.5 w-1.5 rounded-full bg-bearish" />
+              High impact
             </div>
           </div>
-        </div>
-      </Card>
+        </Card>
 
-      {/* Events timeline */}
-      {sortedDates.length === 0 ? (
-        <div className="rounded-xl border border-border bg-bg-surface p-12 text-center">
-          <CalendarDays className="w-12 h-12 text-text-muted mx-auto mb-4" />
-          <p className="text-sm text-text-secondary mb-2">
-            No economic events found
-          </p>
-          <p className="text-xs text-text-muted">
-            Try adjusting your date range or filters
-          </p>
-        </div>
-      ) : (
+        {/* Detail panel */}
         <div className="space-y-4">
-          {sortedDates.map((date) => {
-            const dayEvents = grouped.get(date)!;
-            const today = isToday(date);
-            const past = isPast(date);
-
-            return (
-              <Card
-                key={date}
-                className={today ? "ring-1 ring-accent/50" : ""}
-              >
-                {/* Date header */}
-                <CardHeader className="p-0 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0
-                      ${today ? "bg-accent/15" : "bg-bg-hover"}`}>
-                      <CalendarDays
-                        className={`w-4.5 h-4.5 ${today ? "text-accent" : "text-text-muted"}`}
-                      />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-base font-semibold ${today ? "text-accent" : past ? "text-text-muted" : "text-text-primary"}`}>
-                          {formatDateHeader(date)}
-                        </span>
-                        {today && (
-                          <Badge variant="bullish">Today</Badge>
-                        )}
-                      </div>
-                      <span className="text-xs text-text-muted">
-                        {dayEvents.length} event{dayEvents.length !== 1 ? "s" : ""}
-                      </span>
-                    </div>
+          {selectedDate ? (
+            <>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
+                    {selectedDate === todayStr ? "Today" : "Selected"}
                   </div>
-                </CardHeader>
+                  <div className="text-lg font-semibold">
+                    {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
+                      weekday: "long", month: "long", day: "numeric",
+                    })}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedDate(null)}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
 
-                {/* Events */}
-                <div className="space-y-2.5">
-                  {dayEvents.map((event, i) => (
-                    <div
-                      key={`${event.date}-${event.category}-${i}`}
-                      className={`flex items-stretch rounded-xl border border-border overflow-hidden
-                        ${past ? "bg-bg-primary/60 opacity-60" : "bg-bg-elevated"}`}
-                    >
-                      {/* Importance bar — wider for visibility */}
-                      <div
-                        className={`w-1.5 shrink-0 ${importanceBarColors[event.importance]}`}
-                      />
-
-                      {/* Content */}
-                      <div className="flex-1 px-4 py-3.5 min-w-0">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                          {/* Event name */}
-                          <span className="text-sm font-semibold text-text-primary">
-                            {event.event}
-                          </span>
-
-                          {/* Badges row */}
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${categoryColors[event.category]}`}
-                            >
-                              {categoryLabels[event.category]}
+              {selectedEvents.length === 0 ? (
+                <Card className="py-8 text-center">
+                  <CalendarDays className="h-8 w-8 text-text-muted mx-auto mb-2" />
+                  <p className="text-sm text-text-muted">No events this day</p>
+                </Card>
+              ) : (
+                <div className="space-y-2">
+                  {selectedEvents.map((event, i) => (
+                    <Card key={`${event.date}-${i}`} className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`mt-1 h-2 w-2 shrink-0 rounded-full ${importanceDot[event.importance]}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium">{event.event}</span>
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${categoryBadge[event.category] ?? categoryBadge.other}`}>
+                              {categoryLabels[event.category] ?? event.category}
                             </span>
-
-                            <span className="text-xs font-mono text-text-muted">
-                              {event.country}
-                            </span>
-
-                            {event.time && (
-                              <span className="text-xs text-text-muted font-mono">
-                                {event.time}
-                              </span>
-                            )}
                           </div>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-muted">
+                            {event.time && <span className="font-mono">{event.time}</span>}
+                            <span className="flex items-center gap-1">
+                              <Globe className="h-3 w-3" />{event.country}
+                            </span>
+                          </div>
+
+                          {(event.actual || event.forecast || event.previous) && (
+                            <div className="mt-3 grid grid-cols-3 gap-2">
+                              {event.actual != null && (
+                                <div className="rounded-lg bg-bg-elevated p-2">
+                                  <div className="text-[10px] text-text-muted">Actual</div>
+                                  <div className="font-mono text-sm font-medium text-bullish">{event.actual}</div>
+                                </div>
+                              )}
+                              {event.forecast != null && (
+                                <div className="rounded-lg bg-bg-elevated p-2">
+                                  <div className="text-[10px] text-text-muted">Forecast</div>
+                                  <div className="font-mono text-sm font-medium">{event.forecast}</div>
+                                </div>
+                              )}
+                              {event.previous != null && (
+                                <div className="rounded-lg bg-bg-elevated p-2">
+                                  <div className="text-[10px] text-text-muted">Previous</div>
+                                  <div className="font-mono text-sm font-medium text-text-secondary">{event.previous}</div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-
-                        {/* Actual / Forecast / Previous */}
-                        {(event.actual || event.forecast || event.previous) && (
-                          <div className="flex flex-wrap gap-4 mt-2 text-xs">
-                            {event.actual && (
-                              <span>
-                                <span className="text-text-muted mr-1">Actual</span>
-                                <span className="font-mono font-medium text-bullish">{event.actual}</span>
-                              </span>
-                            )}
-                            {event.forecast && (
-                              <span>
-                                <span className="text-text-muted mr-1">Forecast</span>
-                                <span className="font-mono font-medium text-text-primary">{event.forecast}</span>
-                              </span>
-                            )}
-                            {event.previous && (
-                              <span>
-                                <span className="text-text-muted mr-1">Previous</span>
-                                <span className="font-mono font-medium text-text-secondary">{event.previous}</span>
-                              </span>
-                            )}
-                          </div>
-                        )}
                       </div>
-                    </div>
+                    </Card>
                   ))}
                 </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+              )}
+            </>
+          ) : (
+            <div className="rounded-2xl border border-border bg-bg-secondary p-6 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-bg-elevated text-text-muted">
+                <CalendarDays className="h-6 w-6" />
+              </div>
+              <p className="text-sm font-medium">Select a day</p>
+              <p className="mt-1 text-xs text-text-muted">Click any date to see scheduled events</p>
 
-      {/* Disclaimer */}
-      <div className="flex items-start gap-2 rounded-lg bg-bg-secondary border border-border p-3">
-        <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
-        <p className="text-xs text-text-muted">
-          Recurring event dates marked &quot;est.&quot; are approximations based on
-          typical scheduling patterns. Always verify exact dates with official
-          sources before making trading decisions.
-        </p>
+              {/* Quick upcoming */}
+              {events.filter((e) => e.date >= todayStr && e.importance === "high").length > 0 && (
+                <div className="mt-5 text-left">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted mb-2">Upcoming high impact</div>
+                  <div className="space-y-1.5">
+                    {events
+                      .filter((e) => e.date >= todayStr && e.importance === "high")
+                      .slice(0, 5)
+                      .map((e, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setSelectedDate(e.date)}
+                          className="flex w-full items-center justify-between rounded-xl bg-bg-elevated px-3 py-2 text-left transition-colors hover:bg-bg-elevated"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-1.5 rounded-full bg-bearish" />
+                            <span className="text-xs text-text-primary truncate">{e.event}</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-text-muted shrink-0 ml-2">
+                            {new Date(e.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

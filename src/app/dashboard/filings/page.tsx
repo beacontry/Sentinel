@@ -17,6 +17,7 @@ import {
   ChevronDown,
   Send,
   ExternalLink,
+  Sparkles,
 } from "lucide-react";
 
 interface Filing {
@@ -34,12 +35,20 @@ const FORM_BADGE_VARIANT: Record<string, "default" | "bullish" | "bearish" | "wa
   "8-K": "warning",
 };
 
+type SortField = "date" | "form";
+type SortDir = "desc" | "asc";
+
+const FORM_TYPES = ["All", "10-K", "10-Q", "8-K", "4", "S-1", "144", "DEF 14A"] as const;
+
 export default function FilingsPage() {
   const [symbol, setSymbol] = useState("");
   const [filings, setFilings] = useState<Filing[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [formFilter, setFormFilter] = useState<string>("All");
+  const [sortField, setSortField] = useState<SortField>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const searchFilings = useCallback(async () => {
     const trimmed = symbol.trim().toUpperCase();
@@ -134,21 +143,73 @@ export default function FilingsPage() {
         </div>
       )}
 
-      {/* Results */}
+      {/* Filters — only show after search */}
       {!loading && filings.length > 0 && (
-        <div className="space-y-3">
-          <p className="text-sm text-text-muted">
-            {filings.length} filing{filings.length !== 1 ? "s" : ""} found
-          </p>
-          {filings.map((filing, idx) => (
-            <FilingCard
-              key={`${filing.accessionNumber}-${idx}`}
-              filing={filing}
-              symbol={symbol.toUpperCase()}
-            />
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted mr-1">Form</div>
+          {FORM_TYPES.map((form) => {
+            const count = form === "All" ? filings.length : filings.filter((f) => f.form === form).length;
+            if (form !== "All" && count === 0) return null;
+            return (
+              <button
+                key={form}
+                onClick={() => setFormFilter(form)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  formFilter === form
+                    ? "border-accent/30 bg-accent/10 text-accent"
+                    : "border-border bg-bg-secondary text-text-secondary hover:border-border-hover"
+                }`}
+              >
+                {form} {form !== "All" && <span className="text-text-muted ml-1">{count}</span>}
+              </button>
+            );
+          })}
+
+          <div className="w-px h-5 bg-border mx-1" />
+
+          <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted mr-1">Sort</div>
+          <button
+            onClick={() => { setSortField("date"); setSortDir((d) => sortField === "date" ? (d === "desc" ? "asc" : "desc") : "desc"); }}
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+              sortField === "date" ? "border-accent/30 bg-accent/10 text-accent" : "border-border bg-bg-secondary text-text-secondary"
+            }`}
+          >
+            Date {sortField === "date" && (sortDir === "desc" ? "↓" : "↑")}
+          </button>
+          <button
+            onClick={() => { setSortField("form"); setSortDir((d) => sortField === "form" ? (d === "desc" ? "asc" : "desc") : "asc"); }}
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+              sortField === "form" ? "border-accent/30 bg-accent/10 text-accent" : "border-border bg-bg-secondary text-text-secondary"
+            }`}
+          >
+            Form {sortField === "form" && (sortDir === "asc" ? "A→Z" : "Z→A")}
+          </button>
         </div>
       )}
+
+      {/* Results */}
+      {!loading && filings.length > 0 && (() => {
+        const filtered = formFilter === "All" ? filings : filings.filter((f) => f.form === formFilter);
+        const sorted = [...filtered].sort((a, b) => {
+          const dir = sortDir === "asc" ? 1 : -1;
+          if (sortField === "date") return dir * a.filingDate.localeCompare(b.filingDate);
+          return dir * a.form.localeCompare(b.form);
+        });
+        return (
+          <div className="space-y-3">
+            <p className="text-sm text-text-muted">
+              Showing {sorted.length} of {filings.length} filing{filings.length !== 1 ? "s" : ""}
+            </p>
+            {sorted.map((filing, idx) => (
+              <FilingCard
+                key={`${filing.accessionNumber}-${idx}`}
+                filing={filing}
+                symbol={symbol.toUpperCase()}
+              />
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Empty State */}
       {!loading && hasSearched && filings.length === 0 && !error && (
@@ -181,10 +242,9 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
 
   const variant = FORM_BADGE_VARIANT[filing.form] ?? "neutral";
 
-  async function handleAskAI() {
-    if (!chatInput.trim()) return;
-
-    const question = chatInput.trim();
+  async function handleAskAI(directQuestion?: string) {
+    const question = (directQuestion ?? chatInput).trim();
+    if (!question) return;
     setChatInput("");
     setChatMessages((prev) => [...prev, { role: "user", content: question }]);
     setChatLoading(true);
@@ -303,99 +363,115 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
             </a>
           )}
 
-          {/* Ask AI Button */}
-          {!chatOpen && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                setChatOpen(true);
-              }}
+          {/* Narrative AI Analysis */}
+          {!chatOpen ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
+              className="group flex w-full items-center gap-3 rounded-2xl border border-accent/20 bg-accent/5 p-4 text-left transition-all hover:border-accent/30 hover:bg-accent/10"
             >
-              <MessageSquare className="w-4 h-4" />
-              Ask AI about this filing
-            </Button>
-          )}
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/15 text-accent">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-accent">
+                  Ask AI about this filing
+                </div>
+                <div className="text-xs text-text-secondary">
+                  Get a plain-English breakdown of key risks, financials, and material events
+                </div>
+              </div>
+            </button>
+          ) : (
+            <div className="rounded-2xl border border-accent/20 bg-accent/[0.03] p-5 space-y-4">
+              {/* Header */}
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-accent/15 text-accent">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-accent">Filing Analysis</div>
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
+                    {filing.form} · {filing.filingDate}
+                  </div>
+                </div>
+              </div>
 
-          {/* Chat Interface */}
-          {chatOpen && (
-            <div className="space-y-3">
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-accent" />
-                AI Filing Analysis
-              </CardTitle>
-
-              {/* Messages */}
+              {/* Narrative conversation blocks */}
               {chatMessages.length > 0 && (
-                <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                <div className="space-y-3 max-h-[600px] overflow-y-auto">
                   {chatMessages.map((msg, i) => (
-                    <div
-                      key={i}
-                      className={`p-3 rounded-lg text-sm ${
-                        msg.role === "user"
-                          ? "bg-accent/10 text-text-primary ml-8"
-                          : "bg-bg-elevated text-text-secondary mr-8"
-                      }`}
-                    >
-                      <p className="text-xs font-medium text-text-muted mb-1">
-                        {msg.role === "user" ? "You" : "AI Analyst"}
-                      </p>
-                      <p className="leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                    </div>
+                    msg.role === "user" ? (
+                      <div key={i} className="flex items-center gap-2 text-sm py-1">
+                        <div className="h-1.5 w-1.5 rounded-full bg-accent shrink-0" />
+                        <span className="font-medium text-accent">{msg.content}</span>
+                      </div>
+                    ) : (
+                      <div key={i} className="rounded-2xl border border-accent/10 bg-bg-secondary p-5 animate-fade-in">
+                        <div className="text-sm leading-7 text-text-secondary whitespace-pre-wrap">
+                          {msg.content}
+                        </div>
+                      </div>
+                    )
                   ))}
                   {chatLoading && (
-                    <div className="bg-bg-elevated p-3 rounded-lg mr-8">
-                      <p className="text-xs font-medium text-text-muted mb-1">AI Analyst</p>
-                      <div className="flex gap-1">
-                        <Skeleton width="8px" height="8px" rounded="full" />
-                        <Skeleton width="8px" height="8px" rounded="full" />
-                        <Skeleton width="8px" height="8px" rounded="full" />
+                    <div className="rounded-2xl border border-accent/10 bg-bg-secondary p-5">
+                      <div className="flex items-center gap-2 text-xs text-text-muted">
+                        <div className="flex gap-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} />
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} />
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} />
+                        </div>
+                        Reading filing and generating analysis...
                       </div>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Chat Input */}
-              <div className="flex gap-2">
-                <Input
-                  placeholder="What were the key risks mentioned?"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={handleChatKeyDown}
-                  className="flex-1"
-                />
-                <Button
-                  onClick={handleAskAI}
-                  loading={chatLoading}
-                  disabled={!chatInput.trim()}
-                >
-                  <Send className="w-4 h-4" />
-                </Button>
-              </div>
-
-              {chatMessages.length === 0 && (
-                <div className="flex flex-wrap gap-2">
+              {/* Suggested questions — narrative cards */}
+              {chatMessages.length === 0 && !chatLoading && (
+                <div className="grid gap-2 sm:grid-cols-3">
                   {[
-                    "What were the key risks mentioned?",
-                    "Summarize the financial highlights",
-                    "Any material events reported?",
-                  ].map((suggestion) => (
-                    <Button
-                      key={suggestion}
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setChatInput(suggestion);
-                      }}
-                      className="text-xs px-3 py-1.5 rounded-full"
+                    { q: "What were the key risks mentioned?", label: "Risk factors" },
+                    { q: "Summarize the financial highlights", label: "Financials" },
+                    { q: "Any material events reported?", label: "Material events" },
+                  ].map(({ q, label }) => (
+                    <button
+                      key={q}
+                      onClick={() => handleAskAI(q)}
+                      className="rounded-xl border border-accent/15 bg-bg-secondary p-4 text-left transition-all hover:border-accent/30 hover:bg-bg-elevated"
                     >
-                      {suggestion}
-                    </Button>
+                      <div className="text-sm font-semibold text-text-primary">{label}</div>
+                      <div className="mt-1 text-xs text-text-muted leading-relaxed">{q}</div>
+                    </button>
                   ))}
                 </div>
               )}
+
+              {/* Input */}
+              <div className="flex items-end gap-2">
+                <div className="flex-1 rounded-xl border border-accent/15 bg-bg-secondary transition-colors focus-within:border-accent/30">
+                  <input
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={handleChatKeyDown}
+                    placeholder="Ask about this filing..."
+                    className="w-full bg-transparent px-4 py-3 text-sm text-text-primary placeholder:text-text-muted outline-none"
+                    disabled={chatLoading}
+                  />
+                </div>
+                <button
+                  onClick={() => handleAskAI()}
+                  disabled={!chatInput.trim() || chatLoading}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-black transition-all hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  {chatLoading ? (
+                    <div className="h-4 w-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
           )}
         </div>

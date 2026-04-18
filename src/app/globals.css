@@ -1,51 +1,48 @@
 @import "tailwindcss";
 
 @theme {
-  /* Typography */
   --font-display: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   --font-body: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), "JetBrains Mono", monospace;
 
-  /* ── Surfaces ──
-     Dark hierarchy matching S6 Planner's depth system.
-     Higher elevation = lighter. Cool-tinted neutrals. */
-  --color-bg-primary: hsl(220, 20%, 10%);
-  --color-bg-secondary: hsl(220, 18%, 14%);
-  --color-bg-surface: hsl(220, 16%, 18%);
-  --color-bg-elevated: hsl(220, 16%, 20%);
-  --color-bg-hover: hsl(220, 14%, 24%);
+  /* ── Surfaces ── Light theme, white cards on gray body */
+  --color-bg-primary: #f1f5f9;
+  --color-bg-secondary: #ffffff;
+  --color-bg-surface: #f8fafc;
+  --color-bg-elevated: #f1f5f9;
+  --color-bg-hover: #e2e8f0;
 
   /* ── Borders ── */
-  --color-border: hsl(220, 15%, 22%);
-  --color-border-hover: hsl(220, 15%, 30%);
+  --color-border: #e2e8f0;
+  --color-border-hover: #cbd5e1;
 
-  /* ── Text ── */
-  --color-text-primary: hsl(220, 15%, 90%);
-  --color-text-secondary: hsl(220, 10%, 65%);
-  --color-text-muted: hsl(220, 8%, 45%);
+  /* ── Text ── Dark on light, maximum contrast */
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #334155;
+  --color-text-muted: #475569;
 
-  /* ── Accent (emerald) ── */
-  --color-accent: hsl(152, 60%, 36%);
-  --color-accent-hover: hsl(152, 60%, 42%);
-  --color-accent-muted: hsl(152, 40%, 20%);
+  /* ── Accent (emerald, darker for light bg) ── */
+  --color-accent: #10b981;
+  --color-accent-hover: #059669;
+  --color-accent-muted: rgba(16, 185, 129, 0.10);
 
-  /* ── Trading semantics ── */
-  --color-bullish: #22c55e;
-  --color-bullish-muted: rgba(34, 197, 94, 0.10);
-  --color-bearish: #ef4444;
-  --color-bearish-muted: rgba(239, 68, 68, 0.10);
-  --color-warning: #f59e0b;
-  --color-warning-muted: rgba(245, 158, 11, 0.10);
-  --color-neutral: hsl(220, 8%, 45%);
+  /* ── Trading semantics (darker for light bg contrast) ── */
+  --color-bullish: #059669;
+  --color-bullish-muted: rgba(5, 150, 105, 0.10);
+  --color-bearish: #dc2626;
+  --color-bearish-muted: rgba(220, 38, 38, 0.10);
+  --color-warning: #d97706;
+  --color-warning-muted: rgba(217, 119, 6, 0.10);
+  --color-neutral: #94a3b8;
 
   /* ── Signals ── */
-  --color-strong-buy: hsl(152, 60%, 36%);
-  --color-buy: #22c55e;
-  --color-hold: hsl(220, 8%, 45%);
-  --color-sell: #ef4444;
-  --color-strong-sell: #dc2626;
+  --color-strong-buy: #047857;
+  --color-buy: #059669;
+  --color-hold: #94a3b8;
+  --color-sell: #dc2626;
+  --color-strong-sell: #b91c1c;
 
-  /* ── Spacing scale (4pt base) ── */
+  /* ── Spacing ── */
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 12px;
@@ -56,15 +53,9 @@
   --space-4xl: 64px;
 }
 
-/* ── Base reset ── */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
 html {
-  color-scheme: dark;
   background-color: var(--color-bg-primary);
 }
 
@@ -73,100 +64,68 @@ body {
   font-family: var(--font-body);
   font-size: 0.875rem;
   line-height: 1.6;
+  letter-spacing: -0.01em;
   color: var(--color-text-primary);
   background-color: var(--color-bg-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-kerning: normal;
   font-variant-numeric: tabular-nums;
 }
 
 a { color: inherit; text-decoration: none; }
-
-code, pre, .font-mono {
-  font-family: var(--font-mono);
-}
+code, pre, .font-mono { font-family: var(--font-mono); }
 
 /* ── Scrollbar ── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--color-bg-primary); }
-::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-border-hover); }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-::selection {
-  background-color: hsl(152, 60%, 36% / 0.25);
-  color: var(--color-text-primary);
-}
-
-input, textarea, select, button {
-  font-family: var(--font-body);
-}
+::selection { background-color: rgba(16, 185, 129, 0.20); color: var(--color-text-primary); }
+input, textarea, select, button { font-family: var(--font-body); }
 
 /* ── Keyframes ── */
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes fade-in-up {
   from { opacity: 0; transform: translateY(24px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes scale-in {
   from { opacity: 0; transform: scale(0.96); }
   to { opacity: 1; transform: scale(1); }
 }
-
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
-
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes slide-in-left {
   from { transform: translateX(-100%); }
   to { transform: translateX(0); }
 }
-
 @keyframes slide-in-right {
   from { opacity: 0; transform: translateX(24px); }
   to { opacity: 1; transform: translateX(0); }
 }
-
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 hsl(152, 60%, 36% / 0.4); }
-  50% { box-shadow: 0 0 12px 4px hsl(152, 60%, 36% / 0.2); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3); }
+  50% { box-shadow: 0 0 10px 3px rgba(16, 185, 129, 0.1); }
 }
 
-/* ── Animation utilities ── */
-.animate-fade-in {
-  animation: fade-in 0.2s ease-out both;
-}
-.animate-fade-in-up {
-  animation: fade-in-up 0.5s ease-out both;
-}
-.animate-scale-in {
-  animation: scale-in 0.2s ease-out both;
-}
-.animate-slide-up {
-  animation: slide-up 0.25s ease-out both;
-}
-.animate-slide-in-left {
-  animation: slide-in-left 0.25s ease-out both;
-}
-.animate-slide-in-right {
-  animation: slide-in-right 0.35s ease-out both;
-}
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
-}
+.animate-fade-in { animation: fade-in 0.2s ease-out both; }
+.animate-fade-in-up { animation: fade-in-up 0.5s ease-out both; opacity: 0; }
+.animate-scale-in { animation: scale-in 0.2s ease-out both; }
+.animate-slide-up { animation: slide-up 0.25s ease-out both; }
+.animate-slide-in-left { animation: slide-in-left 0.25s ease-out both; }
+.animate-slide-in-right { animation: slide-in-right 0.35s ease-out both; }
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
 
-/* Stagger delays */
 .stagger-1 { animation-delay: 0.05s; }
 .stagger-2 { animation-delay: 0.10s; }
 .stagger-3 { animation-delay: 0.15s; }
@@ -176,21 +135,11 @@ input, textarea, select, button {
 .stagger-7 { animation-delay: 0.35s; }
 .stagger-8 { animation-delay: 0.40s; }
 
-/* ── Glass effect ── */
-.glass {
-  background: hsl(220, 18%, 14% / 0.80);
-  backdrop-filter: blur(12px);
-  border: 1px solid hsl(220, 15%, 30% / 0.40);
-  border-radius: 12px;
-}
-
-/* ── Focus ring ── */
 .focus-ring {
   outline: none;
-  box-shadow: 0 0 0 2px var(--color-bg-primary), 0 0 0 4px var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-bg-secondary), 0 0 0 4px var(--color-accent);
 }
 
-/* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

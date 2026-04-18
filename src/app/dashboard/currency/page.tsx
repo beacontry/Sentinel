@@ -120,7 +120,7 @@ export default function CurrencyPage() {
       />
 
       {/* Converter Card */}
-      <Card className="max-w-xl mx-auto">
+      <Card className="w-full">
         <div className="space-y-4">
           {/* From */}
           <div className="space-y-2">
@@ -225,7 +225,7 @@ export default function CurrencyPage() {
       </Card>
 
       {/* Quick Reference */}
-      <Card className="max-w-xl mx-auto">
+      <Card className="w-full">
         <CardHeader>
           <CardTitle>Quick Reference</CardTitle>
         </CardHeader>

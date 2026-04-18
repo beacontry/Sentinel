@@ -234,9 +234,9 @@ export default function AnalysisCockpit() {
         ]}
       />
 
-      <div className="min-h-[760px] flex-1 overflow-hidden rounded-xl border border-border/80 bg-bg-surface shadow-2xl">
+      <div className="min-h-[760px] flex-1 overflow-hidden rounded-xl border border-border bg-bg-surface shadow-2xl">
         <div className="flex flex-col lg:hidden flex-1 min-h-0 overflow-y-auto">
-          <div className="shrink-0 border-b border-border/70 bg-bg-secondary/65">
+          <div className="shrink-0 border-b border-border bg-bg-secondary">
             <div className="flex items-center gap-2 overflow-x-auto px-4 py-3">
               <span className="text-[10px] uppercase tracking-wider text-text-muted shrink-0">
                 Signals
@@ -271,7 +271,7 @@ export default function AnalysisCockpit() {
                         ${
                           isSelected
                             ? "bg-accent/15 text-accent border-accent/30"
-                            : "bg-bg-surface/70 text-text-secondary border-border/70 hover:border-border-hover"
+                            : "bg-bg-secondary text-text-secondary border-border hover:border-border-hover"
                         }`}
                     >
                       <span
@@ -294,7 +294,7 @@ export default function AnalysisCockpit() {
 
               <button
                 onClick={() => setShowAddInput(!showAddInput)}
-                className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full border border-border/70 text-text-muted transition-colors hover:border-accent/30 hover:text-accent"
+                className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full border border-border text-text-muted transition-colors hover:border-accent/30 hover:text-accent"
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -314,7 +314,7 @@ export default function AnalysisCockpit() {
                     placeholder="Symbol..."
                     maxLength={10}
                     autoFocus
-                    className="w-full rounded-xl border border-border/80 bg-bg-elevated/80 pl-9 pr-3 py-2
+                    className="w-full rounded-xl border border-border bg-bg-elevated pl-9 pr-3 py-2
                       text-sm text-text-primary placeholder:text-text-muted font-mono
                       focus:outline-none focus:border-accent/50 min-h-[44px]"
                   />
@@ -327,7 +327,7 @@ export default function AnalysisCockpit() {
                     setShowAddInput(false);
                     setNewSymbol("");
                   }}
-                  className="rounded-[14px] p-2 text-text-muted hover:bg-bg-elevated/60 hover:text-text-primary"
+                  className="rounded-[14px] p-2 text-text-muted hover:bg-bg-elevated hover:text-text-primary"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -335,7 +335,7 @@ export default function AnalysisCockpit() {
             )}
           </div>
 
-          <div className="shrink-0 border-b border-border/70 p-3">
+          <div className="shrink-0 border-b border-border p-3">
             {selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
               <PriceChart
                 analysis={selectedAnalysis}
@@ -355,7 +355,7 @@ export default function AnalysisCockpit() {
           </div>
 
           {selectedSymbol && (
-            <div className="shrink-0 h-[300px] border-b border-border/70">
+            <div className="shrink-0 h-[300px] border-b border-border">
               <IntelligenceTabs
                 symbol={selectedSymbol}
                 analysis={selectedAnalysis}
@@ -379,8 +379,8 @@ export default function AnalysisCockpit() {
             height: "100%",
           }}
         >
-          <div className="flex min-h-0 flex-col border-r border-border/70 bg-bg-secondary/65">
-            <div className="flex-1 min-h-0 border-b border-border/70">
+          <div className="flex min-h-0 flex-col border-r border-border bg-bg-secondary">
+            <div className="flex-1 min-h-0 border-b border-border">
               <SignalFeed
                 signals={signalItems}
                 selectedSymbol={selectedSymbol}
@@ -399,7 +399,7 @@ export default function AnalysisCockpit() {
                 loading={isAnyLoading}
               />
 
-              <div className="shrink-0 space-y-2 border-t border-border/70 p-3">
+              <div className="shrink-0 space-y-2 border-t border-border p-3">
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -415,7 +415,7 @@ export default function AnalysisCockpit() {
                       onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
                       placeholder="Add..."
                       maxLength={10}
-                      className="w-full rounded-[18px] border border-border/80 bg-bg-elevated/80 pl-8 pr-2 py-1.5
+                      className="w-full rounded-[18px] border border-border bg-bg-elevated pl-8 pr-2 py-1.5
                         text-xs text-text-primary placeholder:text-text-muted font-mono
                         focus:outline-none focus:border-accent/50 min-h-[38px]"
                     />
@@ -423,7 +423,7 @@ export default function AnalysisCockpit() {
                   <button
                     type="submit"
                     disabled={!newSymbol.trim()}
-                    className="min-h-[38px] rounded-[16px] border border-border/70 px-2.5 py-1.5 text-text-muted
+                    className="min-h-[38px] rounded-[16px] border border-border px-2.5 py-1.5 text-text-muted
                       transition-colors hover:border-accent/30 hover:text-accent disabled:opacity-30
                       disabled:cursor-not-allowed"
                   >
@@ -437,7 +437,7 @@ export default function AnalysisCockpit() {
                       <button
                         key={sym}
                         onClick={() => handleAddSymbol(sym)}
-                        className="rounded-full border border-border/70 px-2.5 py-1 text-[10px] font-mono
+                        className="rounded-full border border-border px-2.5 py-1 text-[10px] font-mono
                           text-text-muted transition-colors hover:border-accent/30 hover:text-accent"
                       >
                         + {sym}
@@ -453,7 +453,7 @@ export default function AnalysisCockpit() {
                     }}
                     disabled={isSelectedLoading}
                     className="flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded-[16px]
-                      border border-border/70 px-3 py-1.5 text-xs text-text-muted transition-colors
+                      border border-border px-3 py-1.5 text-xs text-text-muted transition-colors
                       hover:border-accent/30 hover:text-accent disabled:opacity-30"
                   >
                     <RefreshCw
@@ -482,7 +482,7 @@ export default function AnalysisCockpit() {
                   events={chartEvents}
                 />
               ) : isSelectedLoading ? (
-                <div className="flex h-full items-center justify-center rounded-xl border border-border/80 bg-bg-surface/70">
+                <div className="flex h-full items-center justify-center rounded-xl border border-border bg-bg-secondary">
                   <div className="text-center">
                     <div className="mx-auto mb-3 h-8 w-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
                     <p className="text-sm text-text-secondary">
@@ -507,7 +507,7 @@ export default function AnalysisCockpit() {
             </div>
           </div>
 
-          <div className="min-h-0 overflow-y-auto border-l border-border/70 bg-bg-secondary/65">
+          <div className="min-h-0 overflow-y-auto border-l border-border bg-bg-secondary">
             <SignalDetails
               analysis={selectedAnalysis}
               loading={isSelectedLoading}

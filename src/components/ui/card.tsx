@@ -8,8 +8,8 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 export function Card({ children, hover = false, className = "", ...props }: CardProps) {
   return (
     <div
-      className={`rounded-xl border border-border bg-bg-secondary p-5
-        ${hover ? "cursor-pointer transition-all duration-200 hover:border-border-hover hover:shadow-lg hover:shadow-black/20 hover:-translate-y-0.5" : ""}
+      className={`rounded-xl border border-border bg-bg-secondary p-5 shadow-sm
+        ${hover ? "cursor-pointer transition-all duration-200 hover:shadow-md hover:border-border-hover" : ""}
         ${className}`}
       {...props}
     >
@@ -26,7 +26,7 @@ export function CardHeader({
   className?: string;
 }) {
   return (
-    <div className={`px-5 py-4 border-b border-border flex items-center justify-between gap-3 ${className}`}>
+    <div className={`mb-4 flex items-center justify-between gap-3 ${className}`}>
       {children}
     </div>
   );
@@ -40,7 +40,7 @@ export function CardContent({
   className?: string;
 }) {
   return (
-    <div className={`px-5 py-4 ${className}`}>
+    <div className={className}>
       {children}
     </div>
   );

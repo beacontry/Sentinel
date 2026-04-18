@@ -144,7 +144,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
       {/* Backdrop */}
       <button
         type="button"
-        className="fixed inset-0 z-40 bg-bg-primary/60 backdrop-blur-sm sm:bg-transparent sm:backdrop-blur-none"
+        className="fixed inset-0 z-40 bg-bg-primary backdrop-blur-sm sm:bg-transparent sm:backdrop-blur-none"
         onClick={onClose}
         aria-label="Close AI chat"
       />
@@ -206,7 +206,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
                   <button
                     key={prompt}
                     onClick={() => sendMessage(prompt)}
-                    className="w-full rounded-lg border border-border/50 bg-bg-surface/50 px-3 py-2.5 text-left text-xs text-text-secondary transition-all hover:border-border hover:bg-bg-surface"
+                    className="w-full rounded-lg border border-border bg-bg-secondary px-3 py-2.5 text-left text-xs text-text-secondary transition-all hover:border-border hover:bg-bg-surface"
                   >
                     {prompt}
                   </button>
@@ -224,7 +224,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
                 className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ${
                   msg.role === "user"
                     ? "bg-accent/15 text-text-primary border border-accent/20"
-                    : "bg-bg-surface text-text-primary border border-border/50"
+                    : "bg-bg-surface text-text-primary border border-border"
                 }`}
               >
                 <MessageContent content={msg.content} />
@@ -234,7 +234,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
 
           {isStreaming && streamingContent && (
             <div className="flex justify-start">
-              <div className="max-w-[85%] rounded-xl border border-border/50 bg-bg-surface px-3.5 py-2.5 text-sm leading-relaxed text-text-primary">
+              <div className="max-w-[85%] rounded-xl border border-border bg-bg-surface px-3.5 py-2.5 text-sm leading-relaxed text-text-primary">
                 <MessageContent content={streamingContent} />
                 <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-accent/60" />
               </div>
@@ -243,7 +243,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
 
           {isStreaming && !streamingContent && (
             <div className="flex justify-start">
-              <div className="rounded-xl border border-border/50 bg-bg-surface px-3.5 py-2.5">
+              <div className="rounded-xl border border-border bg-bg-surface px-3.5 py-2.5">
                 <div className="flex items-center gap-2 text-xs text-text-muted">
                   <div className="flex gap-1">
                     <span
@@ -395,7 +395,7 @@ function renderInline(text: string): React.ReactNode {
       parts.push(
         <code
           key={key++}
-          className="rounded bg-bg-primary/50 px-1 py-0.5 font-mono text-xs text-accent"
+          className="rounded bg-bg-primary px-1 py-0.5 font-mono text-xs text-accent"
         >
           {first.match[1]}
         </code>

@@ -42,8 +42,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-hidden px-4 py-4 lg:px-8">
-      <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-7xl overflow-hidden rounded-[18px] border border-border/80 bg-bg-surface shadow-2xl lg:grid-cols-[1.08fr_0.92fr]">
+    <div className="min-h-screen overflow-hidden px-4 py-4" style={{ paddingLeft: "clamp(1rem, 3vw, 4rem)", paddingRight: "clamp(1rem, 3vw, 4rem)" }}>
+      <div className="mx-auto grid min-h-[calc(100vh-2rem)] overflow-hidden rounded-[18px] border border-border bg-bg-surface shadow-2xl lg:grid-cols-[1fr_1fr]">
         <WorkspacePreview
           eyebrow="Welcome back"
           title="Pick up the desk where you left it."
@@ -81,7 +81,7 @@ export default function LoginPage() {
 
         <section className="flex items-center justify-center p-6 lg:p-10">
           <div className="w-full max-w-lg space-y-5">
-            <div className="rounded-[14px] border border-border/80 bg-bg-surface/68 p-6 shadow-[0_18px_40px_rgba(0,0,0,0.24)] sm:p-8">
+            <div className="rounded-[14px] border border-border bg-bg-secondary p-6 shadow-[0_18px_40px_rgba(0,0,0,0.24)] sm:p-8">
               <div className="space-y-3">
                 <Link href="/" className="inline-flex items-center justify-center h-12 w-12 rounded-[18px] border border-accent/25 bg-accent/12 text-accent lg:hidden">
                   <Shield className="h-5 w-5" />
@@ -133,7 +133,7 @@ export default function LoginPage() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-[10px] border border-border/70 bg-bg-surface/65 p-4">
+              <div className="rounded-[10px] border border-border bg-bg-secondary p-4">
                 <div className="flex items-center gap-2 text-accent">
                   <Shield className="h-4 w-4" />
                   <span className="text-[11px] uppercase tracking-[0.22em]">Session security</span>
@@ -142,7 +142,7 @@ export default function LoginPage() {
                   Authentication reopens the desk without changing your saved module configuration.
                 </p>
               </div>
-              <div className="rounded-[10px] border border-border/70 bg-bg-surface/65 p-4">
+              <div className="rounded-[10px] border border-border bg-bg-secondary p-4">
                 <div className="flex items-center gap-2 text-accent">
                   <Sparkles className="h-4 w-4" />
                   <span className="text-[11px] uppercase tracking-[0.22em]">Live workspace</span>

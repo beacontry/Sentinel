@@ -33,7 +33,22 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" --connect-timeout 3 http://172.25.234.27:8080/api/signals)",
       "Bash(wsl hostname:*)",
       "Bash(xargs ls:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(curl -s \"http://localhost:3000/api/economic-calendar?from=2026-04-25&to=2026-04-30\")",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);const j=JSON.parse\\(d\\);const sofi=j.events.filter\\(e=>e.event.includes\\('SOFI'\\)\\);console.log\\('Total events:',j.events.length\\);console.log\\('SOFI events:',sofi\\);console.log\\('Events on Apr 29:',j.events.filter\\(e=>e.date==='2026-04-29'\\).length\\);console.log\\('Events on Apr 30:',j.events.filter\\(e=>e.date==='2026-04-30'\\).length\\);\")",
+      "Bash(curl -s \"http://localhost:3000/api/economic-calendar?from=2026-04-25&to=2026-04-30\" -o /tmp/cal.json)",
+      "Bash(node -e \"const j=require\\('/tmp/cal.json'\\);console.log\\('Total:',j.events?.length\\);const sofi=j.events?.filter\\(e=>e.event.includes\\('SOFI'\\)\\);console.log\\('SOFI:',JSON.stringify\\(sofi\\)\\);const by29=j.events?.filter\\(e=>e.date==='2026-04-29'\\).length;const by30=j.events?.filter\\(e=>e.date==='2026-04-30'\\).length;console.log\\('Apr29:',by29,'Apr30:',by30\\);\")",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\('Total:',len\\(d.get\\('events',[]\\)\\)\\);sofi=[e for e in d.get\\('events',[]\\) if 'SOFI' in e['event']];print\\('SOFI:',sofi\\);print\\('Apr29:',[e['event'] for e in d.get\\('events',[]\\) if e['date']=='2026-04-29'][:5]\\)\")",
+      "Bash(curl -s \"http://localhost:3000/api/economic-calendar?from=2026-04-28&to=2026-04-30\")",
+      "Read(//tmp/**)",
+      "Bash(curl -v \"http://localhost:3000/api/economic-calendar?from=2026-04-28&to=2026-04-30\")",
+      "Bash(curl -s \"https://finnhub.io/api/v1/calendar/earnings?from=2026-04-27&to=2026-05-01&token=d7c55tpr01quh9fci4m0d7c55tpr01quh9fci4mg\")",
+      "Bash(python3 -c \"import sys,json;d=json.load\\(sys.stdin\\);earns=d.get\\('earningsCalendar',[]\\);sofi=[e for e in earns if e['symbol']=='SOFI'];print\\('Total:',len\\(earns\\)\\);print\\('SOFI:',sofi\\);dates=set\\(e['date'] for e in earns\\);print\\('Dates:',sorted\\(dates\\)\\)\")",
+      "Bash(node:*)",
+      "Bash(curl -s \"https://finnhub.io/api/v1/calendar/earnings?from=2026-03-25&to=2026-05-07&token=d7c55tpr01quh9fci4m0d7c55tpr01quh9fci4mg\")",
+      "Bash(python3 -c 'import sys,json;d=json.load\\(sys.stdin\\);earns=d.get\\('\\\\''earningsCalendar'\\\\'',[]\\);print\\('\\\\''Total:'\\\\'',len\\(earns\\)\\);sofi=[e for e in earns if e['\\\\''symbol'\\\\'']=='\\\\''SOFI'\\\\''];print\\('\\\\''SOFI:'\\\\'',sofi\\);dates={};:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
