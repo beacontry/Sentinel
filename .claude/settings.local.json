@@ -55,7 +55,10 @@
       "Bash(gh repo:*)",
       "Bash(openssl rand:*)",
       "Bash(curl -sI https://sentinel.guardcybersolutionsllc.com/)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(gh secret:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh api:*)"
     ]
   }
 }
