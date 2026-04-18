@@ -58,7 +58,8 @@
       "Bash(curl:*)",
       "Bash(gh secret:*)",
       "Bash(gh auth:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(gh run:*)"
     ]
   }
 }

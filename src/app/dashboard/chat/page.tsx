@@ -12,8 +12,6 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import type { ChatMessageData, ChatSession } from "@/types";
 
 const SUGGESTED_PROMPTS = [
@@ -194,11 +192,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3rem)]">
-      <div className="px-4 pt-4 lg:px-6 lg:pt-6">
-        <SubNav tabs={SUB_NAV.chat} />
-      </div>
-      <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
+    <div className="flex h-[calc(100vh-3rem)] flex-col lg:flex-row">
       {/* Session sidebar */}
       <div className="hidden w-72 shrink-0 flex-col border-r border-border bg-bg-secondary lg:flex">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -386,7 +380,6 @@ export default function ChatPage() {
             AI may produce inaccurate analysis. Always verify before trading.
           </p>
         </div>
-      </div>
       </div>
     </div>
   );
