@@ -10,7 +10,6 @@ import {
   Newspaper,
   Search,
   Settings,
-  Sparkles,
   Users,
   Wallet,
 } from "lucide-react";
@@ -81,20 +80,12 @@ export const NAV_ITEMS: NavItem[] = [
     keywords: ["notes", "performance", "pnl", "tax"],
   },
   {
-    href: "/dashboard/chat",
-    label: "AI Chat",
-    description: "AI research terminal with market insights.",
-    icon: Sparkles,
-    matchPaths: ["/dashboard/insights"],
-    keywords: ["assistant", "research", "insights"],
-  },
-  {
     href: "/dashboard/news",
     label: "Research",
-    description: "News, filings, articles, and education.",
+    description: "News, filings, articles, insights, and education.",
     icon: Newspaper,
-    matchPaths: ["/dashboard/articles", "/dashboard/filings", "/dashboard/education"],
-    keywords: ["news", "filings", "articles", "education"],
+    matchPaths: ["/dashboard/articles", "/dashboard/filings", "/dashboard/insights", "/dashboard/education"],
+    keywords: ["news", "filings", "articles", "insights", "education"],
   },
   {
     href: "/dashboard/calendar",
@@ -194,14 +185,11 @@ export const SUB_NAV: Record<string, SubNavTab[]> = {
     { href: "/dashboard/pnl-calendar", label: "P&L Calendar" },
     { href: "/dashboard/tax-center", label: "Tax" },
   ],
-  chat: [
-    { href: "/dashboard/chat", label: "AI Chat" },
-    { href: "/dashboard/insights", label: "Insights" },
-  ],
   research: [
     { href: "/dashboard/news", label: "News" },
     { href: "/dashboard/articles", label: "Articles" },
     { href: "/dashboard/filings", label: "Filings" },
+    { href: "/dashboard/insights", label: "Insights" },
     { href: "/dashboard/education", label: "Education" },
   ],
   macro: [

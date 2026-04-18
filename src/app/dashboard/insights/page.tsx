@@ -88,7 +88,7 @@ export default function InsightsPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.chat} />
+      <SubNav tabs={SUB_NAV.research} />
       <PageIntro
         eyebrow="Research"
         title="Insights"
