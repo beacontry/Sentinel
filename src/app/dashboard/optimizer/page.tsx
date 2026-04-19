@@ -574,11 +574,26 @@ function RunDetailView({
             <CardTitle>Optimized Parameters</CardTitle>
           </CardHeader>
           <div className="px-4 pb-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               <ParamDisplay label="Stop Loss" value={`${(bestParams.stopLossPct * 100).toFixed(1)}%`} />
               <ParamDisplay label="Take Profit" value={`${(bestParams.takeProfitPct * 100).toFixed(1)}%`} />
               <ParamDisplay label="Trailing Stop" value={`${(bestParams.trailingStopPct * 100).toFixed(1)}%`} />
               <ParamDisplay label="Hold Period" value={`${Math.round(bestParams.holdPeriod)} bars`} />
+              {bestParams.positionPct != null && (
+                <ParamDisplay label="Position Size" value={`${(bestParams.positionPct * 100).toFixed(0)}%`} />
+              )}
+              {bestParams.rsiOversold != null && (
+                <ParamDisplay label="RSI Oversold" value={`${Math.round(bestParams.rsiOversold)}`} />
+              )}
+              {bestParams.rsiOverbought != null && (
+                <ParamDisplay label="RSI Overbought" value={`${Math.round(bestParams.rsiOverbought)}`} />
+              )}
+              {bestParams.emaFast != null && (
+                <ParamDisplay label="EMA Fast" value={`${Math.round(bestParams.emaFast)}`} />
+              )}
+              {bestParams.emaSlow != null && (
+                <ParamDisplay label="EMA Slow" value={`${Math.round(bestParams.emaSlow)}`} />
+              )}
             </div>
           </div>
         </Card>

@@ -26,6 +26,11 @@ export interface OptimizableParams {
   takeProfitPct: number;
   trailingStopPct: number;
   holdPeriod: number;
+  positionPct: number;       // % of account to risk per trade (5-50%)
+  rsiOversold: number;       // RSI threshold for bullish signal (20-40)
+  rsiOverbought: number;     // RSI threshold for bearish signal (60-80)
+  emaFast: number;           // Fast EMA period (5-15)
+  emaSlow: number;           // Slow EMA period (15-50)
 }
 
 interface ParamRange {
@@ -60,10 +65,15 @@ export interface OptimizationProgress {
 // ── Constants ───────────────────────────────────────────────────────
 
 const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
-  stopLossPct:    { min: 0.005, max: 0.10 },
-  takeProfitPct:  { min: 0.01,  max: 0.20 },
-  trailingStopPct:{ min: 0.005, max: 0.10 },
-  holdPeriod:     { min: 3,     max: 60, step: 1 },
+  stopLossPct:     { min: 0.01,  max: 0.12 },
+  takeProfitPct:   { min: 0.02,  max: 0.25 },
+  trailingStopPct: { min: 0.008, max: 0.12 },
+  holdPeriod:      { min: 3,     max: 60, step: 1 },
+  positionPct:     { min: 0.05,  max: 0.50 },
+  rsiOversold:     { min: 20,    max: 40, step: 1 },
+  rsiOverbought:   { min: 60,    max: 80, step: 1 },
+  emaFast:         { min: 5,     max: 15, step: 1 },
+  emaSlow:         { min: 15,    max: 50, step: 1 },
 };
 
 const WINDOW_SIZE = 50;
@@ -75,6 +85,7 @@ const CROSSOVER_RATE = 0.85;
 const DATA_DAYS = 1825; // 5 years
 const FETCH_CONCURRENCY = 3;
 const FETCH_DELAY_MS = 300;
+const INITIAL_CASH = 10000;
 
 const CACHE_DIR = join(
   process.env.NODE_ENV === "production" ? "/tmp" : join(process.cwd(), "data"),
@@ -117,7 +128,6 @@ async function getCachedBars(symbol: string): Promise<Bar[] | null> {
   try {
     const raw = await readFile(path, "utf-8");
     const data = JSON.parse(raw) as { bars: Bar[]; fetchedAt: string };
-    // Cache valid for 24 hours
     const age = Date.now() - new Date(data.fetchedAt).getTime();
     if (age < 24 * 60 * 60 * 1000) {
       return data.bars;
@@ -162,7 +172,6 @@ async function fetchAllBars(
   const barsMap = new Map<string, Bar[]>();
   let fetched = 0;
 
-  // Fetch in batches with concurrency limit
   for (let i = 0; i < symbols.length; i += FETCH_CONCURRENCY) {
     const batch = symbols.slice(i, i + FETCH_CONCURRENCY);
     const results = await Promise.allSettled(
@@ -179,7 +188,6 @@ async function fetchAllBars(
 
     onProgress(fetched);
 
-    // Rate limit between batches
     if (i + FETCH_CONCURRENCY < symbols.length) {
       await new Promise((r) => setTimeout(r, FETCH_DELAY_MS));
     }
@@ -188,68 +196,177 @@ async function fetchAllBars(
   return barsMap;
 }
 
-// ── Signal pre-computation ──────────────────────────────────────────
+// ── Inline signal evaluation (optimizable parameters) ───────────────
 
 type SignalType = "STRONG_BUY" | "BUY" | "HOLD" | "SELL" | "STRONG_SELL";
 
-interface PrecomputedData {
-  bars: Bar[];
-  /** Signal at each bar index (from windowSize onward, step-aligned) */
-  signals: Map<number, SignalType>;
-  trainBars: Bar[];
-  testBars: Bar[];
-  trainSignals: Map<number, SignalType>;
-  testSignals: Map<number, SignalType>;
-}
-
-function precomputeSignals(
-  symbol: string,
+/**
+ * Lightweight signal evaluator with tunable RSI/EMA thresholds.
+ * Uses the same indicators as analyzeBars but with customizable params.
+ */
+function evaluateBarSignal(
   bars: Bar[],
-  windowSize: number,
-  stepSize: number
-): Map<number, SignalType> {
-  const signals = new Map<number, SignalType>();
+  params: OptimizableParams
+): SignalType {
+  if (bars.length < 50) return "HOLD";
 
-  for (let i = windowSize; i < bars.length; i++) {
-    if ((i - windowSize) % stepSize !== 0) continue;
-    const windowBars = bars.slice(i - windowSize, i);
-    if (windowBars.length < 30) continue;
-    const result = analyzeBars(symbol, windowBars);
-    signals.set(i, result.signal as SignalType);
+  const closes = bars.map((b) => b.close);
+  const volumes = bars.map((b) => b.volume);
+  const price = closes[closes.length - 1];
+  const volume = volumes[volumes.length - 1];
+
+  let bullScore = 0;
+  let bearScore = 0;
+
+  // ── EMA crossover (tunable periods) ──
+  const emaFast = calcEMA(closes, params.emaFast);
+  const emaSlow = calcEMA(closes, params.emaSlow);
+  if (emaFast !== null && emaSlow !== null) {
+    if (emaFast > emaSlow) bullScore++;
+    else bearScore++;
+
+    // Fresh crossover detection (last 3 bars)
+    const prevFast = calcEMA(closes.slice(0, -1), params.emaFast);
+    const prevSlow = calcEMA(closes.slice(0, -1), params.emaSlow);
+    if (prevFast !== null && prevSlow !== null) {
+      if (prevFast <= prevSlow && emaFast > emaSlow) bullScore++;
+      if (prevFast >= prevSlow && emaFast < emaSlow) bearScore++;
+    }
   }
 
-  return signals;
+  // ── RSI (tunable thresholds) ──
+  const rsi = calcRSI(closes, 14);
+  if (rsi !== null) {
+    if (rsi < params.rsiOversold) {
+      bullScore += 2;
+    } else if (rsi > params.rsiOverbought) {
+      bearScore += 2;
+    } else if (rsi > 55) {
+      bullScore++;
+    } else if (rsi < 45) {
+      bearScore++;
+    }
+  }
+
+  // ── SMA 20 trend ──
+  const sma20 = calcSMA(closes, 20);
+  if (sma20 !== null) {
+    if (price > sma20) bullScore++;
+    else bearScore++;
+  }
+
+  // ── SMA 50 alignment ──
+  const sma50 = calcSMA(closes, 50);
+  const sma50Aligned = sma50 !== null &&
+    ((bullScore > bearScore && price > sma50) ||
+     (bearScore > bullScore && price < sma50));
+
+  // ── MACD ──
+  const macdHist = calcMACDHistogram(closes);
+  if (macdHist !== null) {
+    if (macdHist > 0) bullScore++;
+    else bearScore++;
+  }
+
+  // ── Volume confirmation ──
+  const avgVol = volumes.length >= 20
+    ? volumes.slice(-20).reduce((a, b) => a + b, 0) / 20
+    : null;
+  const volumeConfirmed = avgVol !== null && volume > avgVol * 1.5;
+
+  // ── Determine signal ──
+  if (bullScore >= 4 && bullScore > bearScore + 2) {
+    if (volumeConfirmed && sma50Aligned) return "STRONG_BUY";
+    return "BUY";
+  } else if (bearScore >= 4 && bearScore > bullScore + 2) {
+    if (volumeConfirmed && sma50Aligned) return "STRONG_SELL";
+    return "SELL";
+  }
+  return "HOLD";
+}
+
+// ── Minimal indicator helpers (avoid full indicator class overhead) ──
+
+function calcSMA(data: number[], period: number): number | null {
+  if (data.length < period) return null;
+  let sum = 0;
+  for (let i = data.length - period; i < data.length; i++) sum += data[i];
+  return sum / period;
+}
+
+function calcEMA(data: number[], period: number): number | null {
+  if (data.length < period) return null;
+  const k = 2 / (period + 1);
+  let ema = data[0];
+  for (let i = 1; i < data.length; i++) {
+    ema = data[i] * k + ema * (1 - k);
+  }
+  return ema;
+}
+
+function calcRSI(data: number[], period: number): number | null {
+  if (data.length < period + 1) return null;
+  let avgGain = 0;
+  let avgLoss = 0;
+  for (let i = data.length - period; i < data.length; i++) {
+    const change = data[i] - data[i - 1];
+    if (change > 0) avgGain += change;
+    else avgLoss -= change;
+  }
+  avgGain /= period;
+  avgLoss /= period;
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - 100 / (1 + rs);
+}
+
+function calcMACDHistogram(data: number[]): number | null {
+  if (data.length < 35) return null;
+  const ema12 = calcEMA(data, 12);
+  const ema26 = calcEMA(data, 26);
+  if (ema12 === null || ema26 === null) return null;
+  const macdLine = ema12 - ema26;
+  // Approximate signal line from recent MACD values
+  const recentMacd: number[] = [];
+  for (let len = data.length - 9; len <= data.length; len++) {
+    const e12 = calcEMA(data.slice(0, len), 12);
+    const e26 = calcEMA(data.slice(0, len), 26);
+    if (e12 !== null && e26 !== null) recentMacd.push(e12 - e26);
+  }
+  const signalLine = recentMacd.length >= 9 ? calcEMA(recentMacd, 9) : null;
+  if (signalLine === null) return macdLine > 0 ? 1 : -1;
+  return macdLine - signalLine;
+}
+
+// ── Signal pre-computation (with tunable params) ────────────────────
+
+interface PrecomputedBars {
+  trainBars: Bar[];
+  testBars: Bar[];
+  /** Buy-and-hold return for comparison */
+  trainBuyHold: number;
+  testBuyHold: number;
 }
 
 function prepareSymbolData(
-  symbol: string,
   bars: Bar[],
   trainPct: number
-): PrecomputedData {
+): PrecomputedBars {
   const splitIdx = Math.floor(bars.length * (trainPct / 100));
   const trainBars = bars.slice(0, splitIdx);
   const testBars = bars.slice(splitIdx);
 
-  const signals = precomputeSignals(symbol, bars, WINDOW_SIZE, STEP_SIZE);
-  const trainSignals = new Map<number, SignalType>();
-  const testSignals = new Map<number, SignalType>();
+  const trainBuyHold = trainBars.length > 1
+    ? ((trainBars[trainBars.length - 1].close - trainBars[0].close) / trainBars[0].close) * 100
+    : 0;
+  const testBuyHold = testBars.length > 1
+    ? ((testBars[testBars.length - 1].close - testBars[0].close) / testBars[0].close) * 100
+    : 0;
 
-  // Re-compute signals separately for train and test sets
-  // This avoids look-ahead bias from the full signal set
-  const trainSigs = precomputeSignals(symbol, trainBars, WINDOW_SIZE, STEP_SIZE);
-  const testSigs = precomputeSignals(symbol, testBars, WINDOW_SIZE, STEP_SIZE);
-
-  return {
-    bars,
-    signals,
-    trainBars,
-    testBars,
-    trainSignals: trainSigs,
-    testSignals: testSigs,
-  };
+  return { trainBars, testBars, trainBuyHold, testBuyHold };
 }
 
-// ── Fast backtester (uses pre-computed signals) ─────────────────────
+// ── Fast backtester (inline signals + tunable position sizing) ──────
 
 interface FastBacktestResult {
   totalReturn: number;
@@ -257,16 +374,17 @@ interface FastBacktestResult {
   maxDrawdown: number;
   winRate: number;
   tradeCount: number;
+  buyHoldReturn: number;
+  excessReturn: number;
 }
 
 function fastBacktest(
   bars: Bar[],
-  signals: Map<number, SignalType>,
-  params: OptimizableParams
+  params: OptimizableParams,
+  buyHoldReturn: number
 ): FastBacktestResult {
-  const initialCash = 10000;
-  let cash = initialCash;
-  const equityPoints: number[] = [initialCash];
+  let cash = INITIAL_CASH;
+  const equityPoints: number[] = [INITIAL_CASH];
   let wins = 0;
   let losses = 0;
 
@@ -287,7 +405,6 @@ function fastBacktest(
 
       let exitPrice: number | null = null;
 
-      // Fixed stop vs trailing stop — use tighter (higher)
       const fixedStop = position.entryPrice * (1 - params.stopLossPct);
       const trailingStop = position.peakPrice * (1 - params.trailingStopPct);
       const effectiveStop = Math.max(fixedStop, trailingStop);
@@ -296,7 +413,6 @@ function fastBacktest(
         exitPrice = effectiveStop;
       }
 
-      // Take profit
       if (!exitPrice) {
         const tpLevel = position.entryPrice * (1 + params.takeProfitPct);
         if (bar.high >= tpLevel) {
@@ -304,23 +420,22 @@ function fastBacktest(
         }
       }
 
-      // Sell signal
-      if (!exitPrice) {
-        const sig = signals.get(i);
+      // Sell signal check (every stepSize bars)
+      if (!exitPrice && (i - WINDOW_SIZE) % STEP_SIZE === 0) {
+        const windowBars = bars.slice(Math.max(0, i - WINDOW_SIZE), i);
+        const sig = evaluateBarSignal(windowBars, params);
         if (sig === "SELL" || sig === "STRONG_SELL") {
           exitPrice = bar.close;
         }
       }
 
-      // Hold period expired
       if (!exitPrice && (i - position.entryIdx) >= params.holdPeriod) {
         exitPrice = bar.close;
       }
 
       if (exitPrice !== null) {
-        const returnPct = (exitPrice - position.entryPrice) / position.entryPrice;
         cash += position.shares * exitPrice;
-        if (returnPct > 0) wins++;
+        if (exitPrice > position.entryPrice) wins++;
         else losses++;
         equityPoints.push(cash);
         position = null;
@@ -328,17 +443,23 @@ function fastBacktest(
       continue;
     }
 
-    // Check for entry signal
-    const sig = signals.get(i);
+    // Entry: check signal at step boundaries
+    if ((i - WINDOW_SIZE) % STEP_SIZE !== 0) continue;
+
+    const windowBars = bars.slice(Math.max(0, i - WINDOW_SIZE), i);
+    const sig = evaluateBarSignal(windowBars, params);
     if (sig !== "BUY" && sig !== "STRONG_BUY") continue;
 
     const entryPrice = bar.close;
     const stopDistance = entryPrice * params.stopLossPct;
     if (stopDistance <= 0) continue;
 
-    const riskBasedShares = Math.floor(100 / stopDistance); // $100 max loss per trade
+    // Position sizing: risk positionPct of current equity
+    const totalEquity = cash;
+    const riskAmount = totalEquity * params.positionPct;
+    const riskBasedShares = Math.floor(riskAmount / stopDistance);
     const affordableShares = Math.floor(cash / entryPrice);
-    const shares = Math.min(riskBasedShares, 100, affordableShares);
+    const shares = Math.min(riskBasedShares, affordableShares);
     if (shares <= 0) continue;
 
     cash -= shares * entryPrice;
@@ -349,15 +470,15 @@ function fastBacktest(
   if (position) {
     const lastBar = bars[bars.length - 1];
     cash += position.shares * lastBar.close;
-    const returnPct = (lastBar.close - position.entryPrice) / position.entryPrice;
-    if (returnPct > 0) wins++;
+    if (lastBar.close > position.entryPrice) wins++;
     else losses++;
     equityPoints.push(cash);
   }
 
-  const totalReturn = ((cash - initialCash) / initialCash) * 100;
+  const totalReturn = ((cash - INITIAL_CASH) / INITIAL_CASH) * 100;
   const tradeCount = wins + losses;
   const winRate = tradeCount > 0 ? wins / tradeCount : 0;
+  const excessReturn = totalReturn - buyHoldReturn;
 
   // Max drawdown
   let peak = equityPoints[0];
@@ -379,33 +500,39 @@ function fastBacktest(
     : 0;
   const sharpeRatio = stdDev > 0 ? (meanRet / stdDev) * Math.sqrt(252) : 0;
 
-  return { totalReturn, sharpeRatio, maxDrawdown, winRate, tradeCount };
+  return { totalReturn, sharpeRatio, maxDrawdown, winRate, tradeCount, buyHoldReturn, excessReturn };
 }
 
 // ── Batch backtest across all symbols ───────────────────────────────
 
 function batchBacktest(
-  symbolData: Map<string, PrecomputedData>,
+  symbolData: Map<string, PrecomputedBars>,
   params: OptimizableParams,
   segment: "train" | "test"
-): { avgReturn: number; results: Map<string, FastBacktestResult> } {
+): { avgReturn: number; avgExcess: number; results: Map<string, FastBacktestResult> } {
   const results = new Map<string, FastBacktestResult>();
   let totalReturn = 0;
+  let totalExcess = 0;
   let count = 0;
 
   for (const [symbol, data] of symbolData) {
     const bars = segment === "train" ? data.trainBars : data.testBars;
-    const signals = segment === "train" ? data.trainSignals : data.testSignals;
+    const buyHold = segment === "train" ? data.trainBuyHold : data.testBuyHold;
 
     if (bars.length < WINDOW_SIZE + 20) continue;
 
-    const result = fastBacktest(bars, signals, params);
+    const result = fastBacktest(bars, params, buyHold);
     results.set(symbol, result);
     totalReturn += result.totalReturn;
+    totalExcess += result.excessReturn;
     count++;
   }
 
-  return { avgReturn: count > 0 ? totalReturn / count : 0, results };
+  return {
+    avgReturn: count > 0 ? totalReturn / count : 0,
+    avgExcess: count > 0 ? totalExcess / count : 0,
+    results,
+  };
 }
 
 // ── Genetic Algorithm ───────────────────────────────────────────────
@@ -417,12 +544,15 @@ function randomParam(key: keyof OptimizableParams): number {
 }
 
 function randomIndividual(): OptimizableParams {
-  return {
-    stopLossPct: randomParam("stopLossPct"),
-    takeProfitPct: randomParam("takeProfitPct"),
-    trailingStopPct: randomParam("trailingStopPct"),
-    holdPeriod: randomParam("holdPeriod"),
-  };
+  const params: Record<string, number> = {};
+  for (const key of Object.keys(PARAM_RANGES) as (keyof OptimizableParams)[]) {
+    params[key] = randomParam(key);
+  }
+  // Enforce emaFast < emaSlow
+  if (params.emaFast >= params.emaSlow) {
+    params.emaSlow = params.emaFast + 5;
+  }
+  return params as unknown as OptimizableParams;
 }
 
 function clampParam(key: keyof OptimizableParams, val: number): number {
@@ -438,6 +568,10 @@ function crossover(a: OptimizableParams, b: OptimizableParams): OptimizableParam
   for (const key of keys) {
     child[key] = Math.random() < 0.5 ? a[key] : b[key];
   }
+  // Enforce emaFast < emaSlow
+  if (child.emaFast >= child.emaSlow) {
+    child.emaSlow = child.emaFast + 5;
+  }
   return child as unknown as OptimizableParams;
 }
 
@@ -451,6 +585,10 @@ function mutate(params: OptimizableParams): OptimizableParams {
       const perturbation = (Math.random() - 0.5) * span * 0.4;
       mutated[key] = clampParam(key, params[key] + perturbation);
     }
+  }
+  // Enforce emaFast < emaSlow
+  if (mutated.emaFast >= mutated.emaSlow) {
+    mutated.emaSlow = clampParam("emaSlow", mutated.emaFast + 5);
   }
   return mutated;
 }
@@ -472,7 +610,6 @@ export async function startOptimization(
   userId: string,
   config: OptimizationConfig
 ): Promise<string> {
-  // Create DB record
   const [run] = await db
     .insert(optimizationRuns)
     .values({
@@ -489,7 +626,6 @@ export async function startOptimization(
 
   const runId = run.id;
 
-  // Initialize progress
   setJobProgress(runId, {
     runId,
     status: "pending",
@@ -501,7 +637,6 @@ export async function startOptimization(
     bestParams: null,
   });
 
-  // Fire and forget — runs in background
   runOptimization(runId, config).catch((err) => {
     logger.error({ runId, err: (err as Error).message }, "Optimization failed");
   });
@@ -532,7 +667,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
 
     logger.info({ runId, symbolCount: barsMap.size }, "Data fetching complete");
 
-    // ── Phase 2: Pre-compute signals ──
+    // ── Phase 2: Prepare data (with buy-and-hold benchmarks) ──
     progress.status = "optimizing";
     progress.totalSymbols = barsMap.size;
     await db
@@ -540,12 +675,12 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       .set({ status: "optimizing", totalSymbols: barsMap.size })
       .where(eq(optimizationRuns.id, runId));
 
-    const symbolData = new Map<string, PrecomputedData>();
+    const symbolData = new Map<string, PrecomputedBars>();
     for (const [symbol, bars] of barsMap) {
-      symbolData.set(symbol, prepareSymbolData(symbol, bars, config.trainPct));
+      symbolData.set(symbol, prepareSymbolData(bars, config.trainPct));
     }
 
-    logger.info({ runId, symbols: symbolData.size }, "Signal pre-computation complete");
+    logger.info({ runId, symbols: symbolData.size }, "Data preparation complete");
 
     // ── Phase 3: Baseline (moderate preset) ──
     const baselineParams: OptimizableParams = {
@@ -553,52 +688,64 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       takeProfitPct: STRATEGY_PRESETS.moderate.takeProfitPct,
       trailingStopPct: STRATEGY_PRESETS.moderate.trailingStopPct,
       holdPeriod: STRATEGY_PRESETS.moderate.holdPeriod,
+      positionPct: 0.10,
+      rsiOversold: 30,
+      rsiOverbought: 70,
+      emaFast: 9,
+      emaSlow: 21,
     };
     const baselineTrain = batchBacktest(symbolData, baselineParams, "train");
     const baselineTest = batchBacktest(symbolData, baselineParams, "test");
 
     logger.info(
-      { runId, trainReturn: baselineTrain.avgReturn.toFixed(2), testReturn: baselineTest.avgReturn.toFixed(2) },
+      {
+        runId,
+        trainReturn: baselineTrain.avgReturn.toFixed(2),
+        trainExcess: baselineTrain.avgExcess.toFixed(2),
+        testReturn: baselineTest.avgReturn.toFixed(2),
+      },
       "Baseline computed"
     );
 
     // ── Phase 4: Genetic Algorithm ──
+    // Fitness = average excess return over buy-and-hold
     let population: Individual[] = [];
 
-    // Seed population — include known presets + random
-    const presetSeeds = Object.values(STRATEGY_PRESETS).map((p) => ({
+    // Seed with presets + random
+    const presetSeeds: OptimizableParams[] = Object.values(STRATEGY_PRESETS).map((p) => ({
       stopLossPct: p.stopLossPct,
       takeProfitPct: p.takeProfitPct,
       trailingStopPct: p.trailingStopPct,
       holdPeriod: p.holdPeriod,
+      positionPct: 0.15,
+      rsiOversold: 30,
+      rsiOverbought: 70,
+      emaFast: 9,
+      emaSlow: 21,
     }));
 
     const initialParams: OptimizableParams[] = [
       ...presetSeeds,
-      ...Array.from({ length: config.populationSize - presetSeeds.length }, () => randomIndividual()),
+      ...Array.from({ length: Math.max(0, config.populationSize - presetSeeds.length) }, () => randomIndividual()),
     ];
 
-    // Evaluate initial population
     for (const params of initialParams) {
       const result = batchBacktest(symbolData, params, "train");
-      population.push({ params, fitness: result.avgReturn });
+      population.push({ params, fitness: result.avgExcess });
     }
     population.sort((a, b) => b.fitness - a.fitness);
 
     let bestEver: Individual = population[0];
 
     for (let gen = 0; gen < config.generations; gen++) {
-      // Yield event loop between generations
       await new Promise((r) => setTimeout(r, 0));
 
       const nextPop: Individual[] = [];
 
-      // Elitism — keep top N
       for (let i = 0; i < ELITISM && i < population.length; i++) {
         nextPop.push(population[i]);
       }
 
-      // Fill rest with crossover + mutation
       while (nextPop.length < config.populationSize) {
         const parent1 = tournamentSelect(population);
         const parent2 = tournamentSelect(population);
@@ -611,7 +758,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
         }
 
         const result = batchBacktest(symbolData, childParams, "train");
-        nextPop.push({ params: childParams, fitness: result.avgReturn });
+        nextPop.push({ params: childParams, fitness: result.avgExcess });
       }
 
       population = nextPop.sort((a, b) => b.fitness - a.fitness);
@@ -620,12 +767,10 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
         bestEver = population[0];
       }
 
-      // Update progress
       progress.currentGeneration = gen + 1;
       progress.bestFitness = bestEver.fitness;
       progress.bestParams = bestEver.params;
 
-      // Persist generation to DB
       const fitnesses = population.map((ind) => ind.fitness);
       await db.insert(optimizationGenerations).values({
         runId,
@@ -642,23 +787,20 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
         .where(eq(optimizationRuns.id, runId));
 
       logger.info(
-        { runId, gen: gen + 1, best: population[0].fitness.toFixed(2), avg: (fitnesses.reduce((a, b) => a + b, 0) / fitnesses.length).toFixed(2) },
+        { runId, gen: gen + 1, bestExcess: population[0].fitness.toFixed(2), avg: (fitnesses.reduce((a, b) => a + b, 0) / fitnesses.length).toFixed(2) },
         "Generation complete"
       );
     }
 
     // ── Phase 5: Validate on test data ──
     const testResult = batchBacktest(symbolData, bestEver.params, "test");
-
-    // Full backtest on all data with best params for per-symbol results
-    const fullResult = batchBacktest(symbolData, bestEver.params, "test");
     const trainResult = batchBacktest(symbolData, bestEver.params, "train");
 
     // Store per-symbol results
     const symbolResultRows = [];
-    for (const [symbol, data] of symbolData) {
+    for (const [symbol] of symbolData) {
       const tr = trainResult.results.get(symbol);
-      const te = fullResult.results.get(symbol);
+      const te = testResult.results.get(symbol);
       if (!tr && !te) continue;
 
       symbolResultRows.push({
@@ -674,28 +816,22 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       });
     }
 
-    // Insert in batches of 100
     for (let i = 0; i < symbolResultRows.length; i += 100) {
       const batch = symbolResultRows.slice(i, i + 100);
       await db.insert(optimizationSymbolResults).values(batch);
     }
 
-    // Compute aggregate test metrics
-    const testReturns = Array.from(fullResult.results.values());
+    // Aggregate metrics
+    const testReturns = Array.from(testResult.results.values());
     const avgTestSharpe = testReturns.length > 0
-      ? testReturns.reduce((s, r) => s + r.sharpeRatio, 0) / testReturns.length
-      : 0;
+      ? testReturns.reduce((s, r) => s + r.sharpeRatio, 0) / testReturns.length : 0;
     const avgTestDrawdown = testReturns.length > 0
-      ? testReturns.reduce((s, r) => s + r.maxDrawdown, 0) / testReturns.length
-      : 0;
-
+      ? testReturns.reduce((s, r) => s + r.maxDrawdown, 0) / testReturns.length : 0;
     const trainReturns = Array.from(trainResult.results.values());
     const avgTrainSharpe = trainReturns.length > 0
-      ? trainReturns.reduce((s, r) => s + r.sharpeRatio, 0) / trainReturns.length
-      : 0;
+      ? trainReturns.reduce((s, r) => s + r.sharpeRatio, 0) / trainReturns.length : 0;
     const avgTrainDrawdown = trainReturns.length > 0
-      ? trainReturns.reduce((s, r) => s + r.maxDrawdown, 0) / trainReturns.length
-      : 0;
+      ? trainReturns.reduce((s, r) => s + r.maxDrawdown, 0) / trainReturns.length : 0;
 
     // ── Phase 6: Finalize ──
     await db
@@ -704,7 +840,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
         status: "complete",
         completedAt: new Date(),
         bestParams: bestEver.params,
-        bestTrainReturn: bestEver.fitness,
+        bestTrainReturn: trainResult.avgReturn,
         bestTestReturn: testResult.avgReturn,
         baselineTrainReturn: baselineTrain.avgReturn,
         baselineTestReturn: baselineTest.avgReturn,
@@ -721,15 +857,14 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       {
         runId,
         bestParams: bestEver.params,
-        trainReturn: bestEver.fitness.toFixed(2),
+        trainReturn: trainResult.avgReturn.toFixed(2),
+        trainExcess: bestEver.fitness.toFixed(2),
         testReturn: testResult.avgReturn.toFixed(2),
-        baselineTrain: baselineTrain.avgReturn.toFixed(2),
-        baselineTest: baselineTest.avgReturn.toFixed(2),
+        testExcess: testResult.avgExcess.toFixed(2),
       },
       "Optimization complete"
     );
 
-    // Clean up in-memory job after 1 hour
     setTimeout(() => removeJob(runId), 60 * 60 * 1000);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
