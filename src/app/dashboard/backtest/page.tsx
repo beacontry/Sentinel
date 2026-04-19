@@ -25,7 +25,7 @@ const EXIT_REASON_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 const PRESET_OPTIONS = [
-  { value: "", label: "Custom" },
+  { value: "custom", label: "Custom" },
   ...Object.entries(PRESET_LABELS).map(([key, val]) => ({
     value: key,
     label: `${val.label} — ${val.description}`,
@@ -40,7 +40,7 @@ export default function BacktestPage() {
   const [stopLoss, setStopLoss] = useState(2);
   const [takeProfit, setTakeProfit] = useState(3);
   const [trailingStop, setTrailingStop] = useState(1.5);
-  const [preset, setPreset] = useState("");
+  const [preset, setPreset] = useState("custom");
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -261,7 +261,7 @@ export default function BacktestPage() {
         stats={[
           { label: "Saved Playbooks", value: strategies.length },
           { label: "Current Symbol", value: symbol || "None", tone: symbol ? "brand" : "neutral" },
-          { label: "Preset", value: preset || "Custom", tone: preset ? "brand" : "neutral" },
+          { label: "Preset", value: preset === "custom" ? "Custom" : preset, tone: preset !== "custom" ? "brand" : "neutral" },
           { label: "Mode", value: result ? "Results Loaded" : "Ready", tone: result ? "bullish" : "neutral" },
         ]}
       />
@@ -430,7 +430,7 @@ export default function BacktestPage() {
               label="Stop Loss %"
               type="number"
               value={stopLoss}
-              onChange={(e) => { setStopLoss(Number(e.target.value)); setPreset(""); }}
+              onChange={(e) => { setStopLoss(Number(e.target.value)); setPreset("custom"); }}
               step={0.5}
               min={0.5}
               max={20}
@@ -439,7 +439,7 @@ export default function BacktestPage() {
               label="Trail Stop %"
               type="number"
               value={trailingStop}
-              onChange={(e) => { setTrailingStop(Number(e.target.value)); setPreset(""); }}
+              onChange={(e) => { setTrailingStop(Number(e.target.value)); setPreset("custom"); }}
               step={0.5}
               min={0.5}
               max={20}
@@ -448,7 +448,7 @@ export default function BacktestPage() {
               label="Take Profit %"
               type="number"
               value={takeProfit}
-              onChange={(e) => { setTakeProfit(Number(e.target.value)); setPreset(""); }}
+              onChange={(e) => { setTakeProfit(Number(e.target.value)); setPreset("custom"); }}
               step={0.5}
               min={0.5}
               max={50}
