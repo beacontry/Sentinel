@@ -68,8 +68,8 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Trader",
     description: "Execution agent, strategies, backtesting, alerts, and risk tools.",
     icon: Bot,
-    matchPaths: ["/dashboard/strategies", "/dashboard/backtest", "/dashboard/alerts", "/dashboard/calculator"],
-    keywords: ["agent", "execution", "strategies", "backtest", "alerts", "calculator"],
+    matchPaths: ["/dashboard/strategies", "/dashboard/backtest", "/dashboard/optimizer", "/dashboard/alerts", "/dashboard/calculator"],
+    keywords: ["agent", "execution", "strategies", "backtest", "optimizer", "alerts", "calculator"],
   },
   {
     href: "/dashboard/journal",
@@ -176,6 +176,7 @@ export const SUB_NAV: Record<string, SubNavTab[]> = {
     { href: "/dashboard/trader", label: "Live Trader" },
     { href: "/dashboard/strategies", label: "Strategies" },
     { href: "/dashboard/backtest", label: "Backtest" },
+    { href: "/dashboard/optimizer", label: "Optimizer" },
     { href: "/dashboard/alerts", label: "Alerts" },
     { href: "/dashboard/calculator", label: "Calculator" },
   ],

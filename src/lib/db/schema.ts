@@ -18,3 +18,4 @@ export * from "./schema/policy";
 export * from "./schema/dashboard";
 export * from "./schema/paper-trading";
 export * from "./schema/broker-connections";
+export * from "./schema/optimization";
