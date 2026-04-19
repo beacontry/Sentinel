@@ -36,6 +36,7 @@ Thumbs.db
 # data
 data/journal.db
 data/*.sqlite*
+data/optimizer-cache/
 
 # scratch
 check_*.js
