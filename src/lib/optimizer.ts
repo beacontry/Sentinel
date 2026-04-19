@@ -153,7 +153,13 @@ async function fetchSymbolBars(symbol: string): Promise<Bar[]> {
 
   const provider = getMarketDataProvider();
   try {
-    const bars = await provider.fetchBars(symbol, DATA_DAYS, "1d");
+    // Hard 10s timeout per symbol to prevent hanging
+    const bars = await Promise.race([
+      provider.fetchBars(symbol, DATA_DAYS, "1d"),
+      new Promise<Bar[]>((_, reject) =>
+        setTimeout(() => reject(new Error("Symbol fetch timeout")), 10000)
+      ),
+    ]);
     if (bars.length > 200) {
       await cacheBars(symbol, bars);
     }
