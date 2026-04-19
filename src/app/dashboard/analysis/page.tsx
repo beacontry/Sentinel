@@ -314,7 +314,7 @@ export default function AnalysisCockpit() {
                     placeholder="Symbol..."
                     maxLength={10}
                     autoFocus
-                    className="w-full rounded-xl border border-border bg-bg-elevated pl-9 pr-3 py-2
+                    className="w-full rounded-lg border border-border bg-bg-elevated pl-10 pr-3 py-2
                       text-sm text-text-primary placeholder:text-text-muted font-mono
                       focus:outline-none focus:border-accent/50 min-h-[44px]"
                   />
@@ -408,14 +408,14 @@ export default function AnalysisCockpit() {
                   className="flex gap-2"
                 >
                   <div className="relative flex-1">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
                     <input
                       type="text"
                       value={newSymbol}
                       onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
                       placeholder="Add..."
                       maxLength={10}
-                      className="w-full rounded-[18px] border border-border bg-bg-elevated pl-8 pr-2 py-1.5
+                      className="w-full rounded-lg border border-border bg-bg-elevated pl-9 pr-3 py-1.5
                         text-xs text-text-primary placeholder:text-text-muted font-mono
                         focus:outline-none focus:border-accent/50 min-h-[38px]"
                     />
@@ -423,7 +423,7 @@ export default function AnalysisCockpit() {
                   <button
                     type="submit"
                     disabled={!newSymbol.trim()}
-                    className="min-h-[38px] rounded-[16px] border border-border px-2.5 py-1.5 text-text-muted
+                    className="min-h-[38px] rounded-lg border border-border px-2.5 py-1.5 text-text-muted
                       transition-colors hover:border-accent/30 hover:text-accent disabled:opacity-30
                       disabled:cursor-not-allowed"
                   >
