@@ -5,7 +5,7 @@ export interface StrategyParams {
   holdPeriod: number;
 }
 
-export type PresetName = "conservative" | "moderate" | "aggressive" | "day_trade" | "swing";
+export type PresetName = "conservative" | "moderate" | "aggressive" | "day_trade" | "swing" | "optimized";
 
 export const STRATEGY_PRESETS: Record<PresetName, StrategyParams> = {
   conservative: {
@@ -38,6 +38,12 @@ export const STRATEGY_PRESETS: Record<PresetName, StrategyParams> = {
     trailingStopPct: 0.02,
     holdPeriod: 40,
   },
+  optimized: {
+    stopLossPct: 0.005,
+    takeProfitPct: 0.02,
+    trailingStopPct: 0.005,
+    holdPeriod: 1,
+  },
 };
 
 export const PRESET_LABELS: Record<PresetName, { label: string; description: string }> = {
@@ -46,4 +52,5 @@ export const PRESET_LABELS: Record<PresetName, { label: string; description: str
   moderate:     { label: "Moderate",     description: "Balanced risk/reward" },
   aggressive:   { label: "Aggressive",   description: "Wider stops, larger targets" },
   swing:        { label: "Swing",        description: "Multi-week holds" },
+  optimized:    { label: "Optimized",    description: "GA-tuned across S&P 500 (5Y)" },
 };

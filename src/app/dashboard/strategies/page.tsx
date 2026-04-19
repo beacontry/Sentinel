@@ -14,7 +14,7 @@ import type { SymbolStrategy } from "@/types";
 import { STRATEGY_PRESETS, PRESET_LABELS, type PresetName } from "@/lib/strategy-presets";
 
 const PRESET_OPTIONS = [
-  { value: "", label: "Custom" },
+  { value: "custom", label: "Custom" },
   ...Object.entries(PRESET_LABELS).map(([key, val]) => ({
     value: key,
     label: val.label,
@@ -29,7 +29,7 @@ export default function StrategiesPage() {
 
   // Form state
   const [symbol, setSymbol] = useState("");
-  const [preset, setPreset] = useState("");
+  const [preset, setPreset] = useState("custom");
   const [stopLoss, setStopLoss] = useState(2);
   const [takeProfit, setTakeProfit] = useState(3);
   const [trailingStop, setTrailingStop] = useState(1.5);
@@ -117,7 +117,7 @@ export default function StrategiesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbol: symbol.toUpperCase(),
-          presetName: preset || null,
+          presetName: preset === "custom" ? null : preset || null,
           stopLossPct: stopLoss / 100,
           takeProfitPct: takeProfit / 100,
           trailingStopPct: trailingStop / 100,
@@ -157,7 +157,7 @@ export default function StrategiesPage() {
 
   function resetForm() {
     setSymbol("");
-    setPreset("");
+    setPreset("custom");
     setStopLoss(2);
     setTakeProfit(3);
     setTrailingStop(1.5);
