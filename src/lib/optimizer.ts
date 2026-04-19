@@ -76,7 +76,10 @@ const DATA_DAYS = 1825; // 5 years
 const FETCH_CONCURRENCY = 3;
 const FETCH_DELAY_MS = 300;
 
-const CACHE_DIR = join(process.cwd(), "data", "optimizer-cache");
+const CACHE_DIR = join(
+  process.env.NODE_ENV === "production" ? "/tmp" : join(process.cwd(), "data"),
+  "optimizer-cache"
+);
 
 // ── In-memory job tracking ──────────────────────────────────────────
 
