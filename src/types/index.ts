@@ -93,16 +93,17 @@ export interface AnalysisResult {
 // ─── Hybrid Signal Engine ────────────────────────────────────────
 
 export interface SentimentLayer {
-  source: "finnhub";
+  source: "news-ai";
   bullishPercent: number;
   bearishPercent: number;
   newsScore: number;
+  headlineCount: number;
   adjustment: number;
   reasons: string[];
 }
 
 export interface OptionsFlowLayer {
-  source: "finnhub";
+  source: "yahoo";
   putCallRatio: number;
   totalCallVolume: number;
   totalPutVolume: number;

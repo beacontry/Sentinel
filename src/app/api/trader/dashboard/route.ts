@@ -5,6 +5,9 @@ import { traderStatus, traderPositions, traderTrades, traderDailyPnl, traderSign
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { autoStartIfNeeded } from "@/lib/trading-engine";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("trader-dashboard");
 
 export async function GET() {
   const session = await getSession();
@@ -72,7 +75,7 @@ export async function GET() {
     // Open positions — prefer live broker data over stale DB
     const positions = brokerConnected
       ? [] // broker positions handled in finalPositions below
-      : await db.select().from(traderPositions);
+      : await db.select().from(traderPositions).limit(500);
 
     // Recent trades
     const trades = await db
@@ -231,7 +234,7 @@ export async function GET() {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Trader dashboard error:", message);
+    log.error({ err: message }, "Trader dashboard error");
     return NextResponse.json({ error: "Failed to load trader data" }, { status: 500 });
   }
 }

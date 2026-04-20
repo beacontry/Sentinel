@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getFinnhubClient } from "@/lib/finnhub";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("insider");
 
 export async function GET(
   _request: Request,
@@ -132,7 +135,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Insider transactions fetch error:", message);
+    log.error({ err: message }, "Insider transactions fetch error");
     return NextResponse.json(
       { error: "Failed to fetch insider transactions" },
       { status: 500 }

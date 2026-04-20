@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getFinnhubClient } from "@/lib/finnhub";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("social-sentiment");
 
 export async function GET(
   _request: Request,
@@ -95,7 +98,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Social sentiment fetch error:", message);
+    log.error({ err: message }, "Social sentiment fetch error");
     return NextResponse.json(
       { error: "Failed to fetch social sentiment" },
       { status: 500 }

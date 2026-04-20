@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { feedPosts, signals, signalAccuracy, users } from "@/lib/db/schema";
 import { eq, sql, gte } from "drizzle-orm";
 import type { LeaderboardEntry } from "@/types";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("leaderboard");
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -76,7 +79,7 @@ export async function GET(request: NextRequest) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Leaderboard error:", message);
+    log.error({ err: message }, "Leaderboard error");
     return NextResponse.json({ error: "Failed to load leaderboard" }, { status: 500 });
   }
 }

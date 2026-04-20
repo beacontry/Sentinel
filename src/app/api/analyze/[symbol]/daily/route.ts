@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { analyzeHybrid } from "@/lib/hybrid";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("analyze-daily");
 
 export async function GET(
   _request: Request,
@@ -40,7 +43,7 @@ export async function GET(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Daily analysis error:", message);
+    log.error({ err: message }, "Daily analysis error");
     return NextResponse.json(
       { error: "Daily analysis failed" },
       { status: 500 }

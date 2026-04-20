@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { socialLikes, socialPosts } from "@/lib/db/schema";
 import { eq, and, count } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("social-like");
 
 export async function POST(
   _request: Request,
@@ -66,7 +69,7 @@ export async function POST(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Like toggle error:", message);
+    log.error({ err: message }, "Like toggle error");
     return NextResponse.json({ error: "Failed to toggle like" }, { status: 500 });
   }
 }

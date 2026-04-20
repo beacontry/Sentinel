@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { searchFilings } from "@/lib/sec-filings";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("filings");
 
 export async function GET(
   request: Request,
@@ -35,7 +38,7 @@ export async function GET(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Filing search error:", message);
+    log.error({ err: message }, "Filing search error");
     return NextResponse.json(
       { error: "Failed to search filings" },
       { status: 500 }

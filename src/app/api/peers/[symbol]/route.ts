@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getFinnhubClient } from "@/lib/finnhub";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("peers");
 
 export async function GET(
   _request: Request,
@@ -42,7 +45,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Peers fetch error:", message);
+    log.error({ err: message }, "Peers fetch error");
     return NextResponse.json(
       { error: "Failed to fetch peers" },
       { status: 500 }

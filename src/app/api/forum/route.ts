@@ -8,6 +8,9 @@ import {
 } from "@/lib/db/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 import { createForumThreadSchema } from "@/lib/validators";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("forum");
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -82,7 +85,7 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Forum list error:", message);
+    log.error({ err: message }, "Forum list error");
     return NextResponse.json({ error: "Failed to load threads" }, { status: 500 });
   }
 }
@@ -143,7 +146,7 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Forum create error:", message);
+    log.error({ err: message }, "Forum create error");
     return NextResponse.json({ error: "Failed to create thread" }, { status: 500 });
   }
 }

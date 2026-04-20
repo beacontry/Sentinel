@@ -9,6 +9,9 @@ import { discordWebhooks } from "@/lib/db/schema";
 import { evaluateAlertRules } from "@/lib/alert-engine";
 import { pushSignalToTrader } from "@/lib/trader-push";
 import { eq, and } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("analyze");
 
 export async function GET(
   _request: Request,
@@ -115,7 +118,7 @@ export async function GET(
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     const isTimeout = message.includes("aborted") || message === "Route timeout";
-    console.error(`Analysis error [${upperSymbol}]:`, message);
+    log.error({ err: message, symbol: upperSymbol }, "Analysis error");
     return NextResponse.json(
       { error: isTimeout ? "Analysis timed out — market data provider may be slow" : "Analysis failed" },
       {

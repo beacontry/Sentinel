@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { runBacktest } from "@/lib/backtester";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("backtest");
 
 export async function GET(
   request: NextRequest,
@@ -55,7 +58,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Backtest error:", message);
+    log.error({ err: message }, "Backtest error");
     return NextResponse.json(
       { error: "Backtest failed" },
       { status: 500 }

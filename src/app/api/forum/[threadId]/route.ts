@@ -8,6 +8,9 @@ import {
   users,
 } from "@/lib/db/schema";
 import { eq, asc, sql } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("forum-thread");
 
 export async function GET(
   _request: Request,
@@ -83,7 +86,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Forum thread error:", message);
+    log.error({ err: message }, "Forum thread error");
     return NextResponse.json({ error: "Failed to load thread" }, { status: 500 });
   }
 }
@@ -144,7 +147,7 @@ export async function PATCH(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Forum thread update error:", message);
+    log.error({ err: message }, "Forum thread update error");
     return NextResponse.json({ error: "Failed to update thread" }, { status: 500 });
   }
 }
@@ -179,7 +182,7 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Forum thread delete error:", message);
+    log.error({ err: message }, "Forum thread delete error");
     return NextResponse.json({ error: "Failed to delete thread" }, { status: 500 });
   }
 }

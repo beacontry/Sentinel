@@ -4,6 +4,9 @@ import { getMarketDataProvider } from "@/lib/market-data";
 import { analyzeHybrid } from "@/lib/hybrid";
 import type { ConfluenceResult } from "@/types";
 import type { SignalType } from "@/types";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("confluence");
 
 const BUY_SIGNALS: SignalType[] = ["BUY" as SignalType, "STRONG_BUY" as SignalType];
 const SELL_SIGNALS: SignalType[] = ["SELL" as SignalType, "STRONG_SELL" as SignalType];
@@ -130,7 +133,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Confluence analysis error:", message);
+    log.error({ err: message }, "Confluence analysis error");
     return NextResponse.json(
       { error: "Confluence analysis failed" },
       { status: 500 }

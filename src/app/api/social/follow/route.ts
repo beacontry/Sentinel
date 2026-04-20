@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { socialFollows, users } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("social-follow");
 
 const followSchema = z.object({
   userId: z.string().uuid("Invalid user ID"),
@@ -35,7 +38,7 @@ export async function GET() {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Follow list error:", message);
+    log.error({ err: message }, "Follow list error");
     return NextResponse.json({ error: "Failed to load follows" }, { status: 500 });
   }
 }
@@ -111,7 +114,7 @@ export async function POST(request: Request) {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Follow toggle error:", message);
+    log.error({ err: message }, "Follow toggle error");
     return NextResponse.json({ error: "Failed to toggle follow" }, { status: 500 });
   }
 }

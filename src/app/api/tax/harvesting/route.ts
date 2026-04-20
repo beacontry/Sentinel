@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { portfolios, portfolioPositions } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("tax-harvesting");
 import { suggestHarvesting, type TaxPosition } from "@/lib/tax-engine";
 import { getMarketDataProvider } from "@/lib/market-data";
 
@@ -62,7 +65,7 @@ export async function GET() {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Tax harvesting error:", message);
+    log.error({ err: message }, "Tax harvesting error");
     return NextResponse.json(
       { error: "Failed to generate harvesting suggestions" },
       { status: 500 }

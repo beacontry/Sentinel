@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { brokerConnections } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createBrokerClient, BrokerError } from "@/lib/brokers";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("broker-account");
 
 export async function GET() {
   const session = await getSession();
@@ -46,7 +49,7 @@ export async function GET() {
 
     if (accountResult.status === "rejected") {
       const err = accountResult.reason;
-      console.error("Broker account fetch failed:", err?.message ?? err);
+      log.error({ err: err?.message ?? String(err) }, "Broker account fetch failed");
       const userMessage =
         err instanceof BrokerError ? err.userMessage : "Failed to fetch account data";
       return NextResponse.json({ error: userMessage }, { status: 502 });
@@ -106,7 +109,7 @@ export async function GET() {
       );
     }
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Broker account error:", message);
+    log.error({ err: message }, "Broker account error");
     return NextResponse.json({ error: "Failed to fetch account data" }, { status: 500 });
   }
 }

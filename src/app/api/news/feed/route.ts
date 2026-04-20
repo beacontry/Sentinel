@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { watchlistItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getFinnhubClient, type FinnhubNewsArticle } from "@/lib/finnhub";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("news-feed");
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -83,7 +86,7 @@ export async function GET(request: NextRequest) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("News feed error:", message);
+    log.error({ err: message }, "News feed error");
     return NextResponse.json(
       { error: "Failed to fetch news" },
       { status: 500 }

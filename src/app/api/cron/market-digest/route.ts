@@ -4,6 +4,9 @@ import { gatherMarketContext } from "@/lib/market-context";
 import { db } from "@/lib/db";
 import { marketDigests, users, discordWebhooks } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("cron-market-digest");
 
 export async function GET(request: NextRequest) {
   const secret = request.headers.get("x-cron-secret");
@@ -104,7 +107,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Market digest cron error:", message);
+    log.error({ err: message }, "Market digest cron error");
     return NextResponse.json(
       { error: "Digest generation failed" },
       { status: 500 }

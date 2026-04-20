@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getEconomicCalendar } from "@/lib/economic-events";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("economic-calendar");
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -57,7 +60,7 @@ export async function GET(request: NextRequest) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Economic calendar error:", message);
+    log.error({ err: message }, "Economic calendar error");
     return NextResponse.json(
       { error: "Failed to fetch economic calendar" },
       { status: 500 }

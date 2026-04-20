@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { signals, signalAccuracy } from "@/lib/db/schema";
 import { eq, isNotNull, sql, desc } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("performance");
 
 export async function GET() {
   const session = await getSession();
@@ -97,7 +100,7 @@ export async function GET() {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Performance error:", message);
+    log.error({ err: message }, "Performance error");
     return NextResponse.json({ error: "Failed to load performance" }, { status: 500 });
   }
 }

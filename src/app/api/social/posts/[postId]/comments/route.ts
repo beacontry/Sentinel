@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { socialComments, socialPosts, users } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { createCommentSchema } from "@/lib/validators";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("social-comments");
 
 export async function GET(
   _request: Request,
@@ -38,7 +41,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Comments list error:", message);
+    log.error({ err: message }, "Comments list error");
     return NextResponse.json({ error: "Failed to load comments" }, { status: 500 });
   }
 }
@@ -102,7 +105,7 @@ export async function POST(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Comment create error:", message);
+    log.error({ err: message }, "Comment create error");
     return NextResponse.json({ error: "Failed to create comment" }, { status: 500 });
   }
 }

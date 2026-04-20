@@ -4,6 +4,9 @@ import { traderPnlSchema } from "@/lib/trader-validators";
 import { db } from "@/lib/db";
 import { traderDailyPnl, traderStatus } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("trader-pnl");
 
 export async function POST(request: NextRequest) {
   const authError = validateTraderSecret(request);
@@ -54,7 +57,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Trader P&L error:", message);
+    log.error({ err: message }, "Trader P&L error");
     return NextResponse.json({ error: "Failed to store P&L" }, { status: 500 });
   }
 }

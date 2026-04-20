@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { paperTradingConfigs } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("paper-trading");
 
 const createConfigSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
@@ -43,7 +46,7 @@ export async function GET() {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Paper trading list error:", message);
+    log.error({ err: message }, "Paper trading list error");
     return NextResponse.json(
       { error: "Failed to load configurations" },
       { status: 500 }
@@ -86,7 +89,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ config }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Paper trading create error:", message);
+    log.error({ err: message }, "Paper trading create error");
     return NextResponse.json(
       { error: "Failed to create configuration" },
       { status: 500 }

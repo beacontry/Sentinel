@@ -1,4 +1,4 @@
-import type { Bar, AnalysisResult, SignalType } from "@/types";
+import type { Bar, SignalType, HybridSignalResult, HybridPipelineOptions } from "@/types";
 import { analyzeBars } from "../indicators/analyzer";
 import { HYBRID_CONFIG } from "../config";
 import { applySentimentLayer, type SentimentLayer } from "./sentiment-layer";
@@ -9,29 +9,7 @@ import {
 import { applyAnalystLayer, type AnalystLayer } from "./analyst-layer";
 import { applyAiScoringLayer, type AiScoringLayer } from "./ai-scoring-layer";
 
-// ─── Types ──────────────────────────────────────────────────────────
-
-export interface HybridSignalResult extends AnalysisResult {
-  hybrid: {
-    enabled: true;
-    technicalConfidence: number;
-    technicalSignal: SignalType;
-    sentiment?: SentimentLayer;
-    optionsFlow?: OptionsFlowLayer;
-    analyst?: AnalystLayer;
-    aiScoring?: AiScoringLayer;
-    pipelineMs: number;
-    layers: string[];
-  };
-}
-
-export interface HybridPipelineOptions {
-  enableSentiment?: boolean;
-  enableOptionsFlow?: boolean;
-  enableAnalyst?: boolean;
-  enableAiScoring?: boolean;
-  aiScoringTimeout?: number;
-}
+export type { HybridSignalResult, HybridPipelineOptions };
 
 // ─── Signal re-evaluation ───────────────────────────────────────────
 

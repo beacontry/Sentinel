@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { testBrokerConnectionSchema } from "@/lib/validators";
 import { createBrokerClient, BrokerError } from "@/lib/brokers";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("broker-test");
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -49,7 +52,7 @@ export async function POST(request: Request) {
       });
     }
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Broker test error:", message);
+    log.error({ err: message }, "Broker test error");
     return NextResponse.json({
       success: false,
       error: "Failed to connect to broker",

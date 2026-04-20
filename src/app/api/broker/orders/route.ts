@@ -5,6 +5,9 @@ import { brokerConnections } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { placeBrokerOrderSchema } from "@/lib/validators";
 import { createBrokerClient, BrokerError } from "@/lib/brokers";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("broker-orders");
 
 async function getActiveConnection(userId: string) {
   const [connection] = await db
@@ -70,7 +73,7 @@ export async function GET() {
       );
     }
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Broker orders error:", message);
+    log.error({ err: message }, "Broker orders error");
     return NextResponse.json({ error: "Failed to fetch orders" }, { status: 500 });
   }
 }
@@ -147,7 +150,7 @@ export async function POST(request: Request) {
       );
     }
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Broker order error:", message);
+    log.error({ err: message }, "Broker order error");
     return NextResponse.json({ error: "Failed to place order" }, { status: 500 });
   }
 }

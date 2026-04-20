@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getFinnhubClient } from "@/lib/finnhub";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("profile");
 
 export async function GET(
   _request: Request,
@@ -58,7 +61,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Company profile fetch error:", message);
+    log.error({ err: message }, "Company profile fetch error");
     return NextResponse.json(
       { error: "Failed to fetch company profile" },
       { status: 500 }

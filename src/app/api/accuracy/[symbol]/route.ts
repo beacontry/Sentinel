@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getAccuracyStats } from "@/lib/accuracy";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("accuracy-symbol");
 
 export async function GET(
   _request: Request,
@@ -25,7 +28,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Accuracy stats error:", message);
+    log.error({ err: message }, "Accuracy stats error");
     return NextResponse.json(
       { error: "Failed to fetch accuracy" },
       { status: 500 }

@@ -4,6 +4,9 @@ import { getMarketDataProvider } from "./market-data";
 import { analyzeHybrid } from "./hybrid";
 import { SCREENER_CONFIG } from "./config";
 import { pushScreenerSignals, isTraderConfigured, type TraderPushResult } from "./trader-client";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("screener");
 
 // Screener always disables AI scoring (too slow for batch scanning)
 const SCREENER_HYBRID_OPTIONS = {
@@ -310,7 +313,7 @@ export function startScreenerScheduler(): void {
   if (g.__screenerSchedulerStarted) return;
   g.__screenerSchedulerStarted = true;
 
-  console.log("Screener scheduler: starting");
+  log.info("Screener scheduler: starting");
 
   // Run the scheduler loop every 60 seconds to check what needs to happen
   g.__screenerScheduler = setInterval(async () => {
@@ -334,22 +337,22 @@ export function startScreenerScheduler(): void {
 
     if (isNewDay && justAfterOpen) {
       // Daily scan with daily bars at market open
-      console.log("Screener scheduler: daily scan at market open");
+      log.info("Screener scheduler: daily scan at market open");
       try {
         await scanAllSymbols();
       } catch (err) {
-        console.error("Screener scheduler: daily scan failed", err instanceof Error ? err.message : err);
+        log.error({ err: err instanceof Error ? err.message : String(err) }, "Screener scheduler: daily scan failed");
       }
       return;
     }
 
     // Intraday scan every 5 minutes
     if (ageMs >= SCREENER_CONFIG.intradayIntervalMs) {
-      console.log("Screener scheduler: intraday scan");
+      log.info("Screener scheduler: intraday scan");
       try {
         await scanAllSymbolsIntraday();
       } catch (err) {
-        console.error("Screener scheduler: intraday scan failed", err instanceof Error ? err.message : err);
+        log.error({ err: err instanceof Error ? err.message : String(err) }, "Screener scheduler: intraday scan failed");
       }
     }
   }, 60_000); // Check every 60 seconds
@@ -360,6 +363,6 @@ export function stopScreenerScheduler(): void {
     clearInterval(g.__screenerScheduler);
     g.__screenerScheduler = null;
     g.__screenerSchedulerStarted = false;
-    console.log("Screener scheduler: stopped");
+    log.info("Screener scheduler: stopped");
   }
 }

@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { executeTrade } from "@/lib/portfolio-sim";
 import { db } from "@/lib/db";
 import { portfolios } from "@/lib/db/schema";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("portfolio-trade");
 import { eq } from "drizzle-orm";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { z } from "zod";
@@ -73,7 +76,7 @@ export async function POST(
     if (message === "Insufficient cash" || message === "Insufficient shares") {
       return NextResponse.json({ error: message }, { status: 400 });
     }
-    console.error("Trade execution error:", message);
+    log.error({ err: message }, "Trade execution error");
     return NextResponse.json({ error: "Trade failed" }, { status: 500 });
   }
 }

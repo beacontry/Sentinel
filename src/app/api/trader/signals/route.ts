@@ -3,6 +3,9 @@ import { validateTraderSecret } from "@/lib/trader-auth";
 import { traderSignalSchema } from "@/lib/trader-validators";
 import { db } from "@/lib/db";
 import { traderSignals, traderStatus } from "@/lib/db/schema";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("trader-signals");
 
 export async function POST(request: NextRequest) {
   const authError = validateTraderSecret(request);
@@ -34,7 +37,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id: row.id, received: true }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Trader signal error:", message);
+    log.error({ err: message }, "Trader signal error");
     return NextResponse.json({ error: "Failed to store signal" }, { status: 500 });
   }
 }

@@ -3,6 +3,9 @@ import { validateTraderSecret } from "@/lib/trader-auth";
 import { traderPositionsSchema } from "@/lib/trader-validators";
 import { db } from "@/lib/db";
 import { traderPositions, traderStatus } from "@/lib/db/schema";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("trader-positions");
 
 export async function POST(request: NextRequest) {
   const authError = validateTraderSecret(request);
@@ -42,7 +45,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, count: parsed.data.positions.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Trader positions error:", message);
+    log.error({ err: message }, "Trader positions error");
     return NextResponse.json({ error: "Failed to store positions" }, { status: 500 });
   }
 }

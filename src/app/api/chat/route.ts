@@ -7,6 +7,9 @@ import { chatMessages } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { chatMessageSchema } from "@/lib/validators";
 import { CLAUDE_CONFIG } from "@/lib/config";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("chat");
 
 export async function POST(request: NextRequest) {
   const session = await getSession();
@@ -87,7 +90,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     const message2 = err instanceof Error ? err.message : "Unknown error";
-    console.error("Chat error:", message2);
+    log.error({ err: message2 }, "Chat error");
     return NextResponse.json(
       { error: "Failed to generate response" },
       { status: 500 }
@@ -181,7 +184,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Chat GET error:", message);
+    log.error({ err: message }, "Chat GET error");
     return NextResponse.json(
       { error: "Failed to load chat" },
       { status: 500 }

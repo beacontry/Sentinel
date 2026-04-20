@@ -1,16 +1,6 @@
-import type { SignalType } from "@/types";
+import type { SignalType, OptionsFlowLayer } from "@/types";
 
-// ─── Types ──────────────────────────────────────────────────────────
-
-export interface OptionsFlowLayer {
-  source: "yahoo";
-  putCallRatio: number;
-  totalCallVolume: number;
-  totalPutVolume: number;
-  unusualActivity: boolean;
-  adjustment: number; // -0.10 to +0.10
-  reasons: string[];
-}
+export type { OptionsFlowLayer };
 
 // ─── Cache ──────────────────────────────────────────────────────────
 

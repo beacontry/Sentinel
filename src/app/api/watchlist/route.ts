@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { watchlistItems } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("watchlist");
 import { addSymbolSchema, removeSymbolSchema } from "@/lib/validators";
 
 export async function GET() {
@@ -50,7 +53,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Watchlist add error:", message);
+    log.error({ err: message }, "Watchlist add error");
     return NextResponse.json({ error: "Failed to add symbol" }, { status: 500 });
   }
 }
