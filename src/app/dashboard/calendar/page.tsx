@@ -149,9 +149,9 @@ export default function CalendarPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        {/* Calendar grid */}
-        <Card className="p-0">
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px] lg:h-[calc(100vh-220px)]">
+        {/* Calendar grid — fixed */}
+        <Card className="p-0 overflow-hidden">
           {/* Month header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
             <div className="flex items-center gap-3">
@@ -264,8 +264,8 @@ export default function CalendarPage() {
           </div>
         </Card>
 
-        {/* Detail panel */}
-        <div className="space-y-4">
+        {/* Detail panel — scrollable */}
+        <div className="space-y-4 lg:overflow-y-auto lg:max-h-[calc(100vh-220px)] lg:pr-1">
           {selectedDate ? (
             <>
               <div className="flex items-center justify-between">
