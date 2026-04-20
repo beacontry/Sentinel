@@ -329,8 +329,8 @@ export default function TraderPage() {
               <DollarSign className="w-4 h-4 text-accent" />
               <span className="text-xs text-text-muted">Total P&L</span>
             </div>
-            <p className={`text-xl font-display font-bold ${todayPnl.totalPnl >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {todayPnl.totalPnl >= 0 ? "+" : ""}${todayPnl.totalPnl.toFixed(2)}
+            <p className={`text-xl font-display font-bold ${(todayPnl.totalPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+              {(todayPnl.totalPnl ?? 0) >= 0 ? "+" : ""}${(todayPnl.totalPnl ?? 0).toFixed(2)}
             </p>
           </Card>
           <Card>
@@ -338,8 +338,8 @@ export default function TraderPage() {
               <TrendingUp className="w-4 h-4 text-bullish" />
               <span className="text-xs text-text-muted">Realized</span>
             </div>
-            <p className={`text-xl font-display font-bold ${todayPnl.realizedPnl >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {todayPnl.realizedPnl >= 0 ? "+" : ""}${todayPnl.realizedPnl.toFixed(2)}
+            <p className={`text-xl font-display font-bold ${(todayPnl.realizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+              {(todayPnl.realizedPnl ?? 0) >= 0 ? "+" : ""}${(todayPnl.realizedPnl ?? 0).toFixed(2)}
             </p>
           </Card>
           <Card>
@@ -347,8 +347,8 @@ export default function TraderPage() {
               <TrendingDown className="w-4 h-4 text-warning" />
               <span className="text-xs text-text-muted">Unrealized</span>
             </div>
-            <p className={`text-xl font-display font-bold ${todayPnl.unrealizedPnl >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {todayPnl.unrealizedPnl >= 0 ? "+" : ""}${todayPnl.unrealizedPnl.toFixed(2)}
+            <p className={`text-xl font-display font-bold ${(todayPnl.unrealizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+              {(todayPnl.unrealizedPnl ?? 0) >= 0 ? "+" : ""}${(todayPnl.unrealizedPnl ?? 0).toFixed(2)}
             </p>
           </Card>
           <Card>
@@ -370,40 +370,40 @@ export default function TraderPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Net P&L</span>
-              <span className={`text-lg font-display font-bold ${analytics.netPnl >= 0 ? "text-bullish" : "text-bearish"}`}>
-                {analytics.netPnl >= 0 ? "+" : ""}${analytics.netPnl.toFixed(2)}
+              <span className={`text-lg font-display font-bold ${(analytics.netPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+                {(analytics.netPnl ?? 0) >= 0 ? "+" : ""}${(analytics.netPnl ?? 0).toFixed(2)}
               </span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Win Rate</span>
-              <span className={`text-lg font-display font-bold ${analytics.winRate >= 50 ? "text-bullish" : "text-bearish"}`}>
-                {analytics.winRate.toFixed(1)}%
+              <span className={`text-lg font-display font-bold ${(analytics.winRate ?? 0) >= 50 ? "text-bullish" : "text-bearish"}`}>
+                {(analytics.winRate ?? 0).toFixed(1)}%
               </span>
               <span className="text-[10px] text-text-muted block">{analytics.winningTrades}W / {analytics.losingTrades}L</span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Profit Factor</span>
-              <span className={`text-lg font-display font-bold ${analytics.profitFactor >= 1 ? "text-bullish" : "text-bearish"}`}>
-                {analytics.profitFactor.toFixed(2)}
+              <span className={`text-lg font-display font-bold ${(analytics.profitFactor ?? 0) >= 1 ? "text-bullish" : "text-bearish"}`}>
+                {(analytics.profitFactor ?? 0).toFixed(2)}
               </span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Avg Win</span>
-              <span className="text-lg font-display font-bold text-bullish">${analytics.avgWin.toFixed(2)}</span>
+              <span className="text-lg font-display font-bold text-bullish">${(analytics.avgWin ?? 0).toFixed(2)}</span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Avg Loss</span>
-              <span className="text-lg font-display font-bold text-bearish">${analytics.avgLoss.toFixed(2)}</span>
+              <span className="text-lg font-display font-bold text-bearish">${(analytics.avgLoss ?? 0).toFixed(2)}</span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Max Drawdown</span>
-              <span className="text-lg font-display font-bold text-bearish">${analytics.maxDrawdown.toFixed(2)}</span>
+              <span className="text-lg font-display font-bold text-bearish">${(analytics.maxDrawdown ?? 0).toFixed(2)}</span>
             </div>
           </div>
           <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border text-xs text-text-muted">
-            <span>Sharpe: <span className="font-mono font-medium text-text-primary">{analytics.sharpeRatio.toFixed(2)}</span></span>
-            <span>Gross Profit: <span className="font-mono text-bullish">${analytics.grossProfit.toFixed(2)}</span></span>
-            <span>Gross Loss: <span className="font-mono text-bearish">${analytics.grossLoss.toFixed(2)}</span></span>
+            <span>Sharpe: <span className="font-mono font-medium text-text-primary">{(analytics.sharpeRatio ?? 0).toFixed(2)}</span></span>
+            <span>Gross Profit: <span className="font-mono text-bullish">${(analytics.grossProfit ?? 0).toFixed(2)}</span></span>
+            <span>Gross Loss: <span className="font-mono text-bearish">${(analytics.grossLoss ?? 0).toFixed(2)}</span></span>
             <span>Total Trades: <span className="font-mono text-text-primary">{analytics.totalTrades}</span></span>
           </div>
         </Card>
@@ -478,7 +478,7 @@ export default function TraderPage() {
                 >
                   <SignalBadge signal={s.signal as SignalType} size="sm" />
                   <span className="text-sm font-mono font-medium">{s.symbol}</span>
-                  <span className="text-xs font-mono text-text-muted">${s.price.toFixed(2)}</span>
+                  <span className="text-xs font-mono text-text-muted">${(s.price ?? 0).toFixed(2)}</span>
                   {s.actedOn && <Badge variant="bullish">Acted</Badge>}
                   <span className="text-xs text-text-muted ml-auto">
                     {timeAgo(s.traderTimestamp)}
@@ -511,9 +511,9 @@ export default function TraderPage() {
                     : t.status === "REJECTED" ? "bearish"
                     : "neutral"
                   }>{t.status}</Badge>
-                  {t.pnl != null && (
-                    <span className={`text-xs font-mono ml-auto ${t.pnl >= 0 ? "text-bullish" : "text-bearish"}`}>
-                      {t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(2)}
+                  {(t.pnl ?? 0) != null && (
+                    <span className={`text-xs font-mono ml-auto ${(t.pnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+                      {(t.pnl ?? 0) >= 0 ? "+" : ""}${(t.pnl ?? 0).toFixed(2)}
                     </span>
                   )}
                   <span className="text-xs text-text-muted ml-auto">
@@ -587,17 +587,17 @@ export default function TraderPage() {
           <div className="flex items-end gap-1 h-32">
             {pnlHistory.map((p) => {
               const maxPnl = Math.max(...pnlHistory.map((h) => Math.abs(h.totalPnl)), 1);
-              const heightPct = Math.max(Math.abs(p.totalPnl) / maxPnl * 100, 4);
+              const heightPct = Math.max(Math.abs((p.totalPnl ?? 0)) / maxPnl * 100, 4);
               return (
                 <div
                   key={p.date}
                   className="flex-1 flex flex-col items-center justify-end gap-1"
                 >
                   <span className="text-[9px] font-mono text-text-muted">
-                    {p.totalPnl >= 0 ? "+" : ""}{p.totalPnl.toFixed(0)}
+                    {(p.totalPnl ?? 0) >= 0 ? "+" : ""}{(p.totalPnl ?? 0).toFixed(0)}
                   </span>
                   <div
-                    className={`w-full rounded-t ${p.totalPnl >= 0 ? "bg-bullish/70" : "bg-bearish/70"}`}
+                    className={`w-full rounded-t ${(p.totalPnl ?? 0) >= 0 ? "bg-bullish/70" : "bg-bearish/70"}`}
                     style={{ height: `${heightPct}%` }}
                   />
                   <span className="text-[8px] text-text-muted truncate w-full text-center">
