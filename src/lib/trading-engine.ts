@@ -37,8 +37,9 @@ import {
   traderPositions,
   traderStatus,
   traderDailyPnl,
+  optimizationRuns,
 } from "./db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
 
 const log = createRouteLogger("trading-engine");
@@ -262,6 +263,48 @@ async function resolveBrokerClient(
   return { client, connectionId: conn.id };
 }
 
+// ─── Latest Optimizer Results ────────────────────────────────────────────────
+
+// Cache to avoid hitting DB on every symbol every scan
+let _optimizedParamsCache: { params: StrategyParams; fetchedAt: number } | null = null;
+const OPTIMIZER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getLatestOptimizedParams(): Promise<StrategyParams | null> {
+  // Return cached if fresh
+  if (_optimizedParamsCache && Date.now() - _optimizedParamsCache.fetchedAt < OPTIMIZER_CACHE_TTL) {
+    return _optimizedParamsCache.params;
+  }
+
+  try {
+    const [run] = await db
+      .select({ bestParams: optimizationRuns.bestParams, bestTestReturn: optimizationRuns.bestTestReturn })
+      .from(optimizationRuns)
+      .where(eq(optimizationRuns.status, "complete"))
+      .orderBy(desc(optimizationRuns.completedAt))
+      .limit(1);
+
+    if (!run?.bestParams) return null;
+
+    const p = run.bestParams as Record<string, number>;
+    // Only use if it has the required fields
+    if (p.stopLossPct == null || p.takeProfitPct == null) return null;
+
+    const params: StrategyParams = {
+      stopLossPct: p.stopLossPct,
+      takeProfitPct: p.takeProfitPct,
+      trailingStopPct: p.trailingStopPct ?? 0.09,
+      holdPeriod: Math.round(p.holdPeriod ?? 43),
+    };
+
+    _optimizedParamsCache = { params, fetchedAt: Date.now() };
+    log.info({ params, testReturn: run.bestTestReturn }, "Loaded latest optimizer params");
+    return params;
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to load optimizer params");
+    return null;
+  }
+}
+
 // ─── Strategy Resolution ─────────────────────────────────────────────────────
 
 async function resolveStrategy(
@@ -295,9 +338,14 @@ async function resolveStrategy(
     );
   }
 
-  // Use intraday params when engine is in intraday mode
   const engine = getEngine();
-  // Fall back to the preset that matches the current engine mode
+  // For optimized/tactical modes, use latest optimizer results from DB
+  if (engine.mode === "optimized" || engine.mode === "tactical") {
+    const latest = await getLatestOptimizedParams();
+    if (latest) return latest;
+  }
+
+  // Fall back to hardcoded preset
   const modePresetMap: Record<EngineMode, StrategyParams> = {
     conservative: STRATEGY_PRESETS.conservative,
     moderate: STRATEGY_PRESETS.moderate,
