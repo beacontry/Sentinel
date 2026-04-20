@@ -254,6 +254,7 @@ export default function TraderPage() {
                 <option value="optimized">Optimized (GA-tuned, 12% SL, 28% TP)</option>
                 <option value="aggressive">Aggressive (wide stops, big targets)</option>
                 <option value="intraday">Intraday (5min bars, flatten at 3 PM)</option>
+                <option value="tactical">Tactical (always invested, exit on weakness)</option>
               </select>
               <Button
                 onClick={() => handleEngine("start")}
