@@ -45,12 +45,21 @@ const log = createRouteLogger("trading-engine");
 
 export type EngineMode = "swing" | "intraday";
 
+export interface ExternalSignal {
+  symbol: string;
+  signal: string;
+  confidence: number;
+  price: number;
+  source: string;
+  receivedAt: number;
+}
+
 export interface EngineState {
   running: boolean;
   halted: boolean;
   mode: EngineMode;
   intervalId: ReturnType<typeof setInterval> | null;
-  exitCheckId: ReturnType<typeof setInterval> | null; // 1-min exit checks for intraday
+  exitCheckId: ReturnType<typeof setInterval> | null;
   lastScanAt: Date | null;
   scanCount: number;
   dailyLoss: number;
@@ -58,6 +67,7 @@ export interface EngineState {
   dailyLossDate: string;
   userId: string | null;
   positionCount: number;
+  externalSignals: ExternalSignal[];
   errors: string[];
 }
 
@@ -79,6 +89,7 @@ function getEngine(): EngineState {
     dailyLossDate: "",
     userId: null,
     positionCount: 0,
+    externalSignals: [],
     errors: [],
   };
   return g.__tradingEngine;
@@ -581,8 +592,11 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
     return;
   }
 
-  // 3. Scan universe (top 50 S&P 500 stocks)
-  const symbols = SCAN_UNIVERSE;
+  // 3. Scan universe (top 50 + any symbols from external signals)
+  const externalSymbols = engine.externalSignals
+    .filter((s) => !SCAN_UNIVERSE.includes(s.symbol))
+    .map((s) => s.symbol);
+  const symbols = [...SCAN_UNIVERSE, ...new Set(externalSymbols)];
 
   // 4. Get current broker positions
   let brokerPositions: Awaited<ReturnType<BrokerClient["getPositions"]>> = [];
@@ -748,11 +762,14 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
         continue; // Already holding, don't buy again
       }
 
+      // ── Check external signals (from Screener) ──────────────────
+      const extSignal = engine.externalSignals.find(
+        (s) => s.symbol === symbol && (s.signal === "STRONG_BUY" || s.signal === "BUY")
+      );
+      const shouldBuy = signal === SignalType.BUY || signal === SignalType.STRONG_BUY || !!extSignal;
+
       // ── ENTRY LOGIC (if not holding) ─────────────────────────────
-      if (
-        (signal === SignalType.BUY || signal === SignalType.STRONG_BUY) &&
-        positionMap.size < MAX_POSITIONS
-      ) {
+      if (shouldBuy && positionMap.size < MAX_POSITIONS) {
         const strategy = await resolveStrategy(engine.userId, symbol);
 
         // Position sizing
@@ -855,7 +872,13 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
     }
   }
 
-  // 6. Update engine state
+  // 6. Clear processed external signals (older than 30 min)
+  const now = Date.now();
+  engine.externalSignals = engine.externalSignals.filter(
+    (s) => now - s.receivedAt < 30 * 60 * 1000
+  );
+
+  // 7. Update engine state
   engine.lastScanAt = new Date();
   engine.scanCount++;
   engine.positionCount = positionMap.size;
@@ -1057,6 +1080,25 @@ export async function haltEngine(): Promise<{ ok: boolean; error?: string }> {
 
   log.warn("Trading engine emergency halted");
   return { ok: true };
+}
+
+/**
+ * Push an external signal into the engine (from Screener, manual, etc.)
+ * The engine will act on it during its next scan cycle.
+ */
+export function pushExternalSignal(signal: ExternalSignal): boolean {
+  const engine = getEngine();
+  if (!engine.running || engine.halted) return false;
+
+  // Dedup: don't accept the same symbol+signal within 30 minutes
+  const isDup = engine.externalSignals.some(
+    (s) => s.symbol === signal.symbol && s.signal === signal.signal && Date.now() - s.receivedAt < 30 * 60 * 1000
+  );
+  if (isDup) return false;
+
+  engine.externalSignals.push(signal);
+  log.info({ symbol: signal.symbol, signal: signal.signal, source: signal.source }, "External signal received");
+  return true;
 }
 
 export function getEngineStatus(): {
