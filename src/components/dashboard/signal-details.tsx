@@ -357,7 +357,7 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
           size="md"
           className="w-full"
           onClick={() => {
-            window.location.href = `/dashboard/portfolio?symbol=${encodeURIComponent(analysis.symbol)}&signal=${analysis.signal}`;
+            window.location.href = `/dashboard/trader?symbol=${encodeURIComponent(analysis.symbol)}&signal=${analysis.signal}`;
           }}
         >
           <Target className="w-4 h-4" />
@@ -372,7 +372,7 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
               : "bg-bullish hover:bg-bullish/80"
           }`}
           onClick={() => {
-            window.location.href = `/dashboard/portfolio?symbol=${encodeURIComponent(analysis.symbol)}&signal=${analysis.signal}&execute=1`;
+            window.location.href = `/dashboard/trader?symbol=${encodeURIComponent(analysis.symbol)}&signal=${analysis.signal}&execute=1`;
           }}
         >
           {isBullish ? (

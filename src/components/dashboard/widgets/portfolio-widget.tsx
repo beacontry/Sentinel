@@ -57,7 +57,7 @@ export function PortfolioWidget() {
         <Wallet className="w-8 h-8 text-text-muted mx-auto mb-2" />
         <p className="text-sm text-text-muted">No portfolios yet</p>
         <Link
-          href="/dashboard/paper-trading"
+          href="/dashboard/trader"
           className="text-xs text-accent hover:text-accent-hover mt-1 inline-block"
         >
           Create portfolio
@@ -122,7 +122,7 @@ export function PortfolioWidget() {
       )}
 
       <Link
-        href="/dashboard/paper-trading"
+        href="/dashboard/trader"
         className="flex items-center justify-center gap-1 text-xs text-accent
           hover:text-accent-hover pt-2 transition-colors min-h-[44px]"
       >
