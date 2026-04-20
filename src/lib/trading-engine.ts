@@ -1,5 +1,5 @@
 // ─── Automated Trading Engine ────────────────────────────────────────────────
-// Scans watchlist symbols on a 15-minute interval during market hours.
+// Scans the top 50 S&P 500 stocks on a 15-minute interval during market hours.
 // Generates signals via technical analysis, opens positions through a broker
 // client, and manages exits using stop-loss / take-profit / trailing-stop /
 // hold-period rules from the "optimized" strategy preset (or per-symbol
@@ -13,12 +13,22 @@ import type { BrokerClient, BrokerAccount } from "./brokers";
 import { getMarketDataProvider } from "./market-data";
 import { analyzeBars } from "./indicators/analyzer";
 import { STRATEGY_PRESETS } from "./strategy-presets";
+import { SP500_SYMBOLS } from "./sp500";
+
+/** Top 50 most liquid S&P 500 stocks — scanned every cycle */
+const SCAN_UNIVERSE = [
+  "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "TSLA", "BRK-B", "JPM", "V",
+  "UNH", "MA", "HD", "PG", "JNJ", "COST", "ABBV", "BAC", "CRM", "AMD",
+  "NFLX", "WMT", "PEP", "TMO", "AVGO", "LLY", "MRK", "ORCL", "ADBE", "CSCO",
+  "ACN", "DIS", "INTC", "VZ", "CMCSA", "PFE", "T", "KO", "NKE", "MCD",
+  "QCOM", "GS", "MS", "CAT", "BA", "GE", "RTX", "LOW", "SBUX", "PYPL",
+];
 import type { StrategyParams } from "./strategy-presets";
 import { SignalType } from "@/types";
 import { db } from "./db";
 import {
   brokerConnections,
-  watchlistItems,
+  // watchlistItems not used — engine scans full universe
   symbolStrategies,
   traderSignals,
   traderTrades,
@@ -207,15 +217,6 @@ async function resolveStrategy(
 }
 
 // ─── Watchlist ───────────────────────────────────────────────────────────────
-
-async function getWatchlistSymbols(userId: string): Promise<string[]> {
-  const rows = await db
-    .select({ symbol: watchlistItems.symbol })
-    .from(watchlistItems)
-    .where(eq(watchlistItems.userId, userId));
-
-  return rows.map((r) => r.symbol);
-}
 
 // ─── DB Logging ──────────────────────────────────────────────────────────────
 
@@ -496,24 +497,8 @@ async function runScan(): Promise<void> {
     return;
   }
 
-  // 3. Fetch watchlist
-  let symbols: string[];
-  try {
-    symbols = await getWatchlistSymbols(engine.userId);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "unknown";
-    log.error({ err: msg }, "Failed to fetch watchlist");
-    pushError(engine, `Watchlist fetch failed: ${msg}`);
-    return;
-  }
-
-  if (symbols.length === 0) {
-    log.info("Watchlist is empty, nothing to scan");
-    await updateHeartbeat([]);
-    engine.lastScanAt = new Date();
-    engine.scanCount++;
-    return;
-  }
+  // 3. Scan universe (top 50 S&P 500 stocks)
+  const symbols = SCAN_UNIVERSE;
 
   // 4. Get current broker positions
   let brokerPositions: Awaited<ReturnType<BrokerClient["getPositions"]>> = [];
