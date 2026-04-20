@@ -50,7 +50,9 @@ export async function POST(request: NextRequest) {
   try {
     switch (action) {
       case "start": {
-        const mode = (body.mode === "intraday" ? "intraday" : "swing") as "swing" | "intraday";
+        const validModes = ["conservative", "moderate", "optimized", "aggressive", "intraday"] as const;
+        type Mode = typeof validModes[number];
+        const mode: Mode = validModes.includes(body.mode as Mode) ? (body.mode as Mode) : "optimized";
         log.info({ userId: session.userId, mode }, "Engine start requested");
         const result = await startEngine(session.userId, mode);
         if (!result.ok) {
