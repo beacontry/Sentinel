@@ -434,14 +434,14 @@ export default function TraderPage() {
                 {positions.map((p) => (
                   <tr key={p.symbol} className="border-b border-border/50">
                     <td className="py-2 pr-4 font-medium">{p.symbol}</td>
-                    <td className="py-2 pr-4 text-right">{p.quantity}</td>
-                    <td className="py-2 pr-4 text-right">${p.entryPrice.toFixed(2)}</td>
-                    <td className="py-2 pr-4 text-right">${p.currentPrice.toFixed(2)}</td>
+                    <td className="py-2 pr-4 text-right">{p.quantity ?? 0}</td>
+                    <td className="py-2 pr-4 text-right">${(p.entryPrice ?? 0).toFixed(2)}</td>
+                    <td className="py-2 pr-4 text-right">${(p.currentPrice ?? 0).toFixed(2)}</td>
                     <td className="py-2 pr-4 text-right text-text-muted">
                       {p.stopPrice ? `$${p.stopPrice.toFixed(2)}` : "\u2014"}
                     </td>
-                    <td className={`py-2 pr-4 text-right ${p.unrealizedPnl >= 0 ? "text-bullish" : "text-bearish"}`}>
-                      {p.unrealizedPnl >= 0 ? "+" : ""}${p.unrealizedPnl.toFixed(2)}
+                    <td className={`py-2 pr-4 text-right ${(p.unrealizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+                      {(p.unrealizedPnl ?? 0) >= 0 ? "+" : ""}${(p.unrealizedPnl ?? 0).toFixed(2)}
                     </td>
                     <td className="py-2 text-right">
                       <Button
