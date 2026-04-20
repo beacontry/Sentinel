@@ -58,15 +58,22 @@ export default function BacktestPage() {
 
   const symbolDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Build dynamic preset options from saved strategies
+  // Symbol strategy assignments (from Strategies page)
+  const [symbolAssignments, setSymbolAssignments] = useState<{ id: string; symbol: string; presetName: string | null; stopLossPct: number; takeProfitPct: number; trailingStopPct: number; holdPeriod: number }[]>([]);
+
+  // Build dynamic preset options from saved strategies + assignments
   const presetOptions = [
     ...BASE_PRESET_OPTIONS,
-    ...(strategies.length > 0
+    ...((strategies.length > 0 || symbolAssignments.length > 0)
       ? [
-          { value: "_divider", label: "── Saved ──" },
+          { value: "_divider", label: "" },
           ...strategies.map((s) => ({
             value: `saved:${s.id}`,
             label: `${s.name} (${s.config.symbol})`,
+          })),
+          ...symbolAssignments.map((a) => ({
+            value: `assign:${a.id}`,
+            label: `${a.symbol} ${a.presetName ? `(${a.presetName})` : "(custom)"}`,
           })),
         ]
       : []),
@@ -74,10 +81,17 @@ export default function BacktestPage() {
 
   const loadStrategies = useCallback(async () => {
     try {
-      const res = await fetch("/api/strategies");
-      if (res.ok) {
-        const data = await res.json();
+      const [stratRes, assignRes] = await Promise.all([
+        fetch("/api/strategies"),
+        fetch("/api/symbol-strategies"),
+      ]);
+      if (stratRes.ok) {
+        const data = await stratRes.json();
         setStrategies(data.strategies ?? []);
+      }
+      if (assignRes.ok) {
+        const data = await assignRes.json();
+        setSymbolAssignments(data.strategies ?? []);
       }
     } catch {
       // Silent
@@ -136,6 +150,21 @@ export default function BacktestPage() {
         if (s.config.takeProfit != null) setTakeProfit(s.config.takeProfit);
         if (s.config.trailingStop != null) setTrailingStop(s.config.trailingStop);
         setStrategySource(`Loaded from "${s.name}"`);
+        setResult(null);
+      }
+      return;
+    }
+    // Load from symbol assignment
+    if (value.startsWith("assign:")) {
+      const id = value.slice(7);
+      const a = symbolAssignments.find((sa) => sa.id === id);
+      if (a) {
+        setSymbol(a.symbol);
+        setStopLoss(parseFloat((a.stopLossPct * 100).toFixed(1)));
+        setTakeProfit(parseFloat((a.takeProfitPct * 100).toFixed(1)));
+        setTrailingStop(parseFloat((a.trailingStopPct * 100).toFixed(1)));
+        setHoldPeriod(a.holdPeriod);
+        setStrategySource(`Loaded from ${a.symbol} assignment`);
         setResult(null);
       }
       return;
