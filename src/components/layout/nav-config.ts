@@ -11,7 +11,6 @@ import {
   Search,
   Settings,
   Users,
-  Wallet,
 } from "lucide-react";
 
 export const COMMAND_PALETTE_EVENT = "sentinel:open-command-palette";
@@ -54,14 +53,6 @@ export const NAV_ITEMS: NavItem[] = [
     description: "Scan the market for setups, filters, and conviction-ranked ideas.",
     icon: Search,
     keywords: ["scan", "filter", "ideas"],
-  },
-  {
-    href: "/dashboard/portfolio",
-    label: "Portfolio",
-    description: "Track holdings, cash, trade history, and paper trading.",
-    icon: Wallet,
-    matchPaths: [],
-    keywords: ["positions", "holdings", "paper"],
   },
   {
     href: "/dashboard/trader",
@@ -167,9 +158,6 @@ export const SUB_NAV: Record<string, SubNavTab[]> = {
     { href: "/dashboard/heatmap", label: "Heatmap" },
     { href: "/dashboard/correlation", label: "Correlation" },
     { href: "/dashboard/relative-strength", label: "Relative Strength" },
-  ],
-  portfolio: [
-    { href: "/dashboard/portfolio", label: "Portfolio" },
   ],
   trader: [
     { href: "/dashboard/trader", label: "Live Trader" },
