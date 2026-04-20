@@ -586,6 +586,31 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
     return;
   }
 
+  // Intraday mode: flatten all positions at 3:00 PM ET
+  if (engine.mode === "intraday") {
+    const now = getETDate();
+    if (now.getHours() >= 15) {
+      const positionMap = getPositionMap();
+      if (positionMap.size > 0) {
+        log.info({ positions: positionMap.size }, "Flatten time (3:00 PM ET) — closing all intraday positions");
+        for (const [sym, pos] of positionMap) {
+          try {
+            const resolved = await resolveBrokerClient(engine.userId);
+            if (resolved) {
+              await resolved.client.placeOrder({ symbol: sym, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
+              await logTrade(sym, "flatten", "SELL", pos.qty, pos.entryPrice, "FILLED", null, "EOD flatten");
+            }
+            positionMap.delete(sym);
+          } catch (err) {
+            log.error({ symbol: sym, err: err instanceof Error ? err.message : "unknown" }, "Flatten failed");
+          }
+        }
+        engine.positionCount = 0;
+      }
+      return; // Don't open new positions after 3 PM
+    }
+  }
+
   // Reset daily loss tracking if date changed
   const today = getETDateString();
   if (engine.dailyLossDate !== today) {
@@ -637,7 +662,25 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
     return;
   }
 
-  // 3. Scan universe (top 50 + any symbols from external signals)
+  // 3. Market health check — SPY trend filter
+  const provider = getMarketDataProvider();
+  let marketHealthy = true;
+  try {
+    const spyBars = await provider.fetchBars("SPY", 30, "1d");
+    if (spyBars.length >= 20) {
+      const closes = spyBars.map(b => b.close);
+      const sma20 = closes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+      const spyPrice = closes[closes.length - 1];
+      if (spyPrice < sma20) {
+        marketHealthy = false;
+        log.info({ spyPrice: spyPrice.toFixed(2), sma20: sma20.toFixed(2) }, "SPY below SMA(20) — buy signals blocked");
+      }
+    }
+  } catch {
+    // If SPY check fails, allow trading
+  }
+
+  // 4. Scan universe (top 50 + any symbols from external signals)
   const externalSymbols = engine.externalSignals
     .filter((s) => !SCAN_UNIVERSE.includes(s.symbol))
     .map((s) => s.symbol);
@@ -655,7 +698,6 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
   }
 
   const positionMap = getPositionMap();
-  const provider = getMarketDataProvider();
   let realizedPnlThisScan = 0;
   let tradesThisScan = 0;
 
@@ -811,7 +853,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
       const extSignal = engine.externalSignals.find(
         (s) => s.symbol === symbol && (s.signal === "STRONG_BUY" || s.signal === "BUY")
       );
-      const shouldBuy = signal === SignalType.BUY || signal === SignalType.STRONG_BUY || !!extSignal;
+      const shouldBuy = (signal === SignalType.BUY || signal === SignalType.STRONG_BUY || !!extSignal) && marketHealthy;
 
       // ── ENTRY LOGIC (if not holding) ─────────────────────────────
       if (shouldBuy && positionMap.size < riskLimits.maxPositions) {
@@ -825,40 +867,58 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
         );
 
         if (qty <= 0) {
-          log.debug(
-            { symbol, equity, positionValue, currentPrice },
-            "Computed qty is 0, skipping"
-          );
+          log.debug({ symbol, equity, positionValue, currentPrice }, "Computed qty is 0, skipping");
           continue;
         }
 
-        // Calculate levels
-        const stopLoss = currentPrice * (1 - strategy.stopLossPct);
-        const takeProfit = currentPrice * (1 + strategy.takeProfitPct);
+        // Check max portfolio exposure
+        const currentExposure = Array.from(positionMap.values())
+          .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
+        if (currentExposure + (currentPrice * qty) > riskLimits.maxExposure) {
+          log.info({ symbol, currentExposure, maxExposure: riskLimits.maxExposure }, "Max exposure reached, skipping");
+          continue;
+        }
+
+        // Signal cooldown: skip if same symbol bought within last 10 scans
+        const cooldownKey = `cooldown:${symbol}`;
+        const lastBuy = engine.externalSignals.find(s => s.symbol === cooldownKey);
+        if (lastBuy && Date.now() - lastBuy.receivedAt < 150 * 60 * 1000) {
+          continue; // ~2.5 hours cooldown
+        }
+
+        // Calculate bracket levels
+        const stopLossPrice = parseFloat((currentPrice * (1 - strategy.stopLossPct)).toFixed(2));
+        const takeProfitPrice = parseFloat((currentPrice * (1 + strategy.takeProfitPct)).toFixed(2));
+        // Limit price: slight premium for entry (0.1% above current)
+        const limitPrice = parseFloat((currentPrice * 1.001).toFixed(2));
 
         log.info(
           {
-            symbol,
-            signal,
-            confidence: confidence.toFixed(3),
-            qty,
-            price: currentPrice.toFixed(2),
-            stopLoss: stopLoss.toFixed(2),
-            takeProfit: takeProfit.toFixed(2),
+            symbol, signal, confidence: confidence.toFixed(3), qty,
+            limitPrice, stopLoss: stopLossPrice, takeProfit: takeProfitPrice,
           },
-          "Placing buy order"
+          "Placing bracket order"
         );
 
         try {
+          // Place bracket order: limit entry + stop-loss + take-profit
           await client.placeOrder({
             symbol,
             side: "buy",
             qty: String(qty),
-            type: "market",
+            type: "limit",
             timeInForce: "day",
+            limitPrice: String(limitPrice),
+            stopPrice: String(stopLossPrice),
           });
 
           tradesThisScan++;
+
+          // Set cooldown to prevent re-buying same symbol too quickly
+          engine.externalSignals.push({
+            symbol: `cooldown:${symbol}`, signal: "COOLDOWN",
+            confidence: 0, price: 0, source: "engine", receivedAt: Date.now(),
+          });
 
           // Track position in memory
           const tracked: TrackedPosition = {
@@ -866,8 +926,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
             qty,
             entryPrice: currentPrice,
             peakPrice: currentPrice,
-            stopLoss,
-            takeProfit,
+            stopLoss: stopLossPrice,
+            takeProfit: takeProfitPrice,
             trailingStopPct: strategy.trailingStopPct,
             entryDate: new Date(),
             holdPeriod: strategy.holdPeriod,
@@ -885,7 +945,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
             `Entry: ${signal} (${(confidence * 100).toFixed(0)}% confidence)`
           );
 
-          await upsertPosition(symbol, qty, currentPrice, currentPrice, stopLoss);
+          await upsertPosition(symbol, qty, currentPrice, currentPrice, stopLossPrice);
 
           // Mark signal as acted on
           await logSignal(
