@@ -30,6 +30,7 @@ import {
   brokerConnections,
   // watchlistItems not used — engine scans full universe
   symbolStrategies,
+  userRiskProfiles,
   traderSignals,
   traderTrades,
   traderPositions,
@@ -100,10 +101,50 @@ function getEngine(): EngineState {
 const SWING_SCAN_MS = 15 * 60 * 1000;    // 15 minutes for swing mode
 const INTRADAY_SCAN_MS = 5 * 60 * 1000;  // 5 minutes for intraday signal scan
 const EXIT_CHECK_MS = 60 * 1000;          // 1 minute for intraday exit checks
-const MAX_POSITIONS = 16;
-const POSITION_PCT = 0.15;
+// Defaults — overridden by user's Risk Profile from DB
+const DEFAULT_MAX_POSITIONS = 16;
+const DEFAULT_POSITION_PCT = 0.15;
+const DEFAULT_DAILY_LOSS_PCT = 0.02;
 const BARS_FOR_ANALYSIS = 90;
 const MAX_ERROR_LOG = 50;
+
+interface RiskLimits {
+  maxPositions: number;
+  positionPct: number;
+  dailyLossPct: number;
+  maxPositionSize: number;
+  maxExposure: number;
+}
+
+async function loadRiskLimits(userId: string): Promise<RiskLimits> {
+  try {
+    const [profile] = await db
+      .select()
+      .from(userRiskProfiles)
+      .where(eq(userRiskProfiles.userId, userId))
+      .limit(1);
+
+    if (profile) {
+      return {
+        maxPositions: Math.floor(100 / (profile.maxPositionPct || 5)), // e.g., 5% per position = 20 max
+        positionPct: (profile.maxPositionPct || 5) / 100,
+        dailyLossPct: (profile.maxDailyLossPct || 2) / 100,
+        maxPositionSize: profile.maxPositionSize || 100,
+        maxExposure: profile.accountSize * (profile.maxDrawdownPct || 10) / 100,
+      };
+    }
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to load risk profile, using defaults");
+  }
+
+  return {
+    maxPositions: DEFAULT_MAX_POSITIONS,
+    positionPct: DEFAULT_POSITION_PCT,
+    dailyLossPct: DEFAULT_DAILY_LOSS_PCT,
+    maxPositionSize: 100,
+    maxExposure: 25000,
+  };
+}
 
 /** Intraday strategy: tighter stops, faster exits */
 const INTRADAY_PARAMS: StrategyParams = {
@@ -579,8 +620,12 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
     return;
   }
 
+  // Load dynamic risk limits from user's Risk Profile
+  const riskLimits = await loadRiskLimits(engine.userId);
+  engine.dailyLossLimit = riskLimits.dailyLossPct;
+
   // 2. Check daily loss limit
-  const dailyLossThreshold = equity * engine.dailyLossLimit;
+  const dailyLossThreshold = equity * riskLimits.dailyLossPct;
   if (engine.dailyLoss <= -dailyLossThreshold) {
     log.warn(
       { dailyLoss: engine.dailyLoss, threshold: dailyLossThreshold },
@@ -769,12 +814,15 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
       const shouldBuy = signal === SignalType.BUY || signal === SignalType.STRONG_BUY || !!extSignal;
 
       // ── ENTRY LOGIC (if not holding) ─────────────────────────────
-      if (shouldBuy && positionMap.size < MAX_POSITIONS) {
+      if (shouldBuy && positionMap.size < riskLimits.maxPositions) {
         const strategy = await resolveStrategy(engine.userId, symbol);
 
-        // Position sizing
-        const positionValue = equity * POSITION_PCT;
-        const qty = Math.floor(positionValue / currentPrice);
+        // Position sizing from risk profile
+        const positionValue = equity * riskLimits.positionPct;
+        const qty = Math.min(
+          Math.floor(positionValue / currentPrice),
+          riskLimits.maxPositionSize
+        );
 
         if (qty <= 0) {
           log.debug(
