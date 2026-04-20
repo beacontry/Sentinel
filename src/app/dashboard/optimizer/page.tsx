@@ -88,6 +88,10 @@ export default function OptimizerPage() {
   const [symbolOrder, setSymbolOrder] = useState<"desc" | "asc">("desc");
   const [showAllSymbols, setShowAllSymbols] = useState(false);
 
+  // Mode comparison
+  const [comparison, setComparison] = useState<{ mode: string; label: string; totalReturn: number; finalValue: number; maxDrawdown: number; sharpe: number; trades: number; timeInMarket: number }[] | null>(null);
+  const [comparingModes, setComparingModes] = useState(false);
+
   // Config form
   const [popSize, setPopSize] = useState(30);
   const [gens, setGens] = useState(25);
@@ -225,6 +229,26 @@ export default function OptimizerPage() {
             <Play className="h-4 w-4 mr-2" />
             <span className="hidden sm:inline">New</span> Run
           </Button>
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              setComparingModes(true);
+              try {
+                const res = await fetch("/api/optimize/compare");
+                if (res.ok) {
+                  const data = await res.json();
+                  setComparison(data.results);
+                }
+              } finally {
+                setComparingModes(false);
+              }
+            }}
+            disabled={comparingModes}
+            className="min-h-[44px]"
+          >
+            {comparingModes ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BarChart3 className="h-4 w-4 mr-2" />}
+            <span className="hidden sm:inline">Compare</span> Modes
+          </Button>
         </div>
       </div>
 
@@ -285,6 +309,50 @@ export default function OptimizerPage() {
                 <Zap className="h-4 w-4 mr-2" />
                 Start Optimization
               </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Mode Comparison Results */}
+      {comparison && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Mode Comparison — $10,000 over 5 Years</CardTitle>
+          </CardHeader>
+          <div className="px-4 pb-4">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-text-muted text-left">
+                    <th className="pb-2 pr-4 font-medium">Mode</th>
+                    <th className="pb-2 pr-4 font-medium text-right">Return</th>
+                    <th className="pb-2 pr-4 font-medium text-right">Final Value</th>
+                    <th className="pb-2 pr-4 font-medium text-right">Max DD</th>
+                    <th className="pb-2 pr-4 font-medium text-right">Sharpe</th>
+                    <th className="pb-2 pr-4 font-medium text-right">Trades</th>
+                    <th className="pb-2 font-medium text-right">Time in Market</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono">
+                  {comparison.map((r) => (
+                    <tr key={r.mode} className={`border-b border-border/50 ${r.mode === "spy" ? "bg-bg-elevated" : ""}`}>
+                      <td className="py-2 pr-4 font-sans font-medium">
+                        {r.label}
+                        {r.mode === "spy" && <Badge variant="neutral" className="ml-2">Benchmark</Badge>}
+                      </td>
+                      <td className={`py-2 pr-4 text-right ${r.totalReturn >= 0 ? "text-bullish" : "text-bearish"}`}>
+                        {r.totalReturn >= 0 ? "+" : ""}{r.totalReturn}%
+                      </td>
+                      <td className="py-2 pr-4 text-right">${r.finalValue.toLocaleString()}</td>
+                      <td className="py-2 pr-4 text-right text-bearish">-{r.maxDrawdown}%</td>
+                      <td className="py-2 pr-4 text-right text-text-secondary">{r.sharpe}</td>
+                      <td className="py-2 pr-4 text-right text-text-secondary">{r.trades}</td>
+                      <td className="py-2 text-right text-text-secondary">{r.timeInMarket}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </Card>
