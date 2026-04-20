@@ -17,7 +17,13 @@ export async function GET() {
 
   try {
     // Auto-start engine if there are open positions after a restart
-    autoStartIfNeeded(session.userId).catch(() => {});
+    // Only auto-start once per container lifecycle (not on every page load)
+    const autoStartKey = "__autoStartDone";
+    const gAuto = globalThis as typeof globalThis & { [key: string]: boolean | undefined };
+    if (!gAuto[autoStartKey]) {
+      gAuto[autoStartKey] = true;
+      autoStartIfNeeded(session.userId).catch(() => {});
+    }
 
     // Status — check trader service heartbeat first
     const [status] = await db.select().from(traderStatus).limit(1);

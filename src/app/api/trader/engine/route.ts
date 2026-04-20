@@ -40,19 +40,36 @@ export async function POST(request: NextRequest) {
   }
 
   const action = body.action as string | undefined;
-  if (!action || !["start", "stop", "halt"].includes(action)) {
+  if (!action || !["start", "stop", "halt", "switch"].includes(action)) {
     return NextResponse.json(
-      { error: "Invalid action. Expected: start, stop, or halt" },
+      { error: "Invalid action. Expected: start, stop, halt, or switch" },
       { status: 400 }
     );
   }
 
+  const validModes = ["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical"] as const;
+  type Mode = typeof validModes[number];
+  const mode: Mode = validModes.includes(body.mode as Mode) ? (body.mode as Mode) : "optimized";
+
   try {
     switch (action) {
+      case "switch": {
+        // Stop current engine (without placing safety stops since we're restarting immediately)
+        log.info({ userId: session.userId, mode }, "Engine mode switch requested");
+        const status = getEngineStatus();
+        if (status.running) {
+          await stopEngine();
+        }
+        const result = await startEngine(session.userId, mode);
+        if (!result.ok) {
+          return NextResponse.json({ error: result.error }, { status: 400 });
+        }
+        return NextResponse.json({
+          data: { message: `Engine switched to ${mode}`, ...getEngineStatus() },
+        });
+      }
+
       case "start": {
-        const validModes = ["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical"] as const;
-        type Mode = typeof validModes[number];
-        const mode: Mode = validModes.includes(body.mode as Mode) ? (body.mode as Mode) : "optimized";
         log.info({ userId: session.userId, mode }, "Engine start requested");
         const result = await startEngine(session.userId, mode);
         if (!result.ok) {
