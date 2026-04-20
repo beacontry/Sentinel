@@ -253,7 +253,8 @@ export default function TraderPage() {
             <option value="optimized">Optimized (GA-tuned, 12% SL, 28% TP)</option>
             <option value="aggressive">Aggressive (wide stops, big targets)</option>
             <option value="intraday">Intraday (5min bars, flatten at 3 PM)</option>
-            <option value="tactical">Tactical (always invested, exit on weakness)</option>
+            <option value="tactical">Tactical (top 50 S&P, exit on SPY weakness)</option>
+            <option value="tactical-smart">Tactical Smart (screener-picked, exit on SPY weakness)</option>
           </select>
           {!engine?.running ? (
             <Button
