@@ -638,19 +638,21 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     let population: Individual[] = [];
     const initParams = [...presetSeeds, ...Array.from({ length: Math.max(0, config.populationSize - presetSeeds.length) }, () => randomIndividual())];
 
-    for (const params of initParams) {
-      const r = portfolioBacktest(portfolioData, params, "train");
-      population.push({ params, fitness: r.excessReturn });
+    for (let pi = 0; pi < initParams.length; pi++) {
+      const r = portfolioBacktest(portfolioData, initParams[pi], "train");
+      population.push({ params: initParams[pi], fitness: r.excessReturn });
+      // Yield every 5 evaluations to keep HTTP alive
+      if (pi % 5 === 0) await new Promise((r) => setTimeout(r, 1));
     }
     population.sort((a, b) => b.fitness - a.fitness);
     let bestEver = population[0];
 
     for (let gen = 0; gen < config.generations; gen++) {
-      await new Promise((r) => setTimeout(r, 0));
       const nextPop: Individual[] = [];
 
       for (let i = 0; i < ELITISM && i < population.length; i++) nextPop.push(population[i]);
 
+      let evalCount = 0;
       while (nextPop.length < config.populationSize) {
         const p1 = tournamentSelect(population), p2 = tournamentSelect(population);
         const childParams = Math.random() < CROSSOVER_RATE
@@ -658,6 +660,8 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
           : mutate(p1.params);
         const r = portfolioBacktest(portfolioData, childParams, "train");
         nextPop.push({ params: childParams, fitness: r.excessReturn });
+        // Yield every 3 evaluations to prevent event loop starvation
+        if (++evalCount % 3 === 0) await new Promise((r) => setTimeout(r, 1));
       }
 
       population = nextPop.sort((a, b) => b.fitness - a.fitness);
