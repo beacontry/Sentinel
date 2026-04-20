@@ -128,7 +128,7 @@ export default function TraderPage() {
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [cmdLoading, setCmdLoading] = useState<string | null>(null);
-  const [engineMode, setEngineMode] = useState<"swing" | "intraday">("swing");
+  const [engineMode, setEngineMode] = useState<string>("optimized");
   const [showRisk, setShowRisk] = useState(false);
   const [riskForm, setRiskForm] = useState({
     max_daily_loss: "500",
@@ -246,11 +246,14 @@ export default function TraderPage() {
             <>
               <select
                 value={engineMode}
-                onChange={(e) => setEngineMode(e.target.value as "swing" | "intraday")}
+                onChange={(e) => setEngineMode(e.target.value)}
                 className="min-h-[44px] rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary"
               >
-                <option value="swing">Swing (15min, daily bars)</option>
-                <option value="intraday">Intraday (1min, 5min bars)</option>
+                <option value="conservative">Conservative (tight stops, modest targets)</option>
+                <option value="moderate">Moderate (balanced risk/reward)</option>
+                <option value="optimized">Optimized (GA-tuned, 12% SL, 28% TP)</option>
+                <option value="aggressive">Aggressive (wide stops, big targets)</option>
+                <option value="intraday">Intraday (5min bars, flatten at 3 PM)</option>
               </select>
               <Button
                 onClick={() => handleEngine("start")}

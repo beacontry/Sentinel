@@ -44,7 +44,11 @@ const log = createRouteLogger("trading-engine");
 
 // ─── Engine State (globalThis singleton) ─────────────────────────────────────
 
-export type EngineMode = "swing" | "intraday";
+export type EngineMode = "conservative" | "moderate" | "optimized" | "aggressive" | "intraday";
+
+function isIntradayMode(mode: EngineMode): boolean {
+  return mode === "intraday";
+}
 
 export interface ExternalSignal {
   symbol: string;
@@ -80,7 +84,7 @@ function getEngine(): EngineState {
   g.__tradingEngine ??= {
     running: false,
     halted: false,
-    mode: "swing",
+    mode: "optimized",
     intervalId: null,
     exitCheckId: null,
     lastScanAt: null,
@@ -93,7 +97,7 @@ function getEngine(): EngineState {
     externalSignals: [],
     errors: [],
   };
-  return g.__tradingEngine;
+  return g.__tradingEngine!;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -283,7 +287,15 @@ async function resolveStrategy(
 
   // Use intraday params when engine is in intraday mode
   const engine = getEngine();
-  return engine.mode === "intraday" ? INTRADAY_PARAMS : STRATEGY_PRESETS.optimized;
+  // Fall back to the preset that matches the current engine mode
+  const modePresetMap: Record<EngineMode, StrategyParams> = {
+    conservative: STRATEGY_PRESETS.conservative,
+    moderate: STRATEGY_PRESETS.moderate,
+    optimized: STRATEGY_PRESETS.optimized,
+    aggressive: STRATEGY_PRESETS.aggressive,
+    intraday: INTRADAY_PARAMS,
+  };
+  return modePresetMap[engine.mode] ?? STRATEGY_PRESETS.optimized;
 }
 
 // ─── Exit Check (intraday 1-min price monitoring) ───────────────────────────
@@ -587,7 +599,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
   }
 
   // Intraday mode: flatten all positions at 3:00 PM ET
-  if (engine.mode === "intraday") {
+  if (isIntradayMode(engine.mode)) {
     const now = getETDate();
     if (now.getHours() >= 15) {
       const positionMap = getPositionMap();
@@ -1024,7 +1036,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
 
 // ─── Engine Control ──────────────────────────────────────────────────────────
 
-export async function startEngine(userId: string, mode: EngineMode = "swing"): Promise<{
+export async function startEngine(userId: string, mode: EngineMode = "optimized"): Promise<{
   ok: boolean;
   error?: string;
 }> {
@@ -1069,8 +1081,9 @@ export async function startEngine(userId: string, mode: EngineMode = "swing"): P
   engine.dailyLoss = 0;
   engine.dailyLossDate = getETDateString();
 
-  const scanIntervalMs = mode === "intraday" ? INTRADAY_SCAN_MS : SWING_SCAN_MS;
-  const barResolution = mode === "intraday" ? "5m" : "1d";
+  const intraday = isIntradayMode(mode);
+  const scanIntervalMs = intraday ? INTRADAY_SCAN_MS : SWING_SCAN_MS;
+  const barResolution = intraday ? "5m" : "1d";
 
   log.info({ userId, mode, scanIntervalMs }, "Trading engine started");
 
@@ -1280,7 +1293,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
     const positions = await resolved.client.getPositions();
     if (positions.length > 0) {
       log.info({ positions: positions.length, userId }, "Open positions detected — auto-starting engine");
-      await startEngine(userId, "swing");
+      await startEngine(userId, "optimized");
     }
   } catch (err) {
     log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Auto-start check failed");
