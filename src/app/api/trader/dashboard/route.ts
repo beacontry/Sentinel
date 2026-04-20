@@ -65,8 +65,10 @@ export async function GET() {
       .where(eq(traderDailyPnl.date, today))
       .limit(1);
 
-    // Open positions
-    const positions = await db.select().from(traderPositions);
+    // Open positions — prefer live broker data over stale DB
+    const positions = brokerConnected
+      ? [] // broker positions handled in finalPositions below
+      : await db.select().from(traderPositions);
 
     // Recent trades
     const trades = await db
@@ -181,6 +183,12 @@ export async function GET() {
         totalPnl: todayPnl.realizedPnl + todayPnl.unrealizedPnl,
         tradesCount: todayPnl.tradesCount,
         halted: todayPnl.halted,
+      } : brokerConnected && brokerPositions.length > 0 ? {
+        realizedPnl: 0,
+        unrealizedPnl: brokerPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0),
+        totalPnl: brokerPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0),
+        tradesCount: brokerPositions.length,
+        halted: false,
       } : null,
       positions: finalPositions,
       trades: trades.map((t) => ({

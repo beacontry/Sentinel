@@ -50,8 +50,9 @@ export async function POST(request: NextRequest) {
   try {
     switch (action) {
       case "start": {
-        log.info({ userId: session.userId }, "Engine start requested");
-        const result = await startEngine(session.userId);
+        const mode = (body.mode === "intraday" ? "intraday" : "swing") as "swing" | "intraday";
+        log.info({ userId: session.userId, mode }, "Engine start requested");
+        const result = await startEngine(session.userId, mode);
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }

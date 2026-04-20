@@ -115,6 +115,7 @@ async function sendCommand(command: string, payload: Record<string, unknown> = {
 interface EngineStatus {
   running: boolean;
   halted: boolean;
+  mode?: string;
   lastScanAt: string | null;
   scanCount: number;
   positionCount: number;
@@ -127,6 +128,7 @@ export default function TraderPage() {
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [cmdLoading, setCmdLoading] = useState<string | null>(null);
+  const [engineMode, setEngineMode] = useState<"swing" | "intraday">("swing");
   const [showRisk, setShowRisk] = useState(false);
   const [riskForm, setRiskForm] = useState({
     max_daily_loss: "500",
@@ -162,7 +164,7 @@ export default function TraderPage() {
       await fetch("/api/trader/engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, mode: engineMode }),
       });
       // Refresh
       const [dashRes, engRes] = await Promise.allSettled([
@@ -241,14 +243,24 @@ export default function TraderPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           {!engine?.running ? (
-            <Button
-              onClick={() => handleEngine("start")}
-              disabled={cmdLoading !== null || !status.connected}
-              className="min-h-[44px]"
-            >
-              <Play className="w-4 h-4" />
-              <span className="hidden sm:inline">Start Engine</span>
-            </Button>
+            <>
+              <select
+                value={engineMode}
+                onChange={(e) => setEngineMode(e.target.value as "swing" | "intraday")}
+                className="min-h-[44px] rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary"
+              >
+                <option value="swing">Swing (15min, daily bars)</option>
+                <option value="intraday">Intraday (1min, 5min bars)</option>
+              </select>
+              <Button
+                onClick={() => handleEngine("start")}
+                disabled={cmdLoading !== null || !status.connected}
+                className="min-h-[44px]"
+              >
+                <Play className="w-4 h-4" />
+                <span className="hidden sm:inline">Start</span>
+              </Button>
+            </>
           ) : (
             <Button
               variant="secondary"
@@ -277,7 +289,7 @@ export default function TraderPage() {
         {engine && (
           <div className="flex items-center gap-3 text-xs text-text-muted">
             <Badge variant={engine.running ? "bullish" : engine.halted ? "bearish" : "neutral"}>
-              {engine.running ? "Running" : engine.halted ? "Halted" : "Stopped"}
+              {engine.running ? `Running (${engine.mode ?? "swing"})` : engine.halted ? "Halted" : "Stopped"}
             </Badge>
             {engine.scanCount > 0 && <span className="font-mono">{engine.scanCount} scans</span>}
             {engine.lastScanAt && <span>Last: {timeAgo(engine.lastScanAt)}</span>}

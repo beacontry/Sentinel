@@ -43,15 +43,19 @@ const log = createRouteLogger("trading-engine");
 
 // ─── Engine State (globalThis singleton) ─────────────────────────────────────
 
+export type EngineMode = "swing" | "intraday";
+
 export interface EngineState {
   running: boolean;
   halted: boolean;
+  mode: EngineMode;
   intervalId: ReturnType<typeof setInterval> | null;
+  exitCheckId: ReturnType<typeof setInterval> | null; // 1-min exit checks for intraday
   lastScanAt: Date | null;
   scanCount: number;
   dailyLoss: number;
   dailyLossLimit: number;
-  dailyLossDate: string; // YYYY-MM-DD in ET, resets when date changes
+  dailyLossDate: string;
   userId: string | null;
   positionCount: number;
   errors: string[];
@@ -65,11 +69,13 @@ function getEngine(): EngineState {
   g.__tradingEngine ??= {
     running: false,
     halted: false,
+    mode: "swing",
     intervalId: null,
+    exitCheckId: null,
     lastScanAt: null,
     scanCount: 0,
     dailyLoss: 0,
-    dailyLossLimit: 0.02, // 2% of equity by default
+    dailyLossLimit: 0.02,
     dailyLossDate: "",
     userId: null,
     positionCount: 0,
@@ -80,11 +86,21 @@ function getEngine(): EngineState {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const SCAN_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const SWING_SCAN_MS = 15 * 60 * 1000;    // 15 minutes for swing mode
+const INTRADAY_SCAN_MS = 5 * 60 * 1000;  // 5 minutes for intraday signal scan
+const EXIT_CHECK_MS = 60 * 1000;          // 1 minute for intraday exit checks
 const MAX_POSITIONS = 16;
-const POSITION_PCT = 0.15; // 15% of equity per position
+const POSITION_PCT = 0.15;
 const BARS_FOR_ANALYSIS = 90;
 const MAX_ERROR_LOG = 50;
+
+/** Intraday strategy: tighter stops, faster exits */
+const INTRADAY_PARAMS: StrategyParams = {
+  stopLossPct: 0.015,      // 1.5% stop loss
+  takeProfitPct: 0.025,    // 2.5% take profit
+  trailingStopPct: 0.01,   // 1% trailing stop
+  holdPeriod: 12,           // 12 bars = 1 hour on 5-min
+};
 
 // ─── Market Hours ────────────────────────────────────────────────────────────
 
@@ -213,10 +229,78 @@ async function resolveStrategy(
     );
   }
 
-  return STRATEGY_PRESETS.optimized;
+  // Use intraday params when engine is in intraday mode
+  const engine = getEngine();
+  return engine.mode === "intraday" ? INTRADAY_PARAMS : STRATEGY_PRESETS.optimized;
 }
 
-// ─── Watchlist ───────────────────────────────────────────────────────────────
+// ─── Exit Check (intraday 1-min price monitoring) ───────────────────────────
+
+async function runExitCheck(): Promise<void> {
+  const engine = getEngine();
+  if (!engine.userId || !engine.running || engine.halted) return;
+  if (!isMarketOpen()) return;
+
+  const resolved = await resolveBrokerClient(engine.userId);
+  if (!resolved) return;
+
+  const { client } = resolved;
+  const positionMap = getPositionMap();
+  if (positionMap.size === 0) return;
+
+  const provider = getMarketDataProvider();
+
+  for (const [symbol, pos] of positionMap) {
+    try {
+      const quote = await provider.fetchQuote(symbol);
+      if (!quote) continue;
+
+      const currentPrice = quote.price;
+      if (currentPrice <= 0) continue;
+
+      // Update peak
+      if (currentPrice > pos.peakPrice) pos.peakPrice = currentPrice;
+
+      const params = await resolveStrategy(engine.userId, symbol);
+      let exitReason = "";
+
+      // Stop loss
+      const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
+      const trailStop = pos.peakPrice * (1 - params.trailingStopPct);
+      const effectiveStop = Math.max(fixedStop, trailStop);
+
+      if (currentPrice <= effectiveStop) {
+        exitReason = currentPrice <= fixedStop ? "stop_loss" : "trailing_stop";
+      }
+
+      // Take profit
+      if (!exitReason && currentPrice >= pos.entryPrice * (1 + params.takeProfitPct)) {
+        exitReason = "take_profit";
+      }
+
+      if (exitReason) {
+        log.info({ symbol, exitReason, currentPrice, entryPrice: pos.entryPrice }, "Exit triggered by 1-min check");
+        try {
+          await client.placeOrder({ symbol, qty: String(pos.qty), side: "sell", type: "market", timeInForce: "day" });
+          const pnl = (currentPrice - pos.entryPrice) * pos.qty;
+          engine.dailyLoss += pnl < 0 ? pnl : 0;
+
+          await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "FILLED", pnl, exitReason);
+          positionMap.delete(symbol);
+          engine.positionCount = positionMap.size;
+        } catch (err) {
+          log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit order failed");
+        }
+      }
+
+      await new Promise((r) => setTimeout(r, 0));
+    } catch {
+      // Skip symbol on error
+    }
+  }
+}
+
+// ─── DB Logging ──────────────────────────────────────────────────────────────
 
 // ─── DB Logging ──────────────────────────────────────────────────────────────
 
@@ -431,7 +515,7 @@ function getPositionMap(): Map<string, TrackedPosition> {
 
 // ─── Core Scan ───────────────────────────────────────────────────────────────
 
-async function runScan(): Promise<void> {
+async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
   const engine = getEngine();
 
   if (engine.halted) {
@@ -525,7 +609,8 @@ async function runScan(): Promise<void> {
       if (engine.halted) break;
 
       // Fetch bars and analyze
-      const bars = await provider.fetchBars(symbol, BARS_FOR_ANALYSIS, "1d");
+      const days = barResolution === "5m" ? 5 : BARS_FOR_ANALYSIS;
+      const bars = await provider.fetchBars(symbol, days, barResolution);
       if (bars.length < 20) {
         log.debug({ symbol, barCount: bars.length }, "Insufficient bars, skipping");
         continue;
@@ -808,7 +893,7 @@ async function runScan(): Promise<void> {
 
 // ─── Engine Control ──────────────────────────────────────────────────────────
 
-export async function startEngine(userId: string): Promise<{
+export async function startEngine(userId: string, mode: EngineMode = "swing"): Promise<{
   ok: boolean;
   error?: string;
 }> {
@@ -837,32 +922,41 @@ export async function startEngine(userId: string): Promise<{
 
   engine.running = true;
   engine.halted = false;
+  engine.mode = mode;
   engine.userId = userId;
   engine.errors = [];
   engine.dailyLoss = 0;
   engine.dailyLossDate = getETDateString();
 
+  const scanIntervalMs = mode === "intraday" ? INTRADAY_SCAN_MS : SWING_SCAN_MS;
+  const barResolution = mode === "intraday" ? "5m" : "1d";
+
+  log.info({ userId, mode, scanIntervalMs }, "Trading engine started");
+
   // Run initial scan immediately
-  log.info({ userId }, "Trading engine started");
-  runScan().catch((err) => {
-    log.error(
-      { err: err instanceof Error ? err.message : "unknown" },
-      "Initial scan failed"
-    );
+  runScan(barResolution).catch((err) => {
+    log.error({ err: err instanceof Error ? err.message : "unknown" }, "Initial scan failed");
     pushError(engine, `Initial scan failed: ${err instanceof Error ? err.message : "unknown"}`);
   });
 
-  // Set up interval
+  // Set up signal scan interval
   engine.intervalId = setInterval(() => {
     if (!engine.running) return;
-    runScan().catch((err) => {
-      log.error(
-        { err: err instanceof Error ? err.message : "unknown" },
-        "Scan cycle failed"
-      );
+    runScan(barResolution).catch((err) => {
+      log.error({ err: err instanceof Error ? err.message : "unknown" }, "Scan cycle failed");
       pushError(engine, `Scan failed: ${err instanceof Error ? err.message : "unknown"}`);
     });
-  }, SCAN_INTERVAL_MS);
+  }, scanIntervalMs);
+
+  // Intraday mode: also run 1-minute exit checks using live quotes
+  if (mode === "intraday") {
+    engine.exitCheckId = setInterval(() => {
+      if (!engine.running || engine.halted) return;
+      runExitCheck().catch((err) => {
+        log.error({ err: err instanceof Error ? err.message : "unknown" }, "Exit check failed");
+      });
+    }, EXIT_CHECK_MS);
+  }
 
   return { ok: true };
 }
@@ -877,6 +971,10 @@ export function stopEngine(): { ok: boolean; error?: string } {
   if (engine.intervalId) {
     clearInterval(engine.intervalId);
     engine.intervalId = null;
+  }
+  if (engine.exitCheckId) {
+    clearInterval(engine.exitCheckId);
+    engine.exitCheckId = null;
   }
 
   engine.running = false;
@@ -964,6 +1062,7 @@ export async function haltEngine(): Promise<{ ok: boolean; error?: string }> {
 export function getEngineStatus(): {
   running: boolean;
   halted: boolean;
+  mode: EngineMode;
   lastScanAt: string | null;
   scanCount: number;
   positionCount: number;
@@ -976,6 +1075,7 @@ export function getEngineStatus(): {
   return {
     running: engine.running,
     halted: engine.halted,
+    mode: engine.mode,
     lastScanAt: engine.lastScanAt?.toISOString() ?? null,
     scanCount: engine.scanCount,
     positionCount: engine.positionCount,
