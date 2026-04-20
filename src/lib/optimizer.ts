@@ -391,9 +391,11 @@ function portfolioBacktest(
       if (bar.high > pos.peakPrice) pos.peakPrice = bar.high;
       let exitPrice: number | null = null;
 
-      // Stops
+      // Stops with profit-based tightening
+      const profitPct = (pos.peakPrice - pos.entryPrice) / pos.entryPrice;
+      const dynTrail = profitPct >= 0.30 ? 0.03 : profitPct >= 0.20 ? 0.04 : profitPct >= 0.10 ? 0.06 : params.trailingStopPct;
       const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
-      const trailStop = pos.peakPrice * (1 - params.trailingStopPct);
+      const trailStop = pos.peakPrice * (1 - dynTrail);
       if (bar.low <= Math.max(fixedStop, trailStop)) exitPrice = Math.max(fixedStop, trailStop);
 
       // Take profit

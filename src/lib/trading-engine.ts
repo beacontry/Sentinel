@@ -169,6 +169,25 @@ const INTRADAY_PARAMS: StrategyParams = {
   holdPeriod: 12,           // 12 bars = 1 hour on 5-min
 };
 
+// ─── Profit-Based Trailing Stop ──────────────────────────────────────────────
+
+/**
+ * Tightens the trailing stop as unrealized profit grows.
+ * Locks in more gains at higher profit levels.
+ */
+function getDynamicTrailingPct(
+  entryPrice: number,
+  peakPrice: number,
+  baseTrailingPct: number
+): number {
+  const profitPct = (peakPrice - entryPrice) / entryPrice;
+
+  if (profitPct >= 0.30) return 0.03;  // 30%+ profit → 3% trail (lock in 27%+)
+  if (profitPct >= 0.20) return 0.04;  // 20-30% profit → 4% trail
+  if (profitPct >= 0.10) return 0.06;  // 10-20% profit → 6% trail
+  return baseTrailingPct;               // <10% profit → default trail
+}
+
 // ─── Market Hours ────────────────────────────────────────────────────────────
 
 function getETDate(): Date {
@@ -388,9 +407,10 @@ async function runExitCheck(): Promise<void> {
       const params = await resolveStrategy(engine.userId, symbol);
       let exitReason = "";
 
-      // Stop loss
+      // Stop loss with profit-based tightening
       const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
-      const trailStop = pos.peakPrice * (1 - params.trailingStopPct);
+      const dynTrailPct = getDynamicTrailingPct(pos.entryPrice, pos.peakPrice, params.trailingStopPct);
+      const trailStop = pos.peakPrice * (1 - dynTrailPct);
       const effectiveStop = Math.max(fixedStop, trailStop);
 
       if (currentPrice <= effectiveStop) {
@@ -1146,8 +1166,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
         }
 
         const strategy = await resolveStrategy(engine.userId, symbol);
+        const dynTrail = getDynamicTrailingPct(heldPosition.entryPrice, heldPosition.peakPrice, strategy.trailingStopPct);
         const trailingStopPrice =
-          heldPosition.peakPrice * (1 - strategy.trailingStopPct);
+          heldPosition.peakPrice * (1 - dynTrail);
         const tradingDays = tradingDaysBetween(heldPosition.entryDate, new Date());
 
         let shouldExit = false;

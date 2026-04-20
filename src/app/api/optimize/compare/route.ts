@@ -98,8 +98,10 @@ function simulateSignalStrategy(
       if (bar.high > pos.peakPrice) pos.peakPrice = bar.high;
 
       let exit = false;
+      const pPct = (pos.peakPrice - pos.entryPrice) / pos.entryPrice;
+      const dynT = pPct >= 0.30 ? 0.03 : pPct >= 0.20 ? 0.04 : pPct >= 0.10 ? 0.06 : params.trailingStopPct;
       const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
-      const trailStop = pos.peakPrice * (1 - params.trailingStopPct);
+      const trailStop = pos.peakPrice * (1 - dynT);
       if (bar.low <= Math.max(fixedStop, trailStop)) exit = true;
       if (bar.high >= pos.entryPrice * (1 + params.takeProfitPct)) exit = true;
       if (di - pos.entryIdx >= params.holdPeriod) exit = true;
