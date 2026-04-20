@@ -23,6 +23,7 @@ import {
   Play,
   XCircle,
   Settings,
+  RefreshCw,
 } from "lucide-react";
 
 interface TraderData {
@@ -158,7 +159,7 @@ export default function TraderPage() {
     return () => clearInterval(interval);
   }, []);
 
-  async function handleEngine(action: "start" | "stop" | "halt") {
+  async function handleEngine(action: "start" | "stop" | "halt" | "switch") {
     setCmdLoading(action);
     try {
       await fetch("/api/trader/engine", {
@@ -242,29 +243,36 @@ export default function TraderPage() {
       {/* Engine controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
+          <select
+            value={engineMode}
+            onChange={(e) => setEngineMode(e.target.value)}
+            className="min-h-[44px] rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary"
+          >
+            <option value="conservative">Conservative (tight stops, modest targets)</option>
+            <option value="moderate">Moderate (balanced risk/reward)</option>
+            <option value="optimized">Optimized (GA-tuned, 12% SL, 28% TP)</option>
+            <option value="aggressive">Aggressive (wide stops, big targets)</option>
+            <option value="intraday">Intraday (5min bars, flatten at 3 PM)</option>
+            <option value="tactical">Tactical (always invested, exit on weakness)</option>
+          </select>
           {!engine?.running ? (
-            <>
-              <select
-                value={engineMode}
-                onChange={(e) => setEngineMode(e.target.value)}
-                className="min-h-[44px] rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary"
-              >
-                <option value="conservative">Conservative (tight stops, modest targets)</option>
-                <option value="moderate">Moderate (balanced risk/reward)</option>
-                <option value="optimized">Optimized (GA-tuned, 12% SL, 28% TP)</option>
-                <option value="aggressive">Aggressive (wide stops, big targets)</option>
-                <option value="intraday">Intraday (5min bars, flatten at 3 PM)</option>
-                <option value="tactical">Tactical (always invested, exit on weakness)</option>
-              </select>
-              <Button
-                onClick={() => handleEngine("start")}
-                disabled={cmdLoading !== null || !status.connected}
-                className="min-h-[44px]"
-              >
-                <Play className="w-4 h-4" />
-                <span className="hidden sm:inline">Start</span>
-              </Button>
-            </>
+            <Button
+              onClick={() => handleEngine("start")}
+              disabled={cmdLoading !== null || !status.connected}
+              className="min-h-[44px]"
+            >
+              <Play className="w-4 h-4" />
+              <span className="hidden sm:inline">Start</span>
+            </Button>
+          ) : engine?.mode !== engineMode ? (
+            <Button
+              onClick={() => handleEngine("switch")}
+              disabled={cmdLoading !== null}
+              className="min-h-[44px]"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span className="hidden sm:inline">Switch</span>
+            </Button>
           ) : (
             <Button
               variant="secondary"
@@ -273,7 +281,7 @@ export default function TraderPage() {
               className="min-h-[44px]"
             >
               <Square className="w-4 h-4" />
-              <span className="hidden sm:inline">Stop Engine</span>
+              <span className="hidden sm:inline">Stop</span>
             </Button>
           )}
           <Button
