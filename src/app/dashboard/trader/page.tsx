@@ -282,9 +282,9 @@ export default function TraderPage() {
             {engine.scanCount > 0 && <span className="font-mono">{engine.scanCount} scans</span>}
             {engine.lastScanAt && <span>Last: {timeAgo(engine.lastScanAt)}</span>}
             {engine.positionCount > 0 && <span className="font-mono">{engine.positionCount} positions</span>}
-            {engine.dailyLoss !== 0 && (
-              <span className={engine.dailyLoss < 0 ? "text-bearish" : "text-bullish"}>
-                Day: ${engine.dailyLoss.toFixed(0)}
+            {(engine.dailyLoss ?? 0) !== 0 && (
+              <span className={(engine.dailyLoss ?? 0) < 0 ? "text-bearish" : "text-bullish"}>
+                Day: ${(engine.dailyLoss ?? 0).toFixed(0)}
               </span>
             )}
           </div>
