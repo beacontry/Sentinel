@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { traderStatus, traderPositions, traderTrades, traderDailyPnl, traderSignals } from "@/lib/db/schema";
+import { traderStatus, traderPositions, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { createBrokerClient } from "@/lib/brokers";
 
 export async function GET() {
   const session = await getSession();
@@ -11,11 +12,50 @@ export async function GET() {
   }
 
   try {
-    // Status
+    // Status — check trader service heartbeat first
     const [status] = await db.select().from(traderStatus).limit(1);
-    const isConnected = status
+    const traderServiceAlive = status
       ? Date.now() - status.lastHeartbeat.getTime() < 5 * 60 * 1000
       : false;
+
+    // If trader service isn't running, try broker connection directly
+    let brokerAccount: { equity: number; cash: number; buyingPower: number; portfolioValue: number } | null = null;
+    let brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number; unrealizedPnl: number; marketValue: number }[] = [];
+    let brokerConnected = false;
+    let brokerName = "";
+    let brokerEnv = "";
+
+    if (!traderServiceAlive) {
+      const [conn] = await db
+        .select()
+        .from(brokerConnections)
+        .where(and(eq(brokerConnections.userId, session.userId), eq(brokerConnections.isActive, true)))
+        .limit(1);
+
+      if (conn) {
+        brokerName = conn.broker;
+        brokerEnv = conn.environment;
+        try {
+          const client = createBrokerClient(conn.broker, conn.apiKey, conn.apiSecret, conn.environment);
+          const [acct, pos] = await Promise.allSettled([client.getAccount(), client.getPositions()]);
+          if (acct.status === "fulfilled") {
+            const a = acct.value;
+            brokerAccount = { equity: a.equity, cash: a.cash, buyingPower: a.buyingPower, portfolioValue: a.portfolioValue ?? a.equity };
+            brokerConnected = true;
+          }
+          if (pos.status === "fulfilled") {
+            brokerPositions = pos.value.map((p) => ({
+              symbol: p.symbol, qty: p.qty, avgEntryPrice: p.avgEntryPrice,
+              currentPrice: p.currentPrice, unrealizedPnl: p.unrealizedPnl, marketValue: p.marketValue,
+            }));
+          }
+        } catch {
+          // Broker connection failed — show as offline
+        }
+      }
+    }
+
+    const isConnected = traderServiceAlive || brokerConnected;
 
     // Today's P&L
     const today = new Date().toISOString().slice(0, 10);
@@ -101,13 +141,37 @@ export async function GET() {
       sharpeRatio: Math.round(sharpeRatio * 100) / 100,
     };
 
+    // If broker is connected directly, merge its positions
+    const finalPositions = traderServiceAlive
+      ? positions.map((p) => ({ ...p, updatedAt: p.updatedAt.toISOString() }))
+      : brokerPositions.map((p) => ({
+          symbol: p.symbol,
+          qty: p.qty,
+          entryPrice: p.avgEntryPrice,
+          currentPrice: p.currentPrice,
+          pnl: p.unrealizedPnl,
+          marketValue: p.marketValue,
+          updatedAt: new Date().toISOString(),
+        }));
+
     return NextResponse.json({
       status: {
         connected: isConnected,
-        mode: status?.mode ?? "unknown",
-        lastHeartbeat: status?.lastHeartbeat?.toISOString() ?? null,
+        mode: traderServiceAlive
+          ? (status?.mode ?? "unknown")
+          : brokerConnected
+            ? brokerEnv
+            : "unknown",
+        lastHeartbeat: status?.lastHeartbeat?.toISOString() ?? (brokerConnected ? new Date().toISOString() : null),
         watchlist: status?.watchlist ?? [],
+        broker: brokerConnected ? brokerName : undefined,
       },
+      brokerAccount: brokerAccount ? {
+        equity: brokerAccount.equity,
+        cash: brokerAccount.cash,
+        buyingPower: brokerAccount.buyingPower,
+        portfolioValue: brokerAccount.portfolioValue,
+      } : null,
       todayPnl: todayPnl ? {
         realizedPnl: todayPnl.realizedPnl,
         unrealizedPnl: todayPnl.unrealizedPnl,
@@ -115,10 +179,7 @@ export async function GET() {
         tradesCount: todayPnl.tradesCount,
         halted: todayPnl.halted,
       } : null,
-      positions: positions.map((p) => ({
-        ...p,
-        updatedAt: p.updatedAt.toISOString(),
-      })),
+      positions: finalPositions,
       trades: trades.map((t) => ({
         ...t,
         fillTime: t.fillTime?.toISOString() ?? null,
