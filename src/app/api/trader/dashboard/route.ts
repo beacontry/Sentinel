@@ -141,16 +141,19 @@ export async function GET() {
       sharpeRatio: Math.round(sharpeRatio * 100) / 100,
     };
 
-    // If broker is connected directly, merge its positions
+    // Normalize positions to a consistent shape for the UI
     const finalPositions = traderServiceAlive
       ? positions.map((p) => ({ ...p, updatedAt: p.updatedAt.toISOString() }))
       : brokerPositions.map((p) => ({
           symbol: p.symbol,
+          quantity: p.qty,
           qty: p.qty,
           entryPrice: p.avgEntryPrice,
           currentPrice: p.currentPrice,
+          unrealizedPnl: p.unrealizedPnl,
           pnl: p.unrealizedPnl,
           marketValue: p.marketValue,
+          stopPrice: null,
           updatedAt: new Date().toISOString(),
         }));
 
