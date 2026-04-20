@@ -1,0 +1,424 @@
+import { NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
+import { getMarketDataProvider } from "@/lib/market-data";
+import { analyzeBars } from "@/lib/indicators/analyzer";
+import { STRATEGY_PRESETS } from "@/lib/strategy-presets";
+import { db } from "@/lib/db";
+import { optimizationRuns } from "@/lib/db/schema";
+import { eq, desc } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+import type { Bar } from "@/types";
+
+const log = createRouteLogger("mode-comparison");
+
+const SCAN_UNIVERSE = [
+  "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "TSLA", "JPM", "V",
+  "UNH", "MA", "HD", "PG", "JNJ", "COST", "ABBV", "BAC", "CRM", "AMD",
+  "NFLX", "WMT", "PEP", "TMO", "AVGO", "LLY", "MRK", "ORCL", "ADBE", "CSCO",
+  "ACN", "DIS", "INTC", "VZ", "CMCSA", "PFE", "T", "KO", "NKE", "MCD",
+  "QCOM", "GS", "MS", "CAT", "BA", "GE", "RTX", "LOW", "SBUX", "PYPL",
+];
+
+interface ModeResult {
+  mode: string;
+  label: string;
+  totalReturn: number;
+  finalValue: number;
+  maxDrawdown: number;
+  sharpe: number;
+  trades: number;
+  timeInMarket: number; // percentage
+}
+
+interface StrategyParams {
+  stopLossPct: number;
+  takeProfitPct: number;
+  trailingStopPct: number;
+  holdPeriod: number;
+}
+
+// Simple SMA helper
+function sma(data: number[], period: number): number | null {
+  if (data.length < period) return null;
+  let s = 0;
+  for (let i = data.length - period; i < data.length; i++) s += data[i];
+  return s / period;
+}
+
+/**
+ * Simulate a signal-based strategy on the portfolio of stocks
+ */
+function simulateSignalStrategy(
+  allBars: Map<string, Bar[]>,
+  params: StrategyParams,
+  maxPositions: number,
+  positionPct: number,
+): ModeResult & { mode: string; label: string } {
+  // Build unified date index
+  const dateSet = new Set<string>();
+  const barLookup = new Map<string, Map<string, Bar>>();
+  for (const [sym, bars] of allBars) {
+    const lookup = new Map<string, Bar>();
+    for (const b of bars) {
+      const dk = b.date.split("T")[0];
+      dateSet.add(dk);
+      lookup.set(dk, b);
+    }
+    barLookup.set(sym, lookup);
+  }
+  const dates = [...dateSet].sort();
+
+  const INITIAL = 10000;
+  let cash = INITIAL;
+  const positions = new Map<string, { qty: number; entryPrice: number; peakPrice: number; entryIdx: number }>();
+  const equityHistory: number[] = [INITIAL];
+  let wins = 0, losses = 0;
+  let daysInMarket = 0;
+  const windows = new Map<string, Bar[]>();
+
+  for (let di = 0; di < dates.length; di++) {
+    const date = dates[di];
+
+    // Update windows
+    for (const sym of SCAN_UNIVERSE) {
+      const bar = barLookup.get(sym)?.get(date);
+      if (!bar) continue;
+      let w = windows.get(sym);
+      if (!w) { w = []; windows.set(sym, w); }
+      w.push(bar);
+      if (w.length > 50) w.shift();
+    }
+
+    if (positions.size > 0) daysInMarket++;
+
+    // Check exits
+    for (const [sym, pos] of [...positions]) {
+      const bar = barLookup.get(sym)?.get(date);
+      if (!bar) continue;
+      if (bar.high > pos.peakPrice) pos.peakPrice = bar.high;
+
+      let exit = false;
+      const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
+      const trailStop = pos.peakPrice * (1 - params.trailingStopPct);
+      if (bar.low <= Math.max(fixedStop, trailStop)) exit = true;
+      if (bar.high >= pos.entryPrice * (1 + params.takeProfitPct)) exit = true;
+      if (di - pos.entryIdx >= params.holdPeriod) exit = true;
+
+      // Sell signal check every 15 days
+      if (!exit && di % 15 === 0) {
+        const w = windows.get(sym);
+        if (w && w.length >= 30) {
+          const result = analyzeBars(sym, w);
+          if (result.signal === "SELL" || result.signal === "STRONG_SELL") exit = true;
+        }
+      }
+
+      if (exit) {
+        cash += pos.qty * bar.close;
+        if (bar.close > pos.entryPrice) wins++; else losses++;
+        positions.delete(sym);
+      }
+    }
+
+    // Check entries every 15 days
+    if (di % 15 === 0 && positions.size < maxPositions) {
+      for (const sym of SCAN_UNIVERSE) {
+        if (positions.has(sym)) continue;
+        const w = windows.get(sym);
+        if (!w || w.length < 30) continue;
+        const bar = barLookup.get(sym)?.get(date);
+        if (!bar) continue;
+
+        const result = analyzeBars(sym, w);
+        if (result.signal !== "BUY" && result.signal !== "STRONG_BUY") continue;
+        if (positions.size >= maxPositions) break;
+
+        let equity = cash;
+        for (const [s, p] of positions) {
+          const b = barLookup.get(s)?.get(date);
+          equity += p.qty * (b?.close ?? p.entryPrice);
+        }
+
+        const posValue = equity * positionPct;
+        const qty = Math.floor(posValue / bar.close);
+        if (qty <= 0 || qty * bar.close > cash) continue;
+
+        cash -= qty * bar.close;
+        positions.set(sym, { qty, entryPrice: bar.close, peakPrice: bar.close, entryIdx: di });
+      }
+    }
+
+    // Record equity
+    let eq = cash;
+    for (const [s, p] of positions) {
+      const b = barLookup.get(s)?.get(date);
+      eq += p.qty * (b?.close ?? p.entryPrice);
+    }
+    equityHistory.push(eq);
+  }
+
+  // Close remaining
+  const lastDate = dates[dates.length - 1];
+  for (const [sym, pos] of positions) {
+    const b = barLookup.get(sym)?.get(lastDate);
+    const price = b?.close ?? pos.entryPrice;
+    cash += pos.qty * price;
+    if (price > pos.entryPrice) wins++; else losses++;
+  }
+
+  const finalEquity = cash;
+  const totalReturn = ((finalEquity - INITIAL) / INITIAL) * 100;
+  const tradeCount = wins + losses;
+
+  // Max drawdown
+  let peak = equityHistory[0], maxDD = 0;
+  for (const v of equityHistory) {
+    if (v > peak) peak = v;
+    const dd = ((peak - v) / peak) * 100;
+    if (dd > maxDD) maxDD = dd;
+  }
+
+  // Sharpe
+  const returns: number[] = [];
+  for (let i = 1; i < equityHistory.length; i++) {
+    returns.push((equityHistory[i] - equityHistory[i - 1]) / equityHistory[i - 1]);
+  }
+  const meanR = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+  const stdR = returns.length > 1
+    ? Math.sqrt(returns.reduce((s, r) => s + (r - meanR) ** 2, 0) / (returns.length - 1))
+    : 0;
+  const sharpe = stdR > 0 ? (meanR / stdR) * Math.sqrt(252) : 0;
+
+  return {
+    mode: "", label: "",
+    totalReturn: Math.round(totalReturn * 10) / 10,
+    finalValue: Math.round(finalEquity),
+    maxDrawdown: Math.round(maxDD * 10) / 10,
+    sharpe: Math.round(sharpe * 100) / 100,
+    trades: tradeCount,
+    timeInMarket: Math.round((daysInMarket / dates.length) * 100),
+  };
+}
+
+/**
+ * Simulate tactical mode: always invested, exit on SPY weakness
+ */
+function simulateTactical(
+  allBars: Map<string, Bar[]>,
+  spyBars: Bar[],
+): ModeResult {
+  const dateSet = new Set<string>();
+  const barLookup = new Map<string, Map<string, Bar>>();
+  for (const [sym, bars] of allBars) {
+    const lookup = new Map<string, Bar>();
+    for (const b of bars) { const dk = b.date.split("T")[0]; dateSet.add(dk); lookup.set(dk, b); }
+    barLookup.set(sym, lookup);
+  }
+  const spyLookup = new Map<string, Bar>();
+  for (const b of spyBars) spyLookup.set(b.date.split("T")[0], b);
+
+  const dates = [...dateSet].sort();
+  const INITIAL = 10000;
+  let cash = INITIAL;
+  const positions = new Map<string, { qty: number; entryPrice: number }>();
+  const equityHistory: number[] = [INITIAL];
+  let trades = 0, daysInMarket = 0;
+  let isInvested = false;
+  const spyCloses: number[] = [];
+
+  for (let di = 0; di < dates.length; di++) {
+    const date = dates[di];
+    const spyBar = spyLookup.get(date);
+    if (spyBar) spyCloses.push(spyBar.close);
+
+    if (isInvested) daysInMarket++;
+
+    const sma20 = spyCloses.length >= 20 ? spyCloses.slice(-20).reduce((a, b) => a + b, 0) / 20 : null;
+    const sma50 = spyCloses.length >= 50 ? spyCloses.slice(-50).reduce((a, b) => a + b, 0) / 50 : null;
+    const spyPrice = spyCloses.length > 0 ? spyCloses[spyCloses.length - 1] : 0;
+
+    // Check for exit: SPY below 20 SMA
+    if (isInvested && sma20 && spyPrice < sma20) {
+      // Count consecutive days below
+      let belowCount = 0;
+      for (let j = spyCloses.length - 3; j < spyCloses.length; j++) {
+        if (j >= 0 && j < spyCloses.length) {
+          const s = spyCloses.slice(Math.max(0, j - 19), j + 1);
+          if (s.length >= 20) {
+            const avg = s.reduce((a, b) => a + b, 0) / s.length;
+            if (spyCloses[j] < avg) belowCount++;
+          }
+        }
+      }
+
+      if (belowCount >= 3) {
+        // Sell everything
+        for (const [sym, pos] of positions) {
+          const b = barLookup.get(sym)?.get(date);
+          cash += pos.qty * (b?.close ?? pos.entryPrice);
+          trades++;
+        }
+        positions.clear();
+        isInvested = false;
+      }
+    }
+
+    // Check for entry: SPY above 50 SMA and not invested
+    if (!isInvested && sma50 && spyPrice > sma50) {
+      const perPosition = cash / Math.min(SCAN_UNIVERSE.length, 16);
+      for (const sym of SCAN_UNIVERSE) {
+        if (positions.size >= 16) break;
+        const b = barLookup.get(sym)?.get(date);
+        if (!b) continue;
+        const qty = Math.floor(perPosition / b.close);
+        if (qty <= 0) continue;
+        cash -= qty * b.close;
+        positions.set(sym, { qty, entryPrice: b.close });
+        trades++;
+      }
+      isInvested = positions.size > 0;
+    }
+
+    // Record equity
+    let eq = cash;
+    for (const [s, p] of positions) {
+      const b = barLookup.get(s)?.get(date);
+      eq += p.qty * (b?.close ?? p.entryPrice);
+    }
+    equityHistory.push(eq);
+  }
+
+  // Close remaining
+  const lastDate = dates[dates.length - 1];
+  for (const [sym, pos] of positions) {
+    const b = barLookup.get(sym)?.get(lastDate);
+    cash += pos.qty * (b?.close ?? pos.entryPrice);
+  }
+
+  const finalEquity = cash;
+  const totalReturn = ((finalEquity - INITIAL) / INITIAL) * 100;
+
+  let peak = equityHistory[0], maxDD = 0;
+  for (const v of equityHistory) {
+    if (v > peak) peak = v;
+    const dd = ((peak - v) / peak) * 100;
+    if (dd > maxDD) maxDD = dd;
+  }
+
+  const returns: number[] = [];
+  for (let i = 1; i < equityHistory.length; i++) {
+    returns.push((equityHistory[i] - equityHistory[i - 1]) / equityHistory[i - 1]);
+  }
+  const meanR = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+  const stdR = returns.length > 1
+    ? Math.sqrt(returns.reduce((s, r) => s + (r - meanR) ** 2, 0) / (returns.length - 1))
+    : 0;
+  const sharpe = stdR > 0 ? (meanR / stdR) * Math.sqrt(252) : 0;
+
+  return {
+    mode: "tactical", label: "Tactical",
+    totalReturn: Math.round(totalReturn * 10) / 10,
+    finalValue: Math.round(finalEquity),
+    maxDrawdown: Math.round(maxDD * 10) / 10,
+    sharpe: Math.round(sharpe * 100) / 100,
+    trades,
+    timeInMarket: Math.round((daysInMarket / (equityHistory.length - 1)) * 100),
+  };
+}
+
+export async function GET() {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  try {
+    const provider = getMarketDataProvider();
+
+    // Fetch 5Y data for all stocks + SPY
+    log.info("Starting mode comparison backtest — fetching data");
+    const allBars = new Map<string, Bar[]>();
+
+    for (const sym of SCAN_UNIVERSE) {
+      try {
+        const bars = await Promise.race([
+          provider.fetchBars(sym, 1825, "1d"),
+          new Promise<Bar[]>((_, rej) => setTimeout(() => rej(new Error("timeout")), 10000)),
+        ]);
+        if (bars.length > 200) allBars.set(sym, bars);
+      } catch { /* skip */ }
+      await new Promise(r => setTimeout(r, 1)); // yield
+    }
+
+    const spyBars = await provider.fetchBars("SPY", 1825, "1d");
+
+    // SPY buy-and-hold
+    const spyReturn = spyBars.length > 1
+      ? ((spyBars[spyBars.length - 1].close - spyBars[0].close) / spyBars[0].close) * 100
+      : 0;
+    let spyPeak = 10000, spyMaxDD = 0;
+    const spyEquity = spyBars.map(b => 10000 * (b.close / spyBars[0].close));
+    for (const v of spyEquity) {
+      if (v > spyPeak) spyPeak = v;
+      const dd = ((spyPeak - v) / spyPeak) * 100;
+      if (dd > spyMaxDD) spyMaxDD = dd;
+    }
+
+    log.info({ symbols: allBars.size, spyBars: spyBars.length }, "Data fetched, running backtests");
+
+    // Get latest optimizer params
+    let optimizedParams = STRATEGY_PRESETS.optimized;
+    try {
+      const [run] = await db.select({ bestParams: optimizationRuns.bestParams })
+        .from(optimizationRuns).where(eq(optimizationRuns.status, "complete"))
+        .orderBy(desc(optimizationRuns.completedAt)).limit(1);
+      if (run?.bestParams) {
+        const p = run.bestParams as Record<string, number>;
+        if (p.stopLossPct != null) {
+          optimizedParams = {
+            stopLossPct: p.stopLossPct, takeProfitPct: p.takeProfitPct,
+            trailingStopPct: p.trailingStopPct ?? 0.09, holdPeriod: Math.round(p.holdPeriod ?? 43),
+          };
+        }
+      }
+    } catch { /* use default */ }
+
+    // Run all modes
+    const results: ModeResult[] = [];
+
+    // SPY buy-and-hold
+    results.push({
+      mode: "spy", label: "SPY Buy & Hold",
+      totalReturn: Math.round(spyReturn * 10) / 10,
+      finalValue: Math.round(10000 * (1 + spyReturn / 100)),
+      maxDrawdown: Math.round(spyMaxDD * 10) / 10,
+      sharpe: 0, trades: 1, timeInMarket: 100,
+    });
+
+    // Signal-based modes
+    const modes = [
+      { mode: "conservative", label: "Conservative", params: STRATEGY_PRESETS.conservative, maxPos: 10, posPct: 0.10 },
+      { mode: "moderate", label: "Moderate", params: STRATEGY_PRESETS.moderate, maxPos: 12, posPct: 0.12 },
+      { mode: "optimized", label: "Optimized (GA)", params: optimizedParams, maxPos: 16, posPct: 0.15 },
+      { mode: "aggressive", label: "Aggressive", params: STRATEGY_PRESETS.aggressive, maxPos: 14, posPct: 0.15 },
+    ];
+
+    for (const m of modes) {
+      const r = simulateSignalStrategy(allBars, m.params, m.maxPos, m.posPct);
+      results.push({ ...r, mode: m.mode, label: m.label });
+      await new Promise(r => setTimeout(r, 1));
+    }
+
+    // Tactical
+    const tactical = simulateTactical(allBars, spyBars);
+    results.push(tactical);
+
+    log.info("Mode comparison complete");
+
+    return NextResponse.json({ results, period: "5 years", startingCapital: 10000 }, {
+      headers: { "Cache-Control": "private, max-age=300" },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    log.error({ err: msg }, "Mode comparison failed");
+    return NextResponse.json({ error: "Comparison failed" }, { status: 500 });
+  }
+}
