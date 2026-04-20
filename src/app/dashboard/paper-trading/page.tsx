@@ -189,7 +189,7 @@ export default function PaperTradingPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.portfolio} />
+      {/* Portfolio sub-nav removed */}
       <PageIntro
         eyebrow="Simulation Lab"
         title="Paper Trading"
