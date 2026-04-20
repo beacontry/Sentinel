@@ -1,6 +1,19 @@
 import type { Bar } from "@/types";
 import { getMarketDataProvider } from "./market-data";
 import { SP500_SYMBOLS } from "./sp500";
+
+/**
+ * Top 50 most liquid S&P 500 stocks — used for portfolio optimization
+ * to keep run times under 2 hours. Full S&P 500 list is still used
+ * for per-symbol validation after the best params are found.
+ */
+const PORTFOLIO_UNIVERSE = [
+  "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "TSLA", "BRK-B", "JPM", "V",
+  "UNH", "MA", "HD", "PG", "JNJ", "COST", "ABBV", "BAC", "CRM", "AMD",
+  "NFLX", "WMT", "PEP", "TMO", "AVGO", "LLY", "MRK", "ORCL", "ADBE", "CSCO",
+  "ACN", "DIS", "INTC", "VZ", "CMCSA", "PFE", "T", "KO", "NKE", "MCD",
+  "QCOM", "GS", "MS", "CAT", "BA", "GE", "RTX", "LOW", "SBUX", "PYPL",
+];
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { db } from "./db";
 import {
@@ -69,7 +82,7 @@ const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
 };
 
 const WINDOW_SIZE = 50;
-const STEP_SIZE = 5;
+const STEP_SIZE = 15;
 const ELITISM = 2;
 const TOURNAMENT_SIZE = 3;
 const MUTATION_RATE = 0.20;
@@ -581,13 +594,13 @@ export async function startOptimization(userId: string, config: OptimizationConf
     .values({
       userId, status: "pending", targetMetric: "total_return", universe: config.universe,
       populationSize: config.populationSize, generations: config.generations,
-      trainPct: config.trainPct, totalSymbols: SP500_SYMBOLS.length,
+      trainPct: config.trainPct, totalSymbols: PORTFOLIO_UNIVERSE.length,
     })
     .returning({ id: optimizationRuns.id });
 
   const runId = run.id;
   g.__optimizerJobs!.set(runId, {
-    runId, status: "pending", symbolsFetched: 0, totalSymbols: SP500_SYMBOLS.length,
+    runId, status: "pending", symbolsFetched: 0, totalSymbols: PORTFOLIO_UNIVERSE.length,
     currentGeneration: 0, totalGenerations: config.generations, bestFitness: 0, bestParams: null,
   });
 
@@ -604,7 +617,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     progress.status = "fetching_data";
     await db.update(optimizationRuns).set({ status: "fetching_data", startedAt: new Date() }).where(eq(optimizationRuns.id, runId));
 
-    const barsMap = await fetchAllBars(SP500_SYMBOLS, (fetched) => {
+    const barsMap = await fetchAllBars(PORTFOLIO_UNIVERSE, (fetched) => {
       progress.symbolsFetched = fetched;
       db.update(optimizationRuns).set({ symbolsFetched: fetched }).where(eq(optimizationRuns.id, runId)).catch(() => {});
     });
