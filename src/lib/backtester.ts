@@ -84,9 +84,15 @@ export function runBacktest(
       let exitPrice: number | null = null;
       let exitReason = "";
 
-      // Use the tighter (higher) of fixed stop and trailing stop
+      // Profit-based trailing stop tightening
+      const profitPct = (position.peakPrice - position.entryPrice) / position.entryPrice;
+      const dynTrailPct = profitPct >= 0.30 ? 0.03
+        : profitPct >= 0.20 ? 0.04
+        : profitPct >= 0.10 ? 0.06
+        : cfg.trailingStopPct;
+
       const fixedStop = position.entryPrice * (1 - cfg.stopLossPct);
-      const trailingStop = position.peakPrice * (1 - cfg.trailingStopPct);
+      const trailingStop = position.peakPrice * (1 - dynTrailPct);
       const effectiveStop = Math.max(fixedStop, trailingStop);
 
       // 1. Stop hit (check low against effective stop)
