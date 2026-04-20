@@ -60,7 +60,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Portfolio",
     description: "Track holdings, cash, trade history, and paper trading.",
     icon: Wallet,
-    matchPaths: ["/dashboard/paper-trading"],
+    matchPaths: [],
     keywords: ["positions", "holdings", "paper"],
   },
   {
@@ -170,7 +170,6 @@ export const SUB_NAV: Record<string, SubNavTab[]> = {
   ],
   portfolio: [
     { href: "/dashboard/portfolio", label: "Portfolio" },
-    { href: "/dashboard/paper-trading", label: "Paper Trading" },
   ],
   trader: [
     { href: "/dashboard/trader", label: "Live Trader" },

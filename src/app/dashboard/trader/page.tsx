@@ -112,8 +112,19 @@ async function sendCommand(command: string, payload: Record<string, unknown> = {
   }
 }
 
+interface EngineStatus {
+  running: boolean;
+  halted: boolean;
+  lastScanAt: string | null;
+  scanCount: number;
+  positionCount: number;
+  dailyLoss: number;
+  errors: string[];
+}
+
 export default function TraderPage() {
   const [data, setData] = useState<TraderData | null>(null);
+  const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [cmdLoading, setCmdLoading] = useState<string | null>(null);
   const [showRisk, setShowRisk] = useState(false);
@@ -128,8 +139,12 @@ export default function TraderPage() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/trader/dashboard");
-        if (res.ok) setData(await res.json());
+        const [dashRes, engRes] = await Promise.allSettled([
+          fetch("/api/trader/dashboard"),
+          fetch("/api/trader/engine"),
+        ]);
+        if (dashRes.status === "fulfilled" && dashRes.value.ok) setData(await dashRes.value.json());
+        if (engRes.status === "fulfilled" && engRes.value.ok) setEngine(await engRes.value.json());
       } catch {
         // Silent
       } finally {
@@ -137,9 +152,28 @@ export default function TraderPage() {
       }
     }
     load();
-    const interval = setInterval(load, 15000); // Refresh every 15s
+    const interval = setInterval(load, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  async function handleEngine(action: "start" | "stop" | "halt") {
+    setCmdLoading(action);
+    try {
+      await fetch("/api/trader/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      // Refresh
+      const [dashRes, engRes] = await Promise.allSettled([
+        fetch("/api/trader/dashboard"),
+        fetch("/api/trader/engine"),
+      ]);
+      if (dashRes.status === "fulfilled" && dashRes.value.ok) setData(await dashRes.value.json());
+      if (engRes.status === "fulfilled" && engRes.value.ok) setEngine(await engRes.value.json());
+    } catch { /* silent */ }
+    setCmdLoading(null);
+  }
 
   if (loading) {
     return (
@@ -203,42 +237,58 @@ export default function TraderPage() {
           { label: "Signals", value: signals.length },
         ]}
       />
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 ">
+      {/* Engine controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          {todayPnl?.halted ? (
+          {!engine?.running ? (
             <Button
-              variant="outline"
-              onClick={() => handleCommand("halt", { action: "resume" })}
-              disabled={cmdLoading !== null}
-              className="border-bullish/30 bg-bullish/10 text-bullish hover:bg-bullish/20 hover:text-bullish"
+              onClick={() => handleEngine("start")}
+              disabled={cmdLoading !== null || !status.connected}
+              className="min-h-[44px]"
             >
               <Play className="w-4 h-4" />
-              <span className="hidden sm:inline">Resume</span>
+              <span className="hidden sm:inline">Start Engine</span>
             </Button>
           ) : (
             <Button
-              variant="outline"
-              onClick={() => handleCommand("halt", { action: "halt" })}
+              variant="secondary"
+              onClick={() => handleEngine("stop")}
               disabled={cmdLoading !== null}
-              className="border-warning/30 bg-warning/10 text-warning hover:bg-warning/20 hover:text-warning"
+              className="min-h-[44px]"
             >
               <Square className="w-4 h-4" />
-              <span className="hidden sm:inline">Halt</span>
+              <span className="hidden sm:inline">Stop Engine</span>
             </Button>
           )}
           <Button
             variant="destructive"
             onClick={() => {
-              if (confirm("Flatten ALL positions at market? This cannot be undone.")) {
-                handleCommand("flatten");
+              if (confirm("EMERGENCY HALT — stops engine and closes ALL positions at market. Continue?")) {
+                handleEngine("halt");
               }
             }}
-            disabled={cmdLoading !== null || positions.length === 0}
+            disabled={cmdLoading !== null}
+            className="min-h-[44px]"
           >
             <XCircle className="w-4 h-4" />
-            <span className="hidden sm:inline">Flatten All</span>
+            <span className="hidden sm:inline">Halt</span>
           </Button>
         </div>
+        {engine && (
+          <div className="flex items-center gap-3 text-xs text-text-muted">
+            <Badge variant={engine.running ? "bullish" : engine.halted ? "bearish" : "neutral"}>
+              {engine.running ? "Running" : engine.halted ? "Halted" : "Stopped"}
+            </Badge>
+            {engine.scanCount > 0 && <span className="font-mono">{engine.scanCount} scans</span>}
+            {engine.lastScanAt && <span>Last: {timeAgo(engine.lastScanAt)}</span>}
+            {engine.positionCount > 0 && <span className="font-mono">{engine.positionCount} positions</span>}
+            {engine.dailyLoss !== 0 && (
+              <span className={engine.dailyLoss < 0 ? "text-bearish" : "text-bullish"}>
+                Day: ${engine.dailyLoss.toFixed(0)}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Status bar */}
