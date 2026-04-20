@@ -485,6 +485,8 @@ async function removePosition(symbol: string): Promise<void> {
 }
 
 async function updateHeartbeat(watchlist: string[]): Promise<void> {
+  const engine = getEngine();
+  const modeStr = `paper:${engine.mode}`; // persist engine mode for auto-restart
   try {
     const rows = await db.select().from(traderStatus);
     if (rows.length > 0) {
@@ -492,7 +494,7 @@ async function updateHeartbeat(watchlist: string[]): Promise<void> {
         .update(traderStatus)
         .set({
           connected: true,
-          mode: "paper",
+          mode: modeStr,
           lastHeartbeat: new Date(),
           watchlist,
         })
@@ -500,7 +502,7 @@ async function updateHeartbeat(watchlist: string[]): Promise<void> {
     } else {
       await db.insert(traderStatus).values({
         connected: true,
-        mode: "paper",
+        mode: modeStr,
         lastHeartbeat: new Date(),
         watchlist,
       });
@@ -1284,7 +1286,7 @@ export function pushExternalSignal(signal: ExternalSignal): boolean {
  */
 export async function autoStartIfNeeded(userId: string): Promise<void> {
   const engine = getEngine();
-  if (engine.running) return; // already running
+  if (engine.running) return;
 
   const resolved = await resolveBrokerClient(userId);
   if (!resolved) return;
@@ -1292,8 +1294,19 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
   try {
     const positions = await resolved.client.getPositions();
     if (positions.length > 0) {
-      log.info({ positions: positions.length, userId }, "Open positions detected — auto-starting engine");
-      await startEngine(userId, "optimized");
+      // Recover last engine mode from DB
+      let lastMode: EngineMode = "optimized";
+      try {
+        const [status] = await db.select().from(traderStatus).limit(1);
+        if (status?.mode?.startsWith("paper:")) {
+          const savedMode = status.mode.split(":")[1] as EngineMode;
+          const validModes: EngineMode[] = ["conservative", "moderate", "optimized", "aggressive", "intraday"];
+          if (validModes.includes(savedMode)) lastMode = savedMode;
+        }
+      } catch { /* use default */ }
+
+      log.info({ positions: positions.length, userId, mode: lastMode }, "Open positions detected — auto-starting engine with last mode");
+      await startEngine(userId, lastMode);
     }
   } catch (err) {
     log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Auto-start check failed");
