@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { traderStatus, traderPositions, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
+import { autoStartIfNeeded } from "@/lib/trading-engine";
 
 export async function GET() {
   const session = await getSession();
@@ -12,6 +13,9 @@ export async function GET() {
   }
 
   try {
+    // Auto-start engine if there are open positions after a restart
+    autoStartIfNeeded(session.userId).catch(() => {});
+
     // Status — check trader service heartbeat first
     const [status] = await db.select().from(traderStatus).limit(1);
     const traderServiceAlive = status

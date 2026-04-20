@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
 
       case "stop": {
         log.info({ userId: session.userId }, "Engine stop requested");
-        const result = stopEngine();
+        const result = await stopEngine();
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }

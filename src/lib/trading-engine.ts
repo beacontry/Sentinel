@@ -943,6 +943,16 @@ export async function startEngine(userId: string, mode: EngineMode = "swing"): P
     return { ok: false, error: `Broker connection test failed: ${msg}` };
   }
 
+  // Cancel any safety stop orders (engine is taking over management)
+  try {
+    if (resolved.client.cancelAllOrders) {
+      await resolved.client.cancelAllOrders();
+      log.info("Cancelled broker-side safety stops — engine taking over");
+    }
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel safety stops");
+  }
+
   engine.running = true;
   engine.halted = false;
   engine.mode = mode;
@@ -984,7 +994,7 @@ export async function startEngine(userId: string, mode: EngineMode = "swing"): P
   return { ok: true };
 }
 
-export function stopEngine(): { ok: boolean; error?: string } {
+export async function stopEngine(): Promise<{ ok: boolean; error?: string }> {
   const engine = getEngine();
 
   if (!engine.running) {
@@ -1001,9 +1011,55 @@ export function stopEngine(): { ok: boolean; error?: string } {
   }
 
   engine.running = false;
-  log.info("Trading engine stopped");
+
+  // Place broker-side safety stop orders for all open positions
+  await placeSafetyStops(engine.userId);
+
+  log.info("Trading engine stopped — safety stops placed on broker");
 
   return { ok: true };
+}
+
+/**
+ * Place stop-loss orders directly on Alpaca for all open positions.
+ * These act as a safety net when the engine isn't running.
+ */
+async function placeSafetyStops(userId: string | null): Promise<void> {
+  if (!userId) return;
+
+  const resolved = await resolveBrokerClient(userId);
+  if (!resolved) return;
+
+  const { client } = resolved;
+
+  try {
+    const positions = await client.getPositions();
+    if (positions.length === 0) return;
+
+    for (const pos of positions) {
+      if (pos.qty <= 0) continue;
+
+      // Use optimized preset stop loss (12%) as safety stop
+      const strategy = await resolveStrategy(userId, pos.symbol);
+      const stopPrice = (pos.avgEntryPrice * (1 - strategy.stopLossPct)).toFixed(2);
+
+      try {
+        await client.placeOrder({
+          symbol: pos.symbol,
+          side: "sell",
+          qty: String(pos.qty),
+          type: "stop",
+          timeInForce: "gtc",
+          stopPrice,
+        });
+        log.info({ symbol: pos.symbol, stopPrice, qty: pos.qty }, "Safety stop placed");
+      } catch (err) {
+        log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Failed to place safety stop");
+      }
+    }
+  } catch (err) {
+    log.error({ err: err instanceof Error ? err.message : "unknown" }, "Failed to place safety stops");
+  }
 }
 
 export async function haltEngine(): Promise<{ ok: boolean; error?: string }> {
@@ -1099,6 +1155,28 @@ export function pushExternalSignal(signal: ExternalSignal): boolean {
   engine.externalSignals.push(signal);
   log.info({ symbol: signal.symbol, signal: signal.signal, source: signal.source }, "External signal received");
   return true;
+}
+
+/**
+ * Auto-start engine if there are open positions on the broker.
+ * Called on first dashboard API hit after a deploy/restart.
+ */
+export async function autoStartIfNeeded(userId: string): Promise<void> {
+  const engine = getEngine();
+  if (engine.running) return; // already running
+
+  const resolved = await resolveBrokerClient(userId);
+  if (!resolved) return;
+
+  try {
+    const positions = await resolved.client.getPositions();
+    if (positions.length > 0) {
+      log.info({ positions: positions.length, userId }, "Open positions detected — auto-starting engine");
+      await startEngine(userId, "swing");
+    }
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Auto-start check failed");
+  }
 }
 
 export function getEngineStatus(): {
