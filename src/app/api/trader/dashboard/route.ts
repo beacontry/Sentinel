@@ -181,19 +181,30 @@ export async function GET() {
         buyingPower: brokerAccount.buyingPower,
         portfolioValue: brokerAccount.portfolioValue,
       } : null,
-      todayPnl: todayPnl ? {
-        realizedPnl: todayPnl.realizedPnl,
-        unrealizedPnl: todayPnl.unrealizedPnl,
-        totalPnl: todayPnl.realizedPnl + todayPnl.unrealizedPnl,
-        tradesCount: todayPnl.tradesCount,
-        halted: todayPnl.halted,
-      } : brokerConnected && brokerPositions.length > 0 ? {
-        realizedPnl: 0,
-        unrealizedPnl: brokerPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0),
-        totalPnl: brokerPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0),
-        tradesCount: brokerPositions.length,
-        halted: false,
-      } : null,
+      todayPnl: (() => {
+        // Always prefer live broker P&L when connected
+        if (brokerConnected && brokerPositions.length > 0) {
+          const unrealized = brokerPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
+          const realized = todayPnl?.realizedPnl ?? 0;
+          return {
+            realizedPnl: realized,
+            unrealizedPnl: unrealized,
+            totalPnl: realized + unrealized,
+            tradesCount: todayPnl?.tradesCount ?? brokerPositions.length,
+            halted: todayPnl?.halted ?? false,
+          };
+        }
+        if (todayPnl) {
+          return {
+            realizedPnl: todayPnl.realizedPnl,
+            unrealizedPnl: todayPnl.unrealizedPnl,
+            totalPnl: todayPnl.realizedPnl + todayPnl.unrealizedPnl,
+            tradesCount: todayPnl.tradesCount,
+            halted: todayPnl.halted,
+          };
+        }
+        return null;
+      })(),
       positions: finalPositions,
       trades: trades.map((t) => ({
         ...t,
