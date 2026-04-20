@@ -326,6 +326,154 @@ function simulateTactical(
   };
 }
 
+/**
+ * Tactical Smart: same SPY exit logic but scores stocks at each re-entry
+ */
+function simulateTacticalSmart(
+  allBars: Map<string, Bar[]>,
+  spyBars: Bar[],
+): ModeResult {
+  const dateSet = new Set<string>();
+  const barLookup = new Map<string, Map<string, Bar>>();
+  for (const [sym, bars] of allBars) {
+    const lookup = new Map<string, Bar>();
+    for (const b of bars) { const dk = b.date.split("T")[0]; dateSet.add(dk); lookup.set(dk, b); }
+    barLookup.set(sym, lookup);
+  }
+  const spyLookup = new Map<string, Bar>();
+  for (const b of spyBars) spyLookup.set(b.date.split("T")[0], b);
+
+  const dates = [...dateSet].sort();
+  const INITIAL = 10000;
+  let cash = INITIAL;
+  const positions = new Map<string, { qty: number; entryPrice: number }>();
+  const equityHistory: number[] = [INITIAL];
+  let trades = 0, daysInMarket = 0;
+  let isInvested = false;
+  const spyCloses: number[] = [];
+  const windows = new Map<string, Bar[]>();
+
+  for (let di = 0; di < dates.length; di++) {
+    const date = dates[di];
+    const spyBar = spyLookup.get(date);
+    if (spyBar) spyCloses.push(spyBar.close);
+
+    // Update rolling windows for signal scoring
+    for (const sym of SCAN_UNIVERSE) {
+      const bar = barLookup.get(sym)?.get(date);
+      if (!bar) continue;
+      let w = windows.get(sym);
+      if (!w) { w = []; windows.set(sym, w); }
+      w.push(bar);
+      if (w.length > 50) w.shift();
+    }
+
+    if (isInvested) daysInMarket++;
+
+    const sma20 = spyCloses.length >= 20 ? spyCloses.slice(-20).reduce((a, b) => a + b, 0) / 20 : null;
+    const sma50 = spyCloses.length >= 50 ? spyCloses.slice(-50).reduce((a, b) => a + b, 0) / 50 : null;
+    const spyPrice = spyCloses.length > 0 ? spyCloses[spyCloses.length - 1] : 0;
+
+    // EXIT: SPY below 20 SMA for 3 days
+    if (isInvested && sma20 && spyPrice < sma20) {
+      let belowCount = 0;
+      for (let j = spyCloses.length - 3; j < spyCloses.length; j++) {
+        if (j >= 0 && j < spyCloses.length) {
+          const s = spyCloses.slice(Math.max(0, j - 19), j + 1);
+          if (s.length >= 20 && spyCloses[j] < s.reduce((a, b) => a + b, 0) / s.length) belowCount++;
+        }
+      }
+      if (belowCount >= 3) {
+        for (const [sym, pos] of positions) {
+          const b = barLookup.get(sym)?.get(date);
+          cash += pos.qty * (b?.close ?? pos.entryPrice);
+          trades++;
+        }
+        positions.clear();
+        isInvested = false;
+      }
+    }
+
+    // ENTRY: SPY above 50 SMA — score and rank stocks
+    if (!isInvested && sma50 && spyPrice > sma50) {
+      const scored: { symbol: string; score: number; price: number }[] = [];
+
+      for (const sym of SCAN_UNIVERSE) {
+        const w = windows.get(sym);
+        if (!w || w.length < 30) continue;
+        const bar = barLookup.get(sym)?.get(date);
+        if (!bar) continue;
+
+        const analysis = analyzeBars(sym, [...w]);
+        let score = 0;
+        if (analysis.signal === "STRONG_BUY") score = 4;
+        else if (analysis.signal === "BUY") score = 2;
+        else if (analysis.signal === "HOLD") score = 0;
+        else score = -2;
+
+        score += analysis.confidence * 2;
+        if (score > 0) scored.push({ symbol: sym, score, price: bar.close });
+      }
+
+      scored.sort((a, b) => b.score - a.score);
+      const toBuy = scored.slice(0, 16);
+      const perPosition = cash / Math.max(toBuy.length, 1);
+
+      for (const { symbol, price } of toBuy) {
+        const qty = Math.floor(perPosition / price);
+        if (qty <= 0) continue;
+        cash -= qty * price;
+        positions.set(symbol, { qty, entryPrice: price });
+        trades++;
+      }
+      isInvested = positions.size > 0;
+    }
+
+    let eq = cash;
+    for (const [s, p] of positions) {
+      const b = barLookup.get(s)?.get(date);
+      eq += p.qty * (b?.close ?? p.entryPrice);
+    }
+    equityHistory.push(eq);
+  }
+
+  const lastDate = dates[dates.length - 1];
+  for (const [sym, pos] of positions) {
+    const b = barLookup.get(sym)?.get(lastDate);
+    cash += pos.qty * (b?.close ?? pos.entryPrice);
+  }
+
+  const finalEquity = cash;
+  const totalReturn = ((finalEquity - INITIAL) / INITIAL) * 100;
+
+  let peak = equityHistory[0], maxDD = 0;
+  for (const v of equityHistory) {
+    if (v > peak) peak = v;
+    const dd = ((peak - v) / peak) * 100;
+    if (dd > maxDD) maxDD = dd;
+  }
+
+  const returns: number[] = [];
+  for (let i = 1; i < equityHistory.length; i++) {
+    returns.push((equityHistory[i] - equityHistory[i - 1]) / equityHistory[i - 1]);
+  }
+  const meanR = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+  const stdR = returns.length > 1
+    ? Math.sqrt(returns.reduce((s, r) => s + (r - meanR) ** 2, 0) / (returns.length - 1))
+    : 0;
+  const sharpe = stdR > 0 ? (meanR / stdR) * Math.sqrt(252) : 0;
+
+  return {
+    mode: "tactical-smart", label: "Tactical Smart",
+    totalReturn: Math.round(totalReturn * 10) / 10,
+    finalValue: Math.round(finalEquity),
+    maxDrawdown: Math.round(maxDD * 10) / 10,
+    sharpe: Math.round(sharpe * 100) / 100,
+    trades,
+    timeInMarket: Math.round((daysInMarket / (equityHistory.length - 1)) * 100),
+  };
+}
+
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -410,6 +558,11 @@ export async function GET() {
     // Tactical
     const tactical = simulateTactical(allBars, spyBars);
     results.push(tactical);
+
+    // Tactical Smart
+    await new Promise(r => setTimeout(r, 1));
+    const tacticalSmart = simulateTacticalSmart(allBars, spyBars);
+    results.push(tacticalSmart);
 
     log.info("Mode comparison complete");
 
