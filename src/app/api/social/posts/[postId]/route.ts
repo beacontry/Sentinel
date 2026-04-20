@@ -6,6 +6,9 @@ import {
   socialComments,
   users,
 } from "@/lib/db/schema";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("social-post-detail");
 import { eq, sql } from "drizzle-orm";
 
 export async function GET(
@@ -79,7 +82,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Social post detail error:", message);
+    log.error({ err: message }, "Social post detail error");
     return NextResponse.json({ error: "Failed to load post" }, { status: 500 });
   }
 }
@@ -114,7 +117,7 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Social post delete error:", message);
+    log.error({ err: message }, "Social post delete error");
     return NextResponse.json({ error: "Failed to delete post" }, { status: 500 });
   }
 }

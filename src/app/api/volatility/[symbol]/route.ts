@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { analyzeBars } from "@/lib/indicators/analyzer";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("volatility");
 
 export async function GET(
   _request: Request,
@@ -90,7 +93,7 @@ export async function GET(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Volatility analysis error:", message);
+    log.error({ err: message }, "Volatility analysis error");
     return NextResponse.json(
       { error: "Volatility analysis failed" },
       { status: 500 }

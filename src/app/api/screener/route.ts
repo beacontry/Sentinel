@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { getScreenerCache, scanAllSymbols, filterResults, startScreenerScheduler } from "@/lib/screener";
 import type { ScreenerFilter } from "@/lib/screener";
 import { SCREENER_CONFIG } from "@/lib/config";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("screener");
 import { isTraderConfigured } from "@/lib/trader-client";
 import { z } from "zod";
 
@@ -52,7 +55,7 @@ export async function GET() {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Screener GET error:", message);
+    log.error({ err: message }, "Screener GET error");
     return NextResponse.json(
       { error: "Failed to retrieve screener results" },
       { status: 500 }
@@ -122,7 +125,7 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Screener POST error:", message);
+    log.error({ err: message }, "Screener POST error");
     return NextResponse.json(
       { error: "Screener scan failed" },
       { status: 500 }

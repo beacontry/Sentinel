@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { getClaudeClient } from "@/lib/claude";
 import { gatherMarketContext } from "@/lib/market-context";
 import { db } from "@/lib/db";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("market-summary");
 import { marketDigests } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -82,7 +85,7 @@ export async function GET() {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Market summary error:", message);
+    log.error({ err: message }, "Market summary error");
     return NextResponse.json(
       { error: "Failed to generate market summary" },
       { status: 500 }

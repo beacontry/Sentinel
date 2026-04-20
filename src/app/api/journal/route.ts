@@ -8,6 +8,9 @@ import {
   updateJournalSchema,
   deleteJournalSchema,
 } from "@/lib/validators";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("journal");
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -49,7 +52,7 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Journal list error:", message);
+    log.error({ err: message }, "Journal list error");
     return NextResponse.json({ error: "Failed to load journal" }, { status: 500 });
   }
 }
@@ -104,7 +107,7 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Journal create error:", message);
+    log.error({ err: message }, "Journal create error");
     return NextResponse.json({ error: "Failed to create entry" }, { status: 500 });
   }
 }
@@ -170,7 +173,7 @@ export async function PATCH(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Journal update error:", message);
+    log.error({ err: message }, "Journal update error");
     return NextResponse.json({ error: "Failed to update entry" }, { status: 500 });
   }
 }
@@ -215,7 +218,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Journal delete error:", message);
+    log.error({ err: message }, "Journal delete error");
     return NextResponse.json({ error: "Failed to delete entry" }, { status: 500 });
   }
 }

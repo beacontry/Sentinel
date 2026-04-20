@@ -8,6 +8,9 @@ import {
   updateStrategySchema,
   deleteStrategySchema,
 } from "@/lib/validators";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("strategies");
 
 export async function GET() {
   const session = await getSession();
@@ -32,7 +35,7 @@ export async function GET() {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Strategies list error:", message);
+    log.error({ err: message }, "Strategies list error");
     return NextResponse.json({ error: "Failed to load strategies" }, { status: 500 });
   }
 }
@@ -81,7 +84,7 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Strategy create error:", message);
+    log.error({ err: message }, "Strategy create error");
     return NextResponse.json({ error: "Failed to create strategy" }, { status: 500 });
   }
 }
@@ -144,7 +147,7 @@ export async function PATCH(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Strategy update error:", message);
+    log.error({ err: message }, "Strategy update error");
     return NextResponse.json({ error: "Failed to update strategy" }, { status: 500 });
   }
 }
@@ -189,7 +192,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Strategy delete error:", message);
+    log.error({ err: message }, "Strategy delete error");
     return NextResponse.json({ error: "Failed to delete strategy" }, { status: 500 });
   }
 }

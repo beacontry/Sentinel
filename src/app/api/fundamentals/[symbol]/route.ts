@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getFinnhubClient } from "@/lib/finnhub";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("fundamentals");
 
 export async function GET(
   _request: Request,
@@ -66,7 +69,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Basic financials fetch error:", message);
+    log.error({ err: message }, "Basic financials fetch error");
     return NextResponse.json(
       { error: "Failed to fetch fundamentals" },
       { status: 500 }

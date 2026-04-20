@@ -4,6 +4,9 @@ import { getPortfolioDetails, getPortfolioValue } from "@/lib/portfolio-sim";
 import { db } from "@/lib/db";
 import { portfolios } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("portfolio-detail");
 import { getMarketDataProvider } from "@/lib/market-data";
 
 export async function GET(
@@ -71,7 +74,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Portfolio detail error:", message);
+    log.error({ err: message }, "Portfolio detail error");
     return NextResponse.json({ error: "Failed to load portfolio" }, { status: 500 });
   }
 }

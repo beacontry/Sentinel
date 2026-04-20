@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExchangeRates, convert, getRatesCacheTime } from "@/lib/currency";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("currency");
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -49,7 +52,7 @@ export async function GET(request: NextRequest) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Currency API error:", message);
+    log.error({ err: message }, "Currency API error");
     return NextResponse.json(
       { error: "Failed to fetch exchange rates" },
       { status: 500 }

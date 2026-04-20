@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { getSymbolSector, getPopularSymbolsBySector } from "@/lib/sectors";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("heatmap");
 
 export async function GET() {
   const session = await getSession();
@@ -54,7 +57,7 @@ export async function GET() {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Heatmap error:", message);
+    log.error({ err: message }, "Heatmap error");
     return NextResponse.json({ error: "Failed to load heatmap" }, { status: 500 });
   }
 }

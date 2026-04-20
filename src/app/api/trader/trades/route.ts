@@ -3,6 +3,9 @@ import { validateTraderSecret } from "@/lib/trader-auth";
 import { traderTradeSchema, traderTradeUpdateSchema } from "@/lib/trader-validators";
 import { db } from "@/lib/db";
 import { traderTrades, traderStatus } from "@/lib/db/schema";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("trader-trades");
 import { eq } from "drizzle-orm";
 
 export async function POST(request: NextRequest) {
@@ -37,7 +40,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id: row.id, received: true }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Trader trade error:", message);
+    log.error({ err: message }, "Trader trade error");
     return NextResponse.json({ error: "Failed to store trade" }, { status: 500 });
   }
 }
@@ -68,7 +71,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ updated: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Trader trade update error:", message);
+    log.error({ err: message }, "Trader trade update error");
     return NextResponse.json({ error: "Failed to update trade" }, { status: 500 });
   }
 }

@@ -6,6 +6,9 @@ import {
   users,
 } from "@/lib/db/schema";
 import { eq, desc, and, sql, count } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("social-posts");
 import { createSocialPostSchema } from "@/lib/validators";
 
 export async function GET(request: Request) {
@@ -78,7 +81,7 @@ export async function GET(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Social posts list error:", message);
+    log.error({ err: message }, "Social posts list error");
     return NextResponse.json({ error: "Failed to load posts" }, { status: 500 });
   }
 }
@@ -129,7 +132,7 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Social post create error:", message);
+    log.error({ err: message }, "Social post create error");
     return NextResponse.json({ error: "Failed to create post" }, { status: 500 });
   }
 }

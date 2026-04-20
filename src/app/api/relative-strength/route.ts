@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { calculateRelativeStrength } from "@/lib/relative-strength";
 import { RS_CONFIG } from "@/lib/config";
 import { getAllSectors } from "@/lib/sectors";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("relative-strength");
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -47,7 +50,7 @@ export async function GET(request: Request) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Relative strength error:", message);
+    log.error({ err: message }, "Relative strength error");
     return NextResponse.json(
       { error: "Failed to compute relative strength rankings" },
       { status: 500 }

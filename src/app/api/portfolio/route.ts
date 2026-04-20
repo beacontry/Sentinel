@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { createPortfolio, getUserPortfolios, getPortfolioValue } from "@/lib/portfolio-sim";
 import { db } from "@/lib/db";
 import { portfolios } from "@/lib/db/schema";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("portfolio");
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -39,7 +42,7 @@ export async function GET() {
     return NextResponse.json({ portfolios: withValues });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Portfolio list error:", message);
+    log.error({ err: message }, "Portfolio list error");
     return NextResponse.json({ error: "Failed to load portfolios" }, { status: 500 });
   }
 }
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ portfolio }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Portfolio create error:", message);
+    log.error({ err: message }, "Portfolio create error");
     return NextResponse.json({ error: "Failed to create portfolio" }, { status: 500 });
   }
 }
@@ -94,7 +97,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Portfolio delete error:", message);
+    log.error({ err: message }, "Portfolio delete error");
     return NextResponse.json({ error: "Failed to delete portfolio" }, { status: 500 });
   }
 }

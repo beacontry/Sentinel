@@ -5,6 +5,9 @@ import { getSession } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
 import { CLAUDE_CONFIG } from "@/lib/config";
 import { getFilingContent } from "@/lib/sec-filings";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("filings-chat");
 
 const chatBodySchema = z.object({
   symbol: z.string().min(1).max(10),
@@ -97,7 +100,7 @@ export async function POST(request: Request) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Filing chat error:", message);
+    log.error({ err: message }, "Filing chat error");
     return NextResponse.json(
       { error: "Failed to generate response" },
       { status: 500 }

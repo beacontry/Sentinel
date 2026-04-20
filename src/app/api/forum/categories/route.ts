@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { forumCategories } from "@/lib/db/schema";
 import { asc } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("forum-categories");
 
 export async function GET() {
   const session = await getSession();
@@ -24,7 +27,7 @@ export async function GET() {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Forum categories error:", message);
+    log.error({ err: message }, "Forum categories error");
     return NextResponse.json({ error: "Failed to load categories" }, { status: 500 });
   }
 }

@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { pushSubscriptions } from "@/lib/db/schema";
 import { z } from "zod";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("push-subscribe");
 
 const subscribeSchema = z.object({
   endpoint: z.string().url(),
@@ -37,7 +40,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true }, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Push subscribe error:", message);
+    log.error({ err: message }, "Push subscribe error");
     return NextResponse.json({ error: "Subscription failed" }, { status: 500 });
   }
 }

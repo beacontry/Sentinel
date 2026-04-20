@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { computeCorrelationMatrix } from "@/lib/correlation";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("correlation");
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -55,7 +58,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Correlation error:", message);
+    log.error({ err: message }, "Correlation error");
     return NextResponse.json({ error: "Correlation failed" }, { status: 500 });
   }
 }

@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
 import { getQuickInsight } from "@/lib/quick-insights";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("insights");
 
 export async function GET(
   _request: Request,
@@ -37,7 +40,7 @@ export async function GET(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Insight fetch error:", message);
+    log.error({ err: message }, "Insight fetch error");
     return NextResponse.json(
       { error: "Failed to generate insight" },
       { status: 500 }

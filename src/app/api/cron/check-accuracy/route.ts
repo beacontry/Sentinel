@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { batchCheckAccuracy } from "@/lib/accuracy";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("cron-check-accuracy");
 
 export async function GET(request: NextRequest) {
   const secret = request.headers.get("x-cron-secret");
@@ -14,7 +17,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ checked });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Accuracy cron error:", message);
+    log.error({ err: message }, "Accuracy cron error");
     return NextResponse.json(
       { error: "Accuracy check failed" },
       { status: 500 }

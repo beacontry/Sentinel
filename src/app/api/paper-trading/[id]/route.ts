@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { paperTradingConfigs, paperTradingRuns } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("paper-trading-detail");
 
 export async function GET(
   _request: Request,
@@ -44,7 +47,7 @@ export async function GET(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Paper trading detail error:", message);
+    log.error({ err: message }, "Paper trading detail error");
     return NextResponse.json(
       { error: "Failed to load configuration" },
       { status: 500 }
@@ -81,7 +84,7 @@ export async function DELETE(
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Paper trading delete error:", message);
+    log.error({ err: message }, "Paper trading delete error");
     return NextResponse.json(
       { error: "Failed to delete configuration" },
       { status: 500 }

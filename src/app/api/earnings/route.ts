@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getFinnhubClient } from "@/lib/finnhub";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("earnings");
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -58,7 +61,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Earnings fetch error:", message);
+    log.error({ err: message }, "Earnings fetch error");
     return NextResponse.json(
       { error: "Failed to fetch earnings" },
       { status: 500 }

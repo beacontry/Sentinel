@@ -8,6 +8,9 @@ import {
   updateBrokerConnectionSchema,
   deleteBrokerConnectionSchema,
 } from "@/lib/validators";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("broker-connections");
 
 function maskSecret(secret: string): string {
   if (secret.length <= 4) return "****";
@@ -42,7 +45,7 @@ export async function GET() {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Failed to list broker connections:", message);
+    log.error({ err: message }, "Failed to list broker connections");
     return NextResponse.json({ error: "Failed to load connections" }, { status: 500 });
   }
 }
@@ -108,7 +111,7 @@ export async function POST(request: Request) {
         { status: 409 }
       );
     }
-    console.error("Failed to create broker connection:", message);
+    log.error({ err: message }, "Failed to create broker connection");
     return NextResponse.json({ error: "Failed to save connection" }, { status: 500 });
   }
 }
@@ -177,7 +180,7 @@ export async function PATCH(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Failed to update broker connection:", message);
+    log.error({ err: message }, "Failed to update broker connection");
     return NextResponse.json({ error: "Failed to update connection" }, { status: 500 });
   }
 }
@@ -218,7 +221,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Failed to delete broker connection:", message);
+    log.error({ err: message }, "Failed to delete broker connection");
     return NextResponse.json({ error: "Failed to delete connection" }, { status: 500 });
   }
 }

@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { articles, users } from "@/lib/db/schema";
 import { eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("articles");
 
 const createArticleSchema = z.object({
   title: z.string().min(1, "Title is required").max(200),
@@ -69,7 +72,7 @@ export async function GET(request: NextRequest) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Articles list error:", message);
+    log.error({ err: message }, "Articles list error");
     return NextResponse.json(
       { error: "Failed to load articles" },
       { status: 500 }
@@ -126,7 +129,7 @@ export async function POST(request: Request) {
         { status: 409 }
       );
     }
-    console.error("Article create error:", message);
+    log.error({ err: message }, "Article create error");
     return NextResponse.json(
       { error: "Failed to create article" },
       { status: 500 }

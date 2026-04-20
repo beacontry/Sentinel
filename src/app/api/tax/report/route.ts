@@ -5,6 +5,9 @@ import { portfolios, portfolioTrades } from "@/lib/db/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { calculateTaxSummary, type TaxTrade } from "@/lib/tax-engine";
 import { toCSV } from "@/lib/csv";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("tax-report");
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -103,7 +106,7 @@ export async function GET(request: NextRequest) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Tax report error:", message);
+    log.error({ err: message }, "Tax report error");
     return NextResponse.json(
       { error: "Failed to generate tax report" },
       { status: 500 }

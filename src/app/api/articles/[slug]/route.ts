@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { articles, articlePurchases, users } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("articles-detail");
 
 const PREVIEW_LENGTH = 500;
 
@@ -78,7 +81,7 @@ export async function GET(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Article detail error:", message);
+    log.error({ err: message }, "Article detail error");
     return NextResponse.json(
       { error: "Failed to load article" },
       { status: 500 }

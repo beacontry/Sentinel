@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { signals, signalAccuracy } from "@/lib/db/schema";
 import { eq, gte, lte, and, desc, inArray } from "drizzle-orm";
 import { toCSV } from "@/lib/csv";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("signals-export");
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -70,7 +73,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     const csv = toCSV(headers, csvRows);
-    const filename = `stocker-signals-${new Date().toISOString().slice(0, 10)}.csv`;
+    const filename = `sentinel-signals-${new Date().toISOString().slice(0, 10)}.csv`;
 
     return new NextResponse(csv, {
       headers: {
@@ -81,7 +84,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Export error:", message);
+    log.error({ err: message }, "Export error");
     return NextResponse.json({ error: "Export failed" }, { status: 500 });
   }
 }

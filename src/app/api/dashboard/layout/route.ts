@@ -5,6 +5,9 @@ import { dashboardLayouts } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { updateDashboardLayoutSchema } from "@/lib/validators";
 import { DEFAULT_LAYOUT, isValidWidgetId } from "@/lib/widget-registry";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("dashboard-layout");
 
 export async function GET() {
   const session = await getSession();
@@ -45,7 +48,7 @@ export async function GET() {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Dashboard layout load error:", message);
+    log.error({ err: message }, "Dashboard layout load error");
     return NextResponse.json(
       { error: "Failed to load layout" },
       { status: 500 }
@@ -116,7 +119,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ success: true, widgets: uniqueWidgets });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Dashboard layout save error:", message);
+    log.error({ err: message }, "Dashboard layout save error");
     return NextResponse.json(
       { error: "Failed to save layout" },
       { status: 500 }

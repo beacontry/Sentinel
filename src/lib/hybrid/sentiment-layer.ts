@@ -1,18 +1,8 @@
-import type { SignalType } from "@/types";
+import type { SignalType, SentimentLayer } from "@/types";
 import { getFinnhubClient } from "../finnhub";
 import { CLAUDE_CONFIG } from "../config";
 
-// ─── Types ──────────────────────────────────────────────────────────
-
-export interface SentimentLayer {
-  source: "news-ai";
-  bullishPercent: number;
-  bearishPercent: number;
-  newsScore: number;
-  headlineCount: number;
-  adjustment: number; // -0.15 to +0.15
-  reasons: string[];
-}
+export type { SentimentLayer };
 
 // ─── Cache ──────────────────────────────────────────────────────────
 

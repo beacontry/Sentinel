@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createForumReplySchema } from "@/lib/validators";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("forum-replies");
 
 export async function POST(
   request: Request,
@@ -87,7 +90,7 @@ export async function POST(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Forum reply error:", message);
+    log.error({ err: message }, "Forum reply error");
     return NextResponse.json({ error: "Failed to create reply" }, { status: 500 });
   }
 }

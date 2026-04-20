@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { paperTradingConfigs, paperTradingRuns } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { runBacktest } from "@/lib/backtester";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("paper-trading-run");
 import { getMarketDataProvider } from "@/lib/market-data";
 import { STRATEGY_PRESETS, type PresetName } from "@/lib/strategy-presets";
 
@@ -128,7 +131,7 @@ export async function POST(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Paper trading run error:", message);
+    log.error({ err: message }, "Paper trading run error");
     return NextResponse.json(
       { error: "Failed to run backtest" },
       { status: 500 }
