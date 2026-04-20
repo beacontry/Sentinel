@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const validModes = ["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical"] as const;
+  const validModes = ["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical", "tactical-smart"] as const;
   type Mode = typeof validModes[number];
   const mode: Mode = validModes.includes(body.mode as Mode) ? (body.mode as Mode) : "optimized";
 

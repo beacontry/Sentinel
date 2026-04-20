@@ -46,7 +46,7 @@ const log = createRouteLogger("trading-engine");
 
 // ─── Engine State (globalThis singleton) ─────────────────────────────────────
 
-export type EngineMode = "conservative" | "moderate" | "optimized" | "aggressive" | "intraday" | "tactical";
+export type EngineMode = "conservative" | "moderate" | "optimized" | "aggressive" | "intraday" | "tactical" | "tactical-smart";
 
 function isIntradayMode(mode: EngineMode): boolean {
   return mode === "intraday";
@@ -340,7 +340,7 @@ async function resolveStrategy(
 
   const engine = getEngine();
   // For optimized/tactical modes, use latest optimizer results from DB
-  if (engine.mode === "optimized" || engine.mode === "tactical") {
+  if (engine.mode === "optimized" || engine.mode === "tactical" || engine.mode === "tactical-smart") {
     const latest = await getLatestOptimizedParams();
     if (latest) return latest;
   }
@@ -352,7 +352,8 @@ async function resolveStrategy(
     optimized: STRATEGY_PRESETS.optimized,
     aggressive: STRATEGY_PRESETS.aggressive,
     intraday: INTRADAY_PARAMS,
-    tactical: STRATEGY_PRESETS.swing, // wide stops for tactical (ride trends)
+    tactical: STRATEGY_PRESETS.swing,
+    "tactical-smart": STRATEGY_PRESETS.swing,
   };
   return modePresetMap[engine.mode] ?? STRATEGY_PRESETS.optimized;
 }
@@ -811,6 +812,160 @@ async function runTacticalScan(): Promise<void> {
   engine.lastScanAt = new Date();
   engine.scanCount++;
   await updateHeartbeat(SCAN_UNIVERSE);
+}
+
+// ─── Tactical Smart: SPY trend + screener-weighted entries ──────────────────
+
+async function runTacticalSmartScan(): Promise<void> {
+  const engine = getEngine();
+  if (!engine.userId || !engine.running || engine.halted) return;
+  if (!isMarketOpen()) return;
+
+  const today = getETDateString();
+  if (engine.dailyLossDate !== today) { engine.dailyLoss = 0; engine.dailyLossDate = today; }
+
+  let client: BrokerClient;
+  let account: BrokerAccount;
+  try {
+    const resolved = await resolveBrokerClient(engine.userId);
+    if (!resolved) { pushError(engine, "No usable broker connection"); return; }
+    client = resolved.client;
+    account = await client.getAccount();
+  } catch (err) {
+    pushError(engine, `Broker connection failed: ${err instanceof Error ? err.message : "unknown"}`);
+    return;
+  }
+
+  const equity = account.equity;
+  const provider = getMarketDataProvider();
+  const positionMap = getPositionMap();
+
+  // SPY trend check (same as tactical)
+  let spyBars: Bar[];
+  try {
+    spyBars = await provider.fetchBars("SPY", 90, "1d");
+  } catch {
+    log.warn("Failed to fetch SPY bars"); engine.lastScanAt = new Date(); engine.scanCount++; return;
+  }
+  if (spyBars.length < 50) return;
+
+  const spyCloses = spyBars.map(b => b.close);
+  const spyPrice = spyCloses[spyCloses.length - 1];
+  const sma20 = spyCloses.slice(-20).reduce((a, b) => a + b, 0) / 20;
+  const sma50 = spyCloses.slice(-50).reduce((a, b) => a + b, 0) / 50;
+
+  // Check consecutive days below exit SMA
+  let belowCount = 0;
+  for (let i = spyCloses.length - 3; i < spyCloses.length; i++) {
+    if (i >= 20) {
+      const s = spyCloses.slice(i - 19, i + 1).reduce((a, b) => a + b, 0) / 20;
+      if (spyCloses[i] < s) belowCount++;
+    }
+  }
+  const confirmedBelow = belowCount >= 3;
+
+  const currentPositions = await client.getPositions().catch(() => []);
+  const isInvested = currentPositions.length > 0;
+
+  log.info({ spyPrice: spyPrice.toFixed(2), sma20: sma20.toFixed(2), sma50: sma50.toFixed(2), confirmedBelow, isInvested }, "Tactical Smart scan");
+
+  if (isInvested && confirmedBelow && spyPrice < sma20) {
+    // ── EXIT: same as regular tactical ──
+    log.warn("TACTICAL SMART EXIT — SPY below SMA, going to cash");
+    for (const pos of currentPositions) {
+      if (pos.qty <= 0) continue;
+      try {
+        await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
+        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical Smart exit");
+        positionMap.delete(pos.symbol);
+      } catch (err) {
+        log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+    engine.positionCount = 0;
+
+  } else if (!isInvested && spyPrice > sma50) {
+    // ── ENTRY: Use screener signals + analyzeBars to pick best stocks ──
+    log.info("TACTICAL SMART ENTRY — picking stocks via signals");
+    const riskLimits = await loadRiskLimits(engine.userId);
+
+    // Score all stocks in universe + any screener external signals
+    const extSymbols = engine.externalSignals
+      .filter(s => (s.signal === "BUY" || s.signal === "STRONG_BUY") && !SCAN_UNIVERSE.includes(s.symbol))
+      .map(s => s.symbol);
+    const allSymbols = [...SCAN_UNIVERSE, ...new Set(extSymbols)];
+
+    const scored: { symbol: string; score: number; price: number }[] = [];
+
+    for (const symbol of allSymbols) {
+      try {
+        const bars = await Promise.race([
+          provider.fetchBars(symbol, 90, "1d"),
+          new Promise<Bar[]>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+        ]);
+        if (bars.length < 30) continue;
+
+        const analysis = analyzeBars(symbol, bars);
+        let score = 0;
+
+        // Score based on signal strength
+        if (analysis.signal === "STRONG_BUY") score = 4;
+        else if (analysis.signal === "BUY") score = 2;
+        else if (analysis.signal === "HOLD") score = 0;
+        else score = -2; // SELL/STRONG_SELL — skip
+
+        // Boost from screener external signal
+        const ext = engine.externalSignals.find(s => s.symbol === symbol);
+        if (ext) {
+          if (ext.signal === "STRONG_BUY") score += 3;
+          else if (ext.signal === "BUY") score += 1;
+        }
+
+        // Confidence boost
+        score += analysis.confidence * 2;
+
+        if (score > 0) {
+          scored.push({ symbol, score, price: analysis.price });
+        }
+
+        await new Promise(r => setTimeout(r, 0));
+      } catch { /* skip */ }
+    }
+
+    // Sort by score descending — best stocks get positions first
+    scored.sort((a, b) => b.score - a.score);
+
+    // Buy top stocks up to maxPositions
+    const toBuy = scored.slice(0, riskLimits.maxPositions);
+    const perPosition = equity / Math.max(toBuy.length, 1);
+
+    for (const { symbol, price } of toBuy) {
+      const qty = Math.min(Math.floor(perPosition / price), riskLimits.maxPositionSize);
+      if (qty <= 0 || qty * price > account.cash) continue;
+
+      try {
+        const limitPrice = (price * 1.001).toFixed(2);
+        await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Tactical Smart: screener-weighted entry");
+        positionMap.set(symbol, {
+          symbol, qty, entryPrice: price, peakPrice: price,
+          stopLoss: price * 0.88, takeProfit: price * 1.5,
+          trailingStopPct: 0.09, entryDate: new Date(), holdPeriod: 999,
+        });
+        log.info({ symbol, qty, score: scored.find(s => s.symbol === symbol)?.score }, "Tactical Smart entry");
+      } catch (err) {
+        log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Entry failed");
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+    engine.positionCount = positionMap.size;
+    log.info({ positions: positionMap.size, candidates: scored.length }, "Tactical Smart buy-in complete");
+  }
+
+  engine.lastScanAt = new Date();
+  engine.scanCount++;
+  await updateHeartbeat([...positionMap.keys()]);
 }
 
 // ─── Standard Signal-Based Scan ─────────────────────────────────────────────
@@ -1324,7 +1479,9 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   log.info({ userId, mode, scanIntervalMs }, "Trading engine started");
 
   // Pick the right scan function based on mode
-  const scanFn = mode === "tactical" ? runTacticalScan : () => runScan(barResolution);
+  const scanFn = mode === "tactical" ? runTacticalScan
+    : mode === "tactical-smart" ? runTacticalSmartScan
+    : () => runScan(barResolution);
 
   // Run initial scan immediately
   scanFn().catch((err) => {
