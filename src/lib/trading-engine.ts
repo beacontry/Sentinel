@@ -8,6 +8,7 @@
 // Safety: paper-mode only, daily loss limit with auto-halt, globalThis halt
 // flag, full error isolation per symbol.
 
+import type { Bar } from "@/types";
 import { createBrokerClient } from "./brokers";
 import type { BrokerClient, BrokerAccount } from "./brokers";
 import { getMarketDataProvider } from "./market-data";
@@ -44,7 +45,7 @@ const log = createRouteLogger("trading-engine");
 
 // ─── Engine State (globalThis singleton) ─────────────────────────────────────
 
-export type EngineMode = "conservative" | "moderate" | "optimized" | "aggressive" | "intraday";
+export type EngineMode = "conservative" | "moderate" | "optimized" | "aggressive" | "intraday" | "tactical";
 
 function isIntradayMode(mode: EngineMode): boolean {
   return mode === "intraday";
@@ -105,6 +106,15 @@ function getEngine(): EngineState {
 const SWING_SCAN_MS = 15 * 60 * 1000;    // 15 minutes for swing mode
 const INTRADAY_SCAN_MS = 5 * 60 * 1000;  // 5 minutes for intraday signal scan
 const EXIT_CHECK_MS = 60 * 1000;          // 1 minute for intraday exit checks
+/** Tactical mode: always invested, exit on market weakness */
+const TACTICAL_CONFIG = {
+  trendSMA: 50,       // SPY below 50-day SMA = caution
+  exitSMA: 20,        // SPY below 20-day SMA = exit
+  confirmBars: 3,     // must stay below for 3 days before exiting
+  reentryRSI: 40,     // re-enter when RSI drops below 40 (oversold bounce)
+  cashPct: 1.0,       // go 100% cash on exit
+};
+
 // Defaults — overridden by user's Risk Profile from DB
 const DEFAULT_MAX_POSITIONS = 16;
 const DEFAULT_POSITION_PCT = 0.15;
@@ -294,6 +304,7 @@ async function resolveStrategy(
     optimized: STRATEGY_PRESETS.optimized,
     aggressive: STRATEGY_PRESETS.aggressive,
     intraday: INTRADAY_PARAMS,
+    tactical: STRATEGY_PRESETS.swing, // wide stops for tactical (ride trends)
   };
   return modePresetMap[engine.mode] ?? STRATEGY_PRESETS.optimized;
 }
@@ -580,6 +591,181 @@ function getPositionMap(): Map<string, TrackedPosition> {
 }
 
 // ─── Core Scan ───────────────────────────────────────────────────────────────
+
+// ─── Tactical Scan: Stay invested, exit on market weakness ──────────────────
+
+async function runTacticalScan(): Promise<void> {
+  const engine = getEngine();
+  if (!engine.userId || !engine.running || engine.halted) return;
+  if (!isMarketOpen()) return;
+
+  const today = getETDateString();
+  if (engine.dailyLossDate !== today) {
+    engine.dailyLoss = 0;
+    engine.dailyLossDate = today;
+  }
+
+  let client: BrokerClient;
+  let account: BrokerAccount;
+  try {
+    const resolved = await resolveBrokerClient(engine.userId);
+    if (!resolved) { pushError(engine, "No usable broker connection"); return; }
+    client = resolved.client;
+    account = await client.getAccount();
+  } catch (err) {
+    pushError(engine, `Broker connection failed: ${err instanceof Error ? err.message : "unknown"}`);
+    return;
+  }
+
+  const equity = account.equity;
+  const provider = getMarketDataProvider();
+  const positionMap = getPositionMap();
+
+  // Fetch SPY bars for trend analysis
+  let spyBars: Bar[];
+  try {
+    spyBars = await provider.fetchBars("SPY", 90, "1d");
+  } catch {
+    log.warn("Failed to fetch SPY bars for tactical scan");
+    engine.lastScanAt = new Date();
+    engine.scanCount++;
+    return;
+  }
+
+  if (spyBars.length < TACTICAL_CONFIG.trendSMA) {
+    log.warn("Not enough SPY bars for tactical analysis");
+    return;
+  }
+
+  const closes = spyBars.map(b => b.close);
+  const spyPrice = closes[closes.length - 1];
+
+  // Calculate indicators
+  const smaExit = closes.slice(-TACTICAL_CONFIG.exitSMA).reduce((a, b) => a + b, 0) / TACTICAL_CONFIG.exitSMA;
+  const smaTrend = closes.slice(-TACTICAL_CONFIG.trendSMA).reduce((a, b) => a + b, 0) / TACTICAL_CONFIG.trendSMA;
+
+  // RSI for re-entry timing
+  let spyRSI = 50;
+  if (closes.length >= 15) {
+    let gains = 0, losses = 0;
+    for (let i = closes.length - 14; i < closes.length; i++) {
+      const change = closes[i] - closes[i - 1];
+      if (change > 0) gains += change; else losses -= change;
+    }
+    gains /= 14; losses /= 14;
+    spyRSI = losses === 0 ? 100 : 100 - 100 / (1 + gains / losses);
+  }
+
+  // Check if below exit SMA for confirmBars consecutive days
+  let belowCount = 0;
+  for (let i = closes.length - TACTICAL_CONFIG.confirmBars; i < closes.length; i++) {
+    const sma = closes.slice(Math.max(0, i - TACTICAL_CONFIG.exitSMA), i).reduce((a, b) => a + b, 0) / Math.min(i, TACTICAL_CONFIG.exitSMA);
+    if (closes[i] < sma) belowCount++;
+  }
+  const confirmedBelow = belowCount >= TACTICAL_CONFIG.confirmBars;
+
+  const currentPositions = await client.getPositions().catch(() => []);
+  const isInvested = currentPositions.length > 0;
+
+  log.info({
+    spyPrice: spyPrice.toFixed(2), smaExit: smaExit.toFixed(2), smaTrend: smaTrend.toFixed(2),
+    spyRSI: spyRSI.toFixed(1), confirmedBelow, isInvested, positions: currentPositions.length,
+  }, "Tactical scan");
+
+  if (isInvested && confirmedBelow && spyPrice < smaExit) {
+    // ── EXIT: Market is weakening → sell everything ──
+    log.warn({ spyPrice: spyPrice.toFixed(2), smaExit: smaExit.toFixed(2) }, "TACTICAL EXIT — SPY below exit SMA, going to cash");
+
+    for (const pos of currentPositions) {
+      if (pos.qty <= 0) continue;
+      try {
+        await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
+        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical exit: SPY below SMA");
+        positionMap.delete(pos.symbol);
+        log.info({ symbol: pos.symbol, qty: pos.qty }, "Tactical exit executed");
+      } catch (err) {
+        log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Tactical exit failed");
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+    engine.positionCount = 0;
+
+  } else if (!isInvested && spyPrice > smaTrend && spyRSI < TACTICAL_CONFIG.reentryRSI) {
+    // ── RE-ENTRY: Market recovering + RSI oversold → buy back in ──
+    log.info({ spyPrice: spyPrice.toFixed(2), smaTrend: smaTrend.toFixed(2), spyRSI: spyRSI.toFixed(1) }, "TACTICAL RE-ENTRY — buying back in");
+
+    const riskLimits = await loadRiskLimits(engine.userId);
+    const perPosition = equity * riskLimits.positionPct;
+
+    for (const symbol of SCAN_UNIVERSE) {
+      if (positionMap.size >= riskLimits.maxPositions) break;
+
+      try {
+        const quote = await provider.fetchQuote(symbol);
+        if (!quote || quote.price <= 0) continue;
+
+        const qty = Math.min(Math.floor(perPosition / quote.price), riskLimits.maxPositionSize);
+        if (qty <= 0) continue;
+
+        const limitPrice = (quote.price * 1.001).toFixed(2);
+        await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "FILLED", null, "Tactical re-entry: SPY above trend SMA");
+
+        positionMap.set(symbol, {
+          symbol, qty, entryPrice: quote.price, peakPrice: quote.price,
+          stopLoss: quote.price * 0.88, takeProfit: quote.price * 1.5,
+          trailingStopPct: 0.09, entryDate: new Date(), holdPeriod: 999,
+        });
+
+        log.info({ symbol, qty, price: quote.price.toFixed(2) }, "Tactical entry executed");
+      } catch (err) {
+        log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Tactical entry failed");
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+    engine.positionCount = positionMap.size;
+
+  } else if (!isInvested && spyPrice > smaTrend) {
+    // ── INITIAL BUY-IN: First time or after cash period, trend is up ──
+    log.info("TACTICAL INITIAL BUY-IN — market trending up, deploying capital");
+
+    const riskLimits = await loadRiskLimits(engine.userId);
+    const perPosition = equity * riskLimits.positionPct;
+
+    for (const symbol of SCAN_UNIVERSE) {
+      if (positionMap.size >= riskLimits.maxPositions) break;
+
+      try {
+        const quote = await provider.fetchQuote(symbol);
+        if (!quote || quote.price <= 0) continue;
+
+        const qty = Math.min(Math.floor(perPosition / quote.price), riskLimits.maxPositionSize);
+        if (qty <= 0) continue;
+
+        const limitPrice = (quote.price * 1.001).toFixed(2);
+        await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+
+        positionMap.set(symbol, {
+          symbol, qty, entryPrice: quote.price, peakPrice: quote.price,
+          stopLoss: quote.price * 0.88, takeProfit: quote.price * 1.5,
+          trailingStopPct: 0.09, entryDate: new Date(), holdPeriod: 999,
+        });
+      } catch {
+        // Skip failed entries
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+    engine.positionCount = positionMap.size;
+    log.info({ positions: positionMap.size }, "Tactical initial buy-in complete");
+  }
+
+  // Update status
+  engine.lastScanAt = new Date();
+  engine.scanCount++;
+  await updateHeartbeat(SCAN_UNIVERSE);
+}
+
+// ─── Standard Signal-Based Scan ─────────────────────────────────────────────
 
 async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
   const engine = getEngine();
@@ -1089,16 +1275,19 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
 
   log.info({ userId, mode, scanIntervalMs }, "Trading engine started");
 
+  // Pick the right scan function based on mode
+  const scanFn = mode === "tactical" ? runTacticalScan : () => runScan(barResolution);
+
   // Run initial scan immediately
-  runScan(barResolution).catch((err) => {
+  scanFn().catch((err) => {
     log.error({ err: err instanceof Error ? err.message : "unknown" }, "Initial scan failed");
     pushError(engine, `Initial scan failed: ${err instanceof Error ? err.message : "unknown"}`);
   });
 
-  // Set up signal scan interval
+  // Set up scan interval
   engine.intervalId = setInterval(() => {
     if (!engine.running) return;
-    runScan(barResolution).catch((err) => {
+    scanFn().catch((err) => {
       log.error({ err: err instanceof Error ? err.message : "unknown" }, "Scan cycle failed");
       pushError(engine, `Scan failed: ${err instanceof Error ? err.message : "unknown"}`);
     });
