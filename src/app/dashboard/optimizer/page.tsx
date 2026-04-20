@@ -594,6 +594,9 @@ function RunDetailView({
               {bestParams.emaSlow != null && (
                 <ParamDisplay label="EMA Slow" value={`${Math.round(bestParams.emaSlow)}`} />
               )}
+              {bestParams.maxPositions != null && (
+                <ParamDisplay label="Max Positions" value={`${Math.round(bestParams.maxPositions)}`} />
+              )}
             </div>
           </div>
         </Card>
