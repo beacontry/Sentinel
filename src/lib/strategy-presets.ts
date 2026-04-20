@@ -5,7 +5,10 @@ export interface StrategyParams {
   holdPeriod: number;
 }
 
-export type PresetName = "conservative" | "moderate" | "aggressive" | "day_trade" | "swing" | "optimized";
+export type PresetName =
+  | "conservative" | "moderate" | "aggressive" | "optimized"
+  | "day_trade" | "swing"
+  | "intraday" | "tactical" | "tactical-smart";
 
 export const STRATEGY_PRESETS: Record<PresetName, StrategyParams> = {
   conservative: {
@@ -26,6 +29,12 @@ export const STRATEGY_PRESETS: Record<PresetName, StrategyParams> = {
     trailingStopPct: 0.025,
     holdPeriod: 15,
   },
+  optimized: {
+    stopLossPct: 0.12,
+    takeProfitPct: 0.28,
+    trailingStopPct: 0.09,
+    holdPeriod: 43,
+  },
   day_trade: {
     stopLossPct: 0.01,
     takeProfitPct: 0.015,
@@ -38,19 +47,34 @@ export const STRATEGY_PRESETS: Record<PresetName, StrategyParams> = {
     trailingStopPct: 0.02,
     holdPeriod: 40,
   },
-  optimized: {
-    stopLossPct: 0.12,
-    takeProfitPct: 0.28,
-    trailingStopPct: 0.09,
-    holdPeriod: 43,
+  intraday: {
+    stopLossPct: 0.015,
+    takeProfitPct: 0.025,
+    trailingStopPct: 0.01,
+    holdPeriod: 12,
+  },
+  tactical: {
+    stopLossPct: 0.025,
+    takeProfitPct: 0.06,
+    trailingStopPct: 0.02,
+    holdPeriod: 999,
+  },
+  "tactical-smart": {
+    stopLossPct: 0.025,
+    takeProfitPct: 0.06,
+    trailingStopPct: 0.02,
+    holdPeriod: 999,
   },
 };
 
 export const PRESET_LABELS: Record<PresetName, { label: string; description: string }> = {
-  day_trade:    { label: "Day Trade",    description: "Intraday, quick exits" },
   conservative: { label: "Conservative", description: "Tight stops, modest targets" },
   moderate:     { label: "Moderate",     description: "Balanced risk/reward" },
   aggressive:   { label: "Aggressive",   description: "Wider stops, larger targets" },
+  optimized:    { label: "Optimized",    description: "GA-tuned, 12% SL, 28% TP, 43-bar hold" },
+  day_trade:    { label: "Day Trade",    description: "Intraday, quick exits" },
   swing:        { label: "Swing",        description: "Multi-week holds" },
-  optimized:    { label: "Optimized",    description: "GA-tuned momentum, 43-bar hold, 50/50 validated" },
+  intraday:     { label: "Intraday",     description: "5min bars, flatten at 3 PM ET" },
+  tactical:     { label: "Tactical",     description: "Top 50 S&P, exit on SPY weakness" },
+  "tactical-smart": { label: "Tactical Smart", description: "Screener-picked stocks, exit on SPY weakness" },
 };
