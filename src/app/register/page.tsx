@@ -6,7 +6,7 @@ import Link from "next/link";
 import { WorkspacePreview } from "@/components/auth/workspace-preview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Shield, Blocks, Settings2 } from "lucide-react";
+import { Shield, Sparkles } from "lucide-react";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -54,8 +54,8 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-primary p-4 lg:p-6">
-      <div className="mx-auto grid min-h-[calc(100vh-2rem)] overflow-hidden rounded-xl border border-border bg-bg-surface lg:min-h-[calc(100vh-3rem)] lg:grid-cols-[1fr_1fr]">
+    <div className="min-h-screen overflow-hidden px-4 py-4" style={{ paddingLeft: "clamp(1rem, 3vw, 4rem)", paddingRight: "clamp(1rem, 3vw, 4rem)" }}>
+      <div className="mx-auto grid min-h-[calc(100vh-2rem)] overflow-hidden rounded-xl border border-border bg-bg-surface shadow-2xl lg:grid-cols-[1fr_1fr]">
         <WorkspacePreview
           eyebrow="Open your workspace"
           title="Build a trading desk that feels yours."
@@ -92,30 +92,20 @@ export default function RegisterPage() {
         />
 
         <section className="flex items-center justify-center p-6 lg:p-10">
-          <div className="w-full max-w-md space-y-5">
-            <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-xl sm:p-8">
+          <div className="w-full max-w-lg space-y-5">
+            <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-[0_18px_40px_rgba(0,0,0,0.24)] sm:p-8">
               <div className="space-y-3">
-                <Link
-                  href="/"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-accent/25 bg-accent/10 text-accent lg:hidden"
-                >
-                  <Shield className="h-4.5 w-4.5" />
+                <Link href="/" className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-accent/25 bg-accent/12 text-accent lg:hidden">
+                  <Shield className="h-5 w-5" />
                 </Link>
-
-                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-accent">
-                  Create Account
-                </div>
-                <h1 className="text-2xl font-semibold tracking-tight text-text-primary sm:text-3xl">
-                  Start with a clean desk
-                </h1>
-                <p className="text-sm leading-relaxed text-text-secondary">
-                  Create your Sentinel account and step straight into the workspace.
-                </p>
+                <div className="text-[11px] uppercase tracking-[0.08em] text-accent">Create Account</div>
+                <h1 className="font-display text-4xl text-text-primary">Start with a clean desk</h1>
+                <p className="text-sm text-text-secondary">Create your Sentinel account and step straight into the workspace.</p>
               </div>
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
                 {error && (
-                  <div className="animate-scale-in rounded-lg border border-bearish/25 bg-bearish/10 px-4 py-3 text-sm text-bearish">
+                  <div className="rounded-lg border border-bearish/25 bg-bearish/10 px-4 py-3 text-sm text-bearish animate-scale-in">
                     {error}
                   </div>
                 )}
@@ -164,17 +154,14 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                 />
 
-                <Button type="submit" size="lg" loading={loading} className="w-full">
+                <Button type="submit" loading={loading} className="w-full">
                   Create Account
                 </Button>
               </form>
 
-              <p className="mt-5 text-center text-sm text-text-muted">
+              <p className="mt-5 text-sm text-text-muted">
                 Already have an account?{" "}
-                <Link
-                  href="/login"
-                  className="font-medium text-accent transition-colors hover:text-accent-hover"
-                >
+                <Link href="/login" className="font-medium text-accent transition-colors hover:text-accent-hover">
                   Sign in
                 </Link>
               </p>
@@ -183,23 +170,19 @@ export default function RegisterPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-border bg-bg-secondary p-4">
                 <div className="flex items-center gap-2 text-accent">
-                  <Blocks className="h-3.5 w-3.5" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.08em]">
-                    Starter desk
-                  </span>
+                  <Sparkles className="h-4 w-4" />
+                  <span className="text-[11px] uppercase tracking-[0.22em]">Starter desk</span>
                 </div>
-                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                <p className="mt-3 text-sm leading-relaxed text-text-secondary">
                   New accounts open with a fuller module mix so the command center does not feel underbuilt.
                 </p>
               </div>
               <div className="rounded-lg border border-border bg-bg-secondary p-4">
                 <div className="flex items-center gap-2 text-accent">
-                  <Settings2 className="h-3.5 w-3.5" />
-                  <span className="text-[11px] font-medium uppercase tracking-[0.08em]">
-                    Workspace control
-                  </span>
+                  <Shield className="h-4 w-4" />
+                  <span className="text-[11px] uppercase tracking-[0.22em]">Workspace control</span>
                 </div>
-                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                <p className="mt-3 text-sm leading-relaxed text-text-secondary">
                   You can rebuild the module layout later without losing the underlying workflow.
                 </p>
               </div>

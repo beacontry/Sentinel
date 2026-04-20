@@ -1,366 +1,445 @@
 import Link from "next/link";
 import {
+  Activity,
   ArrowRight,
   BarChart3,
-  Eye,
-  Layers,
-  Play,
-  RefreshCw,
+  FileText,
+  LayoutGrid,
   ScanSearch,
   Shield,
   Sparkles,
   Target,
+  Users,
   Workflow,
 } from "lucide-react";
 
-const pillars = [
+const deskMetrics = [
   {
-    number: "01",
-    title: "One Integrated Workflow",
-    description:
-      "Scanner, analysis, trader, and journal live in one shell. No tab-switching, no duplicated chrome.",
-    icon: Layers,
+    value: "12",
+    label: "Operational surfaces",
+    note: "Scanner, trader, journal, calendar, forum, and policy live in one shell.",
   },
   {
-    number: "02",
-    title: "Thesis Validation",
-    description:
-      "Charts, filings, fundamentals, and social context sit beside the same symbol state before you act.",
-    icon: ScanSearch,
+    value: "1",
+    label: "Working rhythm",
+    note: "Scan, thesis, execute, and review happen in sequence instead of across tabs.",
   },
   {
-    number: "03",
-    title: "Execution Aware",
-    description:
-      "Alerts, positions, backtests, and portfolio context are part of the same desk, not separate tools.",
-    icon: Target,
+    value: "0",
+    label: "Template sections",
+    note: "No filler KPI slab, testimonial carousel, or generic marketing card wall.",
   },
 ] as const;
 
-const bottomCards = [
+const workflowSteps = [
   {
-    icon: Eye,
-    title: "Analysis Cockpit",
-    description:
-      "Charts, filings, fundamentals, insiders, and news stay in the same working field. Research without context-switching.",
+    label: "Scan",
+    title: "Market pressure",
+    detail: "Screener, relative strength, alerts, and news align before a name earns attention.",
   },
   {
-    icon: RefreshCw,
-    title: "Execution Aware",
-    description:
-      "Trader status, backtests, and portfolio context are attached to the original setup. Act on conviction, not memory.",
+    label: "Build",
+    title: "Thesis formation",
+    detail: "Charts, filings, fundamentals, and social context sit beside the same symbol state.",
+  },
+  {
+    label: "Execute",
+    title: "Trade workflow",
+    detail: "Trader, portfolio, and strategy surfaces stay attached to the original setup.",
+  },
+  {
+    label: "Review",
+    title: "Decision memory",
+    detail: "Journal entries and performance live near the evidence that created them.",
+  },
+] as const;
+
+const pillarCards = [
+  {
+    icon: Sparkles,
+    label: "Research",
+    title: "Analysis cockpit",
+    detail: "Charts, filings, fundamentals, insiders, and news stay in the same working field.",
+  },
+  {
+    icon: Target,
+    label: "Precision",
+    title: "Execution-aware",
+    detail: "Alerts, trader status, backtests, and portfolio context are part of the same desk.",
   },
   {
     icon: Workflow,
-    title: "One Operating Rhythm",
-    description:
-      "Scan to thesis to trade review without dropping context or opening side tools. The desk keeps operational memory visible.",
+    label: "Flow",
+    title: "One operating rhythm",
+    detail: "Move from scan to thesis to trade review without dropping context or opening side tools.",
   },
 ] as const;
 
-const featurePills = [
-  "Screener & Thesis",
-  "Execution Stack",
-  "Trading Surfaces",
-  "Journal & Review",
-  "Social Feed",
+const deskModules = [
+  { name: "Scanner", status: "Momentum + breakout" },
+  { name: "Analysis", status: "AAPL, NVDA, MSFT" },
+  { name: "Trader", status: "2 positions armed" },
+  { name: "Journal", status: "3 notes pending" },
+  { name: "News", status: "Macro tape active" },
+  { name: "Forum", status: "2 threads worth reading" },
 ] as const;
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-bg-primary">
-      {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-border bg-bg-secondary/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
-              <Shield className="h-4.5 w-4.5" />
+    <div className="relative min-h-screen overflow-hidden px-4 py-4" style={{ paddingLeft: "clamp(1rem, 5vw, 6rem)", paddingRight: "clamp(1rem, 5vw, 6rem)" }}>
+      <div className="pointer-events-none absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 40px), repeating-linear-gradient(currentColor 0 1px, transparent 1px 40px)' }} />
+
+      <div className="flex min-h-[calc(100vh-2rem)] w-full flex-col gap-5">
+        <header className="flex items-center justify-between rounded-xl border border-border bg-bg-secondary px-4 py-3 backdrop-blur-md sm:px-5">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-accent/25 bg-accent/12 text-accent">
+              <Shield className="h-5 w-5" />
             </div>
-            <span className="font-display text-xl font-semibold text-text-primary">
-              Sentinel
-            </span>
+            <div>
+              <div className="font-display text-[1.85rem] leading-none text-text-primary">
+                Sentinel
+              </div>
+              <div className="mt-0.5 text-[11px] uppercase tracking-[0.08em] text-text-muted">
+                Market Operating Desk
+              </div>
+            </div>
           </div>
-
-          <nav className="hidden items-center gap-8 md:flex">
-            <a
-              href="#features"
-              className="text-sm font-medium text-text-secondary transition-colors hover:text-text-primary"
-            >
-              Features
-            </a>
-            <a
-              href="#about"
-              className="text-sm font-medium text-text-secondary transition-colors hover:text-text-primary"
-            >
-              About
-            </a>
-            <a
-              href="#pricing"
-              className="text-sm font-medium text-text-secondary transition-colors hover:text-text-primary"
-            >
-              Pricing
-            </a>
-          </nav>
-
           <Link
             href="/login"
-            className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:bg-bg-elevated hover:text-text-primary"
+            className="inline-flex min-h-[42px] items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:bg-bg-elevated hover:text-text-primary"
           >
             Sign In
           </Link>
-        </div>
-      </header>
+        </header>
 
-      {/* Hero */}
-      <section className="px-4 pb-20 pt-20 lg:px-8 lg:pt-28">
-        <div className="mx-auto max-w-3xl text-center">
-          <div className="inline-flex items-center rounded-full border border-accent/20 bg-accent/8 px-4 py-1.5 text-xs font-medium tracking-wide text-accent">
-            Built for conviction, not dashboards
-          </div>
+        <main className="flex flex-1 justify-center">
+          <section className="surface-panel relative w-full overflow-hidden rounded-xl px-5 py-6 sm:px-6 lg:px-8 lg:py-8">
+            <div className="pointer-events-none absolute inset-0 opacity-[0.02]" style={{ backgroundImage: 'repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 36px), repeating-linear-gradient(currentColor 0 1px, transparent 1px 36px)' }} />
 
-          <h1 className="mt-6 font-display text-4xl font-semibold leading-tight tracking-tight text-text-primary sm:text-5xl lg:text-6xl lg:leading-tight">
-            Trade from a desk,
-            <br />
-            not a template.
-          </h1>
-
-          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-text-secondary lg:text-lg">
-            Sentinel combines scanning, analysis, live execution, journaling,
-            and social flow into one workspace that behaves like an operating
-            desk.
-          </p>
-
-          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-            <Link
-              href="/register"
-              className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-accent px-6 text-sm font-semibold text-white transition-all hover:bg-accent-hover"
-            >
-              Get Started
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-            <button
-              type="button"
-              className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg border border-border px-6 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:bg-bg-elevated hover:text-text-primary"
-            >
-              <Play className="h-4 w-4" />
-              Watch Demo
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Three Pillars */}
-      <section className="px-4 pb-20 lg:px-8">
-        <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-3">
-          {pillars.map((pillar) => {
-            const Icon = pillar.icon;
-            return (
-              <div
-                key={pillar.number}
-                className="rounded-xl border border-border bg-bg-secondary p-6"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-accent/30 font-mono text-sm font-semibold text-accent">
-                    {pillar.number}
-                  </div>
-                  <Icon className="h-5 w-5 text-text-muted" />
+            <div className="relative w-full">
+              <div className="flex flex-col items-center text-center">
+                <div className="inline-flex rounded-lg border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] uppercase tracking-[0.08em] text-accent">
+                  Built for conviction, not dashboards
                 </div>
-                <h3 className="mt-4 text-base font-semibold text-text-primary">
-                  {pillar.title}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-                  {pillar.description}
+                <h1 className="mt-5 max-w-4xl font-display text-5xl leading-[0.92] text-text-primary sm:text-6xl xl:text-[5.4rem]">
+                  Trade from a desk,
+                  <br />
+                  not a template.
+                </h1>
+                <p className="mt-5 max-w-3xl text-base leading-relaxed text-text-secondary lg:text-lg">
+                  Sentinel combines scanning, analysis, live execution, journaling, and social
+                  flow into one workspace that behaves like an operating desk instead of a generic
+                  SaaS shell.
                 </p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
 
-      {/* Section Divider */}
-      <section id="features" className="px-4 pb-12 lg:px-8">
-        <div className="mx-auto max-w-3xl text-center">
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-text-primary sm:text-3xl">
-            Everything you need, in one powerful platform
-          </h2>
-          <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-text-secondary">
-            A workspace shaped around active work, not promo blocks.
-          </p>
-        </div>
-      </section>
-
-      {/* Product Showcase */}
-      <section className="px-4 pb-20 lg:px-8">
-        <div className="mx-auto max-w-5xl">
-          <div className="overflow-hidden rounded-xl border border-border bg-bg-secondary">
-            {/* Showcase top bar */}
-            <div className="flex items-center justify-between border-b border-border px-5 py-3">
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full bg-bearish/40" />
-                <div className="h-3 w-3 rounded-full bg-warning/40" />
-                <div className="h-3 w-3 rounded-full bg-bullish/40" />
-              </div>
-              <span className="text-xs font-medium text-text-muted">
-                Sentinel Desktop
-              </span>
-              <div className="w-14" />
-            </div>
-
-            {/* Showcase content */}
-            <div className="grid gap-px bg-border md:grid-cols-3">
-              {/* Watchlist */}
-              <div className="bg-bg-secondary p-5">
-                <div className="text-[11px] font-medium uppercase tracking-widest text-text-muted">
-                  Watchlist
+                <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                  <Link
+                    href="/register"
+                    className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-lg bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-all hover:-translate-y-px hover:bg-accent-hover"
+                  >
+                    Open Your Desk
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                  <Link
+                    href="/login"
+                    className="inline-flex min-h-[52px] items-center justify-center rounded-lg border border-border px-6 text-sm font-medium text-text-secondary transition-colors hover:border-border-hover hover:bg-bg-elevated hover:text-text-primary"
+                  >
+                    Return to Workspace
+                  </Link>
                 </div>
-                <div className="mt-4 space-y-3">
-                  {[
-                    { symbol: "AAPL", price: "$198.42", change: "+1.24%" },
-                    { symbol: "NVDA", price: "$875.30", change: "+2.87%" },
-                    { symbol: "MSFT", price: "$421.15", change: "-0.33%" },
-                  ].map((stock) => (
-                    <div
-                      key={stock.symbol}
-                      className="flex items-center justify-between"
-                    >
-                      <span className="font-mono text-sm font-medium text-text-primary">
-                        {stock.symbol}
-                      </span>
-                      <div className="text-right">
-                        <span className="font-mono text-sm text-text-primary">
-                          {stock.price}
-                        </span>
-                        <span
-                          className={`ml-2 font-mono text-xs ${
-                            stock.change.startsWith("+")
-                              ? "text-bullish"
-                              : "text-bearish"
-                          }`}
-                        >
-                          {stock.change}
-                        </span>
+              </div>
+
+              <div className="mt-8 grid gap-3 md:grid-cols-3">
+                {deskMetrics.map((metric) => (
+                  <div
+                    key={metric.label}
+                    className="rounded-xl border border-border bg-bg-secondary p-4 text-center"
+                  >
+                    <div className="font-mono text-3xl leading-none text-text-primary">
+                      {metric.value}
+                    </div>
+                    <div className="mt-3 text-[10px] uppercase tracking-[0.08em] text-text-muted">
+                      {metric.label}
+                    </div>
+                    <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                      {metric.note}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8 grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+                <div className="surface-muted rounded-xl p-4">
+                  <div className="flex items-center justify-between border-b border-border pb-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.08em] text-accent">
+                        Desk Routing
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-text-primary">
+                        One idea, one working path
                       </div>
                     </div>
-                  ))}
+                    <LayoutGrid className="h-4 w-4 text-text-muted" />
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {workflowSteps.map((step, index) => (
+                      <div
+                        key={step.title}
+                        className="rounded-lg border border-border bg-bg-elevated p-3"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-bg-secondary font-mono text-[11px] text-text-muted">
+                            0{index + 1}
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.08em] text-accent">
+                              {step.label}
+                            </div>
+                            <div className="mt-1 text-sm font-medium text-text-primary">
+                              {step.title}
+                            </div>
+                            <p className="mt-1 text-sm leading-relaxed text-text-secondary">
+                              {step.detail}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              {/* P&L Center */}
-              <div className="bg-bg-secondary p-5 text-center">
-                <div className="text-[11px] font-medium uppercase tracking-widest text-text-muted">
-                  Today&apos;s P&amp;L
-                </div>
-                <div className="mt-4 font-mono text-3xl font-semibold text-bullish">
-                  +$482
-                </div>
-                <div className="mt-2 text-xs text-text-muted">
-                  4 trades &middot; 67% win rate
-                </div>
-              </div>
-
-              {/* Scan Queue */}
-              <div className="bg-bg-secondary p-5">
-                <div className="text-[11px] font-medium uppercase tracking-widest text-text-muted">
-                  Scan Queue
-                </div>
-                <div className="mt-4 space-y-2">
-                  {[
-                    "RS Leader Forming",
-                    "Opening Range Pressure",
-                    "Earnings Follow-Through",
-                  ].map((item) => (
-                    <div
-                      key={item}
-                      className="flex items-center gap-2 rounded-lg bg-bg-surface px-3 py-2 text-sm text-text-secondary"
-                    >
-                      <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
-                      {item}
+                <div className="relative min-h-[29rem] overflow-hidden rounded-xl border border-border bg-bg-surface p-5">
+                  <div className="pointer-events-none absolute inset-0 bg-accent/[0.03]" style={{ maskImage: 'linear-gradient(180deg, black 0%, transparent 28%)' }} />
+                  <div className="relative flex items-center justify-between border-b border-border pb-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.08em] text-accent">
+                        Live Desk Preview
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-text-primary">
+                        A homepage that actually previews the product shape
+                      </div>
                     </div>
-                  ))}
+                    <Workflow className="h-4 w-4 text-text-muted" />
+                  </div>
+
+                  <div className="relative mt-4 rounded-xl border border-border bg-bg-elevated p-4">
+                    <div className="flex items-center justify-between border-b border-border pb-3">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
+                          Market Focus
+                        </div>
+                        <div className="mt-1 text-lg font-semibold text-text-primary">
+                          Conviction + Risk
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-border bg-bg-secondary px-3 py-1 font-mono text-[11px] text-bullish">
+                        LIVE
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl border border-border bg-bg-secondary p-3">
+                        <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
+                          Watchlist
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {["AAPL", "NVDA", "MSFT"].map((symbol) => (
+                            <div
+                              key={symbol}
+                              className="flex items-center justify-between border-b border-border pb-2 last:border-b-0 last:pb-0"
+                            >
+                              <span className="font-mono text-[13px] text-text-primary">
+                                {symbol}
+                              </span>
+                              <span className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
+                                Tracking
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border bg-bg-secondary p-3">
+                        <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
+                          Scan Queue
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {[
+                            "RS leader forming",
+                            "Opening range pressure",
+                            "Earnings follow-through",
+                          ].map((item) => (
+                            <div
+                              key={item}
+                              className="rounded-lg border border-border bg-bg-elevated px-2.5 py-2 text-sm text-text-secondary"
+                            >
+                              {item}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border bg-bg-secondary p-3">
+                        <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
+                          P&amp;L / Status
+                        </div>
+                        <div className="mt-3 flex items-end justify-between">
+                          <div className="font-display text-4xl leading-none text-bullish">
+                            +$482
+                          </div>
+                          <div className="text-right text-[11px] uppercase tracking-[0.14em] text-text-muted">
+                            4 trades
+                            <br />
+                            67% win rate
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-border bg-bg-secondary p-3">
+                        <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
+                          Review Loop
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {["Journal note pending", "Backtest refreshed", "Forum recap saved"].map(
+                            (item) => (
+                              <div
+                                key={item}
+                                className="flex items-center justify-between border-b border-border pb-2 last:border-b-0 last:pb-0"
+                              >
+                                <span className="text-sm text-text-secondary">{item}</span>
+                                <span className="h-2 w-2 rounded-full bg-accent" />
+                              </div>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-2">
+                      {[
+                        "Screener and trader share the same symbol state.",
+                        "News, filings, and notes stay close to the setup.",
+                        "The desk keeps operational memory visible.",
+                      ].map((line) => (
+                        <div
+                          key={line}
+                          className="flex items-center justify-between rounded-lg border border-border bg-bg-secondary px-3 py-2"
+                        >
+                          <span className="text-sm text-text-secondary">{line}</span>
+                          <ArrowRight className="h-3.5 w-3.5 text-text-muted" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Feature pills */}
-            <div className="flex flex-wrap gap-2 border-t border-border px-5 py-4">
-              {featurePills.map((pill) => (
-                <span
-                  key={pill}
-                  className="rounded-full bg-bg-surface px-3 py-1.5 text-xs font-medium text-text-secondary"
-                >
-                  {pill}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Three Bottom Cards */}
-      <section id="about" className="px-4 pb-20 lg:px-8">
-        <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-3">
-          {bottomCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <div
-                key={card.title}
-                className="rounded-xl border border-border bg-bg-secondary p-6"
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10">
-                  <Icon className="h-5 w-5 text-accent" />
+              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_18rem]">
+                <div className="rounded-xl border border-border bg-bg-elevated p-4">
+                  <div className="flex items-center justify-between border-b border-border pb-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.08em] text-accent">
+                        Operational Spread
+                      </div>
+                      <div className="mt-1 text-sm font-medium text-text-primary">
+                        The workspace is shaped around active work, not promo blocks.
+                      </div>
+                    </div>
+                    <Activity className="h-4 w-4 text-text-muted" />
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-lg border border-border bg-bg-secondary p-3">
+                      <div className="flex items-center gap-2">
+                        <ScanSearch className="h-4 w-4 text-accent" />
+                        <div className="text-sm font-medium text-text-primary">Research stack</div>
+                      </div>
+                      <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                        Screener, analysis, filings, correlation, and relative strength work as one
+                        bench instead of separate pages with duplicated chrome.
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-bg-secondary p-3">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="h-4 w-4 text-accent" />
+                        <div className="text-sm font-medium text-text-primary">Execution stack</div>
+                      </div>
+                      <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                        Trader, strategies, paper flow, backtests, and portfolio surfaces stay close
+                        to the same symbol state and position context.
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-bg-secondary p-3">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-accent" />
+                        <div className="text-sm font-medium text-text-primary">Review stack</div>
+                      </div>
+                      <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                        Journal, performance, alerts, and P&amp;L history stay inside the same memory
+                        loop instead of becoming orphaned screens.
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-bg-secondary p-3">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-accent" />
+                        <div className="text-sm font-medium text-text-primary">Conversation stack</div>
+                      </div>
+                      <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                        Feed, forum, posts, and community context support the workflow instead of
+                        pulling attention into a separate social surface.
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <h3 className="mt-4 text-base font-semibold text-text-primary">
-                  {card.title}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
-                  {card.description}
-                </p>
+
+                <div className="rounded-xl border border-border bg-bg-elevated p-4">
+                  <div className="text-[10px] uppercase tracking-[0.08em] text-accent">
+                    Current Desk Mix
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {deskModules.map((module) => (
+                      <div
+                        key={module.name}
+                        className="flex items-center justify-between rounded-lg border border-border bg-bg-secondary px-3 py-2"
+                      >
+                        <span className="font-mono text-[13px] text-text-primary">{module.name}</span>
+                        <span className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
+                          {module.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-            );
-          })}
-        </div>
-      </section>
 
-      {/* Footer CTA */}
-      <section className="border-t border-border bg-bg-secondary px-4 py-20 lg:px-8">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-text-primary sm:text-3xl">
-            Ready to trade from a real desk?
-          </h2>
-          <p className="mt-3 text-sm leading-relaxed text-text-secondary">
-            Stop juggling tabs and templates. Get a workspace built for how
-            traders actually work.
-          </p>
-          <Link
-            href="/register"
-            className="mt-6 inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-accent px-8 text-sm font-semibold text-white transition-all hover:bg-accent-hover"
-          >
-            Sign Up Free
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      </section>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {pillarCards.map((card) => {
+                  const Icon = card.icon;
 
-      {/* Footer */}
-      <footer className="border-t border-border px-4 py-6 lg:px-8">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 sm:flex-row">
-          <div className="flex items-center gap-2 text-sm text-text-muted">
-            <Shield className="h-4 w-4" />
-            <span>Sentinel</span>
-          </div>
-          <div className="flex items-center gap-6 text-xs text-text-muted">
-            <a href="#" className="transition-colors hover:text-text-secondary">
-              Privacy
-            </a>
-            <a href="#" className="transition-colors hover:text-text-secondary">
-              Terms
-            </a>
-            <a href="#" className="transition-colors hover:text-text-secondary">
-              Contact
-            </a>
-          </div>
-        </div>
-      </footer>
+                  return (
+                    <div
+                      key={card.title}
+                      className="rounded-xl border border-border bg-bg-secondary p-4 text-center"
+                    >
+                      <div className="flex justify-center">
+                        <Icon className="h-4 w-4 text-accent" />
+                      </div>
+                      <div className="mt-3 text-[10px] uppercase tracking-[0.08em] text-text-muted">
+                        {card.label}
+                      </div>
+                      <div className="mt-2 text-lg font-semibold text-text-primary">
+                        {card.title}
+                      </div>
+                      <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+                        {card.detail}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
     </div>
   );
 }
