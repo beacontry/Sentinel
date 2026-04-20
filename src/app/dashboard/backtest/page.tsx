@@ -24,7 +24,7 @@ const EXIT_REASON_LABELS: Record<string, { label: string; color: string }> = {
   end_of_data: { label: "End of Data", color: "text-text-muted" },
 };
 
-const PRESET_OPTIONS = [
+const BASE_PRESET_OPTIONS = [
   { value: "custom", label: "Custom" },
   ...Object.entries(PRESET_LABELS).map(([key, val]) => ({
     value: key,
@@ -57,6 +57,20 @@ export default function BacktestPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const symbolDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Build dynamic preset options from saved strategies
+  const presetOptions = [
+    ...BASE_PRESET_OPTIONS,
+    ...(strategies.length > 0
+      ? [
+          { value: "_divider", label: "── Saved ──" },
+          ...strategies.map((s) => ({
+            value: `saved:${s.id}`,
+            label: `${s.name} (${s.config.symbol})`,
+          })),
+        ]
+      : []),
+  ];
 
   const loadStrategies = useCallback(async () => {
     try {
@@ -103,10 +117,27 @@ export default function BacktestPage() {
   }
 
   function handlePresetChange(value: string) {
+    if (value === "_divider") return;
     setPreset(value);
     setStrategySource(null);
     if (value === "auto") {
       handleAutoTune();
+      return;
+    }
+    // Load from saved strategy
+    if (value.startsWith("saved:")) {
+      const id = value.slice(6);
+      const s = strategies.find((st) => st.id === id);
+      if (s) {
+        setSymbol(s.config.symbol);
+        setDays(s.config.days);
+        setHoldPeriod(s.config.holdPeriod);
+        if (s.config.stopLoss != null) setStopLoss(s.config.stopLoss);
+        if (s.config.takeProfit != null) setTakeProfit(s.config.takeProfit);
+        if (s.config.trailingStop != null) setTrailingStop(s.config.trailingStop);
+        setStrategySource(`Loaded from "${s.name}"`);
+        setResult(null);
+      }
       return;
     }
     if (value && value in STRATEGY_PRESETS) {
@@ -419,7 +450,7 @@ export default function BacktestPage() {
           <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
             <Select
               label="Strategy Preset"
-              options={PRESET_OPTIONS}
+              options={presetOptions}
               value={preset}
               onChange={(value) => handlePresetChange(value)}
             />

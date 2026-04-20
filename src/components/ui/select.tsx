@@ -67,21 +67,28 @@ export function Select({
               rounded-lg border border-border bg-bg-surface p-1 shadow-xl animate-scale-in"
           >
             <SelectPrimitive.Viewport>
-              {options.map((opt) => (
-                <SelectPrimitive.Item
-                  key={opt.value}
-                  value={opt.value}
-                  className="flex items-center justify-between rounded-md px-2.5 py-2 text-sm
-                    text-text-secondary cursor-pointer outline-none
-                    data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-primary
-                    data-[state=checked]:text-accent"
-                >
-                  <SelectPrimitive.ItemText>{opt.label}</SelectPrimitive.ItemText>
-                  <SelectPrimitive.ItemIndicator>
-                    <Check className="h-3.5 w-3.5 text-accent" />
-                  </SelectPrimitive.ItemIndicator>
-                </SelectPrimitive.Item>
-              ))}
+              {options.map((opt) =>
+                opt.value === "_divider" ? (
+                  <SelectPrimitive.Separator
+                    key="_divider"
+                    className="my-1 h-px bg-border"
+                  />
+                ) : (
+                  <SelectPrimitive.Item
+                    key={opt.value}
+                    value={opt.value}
+                    className="flex items-center justify-between rounded-md px-2.5 py-2 text-sm
+                      text-text-secondary cursor-pointer outline-none
+                      data-[highlighted]:bg-bg-hover data-[highlighted]:text-text-primary
+                      data-[state=checked]:text-accent"
+                  >
+                    <SelectPrimitive.ItemText>{opt.label}</SelectPrimitive.ItemText>
+                    <SelectPrimitive.ItemIndicator>
+                      <Check className="h-3.5 w-3.5 text-accent" />
+                    </SelectPrimitive.ItemIndicator>
+                  </SelectPrimitive.Item>
+                )
+              )}
             </SelectPrimitive.Viewport>
           </SelectPrimitive.Content>
         </SelectPrimitive.Portal>
