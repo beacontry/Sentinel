@@ -6,7 +6,7 @@ import Link from "next/link";
 import { WorkspacePreview } from "@/components/auth/workspace-preview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Shield, Sparkles } from "lucide-react";
+import { Shield, Lock, LayoutDashboard } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -42,8 +42,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-hidden px-4 py-4" style={{ paddingLeft: "clamp(1rem, 3vw, 4rem)", paddingRight: "clamp(1rem, 3vw, 4rem)" }}>
-      <div className="mx-auto grid min-h-[calc(100vh-2rem)] overflow-hidden rounded-[18px] border border-border bg-bg-surface shadow-2xl lg:grid-cols-[1fr_1fr]">
+    <div className="min-h-screen bg-bg-primary p-4 lg:p-6">
+      <div className="mx-auto grid min-h-[calc(100vh-2rem)] overflow-hidden rounded-xl border border-border bg-bg-surface lg:min-h-[calc(100vh-3rem)] lg:grid-cols-[1fr_1fr]">
         <WorkspacePreview
           eyebrow="Welcome back"
           title="Pick up the desk where you left it."
@@ -80,20 +80,30 @@ export default function LoginPage() {
         />
 
         <section className="flex items-center justify-center p-6 lg:p-10">
-          <div className="w-full max-w-lg space-y-5">
-            <div className="rounded-[14px] border border-border bg-bg-secondary p-6 shadow-[0_18px_40px_rgba(0,0,0,0.24)] sm:p-8">
+          <div className="w-full max-w-md space-y-5">
+            <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-xl sm:p-8">
               <div className="space-y-3">
-                <Link href="/" className="inline-flex items-center justify-center h-12 w-12 rounded-[18px] border border-accent/25 bg-accent/12 text-accent lg:hidden">
-                  <Shield className="h-5 w-5" />
+                <Link
+                  href="/"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-accent/25 bg-accent/10 text-accent lg:hidden"
+                >
+                  <Shield className="h-4.5 w-4.5" />
                 </Link>
-                <div className="text-[11px] uppercase tracking-[0.08em] text-accent">Sign In</div>
-                <h1 className="font-display text-4xl text-text-primary">Return to the desk</h1>
-                <p className="text-sm text-text-secondary">Use your Sentinel account to reopen the workspace.</p>
+
+                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-accent">
+                  Sign In
+                </div>
+                <h1 className="text-2xl font-semibold tracking-tight text-text-primary sm:text-3xl">
+                  Return to the desk
+                </h1>
+                <p className="text-sm leading-relaxed text-text-secondary">
+                  Use your Sentinel account to reopen the workspace.
+                </p>
               </div>
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
                 {error && (
-                  <div className="rounded-lg border border-bearish/25 bg-bearish/10 px-4 py-3 text-sm text-bearish animate-scale-in">
+                  <div className="animate-scale-in rounded-lg border border-bearish/25 bg-bearish/10 px-4 py-3 text-sm text-bearish">
                     {error}
                   </div>
                 )}
@@ -119,35 +129,42 @@ export default function LoginPage() {
                   autoComplete="current-password"
                 />
 
-                <Button type="submit" loading={loading} className="w-full">
+                <Button type="submit" size="lg" loading={loading} className="w-full">
                   Sign In
                 </Button>
               </form>
 
-              <p className="mt-5 text-sm text-text-muted">
+              <p className="mt-5 text-center text-sm text-text-muted">
                 Don&apos;t have an account?{" "}
-                <Link href="/register" className="font-medium text-accent transition-colors hover:text-accent-hover">
+                <Link
+                  href="/register"
+                  className="font-medium text-accent transition-colors hover:text-accent-hover"
+                >
                   Create one
                 </Link>
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-[10px] border border-border bg-bg-secondary p-4">
+              <div className="rounded-lg border border-border bg-bg-secondary p-4">
                 <div className="flex items-center gap-2 text-accent">
-                  <Shield className="h-4 w-4" />
-                  <span className="text-[11px] uppercase tracking-[0.22em]">Session security</span>
+                  <Lock className="h-3.5 w-3.5" />
+                  <span className="text-[11px] font-medium uppercase tracking-[0.08em]">
+                    Session security
+                  </span>
                 </div>
-                <p className="mt-3 text-sm leading-relaxed text-text-secondary">
+                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
                   Authentication reopens the desk without changing your saved module configuration.
                 </p>
               </div>
-              <div className="rounded-[10px] border border-border bg-bg-secondary p-4">
+              <div className="rounded-lg border border-border bg-bg-secondary p-4">
                 <div className="flex items-center gap-2 text-accent">
-                  <Sparkles className="h-4 w-4" />
-                  <span className="text-[11px] uppercase tracking-[0.22em]">Live workspace</span>
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                  <span className="text-[11px] font-medium uppercase tracking-[0.08em]">
+                    Live workspace
+                  </span>
                 </div>
-                <p className="mt-3 text-sm leading-relaxed text-text-secondary">
+                <p className="mt-2 text-sm leading-relaxed text-text-secondary">
                   Analysis, screener, trader, journal, and community surfaces reopen in one continuous shell.
                 </p>
               </div>
