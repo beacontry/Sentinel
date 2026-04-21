@@ -1964,6 +1964,26 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
       } catch { /* use default */ }
 
       log.info({ positions: positions.length, userId, mode: lastMode }, "Open positions detected — auto-starting engine with last mode");
+
+      // Sync broker positions into in-memory map so engine manages them immediately
+      const positionMap = getPositionMap();
+      const strategy = await resolveStrategy(userId, "default");
+      for (const bp of positions) {
+        if (positionMap.has(bp.symbol)) continue; // already tracked
+        positionMap.set(bp.symbol, {
+          symbol: bp.symbol,
+          qty: bp.qty,
+          entryPrice: bp.avgEntryPrice,
+          peakPrice: Math.max(bp.currentPrice, bp.avgEntryPrice), // conservative: at least entry or current
+          stopLoss: bp.avgEntryPrice * (1 - strategy.stopLossPct),
+          takeProfit: bp.avgEntryPrice * (1 + strategy.takeProfitPct),
+          trailingStopPct: strategy.trailingStopPct,
+          entryDate: new Date(), // unknown — use now so hold period counts from restart
+          holdPeriod: strategy.holdPeriod,
+        });
+      }
+      log.info({ synced: positionMap.size }, "Synced broker positions into engine");
+
       await startEngine(userId, lastMode);
     }
   } catch (err) {
