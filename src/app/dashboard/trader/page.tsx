@@ -25,6 +25,15 @@ import {
   Settings,
   RefreshCw,
 } from "lucide-react";
+import { PRESET_LABELS } from "@/lib/strategy-presets";
+
+const ENGINE_MODES = [
+  "conservative", "moderate", "optimized", "aggressive",
+  "intraday", "tactical", "tactical-smart",
+].map(key => ({
+  value: key,
+  label: `${PRESET_LABELS[key as keyof typeof PRESET_LABELS]?.label ?? key} (${PRESET_LABELS[key as keyof typeof PRESET_LABELS]?.description ?? ""})`,
+}));
 
 interface TraderData {
   status: {
@@ -251,13 +260,9 @@ export default function TraderPage() {
             onChange={(e) => setEngineMode(e.target.value)}
             className="min-h-[44px] rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary"
           >
-            <option value="conservative">Conservative (tight stops, modest targets)</option>
-            <option value="moderate">Moderate (balanced risk/reward)</option>
-            <option value="optimized">Optimized (GA-tuned, 12% SL, 28% TP)</option>
-            <option value="aggressive">Aggressive (wide stops, big targets)</option>
-            <option value="intraday">Intraday (5min bars, flatten at 3 PM)</option>
-            <option value="tactical">Tactical (top 50 S&P, exit on SPY weakness)</option>
-            <option value="tactical-smart">Tactical Smart (screener-picked, exit on SPY weakness)</option>
+            {ENGINE_MODES.map(m => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
           </select>
           {!engine?.running ? (
             <Button
