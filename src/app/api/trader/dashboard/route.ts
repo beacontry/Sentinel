@@ -55,7 +55,7 @@ export async function GET() {
           brokerAccount = { equity: a.equity, cash: a.cash, buyingPower: a.buyingPower, portfolioValue: a.portfolioValue ?? a.equity };
           brokerConnected = true;
         }
-        if (!traderServiceAlive && pos.status === "fulfilled") {
+        if (pos.status === "fulfilled") {
           brokerPositions = pos.value.map((p) => ({
             symbol: p.symbol, qty: p.qty, avgEntryPrice: p.avgEntryPrice,
             currentPrice: p.currentPrice, unrealizedPnl: p.unrealizedPnl, marketValue: p.marketValue,
@@ -75,11 +75,6 @@ export async function GET() {
       .from(traderDailyPnl)
       .where(eq(traderDailyPnl.date, today))
       .limit(1);
-
-    // Open positions — prefer live broker data over stale DB
-    const positions = brokerConnected
-      ? [] // broker positions handled in finalPositions below
-      : await db.select().from(traderPositions).limit(500);
 
     // Recent trades
     const trades = await db
@@ -154,10 +149,11 @@ export async function GET() {
       sharpeRatio: Math.round(sharpeRatio * 100) / 100,
     };
 
-    // Normalize positions to a consistent shape for the UI
-    const finalPositions = traderServiceAlive
-      ? positions.map((p) => ({ ...p, updatedAt: p.updatedAt.toISOString() }))
-      : brokerPositions.map((p) => ({
+    // Normalize positions — prefer broker data (always live), fall back to DB
+    const dbPositions = await db.select().from(traderPositions).limit(500);
+    const useBroker = brokerPositions.length > 0;
+    const finalPositions = useBroker
+      ? brokerPositions.map((p) => ({
           symbol: p.symbol,
           quantity: p.qty,
           qty: p.qty,
@@ -168,7 +164,8 @@ export async function GET() {
           marketValue: p.marketValue,
           stopPrice: null,
           updatedAt: new Date().toISOString(),
-        }));
+        }))
+      : dbPositions.map((p) => ({ ...p, updatedAt: p.updatedAt.toISOString() }));
 
     return NextResponse.json({
       status: {
