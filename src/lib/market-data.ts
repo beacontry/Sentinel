@@ -1,5 +1,8 @@
 import type { Bar } from "@/types";
 import { MARKET_DATA_CONFIG } from "./config";
+import { writeFile, readFile, mkdir } from "fs/promises";
+import { existsSync } from "fs";
+import { join } from "path";
 
 export type BarResolution = "5m" | "1d";
 
@@ -8,9 +11,55 @@ interface MarketDataProvider {
   fetchQuote(symbol: string): Promise<{ price: number; volume: number } | null>;
 }
 
+// ─── Persistent bar cache ──────────────────────────────────────────
+
+const BAR_CACHE_DIR = join(
+  process.env.CACHE_DIR ?? (process.env.NODE_ENV === "production" ? "/data/cache" : join(process.cwd(), "data")),
+  "bar-cache"
+);
+const BAR_CACHE_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours for daily bars
+const BAR_CACHE_5M_MAX_AGE_MS = 10 * 60 * 1000;  // 10 minutes for 5-min bars
+
+let barCacheDirReady = false;
+async function ensureBarCacheDir() {
+  if (barCacheDirReady) return;
+  if (!existsSync(BAR_CACHE_DIR)) await mkdir(BAR_CACHE_DIR, { recursive: true });
+  barCacheDirReady = true;
+}
+
+function barCacheKey(symbol: string, resolution: string): string {
+  return join(BAR_CACHE_DIR, `${symbol.replace(/[^A-Z0-9]/g, "_")}_${resolution}.json`);
+}
+
+interface CachedBars { bars: Bar[]; fetchedAt: number; }
+
+async function getCachedBars(symbol: string, resolution: string): Promise<Bar[] | null> {
+  try {
+    await ensureBarCacheDir();
+    const raw = await readFile(barCacheKey(symbol, resolution), "utf-8");
+    const cached: CachedBars = JSON.parse(raw);
+    const maxAge = resolution === "1d" ? BAR_CACHE_MAX_AGE_MS : BAR_CACHE_5M_MAX_AGE_MS;
+    if (Date.now() - cached.fetchedAt > maxAge) return null; // stale
+    if (cached.bars.length < 20) return null; // too few
+    return cached.bars;
+  } catch { return null; }
+}
+
+async function setCachedBars(symbol: string, resolution: string, bars: Bar[]): Promise<void> {
+  if (bars.length < 20) return;
+  try {
+    await ensureBarCacheDir();
+    await writeFile(barCacheKey(symbol, resolution), JSON.stringify({ bars, fetchedAt: Date.now() }));
+  } catch { /* best effort */ }
+}
+
 /** Yahoo Finance provider — no API key required. */
 class YahooProvider implements MarketDataProvider {
   async fetchBars(symbol: string, days: number, resolution: BarResolution = "5m"): Promise<Bar[]> {
+    // Check disk cache first
+    const cached = await getCachedBars(symbol, resolution);
+    if (cached) return cached;
+
     const period2 = Math.floor(Date.now() / 1000);
     const period1 = period2 - days * 86400;
     const interval = resolution === "1d" ? "1d" : "5m";
@@ -56,6 +105,10 @@ class YahooProvider implements MarketDataProvider {
           volume,
         });
       }
+
+      // Cache to disk for fast restarts
+      await setCachedBars(symbol, resolution, bars);
+
       return bars;
     } finally {
       clearTimeout(timeout);
