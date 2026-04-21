@@ -70,21 +70,12 @@ export async function applySentimentLayer(
 
     if (headlines.length === 0) return null;
 
-    // Score sentiment with AI (or use heuristic fallback)
-    const apiKey = CLAUDE_CONFIG.apiKey;
+    // Score sentiment with heuristic (keyword-based) — LLM tokens reserved for insights/chat
     let bullishPercent = 0.5;
     let bearishPercent = 0.5;
     let newsScore = 0.5;
 
-    if (apiKey) {
-      const scored = await scoreSentimentWithAI(symbol, headlines, apiKey);
-      if (scored) {
-        bullishPercent = scored.bullish;
-        bearishPercent = scored.bearish;
-        newsScore = scored.strength;
-      }
-    } else {
-      // Simple heuristic: count positive/negative keywords
+    {
       const scored = scoreSentimentHeuristic(headlines);
       bullishPercent = scored.bullish;
       bearishPercent = scored.bearish;
