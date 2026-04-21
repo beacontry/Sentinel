@@ -61,6 +61,7 @@ jobs:
               podman pull ghcr.io/ixiondt/sentinel:latest
               podman stop sentinel-app 2>/dev/null || true
               podman rm sentinel-app 2>/dev/null || true
+              mkdir -p /opt/apps/sentinel/cache
               podman run -d \
                 --name sentinel-app \
                 --network=host \
@@ -69,6 +70,8 @@ jobs:
                 -e HOSTNAME=0.0.0.0 \
                 -e PORT=3010 \
                 -e NEXT_TELEMETRY_DISABLED=1 \
+                -e CACHE_DIR=/data/cache \
+                -v /opt/apps/sentinel/cache:/data/cache:Z \
                 --restart always \
                 -m 1g \
                 ghcr.io/ixiondt/sentinel:latest

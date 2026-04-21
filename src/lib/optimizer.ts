@@ -117,7 +117,7 @@ const FETCH_DELAY_MS = 300;
 const INITIAL_CASH = 10000;
 
 const CACHE_DIR = join(
-  process.env.NODE_ENV === "production" ? "/tmp" : join(process.cwd(), "data"),
+  process.env.CACHE_DIR ?? (process.env.NODE_ENV === "production" ? "/data/cache" : join(process.cwd(), "data")),
   "optimizer-cache"
 );
 
