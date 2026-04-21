@@ -43,8 +43,8 @@ The live engine uses the same tuned signal parameters as the optimizer. On each 
 All conditions evaluated per stock at each scan interval:
 
 **Indicators Used:**
-- EMA crossover (fast/slow periods from optimizer: default 7/38)
-- RSI (14-period, oversold/overbought thresholds from optimizer: default 29/71)
+- EMA crossover (fast/slow periods — code default 9/21, overridden by optimizer at runtime)
+- RSI (14-period, oversold/overbought — code default 30/70, overridden by optimizer at runtime)
 - SMA(20) — price above = bullish
 - SMA(50) — alignment confirmation
 - MACD histogram — positive = bullish
@@ -197,6 +197,12 @@ Every buy signal passes through these gates before an order is placed:
 - Format: `paper:optimized`, `paper:tactical`, etc.
 - Auto-restart reads last mode from DB
 - Valid modes for auto-restart: conservative, moderate, optimized, aggressive, intraday, tactical, tactical-smart
+
+### Position Reconciliation
+- On each scan cycle, the engine compares its in-memory position map against actual broker positions
+- If a position exists in memory but not on Alpaca (manual sell, external closure), it is removed
+- This frees up slots for new buys and keeps the engine in sync with reality
+- Runs in all three scan modes: signal-based, tactical, and tactical-smart
 
 ---
 

@@ -998,11 +998,22 @@ async function runTacticalScan(): Promise<void> {
   const confirmedBelow = belowCount >= TACTICAL_CONFIG.confirmBars;
 
   const currentPositions = await client.getPositions().catch(() => []);
+
+  // Reconcile: remove positions from map that no longer exist on broker
+  const brokerSyms = new Set(currentPositions.map(p => p.symbol));
+  for (const [sym] of positionMap) {
+    if (!brokerSyms.has(sym)) {
+      log.info({ symbol: sym }, "Position no longer on broker — removing from engine map");
+      positionMap.delete(sym);
+    }
+  }
+  engine.positionCount = positionMap.size;
+
   const isInvested = currentPositions.length > 0;
 
   log.info({
     spyPrice: spyPrice.toFixed(2), smaExit: smaExit.toFixed(2), smaTrend: smaTrend.toFixed(2),
-    spyRSI: spyRSI.toFixed(1), confirmedBelow, isInvested, positions: currentPositions.length,
+    spyRSI: spyRSI.toFixed(1), confirmedBelow, isInvested, positions: positionMap.size,
   }, "Tactical scan");
 
   if (isInvested && confirmedBelow && spyPrice < smaExit) {
