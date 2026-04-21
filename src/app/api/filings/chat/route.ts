@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
 import { CLAUDE_CONFIG } from "@/lib/config";
@@ -59,7 +58,7 @@ export async function POST(request: Request) {
 
   if (!CLAUDE_CONFIG.apiKey) {
     return NextResponse.json(
-      { error: "AI features require an Anthropic API key to be configured." },
+      { error: "AI features require a Groq API key to be configured." },
       { status: 503 }
     );
   }
@@ -77,25 +76,34 @@ export async function POST(request: Request) {
   ].join("\n");
 
   try {
-    const client = new Anthropic({ apiKey: CLAUDE_CONFIG.apiKey });
-
-    const response = await client.messages.create({
-      model: CLAUDE_CONFIG.model,
-      max_tokens: CLAUDE_CONFIG.chatMaxTokens,
-      system: FILING_CHAT_SYSTEM,
-      messages: [{ role: "user", content: userContent }],
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${CLAUDE_CONFIG.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: CLAUDE_CONFIG.model,
+        messages: [
+          { role: "system", content: FILING_CHAT_SYSTEM },
+          { role: "user", content: userContent },
+        ],
+        max_tokens: CLAUDE_CONFIG.chatMaxTokens,
+        temperature: 0.7,
+      }),
     });
 
-    const text = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === "text")
-      .map((block) => block.text)
-      .join("");
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "Unknown error");
+      throw new Error(`Groq API error ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content ?? "";
+    const tokensUsed = data.usage?.total_tokens ?? 0;
 
     return NextResponse.json(
-      {
-        answer: text,
-        tokensUsed: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
-      },
+      { answer: text, tokensUsed },
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {

@@ -94,8 +94,8 @@ export const HYBRID_CONFIG = {
 } as const;
 
 export const CLAUDE_CONFIG = {
-  apiKey: process.env.ANTHROPIC_API_KEY ?? "",
-  model: "claude-sonnet-4-20250514" as const,
+  apiKey: process.env.GROQ_API_KEY ?? process.env.ANTHROPIC_API_KEY ?? "",
+  model: "llama-3.3-70b-versatile" as const,
   digestMaxTokens: 1500,
   chatMaxTokens: 1000,
   digestRateLimitMs: 60 * 60 * 1000, // 1 hour between user-triggered digests

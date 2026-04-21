@@ -171,13 +171,13 @@ export default function SettingsPage() {
           if (data.profile) {
             setRiskProfile(data.profile);
             setRiskForm({
-              accountSize: data.profile.accountSize,
-              riskTolerance: data.profile.riskTolerance,
-              maxDailyLossPct: data.profile.maxDailyLossPct,
-              maxDrawdownPct: data.profile.maxDrawdownPct,
-              maxPositionPct: data.profile.maxPositionPct,
-              maxPositionSize: data.profile.maxPositionSize,
-              maxSingleTradeLoss: data.profile.maxSingleTradeLoss,
+              accountSize: data.profile.accountSize ?? 10000,
+              riskTolerance: data.profile.riskTolerance ?? "moderate",
+              maxDailyLossPct: data.profile.maxDailyLossPct ?? 2,
+              maxDrawdownPct: data.profile.maxDrawdownPct ?? 10,
+              maxPositionPct: data.profile.maxPositionPct ?? 5,
+              maxPositionSize: data.profile.maxPositionSize ?? 100,
+              maxSingleTradeLoss: data.profile.maxSingleTradeLoss ?? 100,
             });
           }
         }
