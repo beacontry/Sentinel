@@ -1122,7 +1122,17 @@ async function runTacticalSmartScan(): Promise<void> {
   const currentPositions = await client.getPositions().catch(() => []);
   const isInvested = currentPositions.length > 0;
 
-  log.info({ spyPrice: spyPrice.toFixed(2), sma20: sma20.toFixed(2), sma50: sma50.toFixed(2), confirmedBelow, isInvested }, "Tactical Smart scan");
+  // Reconcile: remove positions from map that no longer exist on broker
+  const brokerSyms = new Set(currentPositions.map(p => p.symbol));
+  for (const [sym] of positionMap) {
+    if (!brokerSyms.has(sym)) {
+      log.info({ symbol: sym }, "Position no longer on broker — removing from engine map");
+      positionMap.delete(sym);
+    }
+  }
+  engine.positionCount = positionMap.size;
+
+  log.info({ spyPrice: spyPrice.toFixed(2), sma20: sma20.toFixed(2), sma50: sma50.toFixed(2), confirmedBelow, isInvested, positions: positionMap.size }, "Tactical Smart scan");
 
   if (isInvested && confirmedBelow && spyPrice < sma20) {
     // ── EXIT: same as regular tactical ──
@@ -1507,6 +1517,20 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
   }
 
   const positionMap = getPositionMap();
+
+  // Reconcile: remove positions from map that no longer exist on broker
+  // (handles manual sells on Alpaca, external closures, etc.)
+  if (brokerPositions.length > 0 || positionMap.size > 0) {
+    const brokerSymbols = new Set(brokerPositions.map(p => p.symbol));
+    for (const [symbol] of positionMap) {
+      if (!brokerSymbols.has(symbol)) {
+        log.info({ symbol }, "Position no longer on broker — removing from engine map");
+        positionMap.delete(symbol);
+      }
+    }
+    engine.positionCount = positionMap.size;
+  }
+
   let realizedPnlThisScan = 0;
   let tradesThisScan = 0;
 
