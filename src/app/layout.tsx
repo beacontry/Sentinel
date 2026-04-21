@@ -5,7 +5,13 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Sentinel",
-  description: "Trading intelligence platform",
+  description: "Trading intelligence platform — signals, analysis, and automated execution",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Sentinel",
+  },
 };
 
 export const viewport: Viewport = {
@@ -22,7 +28,15 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <head>
-        <meta name="theme-color" content="#f1f5f9" />
+        <meta name="theme-color" content="#0a0f0d" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <script dangerouslySetInnerHTML={{ __html: `
+          if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+              navigator.serviceWorker.register('/sw.js').catch(() => {});
+            });
+          }
+        ` }} />
       </head>
       <body className="min-h-screen bg-bg-primary text-text-primary antialiased">
         {children}
