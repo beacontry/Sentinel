@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { brokerConnections } from "@/lib/db/schema";
+import { brokerConnections, traderTrades, traderDailyPnl } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { createRouteLogger } from "@/lib/logger";
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
           log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders before flatten");
         }
 
-        const results: { symbol: string; qty: number; status: string }[] = [];
+        const results: { symbol: string; qty: number; status: string; pnl?: number }[] = [];
         for (const pos of toClose) {
           if (pos.qty <= 0) continue;
           try {
@@ -70,8 +70,38 @@ export async function POST(request: NextRequest) {
               type: "market",
               timeInForce: "day",
             });
-            results.push({ symbol: pos.symbol, qty: pos.qty, status: "sold" });
-            log.info({ symbol: pos.symbol, qty: pos.qty }, "Position closed via command");
+            const realizedPnl = pos.unrealizedPnl;
+            results.push({ symbol: pos.symbol, qty: pos.qty, status: "sold", pnl: realizedPnl });
+            log.info({ symbol: pos.symbol, qty: pos.qty, pnl: realizedPnl }, "Position closed via command");
+
+            // Record trade in DB
+            try {
+              await db.insert(traderTrades).values({
+                symbol: pos.symbol,
+                action: "manual_close",
+                signal: "MANUAL",
+                quantity: pos.qty,
+                orderType: "market",
+                fillPrice: pos.currentPrice,
+                status: "FILLED",
+                pnl: realizedPnl,
+                notes: `Closed via Trader UI`,
+                traderTimestamp: new Date(),
+              });
+            } catch { /* best effort */ }
+
+            // Update daily P&L
+            try {
+              const today = new Date().toISOString().slice(0, 10);
+              const [existing] = await db.select().from(traderDailyPnl).where(eq(traderDailyPnl.date, today)).limit(1);
+              if (existing) {
+                await db.update(traderDailyPnl)
+                  .set({ realizedPnl: existing.realizedPnl + realizedPnl, tradesCount: existing.tradesCount + 1 })
+                  .where(eq(traderDailyPnl.date, today));
+              } else {
+                await db.insert(traderDailyPnl).values({ date: today, realizedPnl, unrealizedPnl: 0, tradesCount: 1, halted: false });
+              }
+            } catch { /* best effort */ }
           } catch (err) {
             const msg = err instanceof Error ? err.message : "unknown";
             results.push({ symbol: pos.symbol, qty: pos.qty, status: `failed: ${msg}` });
