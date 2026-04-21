@@ -12,7 +12,7 @@ The trading engine scans the S&P 500, generates signals using technical analysis
 |------|-----------|-------------|---------------|-------------|---------------|---------------|
 | Conservative | 1.5% | 2% | 1% | 30 bars | From risk settings | From risk settings |
 | Moderate | 2% | 3% | 1.5% | 20 bars | From risk settings | From risk settings |
-| **Optimized** | 9% | 40.2% | 11.7% | 33 bars | 20% | From risk settings |
+| **Optimized** | 8.5% | 36.9% | 12.6% | 33 bars | 20% | From risk settings |
 | Aggressive | 3% | 5% | 2.5% | 15 bars | From risk settings | From risk settings |
 | Intraday | 1.5% | 2.5% | 1% | 12 bars (1hr) | From risk settings | From risk settings |
 
@@ -82,7 +82,7 @@ trail = 2% + (baseTrail - 2%) × e^(-3 × profitPct)
 
 | Profit | Trailing Stop | Locked-in Minimum |
 |--------|--------------|-------------------|
-| 0% | 11.7% (base) | Could go negative |
+| 0% | 12.6% (base) | Could go negative |
 | 5% | 10.3% | ~0% |
 | 10% | 8.6% | ~1.4% |
 | 20% | 5.5% | ~14.5% |
@@ -169,10 +169,21 @@ Every buy signal passes through these gates before an order is placed:
 - Engine refuses to start if broker connection is "live" environment
 - Only "paper" connections allowed
 
-### Broker-Side Safety Stops
-- **On engine stop:** Places GTC stop-loss orders on Alpaca for all open positions
-- **Stop price:** Entry price × (1 - stopLossPct) from strategy
-- **On engine start:** Cancels all broker-side stop orders (engine takes over)
+### Dual-Layer Stop Protection
+
+**While engine is running (disaster stops):**
+- Wide 18% GTC stop orders on Alpaca for every position
+- Only fire if the server is down for hours — engine manages tighter exits dynamically
+- Placed on engine start and after position sync on auto-restart
+
+**When engine is stopped (safety stops):**
+- Tighter strategy-level GTC stops (~8.5% from optimizer) placed on Alpaca
+- More protective since the engine won't be managing exits
+- Placed automatically when engine is stopped or halted
+
+**Transition:**
+- **On engine start:** Cancels old stops → places 18% disaster stops
+- **On engine stop:** Cancels disaster stops → places ~8.5% safety stops
 
 ### Auto-Restart After Deploy
 - On first dashboard page load after container restart:
