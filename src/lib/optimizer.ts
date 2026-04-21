@@ -120,28 +120,73 @@ function cacheKey(symbol: string): string {
   return join(CACHE_DIR, `${symbol.replace(/[^A-Z0-9]/g, "_")}.json`);
 }
 
-async function getCachedBars(symbol: string): Promise<Bar[] | null> {
+interface CachedData {
+  bars: Bar[];
+  fetchedAt: string;
+  lastDate: string; // last bar date for incremental updates
+}
+
+async function getCachedData(symbol: string): Promise<CachedData | null> {
   try {
     const raw = await readFile(cacheKey(symbol), "utf-8");
-    const data = JSON.parse(raw) as { bars: Bar[]; fetchedAt: string };
-    if (Date.now() - new Date(data.fetchedAt).getTime() < 24 * 60 * 60 * 1000) {
-      return data.bars;
-    }
-    return null;
+    return JSON.parse(raw) as CachedData;
   } catch { return null; }
 }
 
 async function cacheBars(symbol: string, bars: Bar[]) {
+  if (bars.length === 0) return;
+  const lastDate = bars[bars.length - 1].date.split("T")[0];
   try {
-    await writeFile(cacheKey(symbol), JSON.stringify({ bars, fetchedAt: new Date().toISOString() }));
+    await writeFile(cacheKey(symbol), JSON.stringify({
+      bars,
+      fetchedAt: new Date().toISOString(),
+      lastDate,
+    }));
   } catch (err) {
     logger.warn({ symbol, err: (err as Error).message }, "Failed to cache bars");
   }
 }
 
 async function fetchSymbolBars(symbol: string): Promise<Bar[]> {
-  const cached = await getCachedBars(symbol);
-  if (cached && cached.length > 200) return cached;
+  const cached = await getCachedData(symbol);
+
+  // If we have cached data, only fetch new bars since last date
+  if (cached && cached.bars.length > 200 && cached.lastDate) {
+    const lastDate = new Date(cached.lastDate);
+    const daysSince = Math.ceil((Date.now() - lastDate.getTime()) / 86400000);
+
+    // If cache is fresh (less than 1 day old), use as-is
+    if (daysSince <= 1) return cached.bars;
+
+    // Fetch only the missing days + a small overlap for safety
+    const provider = getMarketDataProvider();
+    try {
+      const newBars = await Promise.race([
+        provider.fetchBars(symbol, daysSince + 5, "1d"),
+        new Promise<Bar[]>((_, reject) => setTimeout(() => reject(new Error("timeout")), 10000)),
+      ]);
+
+      if (newBars.length > 0) {
+        // Merge: keep cached bars, append new bars that are after the last cached date
+        const existingDates = new Set(cached.bars.map(b => b.date.split("T")[0]));
+        const uniqueNew = newBars.filter(b => !existingDates.has(b.date.split("T")[0]));
+        const merged = [...cached.bars, ...uniqueNew];
+
+        // Trim to keep only last 5 years worth
+        const maxBars = 1300; // ~5 years of trading days
+        const trimmed = merged.length > maxBars ? merged.slice(-maxBars) : merged;
+
+        await cacheBars(symbol, trimmed);
+        return trimmed;
+      }
+
+      return cached.bars; // fetch failed, use cached
+    } catch {
+      return cached.bars; // timeout, use cached
+    }
+  }
+
+  // No cache or too small — full fetch
   const provider = getMarketDataProvider();
   try {
     const bars = await Promise.race([
