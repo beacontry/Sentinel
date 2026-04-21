@@ -669,7 +669,7 @@ export default function TraderPage() {
             {(() => {
               const startEquity = data?.brokerAccount?.equity ?? 100000;
               // Build cumulative equity from P&L history
-              let cumulative = startEquity;
+              const cumulative = startEquity;
               const points = pnlHistory.map((p) => {
                 const dailyPnl = (p.totalPnl ?? 0);
                 return { date: p.date, value: cumulative + dailyPnl };
