@@ -7,7 +7,7 @@ import { SP500_SYMBOLS } from "./sp500";
  * to keep run times under 2 hours. Full S&P 500 list is still used
  * for per-symbol validation after the best params are found.
  */
-const PORTFOLIO_UNIVERSE = [
+const TOP_50 = [
   "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "TSLA", "BRK-B", "JPM", "V",
   "UNH", "MA", "HD", "PG", "JNJ", "COST", "ABBV", "BAC", "CRM", "AMD",
   "NFLX", "WMT", "PEP", "TMO", "AVGO", "LLY", "MRK", "ORCL", "ADBE", "CSCO",
@@ -52,7 +52,7 @@ export interface OptimizationConfig {
   populationSize: number;
   generations: number;
   trainPct: number;
-  universe: "sp500" | "sp100";
+  universe: "top50" | "sp500";
 }
 
 export interface OptimizationProgress {
@@ -641,13 +641,13 @@ export async function startOptimization(userId: string, config: OptimizationConf
     .values({
       userId, status: "pending", targetMetric: "total_return", universe: config.universe,
       populationSize: config.populationSize, generations: config.generations,
-      trainPct: config.trainPct, totalSymbols: PORTFOLIO_UNIVERSE.length,
+      trainPct: config.trainPct, totalSymbols: config.universe === "sp500" ? SP500_SYMBOLS.length : TOP_50.length,
     })
     .returning({ id: optimizationRuns.id });
 
   const runId = run.id;
   g.__optimizerJobs!.set(runId, {
-    runId, status: "pending", symbolsFetched: 0, totalSymbols: PORTFOLIO_UNIVERSE.length,
+    runId, status: "pending", symbolsFetched: 0, totalSymbols: config.universe === "sp500" ? SP500_SYMBOLS.length : TOP_50.length,
     currentGeneration: 0, totalGenerations: config.generations, bestFitness: 0, bestParams: null,
   });
 
@@ -660,11 +660,15 @@ export async function startOptimization(userId: string, config: OptimizationConf
 async function runOptimization(runId: string, config: OptimizationConfig) {
   const progress = g.__optimizerJobs!.get(runId)!;
   try {
+    // ── Select universe ──
+    const universeSymbols = config.universe === "sp500" ? SP500_SYMBOLS : TOP_50;
+    logger.info({ runId, universe: config.universe, symbols: universeSymbols.length }, "Universe selected");
+
     // ── Fetch data ──
     progress.status = "fetching_data";
     await db.update(optimizationRuns).set({ status: "fetching_data", startedAt: new Date() }).where(eq(optimizationRuns.id, runId));
 
-    const barsMap = await fetchAllBars(PORTFOLIO_UNIVERSE, (fetched) => {
+    const barsMap = await fetchAllBars(universeSymbols, (fetched) => {
       progress.symbolsFetched = fetched;
       db.update(optimizationRuns).set({ symbolsFetched: fetched }).where(eq(optimizationRuns.id, runId)).catch(() => {});
     });

@@ -96,6 +96,7 @@ export default function OptimizerPage() {
   const [popSize, setPopSize] = useState(30);
   const [gens, setGens] = useState(25);
   const [trainPct, setTrainPct] = useState(60);
+  const [universe, setUniverse] = useState<"top50" | "sp500">("top50");
 
   const fetchRuns = useCallback(async () => {
     try {
@@ -151,6 +152,7 @@ export default function OptimizerPage() {
           populationSize: popSize,
           generations: gens,
           trainPct,
+          universe,
         }),
       });
       if (!res.ok) {
@@ -299,6 +301,20 @@ export default function OptimizerPage() {
                   className="w-full bg-bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono min-h-[44px]"
                 />
                 <p className="text-[11px] text-text-muted mt-1">{trainPct}% train / {100 - trainPct}% test</p>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted block mb-1">
+                  Universe
+                </label>
+                <select
+                  value={universe}
+                  onChange={(e) => setUniverse(e.target.value as "top50" | "sp500")}
+                  className="w-full bg-bg-surface border border-border rounded-lg px-3 py-2 text-sm min-h-[44px]"
+                >
+                  <option value="top50">Top 50 (~3 min)</option>
+                  <option value="sp500">Full S&P 500 (~30 min)</option>
+                </select>
+                <p className="text-[11px] text-text-muted mt-1">{universe === "sp500" ? "~495 stocks" : "50 most liquid"}</p>
               </div>
             </div>
             <div className="flex justify-end gap-2">
