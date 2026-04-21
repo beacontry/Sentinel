@@ -41,8 +41,8 @@ function setCache(symbol: string, data: SentimentLayer): void {
 // ─── Layer ──────────────────────────────────────────────────────────
 
 /**
- * Sentiment layer using FREE Finnhub company news + Claude AI scoring.
- * No paid Finnhub tier needed — uses /company-news (free) and scores headlines with Claude.
+ * Sentiment layer using FREE Finnhub company news + AI scoring via Groq.
+ * No paid Finnhub tier needed — uses /company-news (free) and scores headlines with LLM.
  */
 export async function applySentimentLayer(
   symbol: string,
@@ -70,7 +70,7 @@ export async function applySentimentLayer(
 
     if (headlines.length === 0) return null;
 
-    // Score sentiment with Claude (or use heuristic fallback)
+    // Score sentiment with AI (or use heuristic fallback)
     const apiKey = CLAUDE_CONFIG.apiKey;
     let bullishPercent = 0.5;
     let bearishPercent = 0.5;
@@ -117,16 +117,19 @@ async function scoreSentimentWithAI(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const client = new Anthropic({ apiKey });
-
-    const response = await client.messages.create({
-      model: CLAUDE_CONFIG.model,
-      max_tokens: 200,
-      system: "You score news sentiment for stocks. Return ONLY valid JSON, no markdown.",
-      messages: [{
-        role: "user",
-        content: `Score the sentiment of these ${symbol} news headlines on a 0-1 scale.
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: CLAUDE_CONFIG.model,
+        messages: [
+          { role: "system", content: "You score news sentiment for stocks. Return ONLY valid JSON, no markdown." },
+          {
+            role: "user",
+            content: `Score the sentiment of these ${symbol} news headlines on a 0-1 scale.
 
 Headlines:
 ${headlines.map((h, i) => `${i + 1}. ${h}`).join("\n")}
@@ -136,10 +139,18 @@ Return JSON: {"bullish": 0.0-1.0, "bearish": 0.0-1.0, "strength": 0.0-1.0}
 - bearish: how negative the news is (0=not at all, 1=very negative)
 - strength: how significant/impactful the news is (0=trivial, 1=major)
 bullish + bearish should roughly sum to 1.0`,
-      }],
-    }, { signal: controller.signal });
+          },
+        ],
+        max_tokens: 200,
+        temperature: 0.7,
+      }),
+      signal: controller.signal,
+    });
 
-    const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content ?? "";
     const match = text.match(/\{[^}]+\}/);
     if (!match) return null;
 

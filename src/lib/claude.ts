@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { CLAUDE_CONFIG } from "./config";
 import type { MarketContext, ChatContext } from "@/types";
 
@@ -46,13 +45,41 @@ You answer questions about the stock market using the provided context data (new
 - Reference specific symbols, sectors, and news headlines when relevant
 - You can discuss technical analysis concepts but ground them in the provided data`;
 
-class ClaudeClient {
-  private client: Anthropic;
-  private lastDigestAt: number = 0;
+interface GroqMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
 
-  constructor() {
-    this.client = new Anthropic({ apiKey: CLAUDE_CONFIG.apiKey });
+interface GroqResponse {
+  choices: { message: { content: string } }[];
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+}
+
+async function groqChat(messages: GroqMessage[], maxTokens: number): Promise<GroqResponse> {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${CLAUDE_CONFIG.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: CLAUDE_CONFIG.model,
+      messages,
+      max_tokens: maxTokens,
+      temperature: 0.7,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => "Unknown error");
+    throw new Error(`Groq API error ${res.status}: ${err}`);
   }
+
+  return res.json();
+}
+
+class LLMClient {
+  private lastDigestAt: number = 0;
 
   get isConfigured(): boolean {
     return !!CLAUDE_CONFIG.apiKey;
@@ -69,50 +96,38 @@ class ClaudeClient {
 
     const userPrompt = this.buildDigestPrompt(context);
 
-    const response = await this.client.messages.create({
-      model: CLAUDE_CONFIG.model,
-      max_tokens: CLAUDE_CONFIG.digestMaxTokens,
-      system: DIGEST_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPrompt }],
-    });
+    const response = await groqChat([
+      { role: "system", content: DIGEST_SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ], CLAUDE_CONFIG.digestMaxTokens);
 
     this.lastDigestAt = Date.now();
 
-    const text = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === "text")
-      .map((block) => block.text)
-      .join("");
+    const text = response.choices[0]?.message?.content ?? "";
 
     return {
       summary: text,
-      tokensUsed: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
+      tokensUsed: response.usage?.total_tokens ?? 0,
     };
   }
 
   async chatCompletion(history: ChatHistoryMessage[], context: ChatContext): Promise<ChatResult> {
     const contextBlock = this.buildChatContext(context);
 
-    const messages: Anthropic.MessageParam[] = [
+    const messages: GroqMessage[] = [
+      { role: "system", content: CHAT_SYSTEM_PROMPT },
       { role: "user", content: `[Market Context]\n${contextBlock}\n\n[End Context]` },
       { role: "assistant", content: "I've reviewed the current market context. What would you like to know?" },
       ...history.slice(-(CLAUDE_CONFIG.chatHistoryLimit)),
     ];
 
-    const response = await this.client.messages.create({
-      model: CLAUDE_CONFIG.model,
-      max_tokens: CLAUDE_CONFIG.chatMaxTokens,
-      system: CHAT_SYSTEM_PROMPT,
-      messages,
-    });
+    const response = await groqChat(messages, CLAUDE_CONFIG.chatMaxTokens);
 
-    const text = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === "text")
-      .map((block) => block.text)
-      .join("");
+    const text = response.choices[0]?.message?.content ?? "";
 
     return {
       response: text,
-      tokensUsed: (response.usage?.input_tokens ?? 0) + (response.usage?.output_tokens ?? 0),
+      tokensUsed: response.usage?.total_tokens ?? 0,
     };
   }
 
@@ -191,9 +206,9 @@ class ClaudeClient {
 }
 
 // Singleton
-const g = globalThis as typeof globalThis & { __claudeClient?: ClaudeClient };
-g.__claudeClient ??= new ClaudeClient();
+const g = globalThis as typeof globalThis & { __claudeClient?: LLMClient };
+g.__claudeClient ??= new LLMClient();
 
-export function getClaudeClient(): ClaudeClient {
+export function getClaudeClient(): LLMClient {
   return g.__claudeClient!;
 }

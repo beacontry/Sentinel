@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { CLAUDE_CONFIG } from "./config";
 import { getMarketDataProvider } from "./market-data";
 import { getFinnhubClient } from "./finnhub";
@@ -56,7 +55,7 @@ export async function getQuickInsight(symbol: string): Promise<QuickInsightResul
     }
   }
 
-  // If no Anthropic API key, return a fallback
+  // If no API key, return a fallback
   if (!CLAUDE_CONFIG.apiKey) {
     const fallback = buildFallbackInsight(upperSymbol, quote, newsHeadlines);
     cache.set(upperSymbol, { data: fallback, expiry: Date.now() + CACHE_TTL_MS });
@@ -80,23 +79,36 @@ export async function getQuickInsight(symbol: string): Promise<QuickInsightResul
     parts.push("\nNo recent news available.");
   }
 
-  const client = new Anthropic({ apiKey: CLAUDE_CONFIG.apiKey });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await client.messages.create({
-      model: CLAUDE_CONFIG.model,
-      max_tokens: 500,
-      system: INSIGHT_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: parts.join("\n") }],
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${CLAUDE_CONFIG.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: CLAUDE_CONFIG.model,
+        messages: [
+          { role: "system", content: INSIGHT_SYSTEM_PROMPT },
+          { role: "user", content: parts.join("\n") },
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+      }),
+      signal: controller.signal,
     });
 
-    let text = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === "text")
-      .map((block) => block.text)
-      .join("");
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "Unknown error");
+      throw new Error(`Groq API error ${res.status}: ${errText}`);
+    }
 
-    // Strip markdown code fences if Claude wrapped the JSON
+    const data = await res.json();
+    let text = data.choices?.[0]?.message?.content ?? "";
+
+    // Strip markdown code fences if the model wrapped the JSON
     text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
 
     let parsed: QuickInsightResult;
@@ -154,7 +166,7 @@ function buildFallbackInsight(
   }
 
   return {
-    insight: `${symbol} is currently trading at $${quote.price.toFixed(2)}. AI analysis requires an Anthropic API key to be configured. Configure ANTHROPIC_API_KEY in your environment for detailed insights.`,
+    insight: `${symbol} is currently trading at $${quote.price.toFixed(2)}. AI analysis requires a Groq API key to be configured. Configure GROQ_API_KEY in your environment for detailed insights.`,
     factors: factors.slice(0, 5),
     sentiment: "neutral",
   };

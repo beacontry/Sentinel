@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { SignalType } from "@/types";
 import { CLAUDE_CONFIG } from "../config";
 import type { SentimentLayer } from "./sentiment-layer";
@@ -128,22 +127,32 @@ export async function applyAiScoringLayer(
   );
 
   try {
-    const client = new Anthropic({ apiKey: CLAUDE_CONFIG.apiKey });
-
-    const response = await client.messages.create(
-      {
-        model: CLAUDE_CONFIG.model,
-        max_tokens: 500,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userPrompt }],
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${CLAUDE_CONFIG.apiKey}`,
       },
-      { signal: controller.signal }
-    );
+      body: JSON.stringify({
+        model: CLAUDE_CONFIG.model,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+      }),
+      signal: controller.signal,
+    });
 
-    const textBlock = response.content.find((b) => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") return null;
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "Unknown error");
+      throw new Error(`Groq API error ${res.status}: ${errText}`);
+    }
 
-    const rawText = textBlock.text.trim();
+    const data = await res.json();
+    const rawText = (data.choices?.[0]?.message?.content ?? "").trim();
+    if (!rawText) return null;
 
     // Extract JSON from the response (handle potential markdown code blocks)
     let jsonStr = rawText;
@@ -190,9 +199,7 @@ export async function applyAiScoringLayer(
       Math.min(0.98, Math.max(minConf, Math.min(maxConf, adjustedConfidence)))
     );
 
-    const tokensUsed =
-      (response.usage?.input_tokens ?? 0) +
-      (response.usage?.output_tokens ?? 0);
+    const tokensUsed = data.usage?.total_tokens ?? 0;
 
     return {
       model: CLAUDE_CONFIG.model,
