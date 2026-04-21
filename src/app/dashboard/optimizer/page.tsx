@@ -336,6 +336,12 @@ export default function OptimizerPage() {
           <CardHeader>
             <CardTitle>Mode Comparison — $10,000 over 5 Years</CardTitle>
           </CardHeader>
+          {comparison.length === 0 ? (
+            <div className="px-4 pb-4 flex items-center gap-2 text-sm text-text-muted">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Refreshing comparison with new preset...
+            </div>
+          ) : (
           <div className="px-4 pb-4">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -371,6 +377,7 @@ export default function OptimizerPage() {
               </table>
             </div>
           </div>
+          )}
         </Card>
       )}
 
@@ -673,15 +680,13 @@ function RunDetailView({
                         body: JSON.stringify({ runId: run.id }),
                       });
                       if (res.ok) {
-                        alert("Saved as active Optimized preset. Refreshing mode comparison...");
-                        // Auto-refresh Compare Modes with new preset
-                        try {
-                          const cmpRes = await fetch("/api/optimize/compare");
-                          if (cmpRes.ok) {
-                            const cmpData = await cmpRes.json();
-                            onComparisonUpdate(cmpData.results);
-                          }
-                        } catch { /* silent */ }
+                        alert("Saved! Mode comparison will refresh automatically (takes ~1 min).");
+                        // Auto-refresh Compare Modes in background
+                        onComparisonUpdate([]); // clear old results to show loading
+                        fetch("/api/optimize/compare")
+                          .then(r => r.ok ? r.json() : null)
+                          .then(data => { if (data?.results) onComparisonUpdate(data.results); })
+                          .catch(() => {});
                       } else {
                         const data = await res.json();
                         alert(data.error || "Failed to save");
