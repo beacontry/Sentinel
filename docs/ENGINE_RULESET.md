@@ -27,13 +27,24 @@ The trading engine scans the S&P 500, generates signals using technical analysis
 
 ## Signal Generation
 
+### Signal Evaluator Architecture
+
+Two signal evaluation paths exist:
+
+| Component | Signal Source | Used By |
+|-----------|-------------|---------|
+| **`src/lib/signal-eval.ts`** | Shared evaluator with tunable params (EMA fast/slow, RSI oversold/overbought) | Optimizer, Mode Comparison (Optimized/GA row) |
+| **`src/lib/indicators/analyzeBars()`** | Standard indicator module | Live engine (all modes), Mode Comparison (non-Optimized rows) |
+
+The shared signal evaluator (`signal-eval.ts`) was extracted so the optimizer and mode comparison use identical signal logic with the same tunable parameters. The live engine still uses `analyzeBars()` from the standard indicator module — this is a known gap to be unified in a future update.
+
 ### Entry Signals (BUY / STRONG_BUY)
 
 All conditions evaluated per stock at each scan interval:
 
 **Indicators Used:**
 - EMA crossover (fast/slow periods from optimizer: default 7/38)
-- RSI (14-period, oversold threshold from optimizer: default 29)
+- RSI (14-period, oversold/overbought thresholds from optimizer: default 29/71)
 - SMA(20) — price above = bullish
 - SMA(50) — alignment confirmation
 - MACD histogram — positive = bullish
@@ -116,11 +127,17 @@ Every buy signal passes through these gates before an order is placed:
 - **Rule:** Don't re-buy same symbol within 2.5 hours
 - **Action:** Skip if same symbol had a buy signal within 150 minutes
 
-### 7. Max Portfolio Exposure
+### 7. Max Positions
+- **Rule:** Don't exceed maxPositions from risk settings
+- **BUY signals:** Blocked when open positions >= maxPositions
+- **STRONG_BUY signals:** Can exceed maxPositions by up to 50% (e.g., maxPositions=13 → cap of 19 for strong signals)
+- Exposure and cash checks still apply even when STRONG_BUY overflow is allowed
+
+### 8. Max Portfolio Exposure
 - **Rule:** Don't exceed total exposure limit from risk settings
 - **Action:** Skip if current exposure + new position > maxExposure
 
-### 8. Daily Loss Halt
+### 9. Daily Loss Halt
 - **Rule:** Stop all trading if daily losses exceed configured % of equity
 - **Action:** Halt engine, cancel all pending orders
 - **Source:** User risk profile in DB (default 2%)
@@ -136,9 +153,9 @@ Every buy signal passes through these gates before an order is placed:
 
 ### Position Sizing
 - **Method:** Risk-based from user risk profile
-- **Per position:** positionPct × total equity (default 20%)
+- **Per position:** positionPct × total equity (default 15%)
 - **Max shares:** min(risk-based qty, maxPositionSize from risk settings)
-- **Max positions:** from risk settings (default 16)
+- **Max positions:** from risk overrides (default 16), STRONG_BUY can overflow by 50%
 
 ### Exit Orders
 - **Type:** Market order (immediate execution)
@@ -161,12 +178,14 @@ Every buy signal passes through these gates before an order is placed:
 - On first dashboard page load after container restart:
   - Checks Alpaca for open positions
   - If positions exist → auto-starts engine in last used mode (from DB)
+  - Syncs broker positions into in-memory map so the engine immediately resumes dynamic management (trailing stops, exits, etc.)
   - Fires once per container lifecycle
 
 ### Mode Persistence
 - Current engine mode saved to `traderStatus.mode` on every heartbeat
 - Format: `paper:optimized`, `paper:tactical`, etc.
 - Auto-restart reads last mode from DB
+- Valid modes for auto-restart: conservative, moderate, optimized, aggressive, intraday, tactical, tactical-smart
 
 ---
 
@@ -185,6 +204,10 @@ Every buy signal passes through these gates before an order is placed:
 ### Re-Entry
 - **Trigger:** SPY recovers above 50-day SMA
 - **RSI filter:** Can also re-enter if SPY > 20 SMA and RSI(14) < 40
+
+### Daily P&L Tracking
+- Both Tactical and Tactical Smart modes call `upsertDailyPnl` on each scan cycle
+- Daily P&L is recorded for the P&L Calendar and performance tracking
 
 ---
 
@@ -243,17 +266,22 @@ Uses those params for Optimized + Tactical modes
 Per-symbol overrides from Strategies page take priority
 ```
 
-## Risk Settings (from DB)
+### Mode Comparison Integration
 
-All configurable from Trader page → Risk Settings:
+The Mode Comparison feature loads all 11 optimizer parameters from the latest completed run (not just the 4 strategy params). For the Optimized (GA) row, it uses the shared signal evaluator (`signal-eval.ts`) with the full optimizer param set. All other mode rows use `analyzeBars()` from the standard indicator module.
 
-| Setting | Default | Engine Field |
-|---------|---------|-------------|
-| Max Daily Loss % | 2% | dailyLossPct |
-| Max Position Size (shares) | 100 | maxPositionSize |
-| Max Position % of equity | 5% | positionPct |
-| Max Open Positions | derived | maxPositions |
-| Account Size | $10,000 | accountSize |
-| Max Drawdown % | 10% | maxDrawdownPct |
+## Risk Overrides (from DB)
+
+All fields are optional/nullable. Empty fields mean "engine decides" — the engine uses its code defaults. Only user-set fields impose limits. Configurable from Trader page → Risk Settings.
+
+| Setting | Engine Default | Engine Field | Notes |
+|---------|---------------|-------------|-------|
+| Max Open Positions | 16 | maxPositions | STRONG_BUY can overflow by 50% |
+| Max Position % of equity | 15% | positionPct | Per-position allocation |
+| Max Daily Loss % | 2% | dailyLossPct | Triggers daily loss halt |
+| Max Position Size (shares) | 100 | maxPositionSize | Hard cap per order |
+| Max Exposure | $25,000 | maxExposure | Total portfolio exposure cap |
+| Account Size | (from broker) | accountSize | Overrides broker-reported balance |
+| Max Drawdown % | (none) | maxDrawdownPct | Optional circuit breaker |
 
 Updated on every scan cycle — changes take effect within 15 minutes.
