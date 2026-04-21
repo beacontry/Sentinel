@@ -80,13 +80,19 @@ export async function getQuickInsight(symbol: string): Promise<QuickInsightResul
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), 20000);
   try {
+    const apiKey = CLAUDE_CONFIG.apiKey || process.env.GROQ_API_KEY || "";
+    if (!apiKey) {
+      const fallback = buildFallbackInsight(upperSymbol, quote, newsHeadlines);
+      cache.set(upperSymbol, { data: fallback, expiry: Date.now() + CACHE_TTL_MS });
+      return fallback;
+    }
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${CLAUDE_CONFIG.apiKey}`,
+        "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: CLAUDE_CONFIG.model,
