@@ -28,10 +28,10 @@ const capabilities = [
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-bg-primary">
+    <div className="min-h-screen bg-bg-primary overflow-x-hidden">
       {/* Header */}
       <header className="border-b border-border bg-bg-secondary">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
               <Shield className="h-4 w-4" />
@@ -83,7 +83,7 @@ export default function LandingPage() {
       </section>
 
       {/* Three Pillars */}
-      <section className="mx-auto max-w-5xl px-6 pb-20">
+      <section className="mx-auto max-w-4xl px-6 pb-20">
         <div className="grid gap-4 md:grid-cols-3">
           {features.map((f) => (
             <div key={f.num} className="rounded-xl border border-border bg-bg-secondary p-6 text-center">
@@ -99,7 +99,7 @@ export default function LandingPage() {
 
       {/* Platform Section */}
       <section id="features" className="border-t border-border bg-bg-secondary px-6 py-20">
-        <div className="mx-auto max-w-5xl">
+        <div className="mx-auto max-w-4xl">
           <h2 className="text-center text-2xl font-semibold tracking-tight text-text-primary sm:text-3xl">
             Everything You Need, in One Powerful Platform
           </h2>
@@ -169,7 +169,7 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="border-t border-border px-6 py-6">
-        <div className="mx-auto flex max-w-5xl items-center justify-between text-xs text-text-muted">
+        <div className="mx-auto flex max-w-4xl items-center justify-between text-xs text-text-muted">
           <div className="flex items-center gap-2">
             <Shield className="h-3.5 w-3.5" /> Sentinel
           </div>
