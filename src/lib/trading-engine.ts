@@ -1926,7 +1926,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
         const [status] = await db.select().from(traderStatus).limit(1);
         if (status?.mode?.startsWith("paper:")) {
           const savedMode = status.mode.split(":")[1] as EngineMode;
-          const validModes: EngineMode[] = ["conservative", "moderate", "optimized", "aggressive", "intraday"];
+          const validModes: EngineMode[] = ["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical", "tactical-smart"];
           if (validModes.includes(savedMode)) lastMode = savedMode;
         }
       } catch { /* use default */ }
