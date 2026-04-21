@@ -45,6 +45,34 @@ function sma(data: number[], period: number): number | null {
   return s / period;
 }
 
+// Sector mapping for rotation
+const SECTOR_MAP: Record<string, string> = {
+  AAPL: "tech", MSFT: "tech", NVDA: "tech", AMD: "tech", INTC: "tech", GOOGL: "tech",
+  META: "tech", ADBE: "tech", CRM: "tech", ORCL: "tech", CSCO: "tech", AVGO: "tech", QCOM: "tech",
+  AMZN: "consumer", TSLA: "consumer", HD: "consumer", LOW: "consumer", MCD: "consumer",
+  SBUX: "consumer", NKE: "consumer", COST: "consumer", WMT: "consumer", NFLX: "consumer",
+  JPM: "finance", BAC: "finance", GS: "finance", MS: "finance", V: "finance", MA: "finance",
+  UNH: "health", JNJ: "health", PFE: "health", ABBV: "health", LLY: "health", MRK: "health", TMO: "health",
+  BA: "industrial", CAT: "industrial", GE: "industrial", RTX: "industrial",
+  XOM: "energy", CVX: "energy", COP: "energy", SLB: "energy",
+  PG: "staples", PEP: "staples", KO: "staples", PM: "staples",
+  DIS: "comms", VZ: "comms", T: "comms", CMCSA: "comms",
+  PYPL: "fintech", FI: "fintech", FISV: "fintech",
+};
+
+function calcMomentumAndVol(bars: Bar[]): { momentum: number; volatility: number } {
+  if (bars.length < 60) return { momentum: 0, volatility: 1 };
+  const recent = bars.slice(-60);
+  const momentum = (recent[recent.length - 1].close - recent[0].close) / recent[0].close;
+  const returns: number[] = [];
+  for (let i = 1; i < recent.length; i++) {
+    returns.push((recent[i].close - recent[i - 1].close) / recent[i - 1].close);
+  }
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
+  return { momentum, volatility: Math.max(Math.sqrt(variance) * Math.sqrt(252), 0.01) };
+}
+
 /**
  * Simulate a signal-based strategy on the portfolio of stocks
  */
@@ -204,6 +232,10 @@ function simulateSignalStrategy(
 
 /**
  * Simulate tactical mode: always invested, exit on SPY weakness
+ * - Graduated exit: caution SMA (30) sells 50% weakest, full exit on confirmed below 20 SMA
+ * - Faster re-entry: SPY > 20 SMA AND RSI < 40 (oversold bounce), not just SPY > 50 SMA
+ * - Sector rotation on entry: weight by stock momentum + sector strength + inverse volatility
+ * - Inverse volatility sizing: more capital to lower-volatility stocks
  */
 function simulateTactical(
   allBars: Map<string, Bar[]>,
@@ -226,59 +258,153 @@ function simulateTactical(
   const equityHistory: number[] = [INITIAL];
   let trades = 0, daysInMarket = 0;
   let isInvested = false;
+  let cautionSold = false; // track whether we already did a 50% caution sell
   const spyCloses: number[] = [];
+  const rollingBars = new Map<string, Bar[]>(); // rolling window for momentum/vol calc
 
   for (let di = 0; di < dates.length; di++) {
     const date = dates[di];
     const spyBar = spyLookup.get(date);
     if (spyBar) spyCloses.push(spyBar.close);
 
+    // Update rolling bars for each symbol (keep 65 for 60-bar momentum calc)
+    for (const sym of SCAN_UNIVERSE) {
+      const bar = barLookup.get(sym)?.get(date);
+      if (!bar) continue;
+      let w = rollingBars.get(sym);
+      if (!w) { w = []; rollingBars.set(sym, w); }
+      w.push(bar);
+      if (w.length > 65) w.shift();
+    }
+
     if (isInvested) daysInMarket++;
 
-    const sma20 = spyCloses.length >= 20 ? spyCloses.slice(-20).reduce((a, b) => a + b, 0) / 20 : null;
-    const sma50 = spyCloses.length >= 50 ? spyCloses.slice(-50).reduce((a, b) => a + b, 0) / 50 : null;
+    const exitSMA = sma(spyCloses, 20);
+    const cautionSMA = sma(spyCloses, 30);
+    const trendSMA = sma(spyCloses, 50);
     const spyPrice = spyCloses.length > 0 ? spyCloses[spyCloses.length - 1] : 0;
 
-    // Check for exit: SPY below 20 SMA
-    if (isInvested && sma20 && spyPrice < sma20) {
-      // Count consecutive days below
-      let belowCount = 0;
-      for (let j = spyCloses.length - 3; j < spyCloses.length; j++) {
-        if (j >= 0 && j < spyCloses.length) {
-          const s = spyCloses.slice(Math.max(0, j - 19), j + 1);
-          if (s.length >= 20) {
-            const avg = s.reduce((a, b) => a + b, 0) / s.length;
-            if (spyCloses[j] < avg) belowCount++;
-          }
+    // Calculate RSI(14) for SPY for faster re-entry
+    let spyRSI = 50; // default neutral
+    if (spyCloses.length >= 15) {
+      const rsiPeriod = 14;
+      let avgGain = 0, avgLoss = 0;
+      for (let i = spyCloses.length - rsiPeriod; i < spyCloses.length; i++) {
+        const change = spyCloses[i] - spyCloses[i - 1];
+        if (change > 0) avgGain += change;
+        else avgLoss -= change;
+      }
+      avgGain /= rsiPeriod;
+      avgLoss /= rsiPeriod;
+      spyRSI = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+    }
+
+    // --- GRADUATED EXIT ---
+    if (isInvested && cautionSMA && exitSMA) {
+      // Caution zone: SPY below 30 SMA but above 20 SMA -> sell 50% weakest
+      if (!cautionSold && spyPrice < cautionSMA && spyPrice >= exitSMA) {
+        // Sort positions by P&L (weakest first)
+        const posEntries = [...positions.entries()].map(([sym, pos]) => {
+          const b = barLookup.get(sym)?.get(date);
+          const currentPrice = b?.close ?? pos.entryPrice;
+          const pnl = (currentPrice - pos.entryPrice) / pos.entryPrice;
+          return { sym, pos, currentPrice, pnl };
+        });
+        posEntries.sort((a, b) => a.pnl - b.pnl); // weakest first
+
+        const toSell = Math.ceil(posEntries.length / 2);
+        for (let i = 0; i < toSell && i < posEntries.length; i++) {
+          const { sym, pos, currentPrice } = posEntries[i];
+          cash += pos.qty * currentPrice;
+          trades++;
+          positions.delete(sym);
         }
+        cautionSold = true;
+        if (positions.size === 0) isInvested = false;
       }
 
-      if (belowCount >= 3) {
-        // Sell everything
-        for (const [sym, pos] of positions) {
-          const b = barLookup.get(sym)?.get(date);
-          cash += pos.qty * (b?.close ?? pos.entryPrice);
-          trades++;
+      // Full exit: SPY below 20 SMA (confirmed 3 days)
+      if (spyPrice < exitSMA) {
+        let belowCount = 0;
+        for (let j = spyCloses.length - 3; j < spyCloses.length; j++) {
+          if (j >= 0 && j < spyCloses.length) {
+            const s = spyCloses.slice(Math.max(0, j - 19), j + 1);
+            if (s.length >= 20) {
+              const avg = s.reduce((a, b) => a + b, 0) / s.length;
+              if (spyCloses[j] < avg) belowCount++;
+            }
+          }
         }
-        positions.clear();
-        isInvested = false;
+
+        if (belowCount >= 3) {
+          // Sell everything
+          for (const [sym, pos] of positions) {
+            const b = barLookup.get(sym)?.get(date);
+            cash += pos.qty * (b?.close ?? pos.entryPrice);
+            trades++;
+          }
+          positions.clear();
+          isInvested = false;
+          cautionSold = false;
+        }
       }
     }
 
-    // Check for entry: SPY above 50 SMA and not invested
-    if (!isInvested && sma50 && spyPrice > sma50) {
-      const perPosition = cash / Math.min(SCAN_UNIVERSE.length, 16);
+    // --- ENTRY with sector rotation + inverse volatility sizing ---
+    // Faster re-entry: SPY > exitSMA (20) AND RSI < 40 (oversold bounce), OR SPY > trendSMA (50)
+    const fastReentry = exitSMA && spyPrice > exitSMA && spyRSI < 40;
+    const normalEntry = trendSMA && spyPrice > trendSMA;
+
+    if (!isInvested && (fastReentry || normalEntry)) {
+      // Score each stock by momentum + sector strength + inverse volatility
+      const candidates: { sym: string; score: number; invVol: number; price: number }[] = [];
+      const sectorMomentum = new Map<string, { total: number; count: number }>();
+
+      // First pass: compute per-stock momentum & vol, accumulate sector momentum
       for (const sym of SCAN_UNIVERSE) {
-        if (positions.size >= 16) break;
+        const w = rollingBars.get(sym);
+        if (!w || w.length < 60) continue;
         const b = barLookup.get(sym)?.get(date);
         if (!b) continue;
-        const qty = Math.floor(perPosition / b.close);
+
+        const { momentum, volatility } = calcMomentumAndVol(w);
+        const sector = SECTOR_MAP[sym] ?? "other";
+
+        const existing = sectorMomentum.get(sector) ?? { total: 0, count: 0 };
+        existing.total += momentum;
+        existing.count++;
+        sectorMomentum.set(sector, existing);
+
+        candidates.push({ sym, score: momentum, invVol: 1 / volatility, price: b.close });
+      }
+
+      // Second pass: add sector strength to score
+      for (const c of candidates) {
+        const sector = SECTOR_MAP[c.sym] ?? "other";
+        const secData = sectorMomentum.get(sector);
+        const sectorAvg = secData && secData.count > 0 ? secData.total / secData.count : 0;
+        c.score = c.score + sectorAvg + c.invVol * 0.1; // stock momentum + sector avg momentum + small invVol bonus
+      }
+
+      // Sort by composite score descending, take top 16
+      candidates.sort((a, b) => b.score - a.score);
+      const toBuy = candidates.slice(0, 16);
+
+      // Inverse volatility sizing: allocate proportional to invVol
+      const totalInvVol = toBuy.reduce((sum, c) => sum + c.invVol, 0);
+      for (const { sym, invVol, price } of toBuy) {
+        const weight = totalInvVol > 0 ? invVol / totalInvVol : 1 / toBuy.length;
+        const posValue = cash * weight;
+        const qty = Math.floor(posValue / price);
         if (qty <= 0) continue;
-        cash -= qty * b.close;
-        positions.set(sym, { qty, entryPrice: b.close });
+        // Deduct from a copy of remaining cash to avoid overdraft
+        if (qty * price > cash) continue;
+        cash -= qty * price;
+        positions.set(sym, { qty, entryPrice: price });
         trades++;
       }
       isInvested = positions.size > 0;
+      cautionSold = false;
     }
 
     // Record equity
@@ -330,6 +456,8 @@ function simulateTactical(
 
 /**
  * Tactical Smart: same SPY exit logic but scores stocks at each re-entry
+ * - Momentum as primary scorer: 3-month momentum (weighted 3x) + signal score + confidence
+ * - Inverse volatility sizing: more capital to stable stocks
  */
 function simulateTacticalSmart(
   allBars: Map<string, Bar[]>,
@@ -367,7 +495,7 @@ function simulateTacticalSmart(
       let w = windows.get(sym);
       if (!w) { w = []; windows.set(sym, w); }
       w.push(bar);
-      if (w.length > 50) w.shift();
+      if (w.length > 65) w.shift(); // keep 65 for 60-bar momentum calc
     }
 
     if (isInvested) daysInMarket++;
@@ -397,8 +525,10 @@ function simulateTacticalSmart(
     }
 
     // ENTRY: SPY above 50 SMA — score and rank stocks
+    // Momentum as primary scorer: 3-month momentum (3x) + signal score + confidence
+    // Inverse volatility sizing
     if (!isInvested && sma50 && spyPrice > sma50) {
-      const scored: { symbol: string; score: number; price: number }[] = [];
+      const scored: { symbol: string; score: number; invVol: number; price: number }[] = [];
 
       for (const sym of SCAN_UNIVERSE) {
         const w = windows.get(sym);
@@ -406,24 +536,35 @@ function simulateTacticalSmart(
         const bar = barLookup.get(sym)?.get(date);
         if (!bar) continue;
 
-        const analysis = analyzeBars(sym, [...w]);
-        let score = 0;
-        if (analysis.signal === "STRONG_BUY") score = 4;
-        else if (analysis.signal === "BUY") score = 2;
-        else if (analysis.signal === "HOLD") score = 0;
-        else score = -2;
+        // 3-month momentum + volatility
+        const { momentum, volatility } = calcMomentumAndVol(w);
+        const invVol = 1 / volatility;
 
-        score += analysis.confidence * 2;
-        if (score > 0) scored.push({ symbol: sym, score, price: bar.close });
+        // Signal analysis
+        const analysis = analyzeBars(sym, [...w]);
+        let signalScore = 0;
+        if (analysis.signal === "STRONG_BUY") signalScore = 4;
+        else if (analysis.signal === "BUY") signalScore = 2;
+        else if (analysis.signal === "HOLD") signalScore = 0;
+        else signalScore = -2;
+
+        // Composite: momentum weighted 3x + signal + confidence
+        const composite = momentum * 3 + signalScore + analysis.confidence * 2;
+        if (composite > 0) scored.push({ symbol: sym, score: composite, invVol, price: bar.close });
       }
 
       scored.sort((a, b) => b.score - a.score);
       const toBuy = scored.slice(0, 16);
-      const perPosition = cash / Math.max(toBuy.length, 1);
 
-      for (const { symbol, price } of toBuy) {
-        const qty = Math.floor(perPosition / price);
+      // Inverse volatility sizing: allocate proportional to invVol
+      const totalInvVol = toBuy.reduce((sum, c) => sum + c.invVol, 0);
+
+      for (const { symbol, invVol, price } of toBuy) {
+        const weight = totalInvVol > 0 ? invVol / totalInvVol : 1 / toBuy.length;
+        const posValue = cash * weight;
+        const qty = Math.floor(posValue / price);
         if (qty <= 0) continue;
+        if (qty * price > cash) continue;
         cash -= qty * price;
         positions.set(symbol, { qty, entryPrice: price });
         trades++;
