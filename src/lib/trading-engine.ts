@@ -1025,6 +1025,16 @@ async function runTacticalScan(): Promise<void> {
     log.info({ positions: positionMap.size }, "Tactical entry complete");
   }
 
+  // Update daily P&L from broker positions
+  let totalUnrealizedPnl = 0;
+  try {
+    const brokerPositions = await client.getPositions();
+    for (const bp of brokerPositions) {
+      totalUnrealizedPnl += bp.unrealizedPnl;
+    }
+  } catch { /* use 0 */ }
+  await upsertDailyPnl(today, 0, totalUnrealizedPnl, 0, engine.halted);
+
   // Update status
   engine.lastScanAt = new Date();
   engine.scanCount++;
@@ -1183,6 +1193,16 @@ async function runTacticalSmartScan(): Promise<void> {
     engine.positionCount = positionMap.size;
     log.info({ positions: positionMap.size, candidates: scored.length }, "Tactical Smart buy-in complete");
   }
+
+  // Update daily P&L from broker positions
+  let totalUnrealizedPnl = 0;
+  try {
+    const brokerPositions = await client.getPositions();
+    for (const bp of brokerPositions) {
+      totalUnrealizedPnl += bp.unrealizedPnl;
+    }
+  } catch { /* use 0 */ }
+  await upsertDailyPnl(today, 0, totalUnrealizedPnl, 0, engine.halted);
 
   engine.lastScanAt = new Date();
   engine.scanCount++;
