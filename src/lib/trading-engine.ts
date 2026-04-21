@@ -311,7 +311,16 @@ async function passesSmartFilters(symbol: string, bars: Bar[]): Promise<{ allowe
 
   // #2: Relative strength — skip stocks underperforming (negative momentum)
   const rs = await getRelativeStrength(symbol, bars);
-  if (rs < -0.05) { // stock down more than 5% in 60 days
+  // Read RS threshold from latest optimizer params (default -5%)
+  let rsThreshold = -0.05;
+  try {
+    const latestParams = await getLatestOptimizedParams();
+    if (latestParams && "rsThreshold" in latestParams) {
+      rsThreshold = (latestParams as unknown as { rsThreshold: number }).rsThreshold;
+    }
+  } catch { /* use default */ }
+
+  if (rs < rsThreshold) {
     return { allowed: false, reason: "weak_relative_strength" };
   }
 
