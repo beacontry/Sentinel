@@ -1484,7 +1484,11 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
       const shouldBuy = (signal === SignalType.BUY || signal === SignalType.STRONG_BUY || !!extSignal) && marketHealthy;
 
       // ── ENTRY LOGIC (if not holding) ─────────────────────────────
-      if (shouldBuy && positionMap.size < riskLimits.maxPositions) {
+      // Allow STRONG_BUY to exceed maxPositions by up to 50% when cash is available
+      const isStrongSignal = signal === SignalType.STRONG_BUY;
+      const hardCap = Math.floor(riskLimits.maxPositions * 1.5);
+      const positionCap = isStrongSignal ? hardCap : riskLimits.maxPositions;
+      if (shouldBuy && positionMap.size < positionCap) {
         // Smart filters: earnings blackout, relative strength, sentiment
         const filterResult = await passesSmartFilters(symbol, bars);
         if (!filterResult.allowed) {
