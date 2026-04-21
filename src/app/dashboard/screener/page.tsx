@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SignalBadge } from "@/components/ui/signal-badge";
 import { Badge } from "@/components/ui/badge";
+import { Modal, ModalHeader, ModalTitle } from "@/components/ui/modal";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
-import type { SignalType } from "@/types";
+import type { SignalType, AnalysisResult } from "@/types";
 import {
   ScanSearch,
   Plus,
@@ -24,6 +26,8 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  Zap,
+  Minus,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -136,6 +140,12 @@ export default function ScreenerPage() {
   const [sortField, setSortField] = useState<SortField>("confidence");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  // Analysis modal state
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const [analysisData, setAnalysisData] = useState<AnalysisResult | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
   // Auto-refresh: poll cached results every 30s
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
@@ -207,6 +217,34 @@ export default function ScreenerPage() {
   const handleApplyFilters = () => {
     setActivePreset(null);
     fetchResults(filters);
+  };
+
+  // ─── Analysis modal ─────────────────────────────────────────────
+
+  const openAnalysis = useCallback(async (symbol: string) => {
+    setSelectedSymbol(symbol);
+    setAnalysisData(null);
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    try {
+      const res = await fetch(`/api/analyze/${encodeURIComponent(symbol)}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? "Analysis failed");
+      }
+      const data: AnalysisResult = await res.json();
+      setAnalysisData(data);
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }, []);
+
+  const closeAnalysis = () => {
+    setSelectedSymbol(null);
+    setAnalysisData(null);
+    setAnalysisError(null);
   };
 
   // ─── Custom filter management ───────────────────────────────────
@@ -569,8 +607,13 @@ export default function ScreenerPage() {
                     key={r.symbol}
                     className="border-b border-border hover:bg-bg-elevated/30 transition-colors"
                   >
-                    <td className="px-4 py-3 font-mono font-bold text-text-primary">
-                      {r.symbol}
+                    <td className="px-4 py-3 font-mono font-bold">
+                      <button
+                        onClick={() => openAnalysis(r.symbol)}
+                        className="text-text-primary hover:text-accent transition-colors cursor-pointer"
+                      >
+                        {r.symbol}
+                      </button>
                     </td>
                     <td className="px-4 py-3 text-text-secondary">
                       {r.sector}
@@ -660,9 +703,12 @@ export default function ScreenerPage() {
             {sortedResults.map((r) => (
               <div key={r.symbol} className="p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono font-bold text-text-primary text-base">
+                  <button
+                    onClick={() => openAnalysis(r.symbol)}
+                    className="font-mono font-bold text-text-primary text-base hover:text-accent transition-colors cursor-pointer"
+                  >
                     {r.symbol}
-                  </span>
+                  </button>
                   <SignalBadge signal={r.signal} />
                 </div>
                 <div className="flex items-center justify-between text-sm">
@@ -732,6 +778,343 @@ export default function ScreenerPage() {
           </div>
         </Card>
       )}
+
+      {/* Analysis Modal */}
+      <Modal
+        open={selectedSymbol !== null}
+        onClose={closeAnalysis}
+        className="max-w-2xl"
+      >
+        <ModalHeader>
+          <ModalTitle>{selectedSymbol}</ModalTitle>
+        </ModalHeader>
+
+        {analysisLoading ? (
+          <AnalysisModalSkeleton />
+        ) : analysisError ? (
+          <div className="rounded-lg border border-bearish/30 bg-bearish/10 p-4 text-sm text-bearish">
+            {analysisError}
+          </div>
+        ) : analysisData ? (
+          <AnalysisModalContent analysis={analysisData} />
+        ) : null}
+      </Modal>
+    </div>
+  );
+}
+
+// ─── Analysis Modal Content ───────────────────────────────────────
+
+function AnalysisModalSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Skeleton width="90px" height="28px" rounded="full" />
+        <Skeleton width="80px" height="24px" rounded="md" />
+        <div className="flex-1" />
+        <Skeleton width="60px" height="20px" rounded="md" />
+      </div>
+      <Skeleton width="100%" height="8px" rounded="full" />
+      <div className="space-y-1.5">
+        <Skeleton width="100%" height="14px" rounded="sm" />
+        <Skeleton width="85%" height="14px" rounded="sm" />
+        <Skeleton width="70%" height="14px" rounded="sm" />
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {Array.from({ length: 9 }).map((_, i) => (
+          <Skeleton key={i} width="100%" height="56px" rounded="lg" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function getRsiStatus(rsi: number | null): { label: string; color: string } {
+  if (rsi === null) return { label: "--", color: "text-text-muted" };
+  if (rsi >= 70) return { label: "Overbought", color: "text-bearish" };
+  if (rsi <= 30) return { label: "Oversold", color: "text-bullish" };
+  return { label: "Neutral", color: "text-text-secondary" };
+}
+
+function getMacdDirection(
+  macdLine: number | null,
+  macdSignal: number | null
+): { label: string; color: string } {
+  if (macdLine === null || macdSignal === null)
+    return { label: "--", color: "text-text-muted" };
+  if (macdLine > macdSignal) return { label: "Bullish", color: "text-bullish" };
+  return { label: "Bearish", color: "text-bearish" };
+}
+
+function getEmaTrend(
+  ema9: number | null,
+  ema21: number | null
+): { label: string; color: string } {
+  if (ema9 === null || ema21 === null)
+    return { label: "--", color: "text-text-muted" };
+  if (ema9 > ema21) return { label: "Uptrend", color: "text-bullish" };
+  return { label: "Downtrend", color: "text-bearish" };
+}
+
+function getBollingerPosition(
+  price: number,
+  upper: number | null,
+  lower: number | null
+): { label: string; color: string } {
+  if (upper === null || lower === null)
+    return { label: "--", color: "text-text-muted" };
+  if (price >= upper) return { label: "Above Upper", color: "text-bearish" };
+  if (price <= lower) return { label: "Below Lower", color: "text-bullish" };
+  return { label: "Mid Band", color: "text-text-secondary" };
+}
+
+function AnalysisModalContent({ analysis }: { analysis: AnalysisResult }) {
+  const isBullish = analysis.signal === "BUY" || analysis.signal === "STRONG_BUY";
+  const isBearish = analysis.signal === "SELL" || analysis.signal === "STRONG_SELL";
+  const confidencePct = Math.round(analysis.confidence * 100);
+
+  const rsiStatus = getRsiStatus(analysis.indicators.rsi_14);
+  const macdDir = getMacdDirection(
+    analysis.indicators.macd_line,
+    analysis.indicators.macd_signal
+  );
+  const emaTrend = getEmaTrend(
+    analysis.indicators.ema_9,
+    analysis.indicators.ema_21
+  );
+  const bollingerPos = getBollingerPosition(
+    analysis.price,
+    analysis.indicators.bollinger_upper,
+    analysis.indicators.bollinger_lower
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* Signal + Price + Confidence */}
+      <div className="flex flex-wrap items-center gap-3">
+        <SignalBadge signal={analysis.signal} size="lg" />
+        <span className="font-mono text-lg font-bold text-text-primary">
+          ${analysis.price.toFixed(2)}
+        </span>
+        {analysis.volumeRatio !== undefined && (
+          <Badge variant={analysis.unusualVolume ? "warning" : "neutral"} className="text-xs">
+            Vol {analysis.volumeRatio.toFixed(1)}x
+          </Badge>
+        )}
+      </div>
+
+      {/* Confidence bar */}
+      <div>
+        <div className="flex justify-between text-xs mb-1">
+          <span className="text-text-muted uppercase tracking-wider font-medium">
+            Confidence
+          </span>
+          <span
+            className={`font-mono font-bold ${
+              confidencePct >= 70
+                ? "text-bullish"
+                : confidencePct >= 40
+                  ? "text-warning"
+                  : "text-bearish"
+            }`}
+          >
+            {confidencePct}%
+          </span>
+        </div>
+        <div className="h-2 bg-bg-elevated rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ease-out ${
+              isBullish
+                ? "bg-bullish"
+                : isBearish
+                  ? "bg-bearish"
+                  : "bg-neutral"
+            }`}
+            style={{ width: `${confidencePct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Plain English explanation */}
+      {analysis.plainEnglish && (
+        <p className="text-sm text-text-secondary leading-relaxed">
+          {analysis.plainEnglish}
+        </p>
+      )}
+
+      {/* Signal DNA - reasons */}
+      {analysis.reasons.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Zap className="w-3.5 h-3.5 text-accent" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+              Signal DNA
+            </span>
+          </div>
+          <ul className="space-y-1">
+            {analysis.reasons.map((reason, i) => (
+              <li
+                key={i}
+                className="flex items-start gap-2 text-xs text-text-secondary leading-relaxed"
+              >
+                <span className="text-accent mt-0.5 shrink-0">*</span>
+                {reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Indicator grid */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <BarChart3 className="w-3.5 h-3.5 text-accent" />
+          <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+            Indicators
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {/* RSI */}
+          <IndicatorCell
+            icon={<Activity className="w-3.5 h-3.5" />}
+            label="RSI (14)"
+            value={analysis.indicators.rsi_14?.toFixed(1) ?? "--"}
+            status={rsiStatus.label}
+            statusColor={rsiStatus.color}
+          />
+
+          {/* MACD */}
+          <IndicatorCell
+            icon={<ArrowUpDown className="w-3.5 h-3.5" />}
+            label="MACD"
+            value={analysis.indicators.macd_histogram?.toFixed(3) ?? "--"}
+            status={macdDir.label}
+            statusColor={macdDir.color}
+          />
+
+          {/* EMA 9/21 */}
+          <IndicatorCell
+            icon={
+              emaTrend.label === "Uptrend" ? (
+                <TrendingUp className="w-3.5 h-3.5" />
+              ) : emaTrend.label === "Downtrend" ? (
+                <TrendingDown className="w-3.5 h-3.5" />
+              ) : (
+                <Minus className="w-3.5 h-3.5" />
+              )
+            }
+            label="EMA 9/21"
+            value={analysis.indicators.ema_9?.toFixed(2) ?? "--"}
+            status={emaTrend.label}
+            statusColor={emaTrend.color}
+          />
+
+          {/* SMA 20 */}
+          <IndicatorCell
+            label="SMA 20"
+            value={analysis.indicators.sma_20?.toFixed(2) ?? "--"}
+          />
+
+          {/* SMA 50 */}
+          <IndicatorCell
+            label="SMA 50"
+            value={analysis.indicators.sma_50?.toFixed(2) ?? "--"}
+          />
+
+          {/* Bollinger Bands */}
+          <IndicatorCell
+            label="Bollinger"
+            value={
+              analysis.indicators.bollinger_upper !== null
+                ? `${analysis.indicators.bollinger_lower?.toFixed(2)} - ${analysis.indicators.bollinger_upper?.toFixed(2)}`
+                : "--"
+            }
+            status={bollingerPos.label}
+            statusColor={bollingerPos.color}
+          />
+
+          {/* ATR */}
+          <IndicatorCell
+            label="ATR (14)"
+            value={analysis.indicators.atr_14?.toFixed(2) ?? "--"}
+          />
+
+          {/* Volume Ratio */}
+          <IndicatorCell
+            label="Volume Ratio"
+            value={
+              analysis.volumeRatio !== undefined
+                ? `${analysis.volumeRatio.toFixed(1)}x`
+                : "--"
+            }
+            status={
+              analysis.unusualVolume
+                ? "Unusual"
+                : analysis.volumeRatio !== undefined
+                  ? "Normal"
+                  : undefined
+            }
+            statusColor={
+              analysis.unusualVolume ? "text-warning" : "text-text-muted"
+            }
+          />
+
+          {/* VWAP */}
+          <IndicatorCell
+            label="VWAP"
+            value={analysis.indicators.vwap?.toFixed(2) ?? "--"}
+            status={
+              analysis.indicators.vwap !== null
+                ? analysis.price > analysis.indicators.vwap
+                  ? "Above"
+                  : "Below"
+                : undefined
+            }
+            statusColor={
+              analysis.indicators.vwap !== null
+                ? analysis.price > analysis.indicators.vwap
+                  ? "text-bullish"
+                  : "text-bearish"
+                : "text-text-muted"
+            }
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IndicatorCell({
+  icon,
+  label,
+  value,
+  status,
+  statusColor,
+}: {
+  icon?: React.ReactNode;
+  label: string;
+  value: string;
+  status?: string;
+  statusColor?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1 px-3 py-2.5 rounded-lg bg-bg-elevated">
+      <div className="flex items-center gap-1.5 text-text-muted">
+        {icon}
+        <span className="text-[11px] font-medium uppercase tracking-wider">
+          {label}
+        </span>
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-sm font-medium text-text-primary">
+          {value}
+        </span>
+        {status && (
+          <span className={`text-[10px] font-medium ${statusColor ?? "text-text-muted"}`}>
+            {status}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
