@@ -24,6 +24,8 @@ import {
   XCircle,
   Settings,
   RefreshCw,
+  Check,
+  Shield,
 } from "lucide-react";
 import { PRESET_LABELS } from "@/lib/strategy-presets";
 
@@ -146,13 +148,16 @@ export default function TraderPage() {
   const [cmdLoading, setCmdLoading] = useState<string | null>(null);
   const [engineMode, setEngineMode] = useState<string>("optimized");
   const [showRisk, setShowRisk] = useState(false);
-  const [riskForm, setRiskForm] = useState({
-    max_daily_loss: "500",
-    max_position_size: "100",
-    max_positions: "5",
-    stop_loss_pct: "0.02",
-    max_portfolio_exposure: "25000",
+  const [riskForm, setRiskForm] = useState<Record<string, string>>({
+    accountSize: "",
+    maxDailyLossPct: "",
+    maxDrawdownPct: "",
+    maxPositionPct: "",
+    maxPositionSize: "",
+    maxSingleTradeLoss: "",
   });
+  const [riskSaving, setRiskSaving] = useState(false);
+  const [riskSaved, setRiskSaved] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -175,6 +180,30 @@ export default function TraderPage() {
     load();
     const interval = setInterval(load, 10000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Load saved risk profile overrides
+  useEffect(() => {
+    async function loadRiskProfile() {
+      try {
+        const res = await fetch("/api/risk-profile");
+        if (!res.ok) return;
+        const { profile } = await res.json();
+        if (profile) {
+          setRiskForm({
+            accountSize: profile.accountSize != null ? String(profile.accountSize) : "",
+            maxDailyLossPct: profile.maxDailyLossPct != null ? String(profile.maxDailyLossPct) : "",
+            maxDrawdownPct: profile.maxDrawdownPct != null ? String(profile.maxDrawdownPct) : "",
+            maxPositionPct: profile.maxPositionPct != null ? String(profile.maxPositionPct) : "",
+            maxPositionSize: profile.maxPositionSize != null ? String(profile.maxPositionSize) : "",
+            maxSingleTradeLoss: profile.maxSingleTradeLoss != null ? String(profile.maxSingleTradeLoss) : "",
+          });
+        }
+      } catch {
+        // Silent — use empty form (all engine defaults)
+      }
+    }
+    loadRiskProfile();
   }, []);
 
   async function handleEngine(action: "start" | "stop" | "halt" | "switch") {
@@ -607,11 +636,14 @@ export default function TraderPage() {
         </Card>
       </div>
 
-      {/* Risk Settings */}
+      {/* Risk Settings — optional overrides (empty = engine decides) */}
       <Card>
         <CardHeader className="p-0 pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle>Risk Settings</CardTitle>
+            <div className="flex items-center gap-2">
+              <Shield className="w-4 h-4 text-accent" />
+              <CardTitle>Risk Overrides</CardTitle>
+            </div>
             <Button
               variant="ghost"
               size="sm"
@@ -620,41 +652,89 @@ export default function TraderPage() {
               <Settings className="w-4 h-4 text-text-muted" />
             </Button>
           </div>
+          <p className="text-xs text-text-muted mt-1">
+            Only set fields you want to override. Empty fields use engine defaults.
+          </p>
         </CardHeader>
         {showRisk && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {[
-                { key: "max_daily_loss", label: "Max Daily Loss ($)" },
-                { key: "max_position_size", label: "Max Position Size" },
-                { key: "max_positions", label: "Max Open Positions" },
-                { key: "stop_loss_pct", label: "Stop Loss %" },
-                { key: "max_portfolio_exposure", label: "Max Exposure ($)" },
-              ].map(({ key, label }) => (
-                <Input
-                  key={key}
-                  label={label}
-                  type="text"
-                  value={riskForm[key as keyof typeof riskForm]}
-                  onChange={(e) => setRiskForm({ ...riskForm, [key]: e.target.value })}
-                  className="font-mono"
-                />
+              {([
+                { key: "accountSize", label: "Account Size ($)", placeholder: "Engine default: 10,000", step: "100" },
+                { key: "maxDailyLossPct", label: "Max Daily Loss (%)", placeholder: "Engine default: 2%", step: "0.1" },
+                { key: "maxDrawdownPct", label: "Max Drawdown (%)", placeholder: "Engine default: 10%", step: "0.5" },
+                { key: "maxPositionPct", label: "Max Position (%)", placeholder: "Engine default: 15%", step: "0.5" },
+                { key: "maxPositionSize", label: "Max Position Size (shares)", placeholder: "Engine default: 100", step: "1" },
+                { key: "maxSingleTradeLoss", label: "Max Single Trade Loss ($)", placeholder: "Engine default: 100", step: "10" },
+              ] as const).map(({ key, label, placeholder, step }) => (
+                <div key={key}>
+                  <Input
+                    label={label}
+                    type="number"
+                    step={step}
+                    min="0"
+                    value={riskForm[key]}
+                    placeholder={placeholder}
+                    onChange={(e) => setRiskForm({ ...riskForm, [key]: e.target.value })}
+                    className="font-mono"
+                  />
+                  {riskForm[key] === "" && (
+                    <span className="text-[11px] text-text-muted mt-0.5 block">Engine decides</span>
+                  )}
+                </div>
               ))}
             </div>
-            <Button
-              variant="primary"
-              onClick={async () => {
-                const params: Record<string, number> = {};
-                for (const [k, v] of Object.entries(riskForm)) {
-                  const num = parseFloat(v);
-                  if (!isNaN(num)) params[k] = num;
-                }
-                await handleCommand("risk", { params });
-              }}
-              disabled={cmdLoading !== null}
-            >
-              Update Risk Parameters
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="primary"
+                loading={riskSaving}
+                onClick={async () => {
+                  setRiskSaving(true);
+                  setRiskSaved(false);
+                  try {
+                    // Build payload: null for empty fields, number for set fields
+                    const payload: Record<string, number | null> = {};
+                    for (const [k, v] of Object.entries(riskForm)) {
+                      if (v === "") {
+                        payload[k] = null;
+                      } else {
+                        const num = parseFloat(v);
+                        if (!isNaN(num)) payload[k] = num;
+                      }
+                    }
+
+                    // Persist to DB risk profile
+                    await fetch("/api/risk-profile", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(payload),
+                    });
+
+                    // Push to live engine (only non-null params)
+                    const engineParams: Record<string, number> = {};
+                    for (const [k, v] of Object.entries(payload)) {
+                      if (v != null) engineParams[k] = v;
+                    }
+                    if (Object.keys(engineParams).length > 0) {
+                      await handleCommand("risk", { params: engineParams });
+                    }
+
+                    setRiskSaved(true);
+                    setTimeout(() => setRiskSaved(false), 3000);
+                  } finally {
+                    setRiskSaving(false);
+                  }
+                }}
+                disabled={cmdLoading !== null}
+              >
+                Save Overrides
+              </Button>
+              {riskSaved && (
+                <span className="flex items-center gap-1 text-sm text-bullish animate-fade-in">
+                  <Check className="w-4 h-4" /> Saved
+                </span>
+              )}
+            </div>
           </div>
         )}
       </Card>

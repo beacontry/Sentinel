@@ -121,7 +121,7 @@ export async function pushHalt(action: "halt" | "resume"): Promise<{ status: str
 }
 
 /** Update risk parameters at runtime. */
-export async function pushRiskUpdate(params: Record<string, number | boolean>): Promise<{ status: string; params?: Record<string, unknown> }> {
+export async function pushRiskUpdate(params: Record<string, number | boolean | null>): Promise<{ status: string; params?: Record<string, unknown> }> {
   const url = `${TRADER_PUSH_CONFIG.url.replace(/\/$/, "")}/api/risk`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);

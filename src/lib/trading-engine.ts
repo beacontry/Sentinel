@@ -349,6 +349,14 @@ interface RiskLimits {
 }
 
 async function loadRiskLimits(userId: string): Promise<RiskLimits> {
+  const defaults: RiskLimits = {
+    maxPositions: DEFAULT_MAX_POSITIONS,
+    positionPct: DEFAULT_POSITION_PCT,
+    dailyLossPct: DEFAULT_DAILY_LOSS_PCT,
+    maxPositionSize: 100,
+    maxExposure: 25000,
+  };
+
   try {
     const [profile] = await db
       .select()
@@ -357,25 +365,25 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
       .limit(1);
 
     if (profile) {
-      return {
-        maxPositions: Math.floor(100 / (profile.maxPositionPct || 5)), // e.g., 5% per position = 20 max
-        positionPct: (profile.maxPositionPct || 5) / 100,
-        dailyLossPct: (profile.maxDailyLossPct || 2) / 100,
-        maxPositionSize: profile.maxPositionSize || 100,
-        maxExposure: profile.accountSize * (profile.maxDrawdownPct || 10) / 100,
-      };
+      // Each field falls back to its code default independently when null
+      const positionPct = profile.maxPositionPct != null ? profile.maxPositionPct / 100 : defaults.positionPct;
+      const maxPositions = profile.maxPositionPct != null ? Math.floor(100 / profile.maxPositionPct) : defaults.maxPositions;
+      const dailyLossPct = profile.maxDailyLossPct != null ? profile.maxDailyLossPct / 100 : defaults.dailyLossPct;
+      const maxPositionSize = profile.maxPositionSize ?? defaults.maxPositionSize;
+
+      // maxExposure only overridden when BOTH accountSize and maxDrawdownPct are set
+      const maxExposure =
+        profile.accountSize != null && profile.maxDrawdownPct != null
+          ? (profile.accountSize * profile.maxDrawdownPct) / 100
+          : defaults.maxExposure;
+
+      return { maxPositions, positionPct, dailyLossPct, maxPositionSize, maxExposure };
     }
   } catch (err) {
     log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to load risk profile, using defaults");
   }
 
-  return {
-    maxPositions: DEFAULT_MAX_POSITIONS,
-    positionPct: DEFAULT_POSITION_PCT,
-    dailyLossPct: DEFAULT_DAILY_LOSS_PCT,
-    maxPositionSize: 100,
-    maxExposure: 25000,
-  };
+  return defaults;
 }
 
 /** Intraday strategy: tighter stops, faster exits */

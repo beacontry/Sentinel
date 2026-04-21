@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(result);
       }
       case "risk": {
-        const params = body.params as Record<string, number | boolean>;
+        const params = body.params as Record<string, number | boolean | null>;
         if (!params) {
           return NextResponse.json({ error: "Missing params" }, { status: 400 });
         }
