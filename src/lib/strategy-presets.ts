@@ -30,10 +30,10 @@ export const STRATEGY_PRESETS: Record<PresetName, StrategyParams> = {
     holdPeriod: 15,
   },
   optimized: {
-    stopLossPct: 0.12,
-    takeProfitPct: 0.28,
-    trailingStopPct: 0.09,
-    holdPeriod: 43,
+    stopLossPct: 0.085,
+    takeProfitPct: 0.197,
+    trailingStopPct: 0.129,
+    holdPeriod: 35,
   },
   day_trade: {
     stopLossPct: 0.01,
@@ -71,7 +71,7 @@ export const PRESET_LABELS: Record<PresetName, { label: string; description: str
   conservative: { label: "Conservative", description: "Tight stops, modest targets" },
   moderate:     { label: "Moderate",     description: "Balanced risk/reward" },
   aggressive:   { label: "Aggressive",   description: "Wider stops, larger targets" },
-  optimized:    { label: "Optimized",    description: "GA-tuned, 12% SL, 28% TP, 43-bar hold" },
+  optimized:    { label: "Optimized",    description: "GA-tuned, 8.5% SL, 20% TP, 35-bar hold" },
   day_trade:    { label: "Day Trade",    description: "Intraday, quick exits" },
   swing:        { label: "Swing",        description: "Multi-week holds" },
   intraday:     { label: "Intraday",     description: "5min bars, flatten at 3 PM ET" },
