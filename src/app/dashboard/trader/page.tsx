@@ -42,6 +42,12 @@ interface TraderData {
     lastHeartbeat: string | null;
     watchlist: string[];
   };
+  brokerAccount?: {
+    equity: number;
+    cash: number;
+    buyingPower: number;
+    portfolioValue: number;
+  } | null;
   todayPnl: {
     realizedPnl: number;
     unrealizedPnl: number;
@@ -354,6 +360,48 @@ export default function TraderPage() {
         )}
       </div>
 
+      {/* Account Balance */}
+      {data?.brokerAccount && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Card>
+            <div className="flex items-center gap-2 mb-1">
+              <DollarSign className="w-4 h-4 text-accent" />
+              <span className="text-xs text-text-muted">Total Equity</span>
+            </div>
+            <p className="text-xl font-display font-bold text-text-primary">
+              ${data.brokerAccount.equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </Card>
+          <Card>
+            <div className="flex items-center gap-2 mb-1">
+              <BarChart3 className="w-4 h-4 text-accent" />
+              <span className="text-xs text-text-muted">Portfolio Value</span>
+            </div>
+            <p className="text-xl font-display font-bold text-text-primary">
+              ${data.brokerAccount.portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </Card>
+          <Card>
+            <div className="flex items-center gap-2 mb-1">
+              <DollarSign className="w-4 h-4 text-bullish" />
+              <span className="text-xs text-text-muted">Cash</span>
+            </div>
+            <p className="text-xl font-display font-bold text-text-primary">
+              ${data.brokerAccount.cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </Card>
+          <Card>
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingUp className="w-4 h-4 text-bullish" />
+              <span className="text-xs text-text-muted">Buying Power</span>
+            </div>
+            <p className="text-xl font-display font-bold text-text-primary">
+              ${data.brokerAccount.buyingPower.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </Card>
+        </div>
+      )}
+
       {/* Today's P&L */}
       {todayPnl && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -610,6 +658,69 @@ export default function TraderPage() {
           </div>
         )}
       </Card>
+
+      {/* Equity Chart */}
+      {pnlHistory.length > 1 && (
+        <Card>
+          <CardHeader className="p-0 pb-3">
+            <CardTitle>Portfolio Value</CardTitle>
+          </CardHeader>
+          <div className="h-[200px]">
+            {(() => {
+              const startEquity = data?.brokerAccount?.equity ?? 100000;
+              // Build cumulative equity from P&L history
+              let cumulative = startEquity;
+              const points = pnlHistory.map((p) => {
+                const dailyPnl = (p.totalPnl ?? 0);
+                return { date: p.date, value: cumulative + dailyPnl };
+              });
+              // Add current equity as last point
+              if (data?.brokerAccount) {
+                points.push({ date: "Now", value: data.brokerAccount.equity });
+              }
+
+              if (points.length < 2) return null;
+
+              const values = points.map(p => p.value);
+              const maxVal = Math.max(...values);
+              const minVal = Math.min(...values);
+              const range = maxVal - minVal || 1;
+
+              const w = 100;
+              const h = 100;
+              const pad = { top: 8, right: 8, bottom: 16, left: 0 };
+              const cw = w - pad.left - pad.right;
+              const ch = h - pad.top - pad.bottom;
+
+              const line = points.map((p, i) => {
+                const x = pad.left + (i / Math.max(points.length - 1, 1)) * cw;
+                const y = pad.top + ch - ((p.value - minVal) / range) * ch;
+                return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+              }).join(" ");
+
+              const isUp = points[points.length - 1].value >= points[0].value;
+
+              return (
+                <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full">
+                  <path d={line} fill="none" stroke={isUp ? "var(--color-bullish)" : "var(--color-bearish)"} strokeWidth="0.8" />
+                  <text x={pad.left + 2} y={h - 2} className="fill-text-muted" style={{ fontSize: 3 }}>
+                    {points[0].date}
+                  </text>
+                  <text x={w - pad.right - 2} y={h - 2} textAnchor="end" className="fill-text-muted" style={{ fontSize: 3 }}>
+                    {points[points.length - 1].date}
+                  </text>
+                  <text x={pad.left + 2} y={pad.top + 4} className="fill-text-muted" style={{ fontSize: 3 }}>
+                    ${maxVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </text>
+                  <text x={pad.left + 2} y={pad.top + ch - 1} className="fill-text-muted" style={{ fontSize: 3 }}>
+                    ${minVal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </text>
+                </svg>
+              );
+            })()}
+          </div>
+        </Card>
+      )}
 
       {/* P&L History */}
       {pnlHistory.length > 0 && (
