@@ -94,7 +94,7 @@ export const HYBRID_CONFIG = {
 } as const;
 
 export const CLAUDE_CONFIG = {
-  apiKey: process.env.GROQ_API_KEY ?? process.env.ANTHROPIC_API_KEY ?? "",
+  get apiKey() { return process.env.GROQ_API_KEY ?? process.env.ANTHROPIC_API_KEY ?? ""; },
   model: "llama-3.3-70b-versatile" as const,
   digestMaxTokens: 1500,
   chatMaxTokens: 1000,
