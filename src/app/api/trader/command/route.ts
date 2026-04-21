@@ -48,6 +48,17 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: `No position found${symbol ? ` for ${symbol}` : ""}` }, { status: 404 });
         }
 
+        // Cancel all open orders first — stop orders block market sells
+        // (disaster stops get re-placed on the next engine scan)
+        try {
+          if (client.cancelAllOrders) {
+            await client.cancelAllOrders();
+            await new Promise(r => setTimeout(r, 500)); // settle time
+          }
+        } catch (err) {
+          log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders before flatten");
+        }
+
         const results: { symbol: string; qty: number; status: string }[] = [];
         for (const pos of toClose) {
           if (pos.qty <= 0) continue;
