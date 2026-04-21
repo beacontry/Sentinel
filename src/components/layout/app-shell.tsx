@@ -49,8 +49,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div style={{ display: "flex", height: "100vh" }}>
         {/* Desktop sidebar */}
         <aside
-          className="hidden lg:block"
-          style={{ width: 260, flexShrink: 0, backgroundColor: "#1e293b", display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}
+          className="hidden lg:flex"
+          style={{ width: 260, flexShrink: 0, backgroundColor: "#1e293b", flexDirection: "column", height: "100vh", overflow: "hidden" }}
         >
           <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
             {/* Logo */}
