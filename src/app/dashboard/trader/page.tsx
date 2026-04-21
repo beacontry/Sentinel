@@ -557,7 +557,21 @@ export default function TraderPage() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => handleCommand("flatten", { symbol: p.symbol })}
+                        onClick={async () => {
+                          if (!confirm(`Sell all ${p.quantity} shares of ${p.symbol} at market?`)) return;
+                          setCmdLoading("flatten");
+                          const result = await sendCommand("flatten", { symbol: p.symbol });
+                          setCmdLoading(null);
+                          if (result.error) {
+                            alert(`Failed: ${result.error}`);
+                          } else {
+                            // Refresh data
+                            try {
+                              const res = await fetch("/api/trader/dashboard");
+                              if (res.ok) setData(await res.json());
+                            } catch { /* silent */ }
+                          }
+                        }}
                         disabled={cmdLoading !== null}
                       >
                         Close
