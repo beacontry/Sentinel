@@ -16,14 +16,8 @@ import { analyzeBars } from "./indicators/analyzer";
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { SP500_SYMBOLS } from "./sp500";
 
-/** Top 50 most liquid S&P 500 stocks — scanned every cycle */
-const SCAN_UNIVERSE = [
-  "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "TSLA", "BRK-B", "JPM", "V",
-  "UNH", "MA", "HD", "PG", "JNJ", "COST", "ABBV", "BAC", "CRM", "AMD",
-  "NFLX", "WMT", "PEP", "TMO", "AVGO", "LLY", "MRK", "ORCL", "ADBE", "CSCO",
-  "ACN", "DIS", "INTC", "VZ", "CMCSA", "PFE", "T", "KO", "NKE", "MCD",
-  "QCOM", "GS", "MS", "CAT", "BA", "GE", "RTX", "LOW", "SBUX", "PYPL",
-];
+/** Full S&P 500 universe — engine scans all, buys the best */
+const SCAN_UNIVERSE = SP500_SYMBOLS;
 import type { StrategyParams } from "./strategy-presets";
 import { SignalType } from "@/types";
 import { db } from "./db";
@@ -119,20 +113,54 @@ const TACTICAL_CONFIG = {
   fullExitPct: 1.0,   // go 100% cash on confirmed exit
 };
 
-// #3: Sector groups for rotation weighting
+// #3: Sector groups for rotation weighting (covers full S&P 500)
 const SECTOR_MAP: Record<string, string> = {
-  AAPL: "tech", MSFT: "tech", NVDA: "tech", AMD: "tech", INTC: "tech",
-  GOOGL: "tech", META: "tech", ADBE: "tech", CRM: "tech", ORCL: "tech",
-  CSCO: "tech", AVGO: "tech", QCOM: "tech",
-  AMZN: "consumer", TSLA: "consumer", HD: "consumer", LOW: "consumer",
-  MCD: "consumer", SBUX: "consumer", NKE: "consumer", COST: "consumer",
-  WMT: "consumer", PEP: "consumer", KO: "consumer", NFLX: "consumer",
+  // Tech
+  AAPL: "tech", MSFT: "tech", NVDA: "tech", AMD: "tech", INTC: "tech", GOOGL: "tech", GOOG: "tech",
+  META: "tech", ADBE: "tech", CRM: "tech", ORCL: "tech", CSCO: "tech", AVGO: "tech", QCOM: "tech",
+  ANET: "tech", CDNS: "tech", SNPS: "tech", MCHP: "tech", KLAC: "tech", LRCX: "tech", AMAT: "tech",
+  ADI: "tech", FTNT: "tech", PANW: "tech", CRWD: "tech", NOW: "tech", INTU: "tech", ADSK: "tech",
+  ANSS: "tech", IT: "tech", KEYS: "tech", MPWR: "tech", FICO: "tech", TYL: "tech", EPAM: "tech",
+  // Consumer
+  AMZN: "consumer", TSLA: "consumer", HD: "consumer", LOW: "consumer", MCD: "consumer", SBUX: "consumer",
+  NKE: "consumer", COST: "consumer", WMT: "consumer", TGT: "consumer", NFLX: "consumer", DIS: "consumer",
+  BKNG: "consumer", CMG: "consumer", DHI: "consumer", LEN: "consumer", PHM: "consumer", ORLY: "consumer",
+  AZO: "consumer", ROST: "consumer", TJX: "consumer", LULU: "consumer", DECK: "consumer", BBY: "consumer",
+  EBAY: "consumer", ETSY: "consumer", DPZ: "consumer", YUM: "consumer", POOL: "consumer",
+  // Finance
   JPM: "finance", BAC: "finance", GS: "finance", MS: "finance", V: "finance", MA: "finance",
-  UNH: "health", JNJ: "health", PFE: "health", ABBV: "health", LLY: "health",
-  MRK: "health", TMO: "health",
-  BA: "industrial", CAT: "industrial", GE: "industrial", RTX: "industrial",
-  DIS: "comms", CMCSA: "comms", VZ: "comms", T: "comms",
-  PG: "staples", PYPL: "fintech", ACN: "consulting",
+  BRK: "finance", C: "finance", WFC: "finance", SCHW: "finance", BLK: "finance", BX: "finance",
+  KKR: "finance", AXP: "finance", COF: "finance", DFS: "finance", MTB: "finance", USB: "finance",
+  PNC: "finance", TFC: "finance", FITB: "finance", KEY: "finance", CFG: "finance", RF: "finance",
+  ICE: "finance", CME: "finance", CBOE: "finance", NDAQ: "finance", MSCI: "finance", SPGI: "finance",
+  // Health
+  UNH: "health", JNJ: "health", PFE: "health", ABBV: "health", LLY: "health", MRK: "health",
+  TMO: "health", ABT: "health", DHR: "health", BMY: "health", AMGN: "health", GILD: "health",
+  ISRG: "health", MDT: "health", SYK: "health", BSX: "health", EW: "health", REGN: "health",
+  VRTX: "health", IDXX: "health", DXCM: "health", HCA: "health", CI: "health", HUM: "health",
+  CNC: "health", MOH: "health", BIIB: "health", MRNA: "health", ILMN: "health",
+  // Industrial
+  BA: "industrial", CAT: "industrial", GE: "industrial", RTX: "industrial", HON: "industrial",
+  UNP: "industrial", UPS: "industrial", DE: "industrial", GD: "industrial", LMT: "industrial",
+  NOC: "industrial", GEV: "industrial", ETN: "industrial", ITW: "industrial", EMR: "industrial",
+  IR: "industrial", WAB: "industrial", FAST: "industrial", PWR: "industrial", URI: "industrial",
+  // Energy
+  XOM: "energy", CVX: "energy", COP: "energy", SLB: "energy", EOG: "energy", MPC: "energy",
+  PSX: "energy", VLO: "energy", OXY: "energy", DVN: "energy", FANG: "energy", HAL: "energy",
+  // Staples
+  PG: "staples", PEP: "staples", KO: "staples", PM: "staples", MO: "staples", CL: "staples",
+  KMB: "staples", GIS: "staples", K: "staples", SJM: "staples", CPB: "staples", KHC: "staples",
+  MDLZ: "staples", HSY: "staples", MNST: "staples", KR: "staples", SYY: "staples", ADM: "staples",
+  // Utilities
+  NEE: "utilities", DUK: "utilities", SO: "utilities", D: "utilities", AEP: "utilities",
+  EXC: "utilities", SRE: "utilities", ED: "utilities", WEC: "utilities", ES: "utilities",
+  // Real Estate
+  AMT: "realestate", PLD: "realestate", CCI: "realestate", EQIX: "realestate", SPG: "realestate",
+  O: "realestate", WELL: "realestate", DLR: "realestate", PSA: "realestate", VICI: "realestate",
+  // Comms
+  CMCSA: "comms", VZ: "comms", T: "comms", TMUS: "comms", CHTR: "comms",
+  // Fintech
+  PYPL: "fintech", FI: "fintech", FIS: "fintech", FISV: "fintech", GPN: "fintech",
 };
 
 /**
