@@ -40,9 +40,10 @@ export async function GET(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    log.error({ err: message }, "Insight fetch error");
+    const stack = err instanceof Error ? err.stack?.split("\n").slice(0, 3).join(" ") : "";
+    log.error({ err: message, stack }, "Insight fetch error");
     return NextResponse.json(
-      { error: "Failed to generate insight" },
+      { error: "Failed to generate insight", detail: message },
       { status: 500 }
     );
   }
