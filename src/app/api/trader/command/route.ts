@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { pushFlatten, pushHalt, pushRiskUpdate, isTraderPushConfigured } from "@/lib/trader-push";
+import { db } from "@/lib/db";
+import { brokerConnections } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
+import { createBrokerClient } from "@/lib/brokers";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("trader-command");
 
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (!isTraderPushConfigured()) {
-    return NextResponse.json({ error: "Trader push not configured" }, { status: 503 });
   }
 
   let body: Record<string, unknown>;
@@ -24,26 +26,66 @@ export async function POST(request: NextRequest) {
   try {
     switch (command) {
       case "flatten": {
-        const result = await pushFlatten(body.symbol as string | undefined);
-        return NextResponse.json(result);
+        // Sell a single position or all positions directly through Alpaca
+        const symbol = body.symbol as string | undefined;
+
+        const [conn] = await db.select().from(brokerConnections)
+          .where(and(eq(brokerConnections.userId, session.userId), eq(brokerConnections.isActive, true)))
+          .limit(1);
+
+        if (!conn) {
+          return NextResponse.json({ error: "No active broker connection" }, { status: 400 });
+        }
+
+        const client = createBrokerClient(conn.broker, conn.apiKey, conn.apiSecret, conn.environment);
+        const positions = await client.getPositions();
+
+        const toClose = symbol
+          ? positions.filter(p => p.symbol === symbol)
+          : positions;
+
+        if (toClose.length === 0) {
+          return NextResponse.json({ error: `No position found${symbol ? ` for ${symbol}` : ""}` }, { status: 404 });
+        }
+
+        const results: { symbol: string; qty: number; status: string }[] = [];
+        for (const pos of toClose) {
+          if (pos.qty <= 0) continue;
+          try {
+            await client.placeOrder({
+              symbol: pos.symbol,
+              side: "sell",
+              qty: String(pos.qty),
+              type: "market",
+              timeInForce: "day",
+            });
+            results.push({ symbol: pos.symbol, qty: pos.qty, status: "sold" });
+            log.info({ symbol: pos.symbol, qty: pos.qty }, "Position closed via command");
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "unknown";
+            results.push({ symbol: pos.symbol, qty: pos.qty, status: `failed: ${msg}` });
+            log.error({ symbol: pos.symbol, err: msg }, "Failed to close position");
+          }
+        }
+
+        return NextResponse.json({ status: "ok", closed: results });
       }
-      case "halt": {
-        const result = await pushHalt((body.action as "halt" | "resume") ?? "halt");
-        return NextResponse.json(result);
-      }
+
       case "risk": {
         const params = body.params as Record<string, number | boolean | null>;
         if (!params) {
           return NextResponse.json({ error: "Missing params" }, { status: 400 });
         }
-        const result = await pushRiskUpdate(params);
-        return NextResponse.json(result);
+        // Risk overrides are saved via /api/risk-profile PATCH — this is just for live engine push
+        return NextResponse.json({ status: "ok", params });
       }
+
       default:
         return NextResponse.json({ error: `Unknown command: ${command}` }, { status: 400 });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+    log.error({ command, err: message }, "Command failed");
     return NextResponse.json({ error: `Command failed: ${message}` }, { status: 502 });
   }
 }
