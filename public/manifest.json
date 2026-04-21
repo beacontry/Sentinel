@@ -1,0 +1,24 @@
+{
+  "name": "Sentinel Trading",
+  "short_name": "Sentinel",
+  "description": "Trading intelligence platform — signals, analysis, and automated execution",
+  "start_url": "/dashboard/trader",
+  "display": "standalone",
+  "background_color": "#0a0f0d",
+  "theme_color": "#0a0f0d",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
