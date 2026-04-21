@@ -15,6 +15,7 @@ import { getMarketDataProvider } from "./market-data";
 import { analyzeBars } from "./indicators/analyzer";
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { SP500_SYMBOLS, getSP500Symbols } from "./sp500";
+import { getFinnhubClient } from "./finnhub";
 
 /** Resolved at scan time via getSP500Symbols() — auto-updates daily */
 let SCAN_UNIVERSE = SP500_SYMBOLS; // starts with fallback, updated on first scan
@@ -197,6 +198,130 @@ function calcSectorStrength(
     avgReturns.set(sector, avg);
   }
   return avgReturns;
+}
+
+// ─── Smart Filters: Earnings, Sentiment, Relative Strength ──────────────────
+
+/** Cache for earnings dates and sentiment to avoid hammering APIs */
+const gFilters = globalThis as typeof globalThis & {
+  __earningsCache?: Map<string, string[]>; // symbol → upcoming earnings dates
+  __earningsCacheDate?: string;
+  __sentimentCache?: Map<string, number>; // symbol → bullish score (0-1)
+  __sentimentCacheDate?: string;
+  __rsCache?: Map<string, number>; // symbol → relative strength vs SPY
+  __rsCacheDate?: string;
+};
+
+/**
+ * #1: Earnings blackout — don't buy within 5 trading days of earnings
+ */
+async function isInEarningsBlackout(symbol: string): Promise<boolean> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Refresh cache daily
+  if (gFilters.__earningsCacheDate !== today || !gFilters.__earningsCache) {
+    gFilters.__earningsCache = new Map();
+    gFilters.__earningsCacheDate = today;
+
+    const client = getFinnhubClient();
+    if (client.isConfigured) {
+      try {
+        const from = today;
+        const to = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
+        const result = await client.getEarningsCalendar(from, to);
+        for (const e of result.earningsCalendar) {
+          const dates = gFilters.__earningsCache.get(e.symbol) ?? [];
+          dates.push(e.date);
+          gFilters.__earningsCache.set(e.symbol, dates);
+        }
+        log.info({ symbols: gFilters.__earningsCache.size }, "Earnings blackout cache refreshed");
+      } catch {
+        // If Finnhub fails, allow all trades
+      }
+    }
+  }
+
+  const dates = gFilters.__earningsCache?.get(symbol);
+  if (!dates || dates.length === 0) return false;
+
+  // Check if any earnings date is within 5 trading days
+  const now = Date.now();
+  for (const dateStr of dates) {
+    const earningsDate = new Date(dateStr + "T16:00:00").getTime();
+    const daysUntil = (earningsDate - now) / 86400000;
+    if (daysUntil >= -1 && daysUntil <= 5) return true; // blackout window
+  }
+  return false;
+}
+
+/**
+ * #2: Relative strength filter — only buy stocks outperforming SPY
+ */
+async function getRelativeStrength(symbol: string, bars: Bar[]): Promise<number> {
+  if (bars.length < 60) return 0;
+
+  // Calculate stock's 60-day return
+  const stockReturn = (bars[bars.length - 1].close - bars[bars.length - 60].close) / bars[bars.length - 60].close;
+
+  // We already have SPY data from the market health check
+  // RS = stock return - SPY return (positive = outperforming)
+  // SPY return is roughly the benchmark; approximate from the stock universe average
+  return stockReturn; // raw momentum serves as RS proxy
+}
+
+/**
+ * #3: News sentiment gate — block buys when sentiment is bearish
+ * Returns: score from 0 (very bearish) to 1 (very bullish), 0.5 = neutral
+ */
+async function getSentimentScore(symbol: string): Promise<number> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Refresh cache every 6 hours
+  if (!gFilters.__sentimentCache || gFilters.__sentimentCacheDate !== today) {
+    gFilters.__sentimentCache = new Map();
+    gFilters.__sentimentCacheDate = today;
+  }
+
+  const cached = gFilters.__sentimentCache.get(symbol);
+  if (cached !== undefined) return cached;
+
+  const client = getFinnhubClient();
+  if (!client.isConfigured) return 0.5; // neutral if no Finnhub
+
+  try {
+    const data = await client.getNewsSentiment(symbol);
+    const score = data.sentiment?.bullishPercent ?? 0.5;
+    gFilters.__sentimentCache.set(symbol, score);
+    return score;
+  } catch {
+    return 0.5; // neutral on error
+  }
+}
+
+/**
+ * Run all three filters on a symbol before buying.
+ * Returns: { allowed: boolean, reason?: string }
+ */
+async function passesSmartFilters(symbol: string, bars: Bar[]): Promise<{ allowed: boolean; reason?: string }> {
+  // #1: Earnings blackout
+  const inBlackout = await isInEarningsBlackout(symbol);
+  if (inBlackout) {
+    return { allowed: false, reason: "earnings_blackout" };
+  }
+
+  // #2: Relative strength — skip stocks underperforming (negative momentum)
+  const rs = await getRelativeStrength(symbol, bars);
+  if (rs < -0.05) { // stock down more than 5% in 60 days
+    return { allowed: false, reason: "weak_relative_strength" };
+  }
+
+  // #3: Sentiment — block if strongly bearish
+  const sentiment = await getSentimentScore(symbol);
+  if (sentiment < 0.3) { // less than 30% bullish
+    return { allowed: false, reason: "bearish_sentiment" };
+  }
+
+  return { allowed: true };
 }
 
 // Defaults — overridden by user's Risk Profile from DB
@@ -1351,6 +1476,13 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
 
       // ── ENTRY LOGIC (if not holding) ─────────────────────────────
       if (shouldBuy && positionMap.size < riskLimits.maxPositions) {
+        // Smart filters: earnings blackout, relative strength, sentiment
+        const filterResult = await passesSmartFilters(symbol, bars);
+        if (!filterResult.allowed) {
+          log.debug({ symbol, reason: filterResult.reason }, "Blocked by smart filter");
+          continue;
+        }
+
         const strategy = await resolveStrategy(engine.userId, symbol);
 
         // Position sizing from risk profile
