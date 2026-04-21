@@ -453,6 +453,7 @@ export default function OptimizerPage() {
                   setSymbolOrder("desc");
                 }
               }}
+              onComparisonUpdate={(results) => setComparison(results)}
             />
           ) : (
             <div className="flex items-center justify-center min-h-[300px] text-text-muted text-sm">
@@ -562,6 +563,7 @@ function RunDetailView({
   symbolSort,
   symbolOrder,
   onSortChange,
+  onComparisonUpdate,
 }: {
   detail: RunDetail;
   sortedSymbols: SymbolResult[];
@@ -571,6 +573,7 @@ function RunDetailView({
   symbolSort: string;
   symbolOrder: string;
   onSortChange: (sort: "return" | "sharpe" | "drawdown") => void;
+  onComparisonUpdate: (results: { mode: string; label: string; totalReturn: number; finalValue: number; maxDrawdown: number; sharpe: number; trades: number; timeInMarket: number }[]) => void;
 }) {
   const { run, generations } = detail;
   const isComplete = run.status === "complete";
@@ -670,7 +673,15 @@ function RunDetailView({
                         body: JSON.stringify({ runId: run.id }),
                       });
                       if (res.ok) {
-                        alert("Saved as active Optimized preset. Engine will use these parameters.");
+                        alert("Saved as active Optimized preset. Refreshing mode comparison...");
+                        // Auto-refresh Compare Modes with new preset
+                        try {
+                          const cmpRes = await fetch("/api/optimize/compare");
+                          if (cmpRes.ok) {
+                            const cmpData = await cmpRes.json();
+                            onComparisonUpdate(cmpData.results);
+                          }
+                        } catch { /* silent */ }
                       } else {
                         const data = await res.json();
                         alert(data.error || "Failed to save");
