@@ -64,6 +64,7 @@ export interface OptimizableParams {
   rsiOverbought: number;
   emaFast: number;
   emaSlow: number;
+  rsThreshold: number; // min 60-day return to buy (e.g., -0.10 = allow down 10%)
 }
 
 interface ParamRange { min: number; max: number; step?: number }
@@ -101,6 +102,7 @@ const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
   rsiOverbought:   { min: 60,    max: 80, step: 1 },
   emaFast:         { min: 5,     max: 15, step: 1 },
   emaSlow:         { min: 15,    max: 50, step: 1 },
+  rsThreshold:     { min: -0.20, max: 0.10 }, // -20% to +10% (negative = allow beaten-down stocks)
 };
 
 const WINDOW_SIZE = 50;
@@ -510,6 +512,12 @@ function portfolioBacktest(
         const bar = data.barLookup.get(symbol)?.get(date);
         if (!bar) continue;
 
+        // RS filter: check 60-day momentum against threshold
+        if (w.length >= 60) {
+          const rs60 = (w[w.length - 1].close - w[w.length - 60].close) / w[w.length - 60].close;
+          if (rs60 < params.rsThreshold) continue;
+        }
+
         const sig = evaluateBarSignal(w, params);
         if (sig === "BUY" || sig === "STRONG_BUY") {
           candidates.push({ symbol, signal: sig, price: bar.close });
@@ -709,7 +717,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     // ── Baseline ──
     const baselineParams: OptimizableParams = {
       stopLossPct: 0.02, takeProfitPct: 0.03, trailingStopPct: 0.015, holdPeriod: 20,
-      positionPct: 0.10, maxPositions: 10, rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21,
+      positionPct: 0.10, maxPositions: 10, rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     };
     const baselineTrain = portfolioBacktest(portfolioData, baselineParams, "train");
     const baselineTest = portfolioBacktest(portfolioData, baselineParams, "test");
@@ -720,7 +728,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     const presetSeeds: OptimizableParams[] = Object.values(STRATEGY_PRESETS).map((p) => ({
       stopLossPct: p.stopLossPct, takeProfitPct: p.takeProfitPct,
       trailingStopPct: p.trailingStopPct, holdPeriod: p.holdPeriod,
-      positionPct: 0.10, maxPositions: 10, rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21,
+      positionPct: 0.10, maxPositions: 10, rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     }));
 
     let population: Individual[] = [];

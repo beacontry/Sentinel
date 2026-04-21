@@ -727,6 +727,9 @@ function RunDetailView({
               {bestParams.maxPositions != null && (
                 <ParamDisplay label="Max Positions" value={`${Math.round(bestParams.maxPositions)}`} />
               )}
+              {bestParams.rsThreshold != null && (
+                <ParamDisplay label="RS Threshold" value={`${(bestParams.rsThreshold * 100).toFixed(0)}%`} />
+              )}
             </div>
           </div>
         </Card>
