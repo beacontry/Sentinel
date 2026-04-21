@@ -223,6 +223,24 @@ Every buy signal passes through these gates before an order is placed:
 - **Sizing:** Inverse volatility weighted (stable stocks get more capital)
 - **Filter:** Skip stocks with negative momentum
 
+### Active Management (while holding)
+When invested and SPY is healthy, the engine actively manages the portfolio every 15 minutes:
+
+**Swaps (sell weak → buy strong):**
+- Scans all held positions for SELL/STRONG_SELL signals
+- Scans universe + external screener for STRONG_BUY candidates not already held
+- Sells weak positions at market, buys replacement at limit (0.1% above current)
+- Logged as `tactical_smart_swap_sell` / `tactical_smart_swap_buy`
+
+**Additions (deploy unused cash):**
+- Remaining STRONG_BUY candidates can be added if cash is available
+- Respects 1.5× maxPositions hard cap (same as STRONG_BUY overflow)
+- Respects max exposure limit
+- Logged as `tactical_smart_add`
+
+**Signal logging:**
+- Top 5 STRONG_BUY candidates are logged to signals table for visibility even if not acted on
+
 ### Exit
 - Same as Tactical (full exit on SPY weakness)
 
