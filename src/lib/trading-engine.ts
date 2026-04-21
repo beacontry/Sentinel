@@ -1222,6 +1222,138 @@ async function runTacticalSmartScan(): Promise<void> {
     }
     engine.positionCount = positionMap.size;
     log.info({ positions: positionMap.size, candidates: scored.length }, "Tactical Smart buy-in complete");
+
+  } else if (isInvested && !confirmedBelow) {
+    // ── ACTIVE MANAGEMENT: scan for swaps and additions while holding ──
+    const riskLimits = await loadRiskLimits(engine.userId);
+    const heldSymbols = new Set(currentPositions.map(p => p.symbol));
+
+    // Score all stocks (same logic as entry)
+    const extSymbols = engine.externalSignals
+      .filter(s => (s.signal === "BUY" || s.signal === "STRONG_BUY") && !SCAN_UNIVERSE.includes(s.symbol))
+      .map(s => s.symbol);
+    const allSymbols = [...SCAN_UNIVERSE, ...new Set(extSymbols)];
+
+    const candidates: { symbol: string; signal: string; score: number; price: number; invVol: number }[] = [];
+    const weakHeld: { symbol: string; signal: string; pnlPct: number }[] = [];
+
+    for (const symbol of allSymbols) {
+      try {
+        const bars = await Promise.race([
+          provider.fetchBars(symbol, 90, "1d"),
+          new Promise<Bar[]>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+        ]);
+        if (bars.length < 30) continue;
+
+        const analysis = analyzeBars(symbol, bars);
+        const tunedSP = await getOptimizedSignalParams();
+        const sig = tunedSP ? evaluateBarSignal(bars, tunedSP) : analysis.signal;
+
+        // Track weak held positions (SELL signal)
+        if (heldSymbols.has(symbol) && (sig === "SELL" || sig === "STRONG_SELL")) {
+          const bp = currentPositions.find(p => p.symbol === symbol);
+          const pnlPct = bp ? bp.unrealizedPnl / (bp.avgEntryPrice * bp.qty) * 100 : 0;
+          weakHeld.push({ symbol, signal: sig, pnlPct });
+        }
+
+        // Track STRONG_BUY candidates not already held
+        if (!heldSymbols.has(symbol) && sig === "STRONG_BUY") {
+          const { momentum, volatility } = calcMomentumAndVol(bars);
+          if (momentum > -0.05) {
+            const score = momentum * 300 + 4 + analysis.confidence * 2;
+            candidates.push({ symbol, signal: sig, score, price: analysis.price, invVol: 1 / volatility });
+          }
+        }
+
+        await new Promise(r => setTimeout(r, 0));
+      } catch { /* skip */ }
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+
+    // Log signals for visibility (even if not acting)
+    for (const c of candidates.slice(0, 5)) {
+      await logSignal(c.symbol, c.signal as SignalType, c.price, 0, {}, false);
+    }
+
+    // 1. Swap: sell weak held positions and replace with top STRONG_BUY candidates
+    let swapCount = 0;
+    for (const weak of weakHeld) {
+      if (candidates.length === 0) break;
+      const bp = currentPositions.find(p => p.symbol === weak.symbol);
+      if (!bp || bp.qty <= 0) continue;
+
+      const replacement = candidates.shift()!;
+
+      // Sell the weak position
+      try {
+        await client.placeOrder({ symbol: weak.symbol, side: "sell", qty: String(bp.qty), type: "market", timeInForce: "day" });
+        await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "FILLED", bp.unrealizedPnl, `Swap out: ${weak.signal}`);
+        positionMap.delete(weak.symbol);
+        heldSymbols.delete(weak.symbol);
+      } catch (err) {
+        log.error({ symbol: weak.symbol, err: err instanceof Error ? err.message : "unknown" }, "Swap sell failed");
+        continue;
+      }
+
+      // Buy the replacement
+      await new Promise(r => setTimeout(r, 200));
+      const positionValue = equity * riskLimits.positionPct;
+      const qty = Math.min(Math.floor(positionValue / replacement.price), riskLimits.maxPositionSize);
+      if (qty <= 0) continue;
+
+      try {
+        const limitPrice = (replacement.price * 1.001).toFixed(2);
+        await client.placeOrder({ symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "FILLED", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`);
+        positionMap.set(replacement.symbol, {
+          symbol: replacement.symbol, qty, entryPrice: replacement.price, peakPrice: replacement.price,
+          stopLoss: replacement.price * 0.88, takeProfit: replacement.price * 1.5,
+          trailingStopPct: 0.117, entryDate: new Date(), holdPeriod: 999,
+        });
+        heldSymbols.add(replacement.symbol);
+        swapCount++;
+      } catch (err) {
+        log.error({ symbol: replacement.symbol, err: err instanceof Error ? err.message : "unknown" }, "Swap buy failed");
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    // 2. Add: open new positions for remaining STRONG_BUY candidates if cash available
+    const hardCap = Math.floor(riskLimits.maxPositions * 1.5);
+    let addCount = 0;
+    for (const cand of candidates) {
+      if (positionMap.size >= hardCap) break;
+
+      const positionValue = equity * riskLimits.positionPct;
+      const qty = Math.min(Math.floor(positionValue / cand.price), riskLimits.maxPositionSize);
+      if (qty <= 0 || qty * cand.price > account.cash) continue;
+
+      // Check exposure
+      const currentExposure = Array.from(positionMap.values())
+        .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
+      if (currentExposure + cand.price * qty > riskLimits.maxExposure) break;
+
+      try {
+        const limitPrice = (cand.price * 1.001).toFixed(2);
+        await client.placeOrder({ symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "FILLED", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`);
+        positionMap.set(cand.symbol, {
+          symbol: cand.symbol, qty, entryPrice: cand.price, peakPrice: cand.price,
+          stopLoss: cand.price * 0.88, takeProfit: cand.price * 1.5,
+          trailingStopPct: 0.117, entryDate: new Date(), holdPeriod: 999,
+        });
+        addCount++;
+      } catch (err) {
+        log.error({ symbol: cand.symbol, err: err instanceof Error ? err.message : "unknown" }, "Add position failed");
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    engine.positionCount = positionMap.size;
+    if (swapCount > 0 || addCount > 0) {
+      log.info({ swaps: swapCount, adds: addCount, positions: positionMap.size, weakFound: weakHeld.length, strongCandidates: candidates.length + swapCount + addCount }, "Tactical Smart active management");
+    }
   }
 
   // Update daily P&L from broker positions
