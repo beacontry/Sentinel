@@ -157,13 +157,13 @@ export const deleteSymbolStrategySchema = z.object({
 // ─── User Risk Profile ────────────────────────────────────────────
 
 export const updateRiskProfileSchema = z.object({
-  accountSize: z.number().min(100).max(10_000_000).optional(),
-  maxDailyLossPct: z.number().min(0.1).max(100).optional(),
-  maxDrawdownPct: z.number().min(1).max(100).optional(),
-  riskTolerance: z.enum(["conservative", "moderate", "aggressive"]).optional(),
-  maxPositionPct: z.number().min(0.5).max(100).optional(),
-  maxPositionSize: z.number().int().min(1).max(10000).optional(),
-  maxSingleTradeLoss: z.number().min(1).max(100000).optional(),
+  accountSize: z.number().min(100).max(10_000_000).nullable().optional(),
+  maxDailyLossPct: z.number().min(0.1).max(100).nullable().optional(),
+  maxDrawdownPct: z.number().min(1).max(100).nullable().optional(),
+  riskTolerance: z.enum(["conservative", "moderate", "aggressive"]).nullable().optional(),
+  maxPositionPct: z.number().min(0.5).max(100).nullable().optional(),
+  maxPositionSize: z.number().int().min(1).max(10000).nullable().optional(),
+  maxSingleTradeLoss: z.number().min(1).max(100000).nullable().optional(),
 });
 
 // ─── Forum ────────────────────────────────────────────────────────

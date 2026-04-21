@@ -11,23 +11,14 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Auto-create default profile if none exists
   const [existing] = await db
     .select()
     .from(userRiskProfiles)
     .where(eq(userRiskProfiles.userId, session.userId))
     .limit(1);
 
-  if (existing) {
-    return NextResponse.json({ profile: existing });
-  }
-
-  const [created] = await db
-    .insert(userRiskProfiles)
-    .values({ userId: session.userId })
-    .returning();
-
-  return NextResponse.json({ profile: created });
+  // Return the profile if it exists, or null (all-engine-defaults)
+  return NextResponse.json({ profile: existing ?? null });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -36,7 +27,13 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
   const parsed = updateRiskProfileSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -50,7 +47,7 @@ export async function PATCH(request: NextRequest) {
     .limit(1);
 
   if (!existing) {
-    // Create with the provided values
+    // Create with the provided values (nulls are fine — means "engine decides")
     const [created] = await db
       .insert(userRiskProfiles)
       .values({ userId: session.userId, ...parsed.data })

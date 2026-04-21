@@ -170,6 +170,7 @@ export async function analyzeHybrid(
     signal: adjustedSignal,
     confidence: adjustedConfidence,
     reasons: allReasons,
+    volumeRatio: technicalResult.volumeRatio,
     hybrid: {
       enabled: true,
       technicalConfidence,

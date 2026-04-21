@@ -131,6 +131,7 @@ export interface AnalystLayer {
 }
 
 export interface HybridSignalResult extends AnalysisResult {
+  volumeRatio?: number;
   hybrid: {
     enabled: true;
     technicalConfidence: number;
