@@ -109,12 +109,6 @@ export default function LandingPage() {
 
           {/* Product Preview */}
           <div className="mt-12 overflow-hidden rounded-xl border border-border bg-bg-primary">
-            <div className="flex items-center gap-2 border-b border-border px-5 py-3">
-              <div className="h-3 w-3 rounded-full bg-bearish/40" />
-              <div className="h-3 w-3 rounded-full bg-warning/40" />
-              <div className="h-3 w-3 rounded-full bg-bullish/40" />
-              <span className="ml-auto text-xs text-text-muted">Sentinel Desktop</span>
-            </div>
             <div className="grid gap-px bg-border md:grid-cols-3">
               <div className="bg-bg-primary p-5">
                 <div className="text-[10px] font-medium uppercase tracking-widest text-text-muted">Watchlist</div>
@@ -179,7 +173,6 @@ export default function LandingPage() {
           <div className="flex items-center gap-2">
             <Shield className="h-3.5 w-3.5" /> Sentinel
           </div>
-          <span>Trading intelligence platform</span>
         </div>
       </footer>
     </div>
