@@ -109,12 +109,67 @@ const INTRADAY_SCAN_MS = 5 * 60 * 1000;  // 5 minutes for intraday signal scan
 const EXIT_CHECK_MS = 60 * 1000;          // 1 minute for intraday exit checks
 /** Tactical mode: always invested, exit on market weakness */
 const TACTICAL_CONFIG = {
-  trendSMA: 50,       // SPY below 50-day SMA = caution
-  exitSMA: 20,        // SPY below 20-day SMA = exit
-  confirmBars: 3,     // must stay below for 3 days before exiting
-  reentryRSI: 40,     // re-enter when RSI drops below 40 (oversold bounce)
-  cashPct: 1.0,       // go 100% cash on exit
+  trendSMA: 50,       // SPY above this = safe to be invested
+  exitSMA: 20,        // SPY below this for confirmBars = exit
+  confirmBars: 3,     // consecutive days below exitSMA before selling
+  reentryRSI: 40,     // re-enter when RSI < this (oversold bounce)
+  // #2: Graduated exit — first reduce to cautionPct, then full exit
+  cautionSMA: 30,     // SPY below 30-day SMA = reduce exposure
+  cautionPct: 0.50,   // reduce to 50% exposure on caution
+  fullExitPct: 1.0,   // go 100% cash on confirmed exit
 };
+
+// #3: Sector groups for rotation weighting
+const SECTOR_MAP: Record<string, string> = {
+  AAPL: "tech", MSFT: "tech", NVDA: "tech", AMD: "tech", INTC: "tech",
+  GOOGL: "tech", META: "tech", ADBE: "tech", CRM: "tech", ORCL: "tech",
+  CSCO: "tech", AVGO: "tech", QCOM: "tech",
+  AMZN: "consumer", TSLA: "consumer", HD: "consumer", LOW: "consumer",
+  MCD: "consumer", SBUX: "consumer", NKE: "consumer", COST: "consumer",
+  WMT: "consumer", PEP: "consumer", KO: "consumer", NFLX: "consumer",
+  JPM: "finance", BAC: "finance", GS: "finance", MS: "finance", V: "finance", MA: "finance",
+  UNH: "health", JNJ: "health", PFE: "health", ABBV: "health", LLY: "health",
+  MRK: "health", TMO: "health",
+  BA: "industrial", CAT: "industrial", GE: "industrial", RTX: "industrial",
+  DIS: "comms", CMCSA: "comms", VZ: "comms", T: "comms",
+  PG: "staples", PYPL: "fintech", ACN: "consulting",
+};
+
+/**
+ * #5: Momentum score — 3-month price return (proven predictor)
+ * #6: Inverse volatility — lower vol = more capital
+ */
+function calcMomentumAndVol(bars: Bar[]): { momentum: number; volatility: number } {
+  if (bars.length < 60) return { momentum: 0, volatility: 1 };
+
+  const recent = bars.slice(-60);
+  const momentum = (recent[recent.length - 1].close - recent[0].close) / recent[0].close;
+
+  // Daily return std dev
+  const returns: number[] = [];
+  for (let i = 1; i < recent.length; i++) {
+    returns.push((recent[i].close - recent[i - 1].close) / recent[i - 1].close);
+  }
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
+  const volatility = Math.sqrt(variance) * Math.sqrt(252); // annualized
+
+  return { momentum, volatility: Math.max(volatility, 0.01) };
+}
+
+/**
+ * #3: Calculate sector relative strength
+ */
+function calcSectorStrength(
+  sectorReturns: Map<string, number[]>
+): Map<string, number> {
+  const avgReturns = new Map<string, number>();
+  for (const [sector, returns] of sectorReturns) {
+    const avg = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+    avgReturns.set(sector, avg);
+  }
+  return avgReturns;
+}
 
 // Defaults — overridden by user's Risk Profile from DB
 const DEFAULT_MAX_POSITIONS = 16;
@@ -753,96 +808,140 @@ async function runTacticalScan(): Promise<void> {
   const currentPositions = await client.getPositions().catch(() => []);
   const isInvested = currentPositions.length > 0;
 
+  // #2: Calculate caution SMA for graduated exit
+  const smaCaution = closes.slice(-TACTICAL_CONFIG.cautionSMA).reduce((a, b) => a + b, 0) / TACTICAL_CONFIG.cautionSMA;
+  const isCautionZone = spyPrice < smaCaution && spyPrice >= smaExit;
+
   log.info({
     spyPrice: spyPrice.toFixed(2), smaExit: smaExit.toFixed(2), smaTrend: smaTrend.toFixed(2),
-    spyRSI: spyRSI.toFixed(1), confirmedBelow, isInvested, positions: currentPositions.length,
+    smaCaution: smaCaution.toFixed(2), spyRSI: spyRSI.toFixed(1),
+    confirmedBelow, isCautionZone, isInvested, positions: currentPositions.length,
   }, "Tactical scan");
 
   if (isInvested && confirmedBelow && spyPrice < smaExit) {
-    // ── EXIT: Market is weakening → sell everything ──
-    log.warn({ spyPrice: spyPrice.toFixed(2), smaExit: smaExit.toFixed(2) }, "TACTICAL EXIT — SPY below exit SMA, going to cash");
+    // ── FULL EXIT: Confirmed weakness → sell everything ──
+    log.warn("TACTICAL FULL EXIT — SPY confirmed below exit SMA");
 
     for (const pos of currentPositions) {
       if (pos.qty <= 0) continue;
       try {
         await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical exit: SPY below SMA");
+        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical full exit");
         positionMap.delete(pos.symbol);
-        log.info({ symbol: pos.symbol, qty: pos.qty }, "Tactical exit executed");
       } catch (err) {
-        log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Tactical exit failed");
+        log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
       }
       await new Promise(r => setTimeout(r, 100));
     }
     engine.positionCount = 0;
 
-  } else if (!isInvested && spyPrice > smaTrend && spyRSI < TACTICAL_CONFIG.reentryRSI) {
-    // ── RE-ENTRY: Market recovering + RSI oversold → buy back in ──
-    log.info({ spyPrice: spyPrice.toFixed(2), smaTrend: smaTrend.toFixed(2), spyRSI: spyRSI.toFixed(1) }, "TACTICAL RE-ENTRY — buying back in");
+  } else if (isInvested && isCautionZone) {
+    // #2: ── GRADUATED EXIT: SPY in caution zone → reduce to 50% ──
+    const targetPositions = Math.floor(currentPositions.length * TACTICAL_CONFIG.cautionPct);
+    const toSell = currentPositions.length - targetPositions;
+
+    if (toSell > 0) {
+      log.warn({ toSell, from: currentPositions.length, to: targetPositions }, "TACTICAL CAUTION — reducing exposure 50%");
+
+      // #3: Sell weakest sector stocks first
+      const ranked = [...currentPositions].sort((a, b) => {
+        const sectorA = SECTOR_MAP[a.symbol] ?? "other";
+        const sectorB = SECTOR_MAP[b.symbol] ?? "other";
+        // Sell stocks with worst unrealized P&L first
+        return (a.unrealizedPnl ?? 0) - (b.unrealizedPnl ?? 0);
+      });
+
+      for (let i = 0; i < toSell && i < ranked.length; i++) {
+        const pos = ranked[i];
+        if (pos.qty <= 0) continue;
+        try {
+          await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
+          await logTrade(pos.symbol, "tactical_caution", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Graduated exit: caution zone");
+          positionMap.delete(pos.symbol);
+        } catch (err) {
+          log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Caution sell failed");
+        }
+        await new Promise(r => setTimeout(r, 100));
+      }
+      engine.positionCount = positionMap.size;
+    }
+
+  } else if (!isInvested && (
+    // #4: Faster re-entry — either trend confirmed OR RSI oversold bounce
+    (spyPrice > smaTrend) ||
+    (spyPrice > smaExit && spyRSI < TACTICAL_CONFIG.reentryRSI)
+  )) {
+    // ── ENTRY: Buy with sector rotation + momentum weighting ──
+    const reason = spyPrice > smaTrend ? "trend confirmed" : "RSI oversold bounce";
+    log.info({ reason, spyPrice: spyPrice.toFixed(2), spyRSI: spyRSI.toFixed(1) }, "TACTICAL ENTRY");
 
     const riskLimits = await loadRiskLimits(engine.userId);
-    const perPosition = equity * riskLimits.positionPct;
+
+    // #3: Fetch bars for sector strength + momentum scoring
+    const stockScores: { symbol: string; sector: string; momentum: number; invVol: number; weight: number; price: number }[] = [];
+    const sectorMomentums = new Map<string, number[]>();
 
     for (const symbol of SCAN_UNIVERSE) {
-      if (positionMap.size >= riskLimits.maxPositions) break;
-
       try {
-        const quote = await provider.fetchQuote(symbol);
-        if (!quote || quote.price <= 0) continue;
+        const bars = await Promise.race([
+          provider.fetchBars(symbol, 90, "1d"),
+          new Promise<Bar[]>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+        ]);
+        if (bars.length < 60) continue;
 
-        const qty = Math.min(Math.floor(perPosition / quote.price), riskLimits.maxPositionSize);
-        if (qty <= 0) continue;
+        const { momentum, volatility } = calcMomentumAndVol(bars);
+        const sector = SECTOR_MAP[symbol] ?? "other";
+        const invVol = 1 / volatility; // #6: inverse volatility weighting
 
-        const limitPrice = (quote.price * 1.001).toFixed(2);
-        await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
-        await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "FILLED", null, "Tactical re-entry: SPY above trend SMA");
-
-        positionMap.set(symbol, {
-          symbol, qty, entryPrice: quote.price, peakPrice: quote.price,
-          stopLoss: quote.price * 0.88, takeProfit: quote.price * 1.5,
-          trailingStopPct: 0.09, entryDate: new Date(), holdPeriod: 999,
+        stockScores.push({
+          symbol, sector, momentum, invVol, price: bars[bars.length - 1].close,
+          weight: 0, // calculated after sector scoring
         });
 
-        log.info({ symbol, qty, price: quote.price.toFixed(2) }, "Tactical entry executed");
-      } catch (err) {
-        log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Tactical entry failed");
-      }
+        // Track sector momentum
+        const sectorMoms = sectorMomentums.get(sector) ?? [];
+        sectorMoms.push(momentum);
+        sectorMomentums.set(sector, sectorMoms);
+      } catch { /* skip */ }
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    // #3: Calculate sector strength
+    const sectorStrength = calcSectorStrength(sectorMomentums);
+
+    // Combine scores: momentum + sector strength + inverse volatility
+    for (const stock of stockScores) {
+      const sectorBoost = sectorStrength.get(stock.sector) ?? 0;
+      stock.weight = stock.momentum * 2 + sectorBoost + stock.invVol * 0.5;
+    }
+
+    // Sort by weight descending — best stocks first
+    stockScores.sort((a, b) => b.weight - a.weight);
+
+    // #6: Allocate capital proportional to inverse volatility
+    const topStocks = stockScores.filter(s => s.momentum > 0).slice(0, riskLimits.maxPositions);
+    const totalInvVol = topStocks.reduce((sum, s) => sum + s.invVol, 0);
+
+    for (const stock of topStocks) {
+      const volWeight = totalInvVol > 0 ? stock.invVol / totalInvVol : 1 / topStocks.length;
+      const positionValue = equity * Math.min(volWeight, riskLimits.positionPct);
+      const qty = Math.min(Math.floor(positionValue / stock.price), riskLimits.maxPositionSize);
+      if (qty <= 0) continue;
+
+      try {
+        const limitPrice = (stock.price * 1.001).toFixed(2);
+        await client.placeOrder({ symbol: stock.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+
+        positionMap.set(stock.symbol, {
+          symbol: stock.symbol, qty, entryPrice: stock.price, peakPrice: stock.price,
+          stopLoss: stock.price * 0.88, takeProfit: stock.price * 1.5,
+          trailingStopPct: 0.117, entryDate: new Date(), holdPeriod: 999,
+        });
+      } catch { /* skip */ }
       await new Promise(r => setTimeout(r, 100));
     }
     engine.positionCount = positionMap.size;
-
-  } else if (!isInvested && spyPrice > smaTrend) {
-    // ── INITIAL BUY-IN: First time or after cash period, trend is up ──
-    log.info("TACTICAL INITIAL BUY-IN — market trending up, deploying capital");
-
-    const riskLimits = await loadRiskLimits(engine.userId);
-    const perPosition = equity * riskLimits.positionPct;
-
-    for (const symbol of SCAN_UNIVERSE) {
-      if (positionMap.size >= riskLimits.maxPositions) break;
-
-      try {
-        const quote = await provider.fetchQuote(symbol);
-        if (!quote || quote.price <= 0) continue;
-
-        const qty = Math.min(Math.floor(perPosition / quote.price), riskLimits.maxPositionSize);
-        if (qty <= 0) continue;
-
-        const limitPrice = (quote.price * 1.001).toFixed(2);
-        await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
-
-        positionMap.set(symbol, {
-          symbol, qty, entryPrice: quote.price, peakPrice: quote.price,
-          stopLoss: quote.price * 0.88, takeProfit: quote.price * 1.5,
-          trailingStopPct: 0.09, entryDate: new Date(), holdPeriod: 999,
-        });
-      } catch {
-        // Skip failed entries
-      }
-      await new Promise(r => setTimeout(r, 100));
-    }
-    engine.positionCount = positionMap.size;
-    log.info({ positions: positionMap.size }, "Tactical initial buy-in complete");
+    log.info({ positions: positionMap.size, topSector: [...sectorStrength.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] }, "Tactical entry complete with sector rotation");
   }
 
   // Update status
@@ -933,7 +1032,8 @@ async function runTacticalSmartScan(): Promise<void> {
       .map(s => s.symbol);
     const allSymbols = [...SCAN_UNIVERSE, ...new Set(extSymbols)];
 
-    const scored: { symbol: string; score: number; price: number }[] = [];
+    // #5: Score using momentum + signals + screener + #6: inverse volatility
+    const scored: { symbol: string; score: number; price: number; invVol: number }[] = [];
 
     for (const symbol of allSymbols) {
       try {
@@ -943,56 +1043,59 @@ async function runTacticalSmartScan(): Promise<void> {
         ]);
         if (bars.length < 30) continue;
 
+        // #5: Momentum score (proven predictor)
+        const { momentum, volatility } = calcMomentumAndVol(bars);
+        const invVol = 1 / volatility;
+
+        // Signal score
         const analysis = analyzeBars(symbol, bars);
-        let score = 0;
+        let signalScore = 0;
+        if (analysis.signal === "STRONG_BUY") signalScore = 4;
+        else if (analysis.signal === "BUY") signalScore = 2;
+        else if (analysis.signal === "HOLD") signalScore = 0;
+        else signalScore = -2;
 
-        // Score based on signal strength
-        if (analysis.signal === "STRONG_BUY") score = 4;
-        else if (analysis.signal === "BUY") score = 2;
-        else if (analysis.signal === "HOLD") score = 0;
-        else score = -2; // SELL/STRONG_SELL — skip
-
-        // Boost from screener external signal
+        // Screener boost
         const ext = engine.externalSignals.find(s => s.symbol === symbol);
         if (ext) {
-          if (ext.signal === "STRONG_BUY") score += 3;
-          else if (ext.signal === "BUY") score += 1;
+          if (ext.signal === "STRONG_BUY") signalScore += 3;
+          else if (ext.signal === "BUY") signalScore += 1;
         }
 
-        // Confidence boost
-        score += analysis.confidence * 2;
+        // Combined: momentum (weight 3) + signal (weight 1) + confidence
+        const score = momentum * 300 + signalScore + analysis.confidence * 2;
 
-        if (score > 0) {
-          scored.push({ symbol, score, price: analysis.price });
+        if (score > 0 && momentum > -0.05) {
+          scored.push({ symbol, score, price: analysis.price, invVol });
         }
 
         await new Promise(r => setTimeout(r, 0));
       } catch { /* skip */ }
     }
 
-    // Sort by score descending — best stocks get positions first
     scored.sort((a, b) => b.score - a.score);
 
-    // Buy top stocks up to maxPositions
+    // #6: Allocate capital proportional to inverse volatility
     const toBuy = scored.slice(0, riskLimits.maxPositions);
-    const perPosition = equity / Math.max(toBuy.length, 1);
+    const totalInvVol = toBuy.reduce((sum, s) => sum + s.invVol, 0);
 
-    for (const { symbol, price } of toBuy) {
-      const qty = Math.min(Math.floor(perPosition / price), riskLimits.maxPositionSize);
+    for (const { symbol, price, invVol } of toBuy) {
+      const volWeight = totalInvVol > 0 ? invVol / totalInvVol : 1 / toBuy.length;
+      const positionValue = equity * Math.min(volWeight, riskLimits.positionPct);
+      const qty = Math.min(Math.floor(positionValue / price), riskLimits.maxPositionSize);
       if (qty <= 0 || qty * price > account.cash) continue;
 
       try {
         const limitPrice = (price * 1.001).toFixed(2);
         await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
-        await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Tactical Smart: screener-weighted entry");
+        await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Smart: momentum + signal + invVol weighted");
         positionMap.set(symbol, {
           symbol, qty, entryPrice: price, peakPrice: price,
           stopLoss: price * 0.88, takeProfit: price * 1.5,
-          trailingStopPct: 0.09, entryDate: new Date(), holdPeriod: 999,
+          trailingStopPct: 0.117, entryDate: new Date(), holdPeriod: 999,
         });
-        log.info({ symbol, qty, score: scored.find(s => s.symbol === symbol)?.score }, "Tactical Smart entry");
       } catch (err) {
-        log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Entry failed");
+        log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Smart entry failed");
       }
       await new Promise(r => setTimeout(r, 100));
     }
