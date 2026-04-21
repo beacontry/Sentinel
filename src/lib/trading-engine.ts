@@ -13,6 +13,7 @@ import { createBrokerClient } from "./brokers";
 import type { BrokerClient, BrokerAccount } from "./brokers";
 import { getMarketDataProvider } from "./market-data";
 import { analyzeBars } from "./indicators/analyzer";
+import { analyzeHybrid } from "./hybrid/pipeline";
 import { evaluateBarSignal, type SignalParams } from "./signal-eval";
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { SP500_SYMBOLS, getSP500Symbols } from "./sp500";
@@ -1176,10 +1177,9 @@ async function runTacticalSmartScan(): Promise<void> {
         const { momentum, volatility } = calcMomentumAndVol(bars);
         const invVol = 1 / volatility;
 
-        // Signal score — use optimizer-tuned signal params when available
-        const analysis = analyzeBars(symbol, bars);
-        const tunedSP = await getOptimizedSignalParams();
-        const sig = tunedSP ? evaluateBarSignal(bars, tunedSP) : analysis.signal;
+        // Signal score — use hybrid pipeline (same as screener)
+        const analysis = await analyzeHybrid(symbol, bars);
+        const sig = analysis.signal;
         let signalScore = 0;
         if (sig === "STRONG_BUY") signalScore = 4;
         else if (sig === "BUY") signalScore = 2;
@@ -1255,9 +1255,8 @@ async function runTacticalSmartScan(): Promise<void> {
         ]);
         if (bars.length < 30) continue;
 
-        const analysis = analyzeBars(symbol, bars);
-        const tunedSP = await getOptimizedSignalParams();
-        const sig = tunedSP ? evaluateBarSignal(bars, tunedSP) : analysis.signal;
+        const analysis = await analyzeHybrid(symbol, bars);
+        const sig = analysis.signal;
 
         // Track weak held positions (SELL signal)
         if (heldSymbols.has(symbol) && (sig === "SELL" || sig === "STRONG_SELL")) {
@@ -1550,15 +1549,11 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
         continue;
       }
 
-      const analysis = analyzeBars(symbol, bars);
+      // Use hybrid pipeline (technical + sentiment + analyst + options) for signal decisions
+      const analysis = await analyzeHybrid(symbol, bars);
       const currentPrice = analysis.price;
       const confidence = analysis.confidence;
-
-      // Use optimizer-tuned signal params when available (optimized/tactical modes)
-      const tunedSignalParams = await getOptimizedSignalParams();
-      const signal: SignalType = tunedSignalParams
-        ? evaluateBarSignal(bars, tunedSignalParams) as SignalType
-        : analysis.signal;
+      const signal = analysis.signal;
 
       // Log signal to DB
       await logSignal(
