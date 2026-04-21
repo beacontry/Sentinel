@@ -33,10 +33,10 @@ Two signal evaluation paths exist:
 
 | Component | Signal Source | Used By |
 |-----------|-------------|---------|
-| **`src/lib/signal-eval.ts`** | Shared evaluator with tunable params (EMA fast/slow, RSI oversold/overbought) | Optimizer, Mode Comparison (Optimized/GA row) |
-| **`src/lib/indicators/analyzeBars()`** | Standard indicator module | Live engine (all modes), Mode Comparison (non-Optimized rows) |
+| **`src/lib/signal-eval.ts`** | Shared evaluator with tunable params (EMA fast/slow, RSI oversold/overbought) | Optimizer, Mode Comparison (Optimized/GA row), Live engine (signal decisions) |
+| **`src/lib/indicators/analyzeBars()`** | Standard indicator module (price, volume, indicators for logging) | Live engine (data extraction), Mode Comparison (non-Optimized rows) |
 
-The shared signal evaluator (`signal-eval.ts`) was extracted so the optimizer and mode comparison use identical signal logic with the same tunable parameters. The live engine still uses `analyzeBars()` from the standard indicator module — this is a known gap to be unified in a future update.
+The live engine uses the same tuned signal parameters as the optimizer. On each scan, it loads the latest optimizer params (EMA periods, RSI thresholds) and uses `evaluateBarSignal` for signal decisions, while still calling `analyzeBars` for price/volume/indicator data needed for logging and display. If no optimizer run exists, it falls back to `analyzeBars` defaults.
 
 ### Entry Signals (BUY / STRONG_BUY)
 
