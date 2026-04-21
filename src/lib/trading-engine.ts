@@ -14,10 +14,10 @@ import type { BrokerClient, BrokerAccount } from "./brokers";
 import { getMarketDataProvider } from "./market-data";
 import { analyzeBars } from "./indicators/analyzer";
 import { STRATEGY_PRESETS } from "./strategy-presets";
-import { SP500_SYMBOLS } from "./sp500";
+import { SP500_SYMBOLS, getSP500Symbols } from "./sp500";
 
-/** Full S&P 500 universe — engine scans all, buys the best */
-const SCAN_UNIVERSE = SP500_SYMBOLS;
+/** Resolved at scan time via getSP500Symbols() — auto-updates daily */
+let SCAN_UNIVERSE = SP500_SYMBOLS; // starts with fallback, updated on first scan
 import type { StrategyParams } from "./strategy-presets";
 import { SignalType } from "@/types";
 import { db } from "./db";
@@ -767,6 +767,7 @@ async function runTacticalScan(): Promise<void> {
   const engine = getEngine();
   if (!engine.userId || !engine.running || engine.halted) return;
   if (!isMarketOpen()) return;
+  try { SCAN_UNIVERSE = await getSP500Symbols(); } catch { /* keep current */ }
 
   const today = getETDateString();
   if (engine.dailyLossDate !== today) {
@@ -1140,6 +1141,9 @@ async function runTacticalSmartScan(): Promise<void> {
 
 async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
   const engine = getEngine();
+
+  // Refresh S&P 500 universe (auto-updates daily from Wikipedia)
+  try { SCAN_UNIVERSE = await getSP500Symbols(); } catch { /* keep current */ }
 
   if (engine.halted) {
     log.info("Engine halted, skipping scan");

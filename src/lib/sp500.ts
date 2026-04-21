@@ -1,12 +1,13 @@
+import { db } from "./db";
+import { createRouteLogger } from "./logger";
+
+const log = createRouteLogger("sp500");
+
 /**
- * S&P 500 constituents — updated periodically.
- * Removed delisted/acquired tickers that hang Yahoo Finance:
- *   ATVI (acquired by MSFT), SIVB/SBNY (collapsed), PXD (acquired by XOM),
- *   DISH (merged), CTLT (acquired), COO (now COOP), BBWI, FLT, FRC, PEAK,
- *   USFR (ETF, not a stock)
+ * Hardcoded fallback — used when DB is empty or fetch fails.
  * Tickers with dots (BF.B, BRK.B) use Yahoo's dash format.
  */
-export const SP500_SYMBOLS: string[] = [
+const FALLBACK_SYMBOLS: string[] = [
   "A", "AAL", "AAPL", "ABBV", "ABNB", "ABT", "ACGL", "ACN", "ADBE", "ADI",
   "ADM", "ADP", "ADSK", "AEE", "AEP", "AES", "AFL", "AIG", "AIZ", "AJG",
   "AKAM", "ALB", "ALGN", "ALL", "ALLE", "AMAT", "AMCR", "AMD", "AME", "AMGN",
@@ -69,3 +70,89 @@ export const SP500_SYMBOLS: string[] = [
   "XEL", "XOM", "XRAY", "XYL",
   "YUM", "ZBH", "ZBRA", "ZION", "ZTS",
 ];
+
+// ─── In-memory cache with daily refresh ─────────────────────────────
+
+const gSp500 = globalThis as typeof globalThis & {
+  __sp500Cache?: { symbols: string[]; fetchedAt: string };
+};
+
+/**
+ * Get the current S&P 500 symbol list.
+ * Tries: in-memory cache → Wikipedia fetch → hardcoded fallback.
+ * Refreshes once daily.
+ */
+export async function getSP500Symbols(): Promise<string[]> {
+  // Return cached if fresh (same calendar day)
+  const today = new Date().toISOString().slice(0, 10);
+  if (gSp500.__sp500Cache && gSp500.__sp500Cache.fetchedAt === today) {
+    return gSp500.__sp500Cache.symbols;
+  }
+
+  // Try fetching from Wikipedia
+  try {
+    const symbols = await fetchSP500FromWikipedia();
+    if (symbols.length > 400) {
+      gSp500.__sp500Cache = { symbols, fetchedAt: today };
+      log.info({ count: symbols.length }, "Refreshed S&P 500 list from Wikipedia");
+      return symbols;
+    }
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to fetch S&P 500 from Wikipedia");
+  }
+
+  // Fall back to hardcoded
+  gSp500.__sp500Cache = { symbols: FALLBACK_SYMBOLS, fetchedAt: today };
+  return FALLBACK_SYMBOLS;
+}
+
+/**
+ * Synchronous access for code that can't await.
+ * Returns cached list or fallback. Never fetches.
+ */
+export const SP500_SYMBOLS: string[] = FALLBACK_SYMBOLS;
+
+// ─── Wikipedia Scraper ──────────────────────────────────────────────
+
+async function fetchSP500FromWikipedia(): Promise<string[]> {
+  const url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Sentinel/1.0" },
+    });
+    if (!res.ok) throw new Error(`Wikipedia returned ${res.status}`);
+
+    const html = await res.text();
+
+    // Parse the first table — extract ticker symbols from first column
+    const tableMatch = html.match(/<table[^>]*id="constituents"[^>]*>([\s\S]*?)<\/table>/);
+    if (!tableMatch) throw new Error("Constituents table not found");
+
+    const rows = tableMatch[1].match(/<tr[\s\S]*?<\/tr>/g);
+    if (!rows) throw new Error("No rows found");
+
+    const symbols: string[] = [];
+    for (const row of rows) {
+      // First <td> contains the ticker, sometimes wrapped in <a>
+      const tdMatch = row.match(/<td[^>]*>([\s\S]*?)<\/td>/);
+      if (!tdMatch) continue;
+
+      // Extract text, strip HTML tags
+      let ticker = tdMatch[1].replace(/<[^>]+>/g, "").trim();
+      if (!ticker || ticker.length > 10 || !/^[A-Z]/.test(ticker)) continue;
+
+      // Convert dots to dashes for Yahoo Finance compatibility (BRK.B → BRK-B)
+      ticker = ticker.replace(/\./g, "-");
+
+      symbols.push(ticker);
+    }
+
+    return symbols;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
