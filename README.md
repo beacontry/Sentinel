@@ -63,6 +63,7 @@ src/
 │   └── layout/                 # Shell, nav, sub-nav
 ├── lib/
 │   ├── trading-engine.ts       # Automated trading engine
+│   ├── signal-eval.ts          # Shared signal evaluator (optimizer + mode comparison)
 │   ├── optimizer.ts            # Genetic algorithm optimizer
 │   ├── brokers.ts              # Alpaca/IBKR/Tradier broker clients
 │   ├── backtester.ts           # Strategy backtesting engine
@@ -116,13 +117,15 @@ Screener signals (any stock from market scan)
    Safety Checks:
    ├── Market open? (9:30-4:00 ET, Mon-Fri)
    ├── SPY above SMA(20)? (market health filter)
-   ├── Daily loss limit OK? (from risk settings)
-   ├── Max positions OK? (from risk settings)
-   ├── Max exposure OK? (from risk settings)
+   ├── Daily loss limit OK? (from risk overrides)
+   ├── Max positions OK? (BUY respects cap; STRONG_BUY can overflow by 50%)
+   ├── Max exposure OK? (from risk overrides)
    └── Signal cooldown clear? (2.5 hrs per symbol)
          ↓
    Place limit order on Alpaca (with bracket stop-loss)
 ```
+
+Signal evaluation uses two paths: the live engine uses `analyzeBars()` from the standard indicator module, while the optimizer and mode comparison share a tunable signal evaluator (`src/lib/signal-eval.ts`) with configurable EMA fast/slow periods and RSI thresholds.
 
 ### Dynamic Trailing Stops
 
@@ -142,14 +145,16 @@ trail = 2% + (base - 2%) × e^(-3 × profitPct)
 
 - **Paper mode only** — engine refuses to start with live broker connections
 - **Broker-side stop orders** — placed on Alpaca when engine stops/crashes
-- **Auto-restart** — detects open positions after deploy, resumes with last mode
+- **Auto-restart with position sync** — detects open positions after deploy, syncs broker positions into memory, resumes with last mode (all 7 modes supported)
 - **Daily loss auto-halt** — stops trading if losses exceed configured % of equity
 - **SPY trend filter** — blocks all buys when SPY below 20-day SMA
 - **Signal cooldown** — 2.5 hours between same-symbol buys
-- **Max exposure cap** — from risk settings in DB
+- **STRONG_BUY overflow** — BUY signals respect maxPositions; STRONG_BUY can exceed by up to 50%
+- **Max exposure cap** — from risk overrides in DB
 - **Limit orders** — no market orders for entries (controlled fills)
 - **Intraday flatten** — closes all positions at 3:00 PM ET
-- **Risk settings from DB** — all limits configurable from Trader page UI
+- **Risk overrides from DB** — all fields optional; empty = engine defaults. Only user-set fields impose limits
+- **Dashboard always shows broker data** — account balance and positions fetched live from Alpaca regardless of engine state
 
 ## Strategy Optimizer
 
@@ -184,6 +189,8 @@ The genetic algorithm optimizer (`src/lib/optimizer.ts`) finds optimal strategy 
 ### Mode Comparison
 
 The optimizer page includes a **Compare Modes** feature that backtests all 7 engine modes + SPY buy-and-hold against 5 years of real data. Shows return, final value, max drawdown, Sharpe ratio, trades, and time in market.
+
+Mode Comparison loads all 11 optimizer parameters from the latest completed run. The Optimized (GA) row uses the shared signal evaluator (`src/lib/signal-eval.ts`) with the full optimizer param set. Other mode rows use `analyzeBars()` from the standard indicator module.
 
 **Save as Optimized** button on any completed run makes it the active preset. The engine picks up new params within 5 minutes. Compare Modes auto-refreshes when saving.
 
@@ -281,6 +288,8 @@ sudo -u sn-deploy -i bash -c '
 - **Smooth trailing stops** — exponential decay from base toward 2% floor. Locks in progressively more gain without sudden threshold jumps.
 - **Incremental data caching** — first run downloads full 5Y, subsequent runs only fetch new days. Optimizer runs start in <1s after first run.
 - **Dynamic everything** — strategy presets read from latest optimizer run in DB. Risk limits read from user profile. S&P 500 list auto-updates from Wikipedia. No hardcoded values that require deploys.
-- **Safety-first** — paper mode only, broker-side stops on engine shutdown, auto-restart on deploy, SPY health filter, daily loss halt. Multiple layers of protection.
+- **Safety-first** — paper mode only, broker-side stops on engine shutdown, auto-restart with position sync on deploy, SPY health filter, daily loss halt, STRONG_BUY overflow cap. Multiple layers of protection.
+- **Risk overrides, not risk settings** — all risk profile fields are optional. Empty = engine decides using code defaults. Only user-set values impose limits, so the engine works sensibly out of the box.
+- **Broker data always live** — dashboard account balance and positions always fetched from Alpaca regardless of engine state. Positions prefer live broker data over stale DB records.
 - **Yahoo Finance primary** — free, no API key, handles 5Y daily data in single requests. Finnhub as fallback.
 - **Portfolio-level optimization** — optimizer simulates holding multiple stocks simultaneously (not individual backtests) to match real trading conditions.
