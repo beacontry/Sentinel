@@ -1877,14 +1877,15 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     return { ok: false, error: `Broker connection test failed: ${msg}` };
   }
 
-  // Cancel any safety stop orders (engine is taking over management)
+  // Replace old safety stops with wide disaster stops (engine manages tighter exits dynamically)
   try {
     if (resolved.client.cancelAllOrders) {
       await resolved.client.cancelAllOrders();
-      log.info("Cancelled broker-side safety stops — engine taking over");
     }
+    await placeDisasterStops(userId);
+    log.info("Placed disaster stops — engine taking over dynamic management");
   } catch (err) {
-    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel safety stops");
+    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to set up disaster stops");
   }
 
   engine.running = true;
@@ -1964,6 +1965,43 @@ export async function stopEngine(): Promise<{ ok: boolean; error?: string }> {
  * Place stop-loss orders directly on Alpaca for all open positions.
  * These act as a safety net when the engine isn't running.
  */
+const DISASTER_STOP_PCT = 0.18; // 18% below entry — only fires if server is down for hours
+
+/**
+ * Place wide disaster stops on Alpaca for all positions.
+ * These are a safety net while the engine is running — the engine manages
+ * tighter dynamic exits, but if the server crashes these prevent catastrophic loss.
+ */
+async function placeDisasterStops(userId: string | null): Promise<void> {
+  if (!userId) return;
+
+  const resolved = await resolveBrokerClient(userId);
+  if (!resolved) return;
+
+  try {
+    const positions = await resolved.client.getPositions();
+    for (const pos of positions) {
+      if (pos.qty <= 0) continue;
+      const stopPrice = (pos.avgEntryPrice * (1 - DISASTER_STOP_PCT)).toFixed(2);
+      try {
+        await resolved.client.placeOrder({
+          symbol: pos.symbol, side: "sell", qty: String(pos.qty),
+          type: "stop", timeInForce: "gtc", stopPrice,
+        });
+        log.info({ symbol: pos.symbol, stopPrice, qty: pos.qty, pct: DISASTER_STOP_PCT }, "Disaster stop placed");
+      } catch (err) {
+        log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Failed to place disaster stop");
+      }
+    }
+  } catch (err) {
+    log.error({ err: err instanceof Error ? err.message : "unknown" }, "Failed to place disaster stops");
+  }
+}
+
+/**
+ * Place tighter safety stops when engine is stopping (strategy-level stop loss).
+ * These are more protective since the engine won't be managing exits dynamically.
+ */
 async function placeSafetyStops(userId: string | null): Promise<void> {
   if (!userId) return;
 
@@ -1979,18 +2017,13 @@ async function placeSafetyStops(userId: string | null): Promise<void> {
     for (const pos of positions) {
       if (pos.qty <= 0) continue;
 
-      // Use optimized preset stop loss (12%) as safety stop
       const strategy = await resolveStrategy(userId, pos.symbol);
       const stopPrice = (pos.avgEntryPrice * (1 - strategy.stopLossPct)).toFixed(2);
 
       try {
         await client.placeOrder({
-          symbol: pos.symbol,
-          side: "sell",
-          qty: String(pos.qty),
-          type: "stop",
-          timeInForce: "gtc",
-          stopPrice,
+          symbol: pos.symbol, side: "sell", qty: String(pos.qty),
+          type: "stop", timeInForce: "gtc", stopPrice,
         });
         log.info({ symbol: pos.symbol, stopPrice, qty: pos.qty }, "Safety stop placed");
       } catch (err) {
