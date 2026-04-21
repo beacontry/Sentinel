@@ -308,13 +308,13 @@ export interface SymbolStrategy {
 
 export interface UserRiskProfile {
   id: string;
-  accountSize: number;
-  maxDailyLossPct: number;
-  maxDrawdownPct: number;
-  riskTolerance: RiskTolerance;
-  maxPositionPct: number;
-  maxPositionSize: number;
-  maxSingleTradeLoss: number;
+  accountSize: number | null;
+  maxDailyLossPct: number | null;
+  maxDrawdownPct: number | null;
+  riskTolerance: RiskTolerance | null;
+  maxPositionPct: number | null;
+  maxPositionSize: number | null;
+  maxSingleTradeLoss: number | null;
   createdAt: string;
   updatedAt: string;
 }
