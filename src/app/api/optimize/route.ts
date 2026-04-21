@@ -10,7 +10,7 @@ const startSchema = z.object({
   populationSize: z.number().int().min(10).max(100).default(30),
   generations: z.number().int().min(5).max(100).default(25),
   trainPct: z.number().int().min(40).max(80).default(60),
-  universe: z.enum(["top50", "sp500"]).default("top50"),
+  universe: z.enum(["top50", "top150", "sp500"]).default("top50"),
 });
 
 export async function POST(request: NextRequest) {

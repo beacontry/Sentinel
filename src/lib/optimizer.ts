@@ -14,6 +14,28 @@ const TOP_50 = [
   "ACN", "DIS", "INTC", "VZ", "CMCSA", "PFE", "T", "KO", "NKE", "MCD",
   "QCOM", "GS", "MS", "CAT", "BA", "GE", "RTX", "LOW", "SBUX", "PYPL",
 ];
+
+/** Top 150 most liquid S&P 500 stocks by market cap + volume */
+const TOP_150 = [
+  // Top 50 (mega cap)
+  "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "TSLA", "BRK-B", "JPM", "V",
+  "UNH", "MA", "HD", "PG", "JNJ", "COST", "ABBV", "BAC", "CRM", "AMD",
+  "NFLX", "WMT", "PEP", "TMO", "AVGO", "LLY", "MRK", "ORCL", "ADBE", "CSCO",
+  "ACN", "DIS", "INTC", "VZ", "CMCSA", "PFE", "T", "KO", "NKE", "MCD",
+  "QCOM", "GS", "MS", "CAT", "BA", "GE", "RTX", "LOW", "SBUX", "PYPL",
+  // 51-100 (large cap)
+  "INTU", "AMAT", "ISRG", "NOW", "AXP", "BKNG", "SYK", "GILD", "MDLZ", "BMY",
+  "ADI", "LRCX", "BSX", "SCHW", "BLK", "CVX", "XOM", "COP", "SLB", "EOG",
+  "TJX", "REGN", "VRTX", "PANW", "CME", "CB", "MMC", "ICE", "APH", "CDNS",
+  "SNPS", "KLAC", "FTNT", "CRWD", "MCHP", "KKR", "BX", "ETN", "ITW", "EMR",
+  "DHR", "ABT", "CI", "EW", "HCA", "CMG", "ROST", "ORLY", "AZO", "IDXX",
+  // 101-150 (mid-large cap)
+  "MNST", "DXCM", "ODFL", "FAST", "CPRT", "CTAS", "PCAR", "MKTX", "TDG", "ROP",
+  "MSCI", "SPGI", "MCO", "FDS", "FICO", "TYL", "ANSS", "KEYS", "MPWR", "ON",
+  "GWW", "URI", "PWR", "FANG", "MPC", "VLO", "PSX", "DVN", "HES", "OXY",
+  "F", "GM", "DAL", "LUV", "UAL", "CCL", "RCL", "MAR", "HLT", "WYNN",
+  "DE", "UNP", "UPS", "FDX", "LMT", "NOC", "GD", "HON", "WAB", "IR",
+];
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { db } from "./db";
 import {
@@ -52,7 +74,7 @@ export interface OptimizationConfig {
   populationSize: number;
   generations: number;
   trainPct: number;
-  universe: "top50" | "sp500";
+  universe: "top50" | "top150" | "sp500";
 }
 
 export interface OptimizationProgress {
@@ -641,13 +663,13 @@ export async function startOptimization(userId: string, config: OptimizationConf
     .values({
       userId, status: "pending", targetMetric: "total_return", universe: config.universe,
       populationSize: config.populationSize, generations: config.generations,
-      trainPct: config.trainPct, totalSymbols: config.universe === "sp500" ? SP500_SYMBOLS.length : TOP_50.length,
+      trainPct: config.trainPct, totalSymbols: config.universe === "sp500" ? SP500_SYMBOLS.length : config.universe === "top150" ? TOP_150.length : TOP_50.length,
     })
     .returning({ id: optimizationRuns.id });
 
   const runId = run.id;
   g.__optimizerJobs!.set(runId, {
-    runId, status: "pending", symbolsFetched: 0, totalSymbols: config.universe === "sp500" ? SP500_SYMBOLS.length : TOP_50.length,
+    runId, status: "pending", symbolsFetched: 0, totalSymbols: config.universe === "sp500" ? SP500_SYMBOLS.length : config.universe === "top150" ? TOP_150.length : TOP_50.length,
     currentGeneration: 0, totalGenerations: config.generations, bestFitness: 0, bestParams: null,
   });
 
@@ -661,7 +683,9 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
   const progress = g.__optimizerJobs!.get(runId)!;
   try {
     // ── Select universe ──
-    const universeSymbols = config.universe === "sp500" ? SP500_SYMBOLS : TOP_50;
+    const universeSymbols = config.universe === "sp500" ? SP500_SYMBOLS
+      : config.universe === "top150" ? TOP_150
+      : TOP_50;
     logger.info({ runId, universe: config.universe, symbols: universeSymbols.length }, "Universe selected");
 
     // ── Fetch data ──
