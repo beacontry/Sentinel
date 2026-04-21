@@ -31,40 +31,38 @@ export async function GET() {
       ? Date.now() - status.lastHeartbeat.getTime() < 5 * 60 * 1000
       : false;
 
-    // If trader service isn't running, try broker connection directly
+    // Always fetch broker account data when a connection exists
     let brokerAccount: { equity: number; cash: number; buyingPower: number; portfolioValue: number } | null = null;
     let brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number; unrealizedPnl: number; marketValue: number }[] = [];
     let brokerConnected = false;
     let brokerName = "";
     let brokerEnv = "";
 
-    if (!traderServiceAlive) {
-      const [conn] = await db
-        .select()
-        .from(brokerConnections)
-        .where(and(eq(brokerConnections.userId, session.userId), eq(brokerConnections.isActive, true)))
-        .limit(1);
+    const [conn] = await db
+      .select()
+      .from(brokerConnections)
+      .where(and(eq(brokerConnections.userId, session.userId), eq(brokerConnections.isActive, true)))
+      .limit(1);
 
-      if (conn) {
-        brokerName = conn.broker;
-        brokerEnv = conn.environment;
-        try {
-          const client = createBrokerClient(conn.broker, conn.apiKey, conn.apiSecret, conn.environment);
-          const [acct, pos] = await Promise.allSettled([client.getAccount(), client.getPositions()]);
-          if (acct.status === "fulfilled") {
-            const a = acct.value;
-            brokerAccount = { equity: a.equity, cash: a.cash, buyingPower: a.buyingPower, portfolioValue: a.portfolioValue ?? a.equity };
-            brokerConnected = true;
-          }
-          if (pos.status === "fulfilled") {
-            brokerPositions = pos.value.map((p) => ({
-              symbol: p.symbol, qty: p.qty, avgEntryPrice: p.avgEntryPrice,
-              currentPrice: p.currentPrice, unrealizedPnl: p.unrealizedPnl, marketValue: p.marketValue,
-            }));
-          }
-        } catch {
-          // Broker connection failed — show as offline
+    if (conn) {
+      brokerName = conn.broker;
+      brokerEnv = conn.environment;
+      try {
+        const client = createBrokerClient(conn.broker, conn.apiKey, conn.apiSecret, conn.environment);
+        const [acct, pos] = await Promise.allSettled([client.getAccount(), client.getPositions()]);
+        if (acct.status === "fulfilled") {
+          const a = acct.value;
+          brokerAccount = { equity: a.equity, cash: a.cash, buyingPower: a.buyingPower, portfolioValue: a.portfolioValue ?? a.equity };
+          brokerConnected = true;
         }
+        if (!traderServiceAlive && pos.status === "fulfilled") {
+          brokerPositions = pos.value.map((p) => ({
+            symbol: p.symbol, qty: p.qty, avgEntryPrice: p.avgEntryPrice,
+            currentPrice: p.currentPrice, unrealizedPnl: p.unrealizedPnl, marketValue: p.marketValue,
+          }));
+        }
+      } catch {
+        // Broker connection failed — show as offline
       }
     }
 
