@@ -13,6 +13,7 @@ import { createBrokerClient } from "./brokers";
 import type { BrokerClient, BrokerAccount } from "./brokers";
 import { getMarketDataProvider } from "./market-data";
 import { analyzeBars } from "./indicators/analyzer";
+import { evaluateBarSignal, type SignalParams } from "./signal-eval";
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { SP500_SYMBOLS, getSP500Symbols } from "./sp500";
 import { getFinnhubClient } from "./finnhub";
@@ -527,15 +528,27 @@ async function resolveBrokerClient(
 // ─── Latest Optimizer Results ────────────────────────────────────────────────
 
 // Cache to avoid hitting DB on every symbol every scan
-let _optimizedParamsCache: { params: StrategyParams; fetchedAt: number } | null = null;
+let _optimizedParamsCache: { params: StrategyParams; signalParams: SignalParams | null; fetchedAt: number } | null = null;
 const OPTIMIZER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 async function getLatestOptimizedParams(): Promise<StrategyParams | null> {
-  // Return cached if fresh
   if (_optimizedParamsCache && Date.now() - _optimizedParamsCache.fetchedAt < OPTIMIZER_CACHE_TTL) {
     return _optimizedParamsCache.params;
   }
+  await _loadOptimizedParams();
+  return _optimizedParamsCache?.params ?? null;
+}
 
+/** Get tuned signal params (EMA/RSI) from latest optimizer run, or null if unavailable */
+async function getOptimizedSignalParams(): Promise<SignalParams | null> {
+  if (_optimizedParamsCache && Date.now() - _optimizedParamsCache.fetchedAt < OPTIMIZER_CACHE_TTL) {
+    return _optimizedParamsCache.signalParams;
+  }
+  await _loadOptimizedParams();
+  return _optimizedParamsCache?.signalParams ?? null;
+}
+
+async function _loadOptimizedParams(): Promise<void> {
   try {
     const [run] = await db
       .select({ bestParams: optimizationRuns.bestParams, bestTestReturn: optimizationRuns.bestTestReturn })
@@ -544,11 +557,10 @@ async function getLatestOptimizedParams(): Promise<StrategyParams | null> {
       .orderBy(desc(optimizationRuns.completedAt))
       .limit(1);
 
-    if (!run?.bestParams) return null;
+    if (!run?.bestParams) return;
 
     const p = run.bestParams as Record<string, number>;
-    // Only use if it has the required fields
-    if (p.stopLossPct == null || p.takeProfitPct == null) return null;
+    if (p.stopLossPct == null || p.takeProfitPct == null) return;
 
     const params: StrategyParams = {
       stopLossPct: p.stopLossPct,
@@ -557,12 +569,20 @@ async function getLatestOptimizedParams(): Promise<StrategyParams | null> {
       holdPeriod: Math.round(p.holdPeriod ?? 43),
     };
 
-    _optimizedParamsCache = { params, fetchedAt: Date.now() };
-    log.info({ params, testReturn: run.bestTestReturn }, "Loaded latest optimizer params");
-    return params;
+    // Extract signal tuning params if available
+    const signalParams: SignalParams | null = (p.emaFast != null && p.emaSlow != null)
+      ? {
+          emaFast: Math.round(p.emaFast),
+          emaSlow: Math.round(p.emaSlow),
+          rsiOversold: Math.round(p.rsiOversold ?? 30),
+          rsiOverbought: Math.round(p.rsiOverbought ?? 70),
+        }
+      : null;
+
+    _optimizedParamsCache = { params, signalParams, fetchedAt: Date.now() };
+    log.info({ params, signalParams, testReturn: run.bestTestReturn }, "Loaded latest optimizer params");
   } catch (err) {
     log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to load optimizer params");
-    return null;
   }
 }
 
@@ -1146,12 +1166,14 @@ async function runTacticalSmartScan(): Promise<void> {
         const { momentum, volatility } = calcMomentumAndVol(bars);
         const invVol = 1 / volatility;
 
-        // Signal score
+        // Signal score — use optimizer-tuned signal params when available
         const analysis = analyzeBars(symbol, bars);
+        const tunedSP = await getOptimizedSignalParams();
+        const sig = tunedSP ? evaluateBarSignal(bars, tunedSP) : analysis.signal;
         let signalScore = 0;
-        if (analysis.signal === "STRONG_BUY") signalScore = 4;
-        else if (analysis.signal === "BUY") signalScore = 2;
-        else if (analysis.signal === "HOLD") signalScore = 0;
+        if (sig === "STRONG_BUY") signalScore = 4;
+        else if (sig === "BUY") signalScore = 2;
+        else if (sig === "HOLD") signalScore = 0;
         else signalScore = -2;
 
         // Screener boost
@@ -1374,8 +1396,13 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
 
       const analysis = analyzeBars(symbol, bars);
       const currentPrice = analysis.price;
-      const signal = analysis.signal;
       const confidence = analysis.confidence;
+
+      // Use optimizer-tuned signal params when available (optimized/tactical modes)
+      const tunedSignalParams = await getOptimizedSignalParams();
+      const signal: SignalType = tunedSignalParams
+        ? evaluateBarSignal(bars, tunedSignalParams) as SignalType
+        : analysis.signal;
 
       // Log signal to DB
       await logSignal(

@@ -125,7 +125,7 @@ Screener signals (any stock from market scan)
    Place limit order on Alpaca (with bracket stop-loss)
 ```
 
-Signal evaluation uses two paths: the live engine uses `analyzeBars()` from the standard indicator module, while the optimizer and mode comparison share a tunable signal evaluator (`src/lib/signal-eval.ts`) with configurable EMA fast/slow periods and RSI thresholds.
+Signal evaluation uses a shared tunable evaluator (`src/lib/signal-eval.ts`) across the entire system. The live engine, optimizer, and mode comparison all use `evaluateBarSignal` with optimizer-tuned EMA periods and RSI thresholds. The engine loads tuned params from the latest optimizer run on each scan cycle, falling back to defaults if unavailable. `analyzeBars()` is still called for price/volume/indicator data used in logging and display.
 
 ### Dynamic Trailing Stops
 
