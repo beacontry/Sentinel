@@ -147,7 +147,10 @@ export default function TraderPage() {
           fetch("/api/trader/engine"),
         ]);
         if (dashRes.status === "fulfilled" && dashRes.value.ok) setData(await dashRes.value.json());
-        if (engRes.status === "fulfilled" && engRes.value.ok) setEngine(await engRes.value.json());
+        if (engRes.status === "fulfilled" && engRes.value.ok) {
+          const engJson = await engRes.value.json();
+          setEngine(engJson.data ?? engJson);
+        }
       } catch {
         // Silent
       } finally {
