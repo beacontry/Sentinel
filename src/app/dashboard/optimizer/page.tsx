@@ -639,7 +639,36 @@ function RunDetailView({
       {bestParams && (
         <Card>
           <CardHeader>
-            <CardTitle>Optimized Parameters</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Optimized Parameters</CardTitle>
+              {isComplete && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="min-h-[36px]"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch("/api/optimize/save-preset", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ runId: run.id }),
+                      });
+                      if (res.ok) {
+                        alert("Saved as active Optimized preset. Engine will use these parameters.");
+                      } else {
+                        const data = await res.json();
+                        alert(data.error || "Failed to save");
+                      }
+                    } catch {
+                      alert("Failed to save preset");
+                    }
+                  }}
+                >
+                  <Zap className="h-3.5 w-3.5 mr-1" />
+                  Save as Optimized
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <div className="px-4 pb-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
