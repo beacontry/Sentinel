@@ -70,7 +70,7 @@ export interface OptimizationProgress {
 
 const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
   stopLossPct:     { min: 0.01,  max: 0.12 },
-  takeProfitPct:   { min: 0.03,  max: 0.30 },
+  takeProfitPct:   { min: 0.10,  max: 1.00 },
   trailingStopPct: { min: 0.01,  max: 0.15 },
   holdPeriod:      { min: 5,     max: 60, step: 1 },
   positionPct:     { min: 0.03,  max: 0.20 },
