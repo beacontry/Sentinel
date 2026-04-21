@@ -30,9 +30,9 @@ export const STRATEGY_PRESETS: Record<PresetName, StrategyParams> = {
     holdPeriod: 15,
   },
   optimized: {
-    stopLossPct: 0.09,
-    takeProfitPct: 0.402,
-    trailingStopPct: 0.117,
+    stopLossPct: 0.085,
+    takeProfitPct: 0.369,
+    trailingStopPct: 0.126,
     holdPeriod: 33,
   },
   day_trade: {
@@ -71,10 +71,10 @@ export const PRESET_LABELS: Record<PresetName, { label: string; description: str
   conservative: { label: "Conservative", description: "Tight stops, modest targets" },
   moderate:     { label: "Moderate",     description: "Balanced risk/reward" },
   aggressive:   { label: "Aggressive",   description: "Wider stops, larger targets" },
-  optimized:    { label: "Optimized",    description: "GA-tuned, 9% SL, 40% TP, 33-bar hold" },
+  optimized:    { label: "Optimized",    description: "GA-tuned params from latest optimizer run" },
   day_trade:    { label: "Day Trade",    description: "Intraday, quick exits" },
   swing:        { label: "Swing",        description: "Multi-week holds" },
   intraday:     { label: "Intraday",     description: "5min bars, flatten at 3 PM ET" },
   tactical:     { label: "Tactical",     description: "Top 50 S&P, exit on SPY weakness" },
-  "tactical-smart": { label: "Tactical Smart", description: "Screener-picked stocks, exit on SPY weakness" },
+  "tactical-smart": { label: "Tactical Smart", description: "SPY timing + active stock rotation + crash protection" },
 };
