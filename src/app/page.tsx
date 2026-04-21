@@ -36,12 +36,7 @@ export default function LandingPage() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
               <Shield className="h-4 w-4" />
             </div>
-            <div>
-              <span className="text-lg font-semibold text-text-primary">Sentinel</span>
-              <span className="ml-2 hidden text-[10px] uppercase tracking-widest text-text-muted sm:inline">
-                Market Operating Desk
-              </span>
-            </div>
+            <span className="text-lg font-semibold text-text-primary">Sentinel</span>
           </div>
           <div className="flex items-center gap-6">
             <nav className="hidden items-center gap-6 md:flex">
