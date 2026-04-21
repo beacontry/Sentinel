@@ -84,11 +84,10 @@ export function runBacktest(
       let exitPrice: number | null = null;
       let exitReason = "";
 
-      // Profit-based trailing stop tightening
+      // Profit-based trailing stop — exponential decay toward 2% floor
       const profitPct = (position.peakPrice - position.entryPrice) / position.entryPrice;
-      const dynTrailPct = profitPct >= 0.30 ? 0.03
-        : profitPct >= 0.20 ? 0.04
-        : profitPct >= 0.10 ? 0.06
+      const dynTrailPct = profitPct > 0
+        ? 0.02 + (cfg.trailingStopPct - 0.02) * Math.exp(-3 * profitPct)
         : cfg.trailingStopPct;
 
       const fixedStop = position.entryPrice * (1 - cfg.stopLossPct);

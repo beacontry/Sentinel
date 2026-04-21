@@ -172,20 +172,37 @@ const INTRADAY_PARAMS: StrategyParams = {
 // ─── Profit-Based Trailing Stop ──────────────────────────────────────────────
 
 /**
- * Tightens the trailing stop as unrealized profit grows.
- * Locks in more gains at higher profit levels.
+ * Tightens the trailing stop proportionally as profit grows.
+ * The trail shrinks from baseTrailingPct toward a minimum floor
+ * as the profit percentage increases.
+ *
+ * Example with base 12%, floor 2%:
+ *   0% profit  → 12% trail
+ *   5% profit  → 10.5% trail
+ *  10% profit  → 9% trail
+ *  20% profit  → 6% trail
+ *  30% profit  → 3% trail (near floor)
+ *  40%+ profit → 2% trail (floor)
+ *
+ * This locks in progressively more gain as the stock rises.
  */
+const TRAIL_FLOOR = 0.02; // minimum trailing stop: 2%
+const TRAIL_DECAY_RATE = 3; // how fast the trail tightens (higher = faster)
+
 function getDynamicTrailingPct(
   entryPrice: number,
   peakPrice: number,
   baseTrailingPct: number
 ): number {
   const profitPct = (peakPrice - entryPrice) / entryPrice;
+  if (profitPct <= 0) return baseTrailingPct;
 
-  if (profitPct >= 0.30) return 0.03;  // 30%+ profit → 3% trail (lock in 27%+)
-  if (profitPct >= 0.20) return 0.04;  // 20-30% profit → 4% trail
-  if (profitPct >= 0.10) return 0.06;  // 10-20% profit → 6% trail
-  return baseTrailingPct;               // <10% profit → default trail
+  // Exponential decay from base toward floor as profit grows
+  // trail = floor + (base - floor) * e^(-rate * profitPct)
+  const range = baseTrailingPct - TRAIL_FLOOR;
+  const trail = TRAIL_FLOOR + range * Math.exp(-TRAIL_DECAY_RATE * profitPct);
+
+  return Math.max(TRAIL_FLOOR, trail);
 }
 
 // ─── Market Hours ────────────────────────────────────────────────────────────
