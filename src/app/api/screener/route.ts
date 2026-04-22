@@ -7,6 +7,7 @@ import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("screener");
 import { isTraderConfigured } from "@/lib/trader-client";
+import { rateLimit } from "@/lib/rate-limiter";
 import { z } from "zod";
 
 export const maxDuration = 120; // Allow up to 2 minutes for full market scan
@@ -70,6 +71,11 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { allowed } = rateLimit(`screener:${session.userId}`, 3, 60);
+  if (!allowed) {
+    return NextResponse.json({ error: "Rate limited — max 3 scans per minute" }, { status: 429 });
   }
 
   let body: unknown;

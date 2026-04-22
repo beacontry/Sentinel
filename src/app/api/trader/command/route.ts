@@ -4,7 +4,16 @@ import { db } from "@/lib/db";
 import { brokerConnections, traderTrades, traderDailyPnl } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
+import { decrypt } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
+import { rateLimit } from "@/lib/rate-limiter";
+import { z } from "zod";
+
+const commandSchema = z.object({
+  command: z.enum(["flatten", "risk"]),
+  symbol: z.string().max(10).optional(),
+  params: z.record(z.union([z.number(), z.boolean(), z.null()])).optional(),
+});
 
 const log = createRouteLogger("trader-command");
 
@@ -14,20 +23,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const command = body.command as string;
+  const { allowed } = rateLimit(`trader-cmd:${session.userId}`, 10, 60);
+  if (!allowed) {
+    return NextResponse.json({ error: "Rate limited" }, { status: 429 });
+  }
+
+  const parsed = commandSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid command", details: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const { command, symbol } = parsed.data;
 
   try {
     switch (command) {
       case "flatten": {
         // Sell a single position or all positions directly through Alpaca
-        const symbol = body.symbol as string | undefined;
 
         const [conn] = await db.select().from(brokerConnections)
           .where(and(eq(brokerConnections.userId, session.userId), eq(brokerConnections.isActive, true)))
@@ -37,7 +55,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "No active broker connection" }, { status: 400 });
         }
 
-        const client = createBrokerClient(conn.broker, conn.apiKey, conn.apiSecret, conn.environment);
+        const client = createBrokerClient(conn.broker, decrypt(conn.apiKey), decrypt(conn.apiSecret), conn.environment);
         const positions = await client.getPositions();
 
         const toClose = symbol
@@ -118,7 +136,7 @@ export async function POST(request: NextRequest) {
       }
 
       case "risk": {
-        const params = body.params as Record<string, number | boolean | null>;
+        const params = parsed.data.params;
         if (!params) {
           return NextResponse.json({ error: "Missing params" }, { status: 400 });
         }

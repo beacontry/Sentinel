@@ -11,6 +11,7 @@
 import type { Bar } from "@/types";
 import { createBrokerClient } from "./brokers";
 import type { BrokerClient, BrokerAccount } from "./brokers";
+import { decrypt } from "./crypto";
 import { getMarketDataProvider } from "./market-data";
 import { analyzeBars } from "./indicators/analyzer";
 import { analyzeHybrid } from "./hybrid/pipeline";
@@ -546,8 +547,8 @@ async function resolveBrokerClient(
 
   const client = createBrokerClient(
     conn.broker,
-    conn.apiKey,
-    conn.apiSecret,
+    decrypt(conn.apiKey),
+    decrypt(conn.apiSecret),
     conn.environment
   );
 

@@ -7,8 +7,14 @@ import {
   getEngineStatus,
 } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
+import { z } from "zod";
 
 const log = createRouteLogger("trader-engine-api");
+
+const engineActionSchema = z.object({
+  action: z.enum(["start", "stop", "halt", "switch"]),
+  mode: z.enum(["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical", "tactical-smart"]).optional().default("optimized"),
+});
 
 // ─── GET /api/trader/engine — Engine Status (per-user) ──────────────────────
 
@@ -33,24 +39,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const action = body.action as string | undefined;
-  if (!action || !["start", "stop", "halt", "switch"].includes(action)) {
+  const parsed = engineActionSchema.safeParse(body);
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "Invalid action. Expected: start, stop, halt, or switch" },
+      { error: "Invalid request", details: parsed.error.flatten() },
       { status: 400 }
     );
   }
 
-  const validModes = ["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical", "tactical-smart"] as const;
-  type Mode = typeof validModes[number];
-  const mode: Mode = validModes.includes(body.mode as Mode) ? (body.mode as Mode) : "optimized";
+  const { action, mode } = parsed.data;
 
   try {
     switch (action) {

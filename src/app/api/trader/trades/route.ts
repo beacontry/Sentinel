@@ -6,7 +6,7 @@ import { traderTrades, traderStatus } from "@/lib/db/schema";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("trader-trades");
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 
 export async function POST(request: NextRequest) {
   const authError = validateTraderSecret(request);
@@ -61,10 +61,22 @@ export async function PATCH(request: NextRequest) {
     if (parsed.data.fill_time) updates.fillTime = new Date(parsed.data.fill_time);
     if (parsed.data.pnl != null) updates.pnl = parsed.data.pnl;
 
+    // Update only the most recent trade for this trader_id (not all trades)
+    const [target] = await db
+      .select({ id: traderTrades.id })
+      .from(traderTrades)
+      .where(eq(traderTrades.traderId, parsed.data.trader_id))
+      .orderBy(desc(traderTrades.createdAt))
+      .limit(1);
+
+    if (!target) {
+      return NextResponse.json({ error: "Trade not found" }, { status: 404 });
+    }
+
     await db
       .update(traderTrades)
       .set(updates)
-      .where(eq(traderTrades.traderId, parsed.data.trader_id));
+      .where(eq(traderTrades.id, target.id));
 
     await upsertHeartbeat();
 

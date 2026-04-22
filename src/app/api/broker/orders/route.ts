@@ -5,6 +5,7 @@ import { brokerConnections } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { placeBrokerOrderSchema } from "@/lib/validators";
 import { createBrokerClient, BrokerError } from "@/lib/brokers";
+import { decrypt } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("broker-orders");
@@ -40,8 +41,8 @@ export async function GET() {
 
     const client = createBrokerClient(
       connection.broker,
-      connection.apiKey,
-      connection.apiSecret,
+      decrypt(connection.apiKey),
+      decrypt(connection.apiSecret),
       connection.environment
     );
 
@@ -110,8 +111,8 @@ export async function POST(request: Request) {
 
     const client = createBrokerClient(
       connection.broker,
-      connection.apiKey,
-      connection.apiSecret,
+      decrypt(connection.apiKey),
+      decrypt(connection.apiSecret),
       connection.environment
     );
 

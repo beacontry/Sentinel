@@ -79,10 +79,30 @@ interface RunDetail {
 // ── Component ───────────────────────────────────────────────────────
 
 export default function OptimizerPage() {
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [runs, setRuns] = useState<OptimizationRun[]>([]);
   const [selectedRun, setSelectedRun] = useState<RunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+
+  // Check user role
+  useEffect(() => {
+    fetch("/api/auth/me").then(r => r.json()).then(d => setUserRole(d.user?.role ?? "user")).catch(() => setUserRole("user"));
+  }, []);
+
+  if (userRole !== null && userRole !== "admin") {
+    return (
+      <div className="p-4 lg:p-6 space-y-6">
+        <div className="rounded-xl border border-border bg-bg-surface p-12 text-center">
+          <Target className="w-12 h-12 text-text-muted mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-text-primary mb-2">Admin Access Required</h2>
+          <p className="text-sm text-text-secondary max-w-md mx-auto">
+            The Strategy Optimizer runs computationally expensive genetic algorithms. Only admins can start optimization runs. The optimized parameters are shared with all users automatically.
+          </p>
+        </div>
+      </div>
+    );
+  }
   const [showConfig, setShowConfig] = useState(false);
   const [symbolSort, setSymbolSort] = useState<"return" | "sharpe" | "drawdown">("return");
   const [symbolOrder, setSymbolOrder] = useState<"desc" | "asc">("desc");

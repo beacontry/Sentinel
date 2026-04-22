@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { AiProvider } from "@/components/ai/ai-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CommandPalette } from "@/components/ui/command-palette";
+import { CsrfInit } from "@/components/csrf-init";
 
 export default function DashboardLayout({
   children,
@@ -15,6 +16,7 @@ export default function DashboardLayout({
       <AiProvider>
         <AppShell>{children}</AppShell>
         <CommandPalette />
+        <CsrfInit />
       </AiProvider>
     </TooltipProvider>
   );

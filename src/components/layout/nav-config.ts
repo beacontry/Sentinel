@@ -28,6 +28,7 @@ export interface NavItem {
 export interface SubNavTab {
   href: string;
   label: string;
+  adminOnly?: boolean;
 }
 
 /** Flat 10-item sidebar */
@@ -163,7 +164,7 @@ export const SUB_NAV: Record<string, SubNavTab[]> = {
     { href: "/dashboard/trader", label: "Live Trader" },
     { href: "/dashboard/strategies", label: "Strategies" },
     { href: "/dashboard/backtest", label: "Backtest" },
-    { href: "/dashboard/optimizer", label: "Optimizer" },
+    { href: "/dashboard/optimizer", label: "Optimizer", adminOnly: true },
     { href: "/dashboard/alerts", label: "Alerts" },
     { href: "/dashboard/calculator", label: "Calculator" },
   ],
