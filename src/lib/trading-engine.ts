@@ -356,7 +356,7 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
     positionPct: DEFAULT_POSITION_PCT,
     dailyLossPct: DEFAULT_DAILY_LOSS_PCT,
     maxPositionSize: 100,
-    maxExposure: 25000,
+    maxExposure: 0, // 0 = use account equity as cap (set below)
   };
 
   try {
@@ -1349,10 +1349,11 @@ async function runTacticalSmartScan(): Promise<void> {
       const qty = Math.min(Math.floor(positionValue / cand.price), riskLimits.maxPositionSize);
       if (qty <= 0 || qty * cand.price > account.buyingPower) continue;
 
-      // Check exposure
+      // Check exposure (use equity as cap when not configured)
+      const effectiveMaxExposure = riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
       const currentExposure = Array.from(positionMap.values())
         .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
-      if (currentExposure + cand.price * qty > riskLimits.maxExposure) break;
+      if (currentExposure + cand.price * qty > effectiveMaxExposure) break;
 
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
@@ -1735,11 +1736,12 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
           continue;
         }
 
-        // Check max portfolio exposure
+        // Check max portfolio exposure (use equity as cap when not configured)
+        const effectiveMaxExposure = riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
         const currentExposure = Array.from(positionMap.values())
           .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
-        if (currentExposure + (currentPrice * qty) > riskLimits.maxExposure) {
-          log.info({ symbol, currentExposure, maxExposure: riskLimits.maxExposure }, "Max exposure reached, skipping");
+        if (currentExposure + (currentPrice * qty) > effectiveMaxExposure) {
+          log.info({ symbol, currentExposure, maxExposure: effectiveMaxExposure }, "Max exposure reached, skipping");
           continue;
         }
 
