@@ -1765,7 +1765,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
         );
 
         try {
-          // Place bracket order: limit entry + stop-loss + take-profit
+          // Place limit buy order — stop-loss and take-profit are managed
+          // internally by the engine's exit logic (trailing stop, hold period)
           await client.placeOrder({
             symbol,
             side: "buy",
@@ -1773,9 +1774,6 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
             type: "limit",
             timeInForce: "day",
             limitPrice: String(limitPrice),
-            orderClass: "bracket",
-            stopLossPrice: String(stopLossPrice),
-            takeProfitPrice: String(takeProfitPrice),
           });
 
           tradesThisScan++;
