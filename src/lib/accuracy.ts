@@ -49,34 +49,56 @@ export async function checkSignalOutcome(signalId: string): Promise<void> {
     .where(eq(signalAccuracy.id, row.id));
 }
 
+/** Map timeframe to appropriate hold period in hours before checking accuracy. */
+function holdHoursForTimeframe(timeframe: string | null, checkHours: number | null): number {
+  if (checkHours && checkHours > 0) return checkHours;
+  switch (timeframe) {
+    case "5m": return 2;    // Intraday signals: check after 2 hours
+    case "1d": return 72;   // Daily signals: check after 3 trading days
+    default: return 24;     // Unknown: default 24 hours
+  }
+}
+
 /**
  * Batch check signals that are old enough but haven't been measured yet.
+ * Uses timeframe-aware hold periods — 5-min signals are checked after 2 hours,
+ * daily signals after 3 trading days.
  * Returns the number of signals checked.
  */
 export async function batchCheckAccuracy(maxBatch: number = 50): Promise<number> {
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
-
+  // Fetch unchecked signals with their timeframe info
   const unchecked = await db
-    .select({ signalId: signalAccuracy.signalId })
+    .select({
+      signalId: signalAccuracy.signalId,
+      timeframe: signalAccuracy.timeframe,
+      checkHours: signalAccuracy.checkHours,
+      createdAt: signals.createdAt,
+    })
     .from(signalAccuracy)
     .innerJoin(signals, eq(signalAccuracy.signalId, signals.id))
-    .where(
-      and(
-        isNull(signalAccuracy.exitPrice),
-        lte(signals.createdAt, cutoff)
-      )
-    )
-    .limit(maxBatch);
+    .where(isNull(signalAccuracy.exitPrice))
+    .limit(maxBatch * 2); // Fetch extra since some may not be ready yet
+
+  const now = Date.now();
+  let checked = 0;
 
   for (const row of unchecked) {
+    if (checked >= maxBatch) break;
+
+    // Only check if enough time has passed for this signal's timeframe
+    const holdMs = holdHoursForTimeframe(row.timeframe, row.checkHours) * 60 * 60 * 1000;
+    const ageMs = now - new Date(row.createdAt).getTime();
+    if (ageMs < holdMs) continue;
+
     try {
       await checkSignalOutcome(row.signalId);
+      checked++;
     } catch {
       // Skip failed checks — will retry next batch
     }
   }
 
-  return unchecked.length;
+  return checked;
 }
 
 /**

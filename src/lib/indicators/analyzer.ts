@@ -248,6 +248,7 @@ export function analyzeBars(symbol: string, bars: Bar[]): AnalysisResult {
     sma_50: [],
     ema_9: [],
     ema_21: [],
+    ema_50: [],
     vwap: [],
     rsi_14: [],
     macd_line: [],
@@ -285,6 +286,7 @@ export function analyzeBars(symbol: string, bars: Bar[]): AnalysisResult {
     series.sma_50.push(ind.sma50.value());
     series.ema_9.push(ind.ema9.value());
     series.ema_21.push(ind.ema21.value());
+    series.ema_50.push(ind.ema50.value());
     series.vwap.push(ind.vwap.value());
     series.rsi_14.push(ind.rsi.value());
     const mv = ind.macd.values();

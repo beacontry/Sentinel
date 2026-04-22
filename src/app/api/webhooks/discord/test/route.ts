@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     },
     series: {
       sma_9: [], sma_20: [], sma_50: [],
-      ema_9: [], ema_21: [], vwap: [],
+      ema_9: [], ema_21: [], ema_50: [], vwap: [],
       rsi_14: [], macd_line: [], macd_signal: [], macd_histogram: [],
       atr_14: [], bollinger_upper: [], bollinger_middle: [], bollinger_lower: [],
     },

@@ -45,6 +45,7 @@ export interface IndicatorSeries {
   sma_50: (number | null)[];
   ema_9: (number | null)[];
   ema_21: (number | null)[];
+  ema_50: (number | null)[];
   vwap: (number | null)[];
   rsi_14: (number | null)[];
   macd_line: (number | null)[];

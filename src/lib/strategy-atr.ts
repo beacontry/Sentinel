@@ -11,12 +11,12 @@ export interface ATRTuningResult {
 
 /**
  * Compute ATR-based strategy params for a symbol.
- * Uses 30 days of daily bars to calculate ATR, then derives
- * stop/TP/trailing as multiples of ATR percentage.
+ * Uses 90 days of daily bars to calculate ATR (matching screener lookback),
+ * then derives stop/TP/trailing as multiples of ATR percentage.
  */
 export async function computeATRStrategy(symbol: string): Promise<ATRTuningResult> {
   const provider = getMarketDataProvider();
-  const bars = await provider.fetchBars(symbol, 30, "1d");
+  const bars = await provider.fetchBars(symbol, 90, "1d");
   if (bars.length < 15) throw new Error("Not enough data to compute ATR");
 
   const atrCalc = new ATR(14);

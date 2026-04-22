@@ -31,9 +31,9 @@ function barCacheKey(symbol: string, resolution: string): string {
   return join(BAR_CACHE_DIR, `${symbol.replace(/[^A-Z0-9]/g, "_")}_${resolution}.json`);
 }
 
-interface CachedBars { bars: Bar[]; fetchedAt: number; }
+interface CachedBars { bars: Bar[]; fetchedAt: number; days: number; }
 
-async function getCachedBars(symbol: string, resolution: string): Promise<Bar[] | null> {
+async function getCachedBars(symbol: string, resolution: string, requestedDays: number): Promise<Bar[] | null> {
   try {
     await ensureBarCacheDir();
     const raw = await readFile(barCacheKey(symbol, resolution), "utf-8");
@@ -41,23 +41,25 @@ async function getCachedBars(symbol: string, resolution: string): Promise<Bar[] 
     const maxAge = resolution === "1d" ? BAR_CACHE_MAX_AGE_MS : BAR_CACHE_5M_MAX_AGE_MS;
     if (Date.now() - cached.fetchedAt > maxAge) return null; // stale
     if (cached.bars.length < 20) return null; // too few
+    // Only serve cache if it covers at least as many days as requested
+    if ((cached.days ?? 0) < requestedDays) return null;
     return cached.bars;
   } catch { return null; }
 }
 
-async function setCachedBars(symbol: string, resolution: string, bars: Bar[]): Promise<void> {
+async function setCachedBars(symbol: string, resolution: string, bars: Bar[], days: number): Promise<void> {
   if (bars.length < 20) return;
   try {
     await ensureBarCacheDir();
-    await writeFile(barCacheKey(symbol, resolution), JSON.stringify({ bars, fetchedAt: Date.now() }));
+    await writeFile(barCacheKey(symbol, resolution), JSON.stringify({ bars, fetchedAt: Date.now(), days }));
   } catch { /* best effort */ }
 }
 
 /** Yahoo Finance provider — no API key required. */
 class YahooProvider implements MarketDataProvider {
   async fetchBars(symbol: string, days: number, resolution: BarResolution = "5m"): Promise<Bar[]> {
-    // Check disk cache first
-    const cached = await getCachedBars(symbol, resolution);
+    // Check disk cache first — only serves if cached days >= requested days
+    const cached = await getCachedBars(symbol, resolution, days);
     if (cached) return cached;
 
     const period2 = Math.floor(Date.now() / 1000);
@@ -107,7 +109,7 @@ class YahooProvider implements MarketDataProvider {
       }
 
       // Cache to disk for fast restarts
-      await setCachedBars(symbol, resolution, bars);
+      await setCachedBars(symbol, resolution, bars, days);
 
       return bars;
     } finally {

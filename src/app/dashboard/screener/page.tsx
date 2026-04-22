@@ -501,7 +501,7 @@ export default function ScreenerPage() {
                     {p.signal.replace("_", " ")}
                   </Badge>
                   <span className="text-text-muted">
-                    {(p.confidence * 100).toFixed(0)}%
+                    {Math.round(p.confidence * 100)}%
                   </span>
                 </div>
                 <div className="text-right">
@@ -664,11 +664,11 @@ export default function ScreenerPage() {
                                   ? "bg-warning"
                                   : "bg-bearish"
                             }`}
-                            style={{ width: `${(r.confidence * 100).toFixed(0)}%` }}
+                            style={{ width: `${Math.round(r.confidence * 100)}%` }}
                           />
                         </div>
                         <span className="text-xs font-mono text-text-secondary w-10 text-right">
-                          {(r.confidence * 100).toFixed(0)}%
+                          {Math.round(r.confidence * 100)}%
                         </span>
                       </div>
                     </td>
@@ -759,11 +759,11 @@ export default function ScreenerPage() {
                             ? "bg-warning"
                             : "bg-bearish"
                       }`}
-                      style={{ width: `${(r.confidence * 100).toFixed(0)}%` }}
+                      style={{ width: `${Math.round(r.confidence * 100)}%` }}
                     />
                   </div>
                   <span className="text-xs font-mono text-text-secondary w-10 text-right">
-                    {(r.confidence * 100).toFixed(0)}%
+                    {Math.round(r.confidence * 100)}%
                   </span>
                 </div>
               </div>
