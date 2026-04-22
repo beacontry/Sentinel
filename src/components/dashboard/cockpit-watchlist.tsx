@@ -116,32 +116,32 @@ export function CockpitWatchlist({
             })}
           </div>
         )}
-      </div>
 
-      {recentActivity.length > 0 && (
-        <div className="shrink-0 border-t border-border">
-          <div className="flex items-center gap-2 px-4 py-2">
-            <Clock className="w-3 h-3 text-text-muted" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-              Recent
-            </span>
+        {recentActivity.length > 0 && (
+          <div className="border-t border-border">
+            <div className="flex items-center gap-2 px-4 py-2">
+              <Clock className="w-3 h-3 text-text-muted" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
+                Recent
+              </span>
+            </div>
+            <div className="space-y-1 px-2 pb-2">
+              {recentActivity.map((item) => (
+                <button
+                  key={item.symbol + item.time}
+                  onClick={() => onSelectSymbol(item.symbol)}
+                  className="flex min-h-[34px] w-full items-center justify-between rounded-[14px] px-2.5 py-1 text-[10px] transition-colors hover:bg-bg-elevated"
+                >
+                  <span className="font-mono text-text-secondary">
+                    {item.symbol}
+                  </span>
+                  <span className="text-text-muted">{timeAgo(item.time)}</span>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="space-y-1 px-2 pb-2">
-            {recentActivity.map((item) => (
-              <button
-                key={item.symbol + item.time}
-                onClick={() => onSelectSymbol(item.symbol)}
-                className="flex min-h-[34px] w-full items-center justify-between rounded-[14px] px-2.5 py-1 text-[10px] transition-colors hover:bg-bg-elevated"
-              >
-                <span className="font-mono text-text-secondary">
-                  {item.symbol}
-                </span>
-                <span className="text-text-muted">{timeAgo(item.time)}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
