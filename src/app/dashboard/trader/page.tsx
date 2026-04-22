@@ -139,6 +139,7 @@ interface EngineStatus {
   positionCount: number;
   dailyLoss: number;
   errors: string[];
+  isOwner?: boolean;
 }
 
 export default function TraderPage() {
@@ -288,76 +289,82 @@ export default function TraderPage() {
         ]}
       />
       {/* Engine controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <select
-            value={engineMode}
-            onChange={(e) => setEngineMode(e.target.value)}
-            className="min-h-[44px] rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary"
-          >
-            {ENGINE_MODES.map(m => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
-          </select>
-          {!engine?.running ? (
-            <Button
-              onClick={() => handleEngine("start")}
-              disabled={cmdLoading !== null || !status.connected}
-              className="min-h-[44px]"
-            >
-              <Play className="w-4 h-4" />
-              <span className="hidden sm:inline">Start</span>
-            </Button>
-          ) : engine?.mode !== engineMode ? (
-            <Button
-              onClick={() => handleEngine("switch")}
-              disabled={cmdLoading !== null}
-              className="min-h-[44px]"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span className="hidden sm:inline">Switch</span>
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              onClick={() => handleEngine("stop")}
-              disabled={cmdLoading !== null}
-              className="min-h-[44px]"
-            >
-              <Square className="w-4 h-4" />
-              <span className="hidden sm:inline">Stop</span>
-            </Button>
-          )}
-          <Button
-            variant="destructive"
-            onClick={() => {
-              if (confirm("EMERGENCY HALT — stops engine and closes ALL positions at market. Continue?")) {
-                handleEngine("halt");
-              }
-            }}
-            disabled={cmdLoading !== null}
-            className="min-h-[44px]"
-          >
-            <XCircle className="w-4 h-4" />
-            <span className="hidden sm:inline">Halt</span>
-          </Button>
+      {engine?.running && engine?.isOwner === false ? (
+        <div className="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          Engine is running for another user. You can view your own data below, but cannot control the engine until they stop it.
         </div>
-        {engine && (
-          <div className="flex items-center gap-3 text-xs text-text-muted">
-            <Badge variant={engine.running ? "bullish" : engine.halted ? "bearish" : "neutral"}>
-              {engine.running ? `Running (${engine.mode ?? "swing"})` : engine.halted ? "Halted" : "Stopped"}
-            </Badge>
-            {engine.scanCount > 0 && <span className="font-mono">{engine.scanCount} scans</span>}
-            {engine.lastScanAt && <span>Last: {timeAgo(engine.lastScanAt)}</span>}
-            {engine.positionCount > 0 && <span className="font-mono">{engine.positionCount} positions</span>}
-            {(engine.dailyLoss ?? 0) !== 0 && (
-              <span className={(engine.dailyLoss ?? 0) < 0 ? "text-bearish" : "text-bullish"}>
-                Day: ${(engine.dailyLoss ?? 0).toFixed(0)}
-              </span>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <select
+              value={engineMode}
+              onChange={(e) => setEngineMode(e.target.value)}
+              className="min-h-[44px] rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary"
+            >
+              {ENGINE_MODES.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            {!engine?.running ? (
+              <Button
+                onClick={() => handleEngine("start")}
+                disabled={cmdLoading !== null || !status.connected}
+                className="min-h-[44px]"
+              >
+                <Play className="w-4 h-4" />
+                <span className="hidden sm:inline">Start</span>
+              </Button>
+            ) : engine?.mode !== engineMode ? (
+              <Button
+                onClick={() => handleEngine("switch")}
+                disabled={cmdLoading !== null}
+                className="min-h-[44px]"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span className="hidden sm:inline">Switch</span>
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                onClick={() => handleEngine("stop")}
+                disabled={cmdLoading !== null}
+                className="min-h-[44px]"
+              >
+                <Square className="w-4 h-4" />
+                <span className="hidden sm:inline">Stop</span>
+              </Button>
             )}
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (confirm("EMERGENCY HALT — stops engine and closes ALL positions at market. Continue?")) {
+                  handleEngine("halt");
+                }
+              }}
+              disabled={cmdLoading !== null}
+              className="min-h-[44px]"
+            >
+              <XCircle className="w-4 h-4" />
+              <span className="hidden sm:inline">Halt</span>
+            </Button>
           </div>
-        )}
-      </div>
+          {engine && (
+            <div className="flex items-center gap-3 text-xs text-text-muted">
+              <Badge variant={engine.running ? "bullish" : engine.halted ? "bearish" : "neutral"}>
+                {engine.running ? `Running (${engine.mode ?? "swing"})` : engine.halted ? "Halted" : "Stopped"}
+              </Badge>
+              {engine.scanCount > 0 && <span className="font-mono">{engine.scanCount} scans</span>}
+              {engine.lastScanAt && <span>Last: {timeAgo(engine.lastScanAt)}</span>}
+              {engine.positionCount > 0 && <span className="font-mono">{engine.positionCount} positions</span>}
+              {(engine.dailyLoss ?? 0) !== 0 && (
+                <span className={(engine.dailyLoss ?? 0) < 0 ? "text-bearish" : "text-bullish"}>
+                  Day: ${(engine.dailyLoss ?? 0).toFixed(0)}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Status bar */}
       <div className="flex flex-wrap items-center gap-3">

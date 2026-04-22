@@ -19,7 +19,8 @@ export async function GET() {
   }
 
   const status = getEngineStatus();
-  return NextResponse.json({ data: status }, {
+  const isOwner = !status.userId || status.userId === session.userId;
+  return NextResponse.json({ data: { ...status, isOwner } }, {
     headers: { "Cache-Control": "private, no-store" },
   });
 }
