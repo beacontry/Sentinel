@@ -109,5 +109,17 @@ jobs:
                 -m 1g \
                 ghcr.io/ixiondt/sentinel:latest
             "
+            # Health check — wait for app to be ready
+            for i in 1 2 3 4 5; do
+              sleep 5
+              if sudo -u sn-deploy -i bash -c 'podman exec sentinel-app curl -sf http://localhost:3010/api/health' > /dev/null 2>&1; then
+                echo "Health check passed on attempt $i"
+                exit 0
+              fi
+              echo "Health check attempt $i failed, retrying..."
+            done
+            echo "Health check failed after 5 attempts!"
+            sudo -u sn-deploy -i bash -c 'podman logs --tail 50 sentinel-app'
+            exit 1
         env:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}

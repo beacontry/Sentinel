@@ -8,13 +8,14 @@ import {
   updateBrokerConnectionSchema,
   deleteBrokerConnectionSchema,
 } from "@/lib/validators";
+import { encrypt, decrypt } from "@/lib/crypto";
+import { requireCsrf } from "@/lib/csrf";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("broker-connections");
 
-function maskSecret(secret: string): string {
-  if (secret.length <= 4) return "****";
-  return "****" + secret.slice(-4);
+function maskSecret(_secret: string): string {
+  return "••••••••";
 }
 
 export async function GET() {
@@ -51,6 +52,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const csrfError = await requireCsrf(request);
+  if (csrfError) return csrfError;
+
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -72,15 +76,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    // TODO: encrypt apiKey and apiSecret before storage (AES-256-GCM)
     const [connection] = await db
       .insert(brokerConnections)
       .values({
         userId: session.userId,
         broker: parsed.data.broker,
         label: parsed.data.label,
-        apiKey: parsed.data.apiKey,
-        apiSecret: parsed.data.apiSecret,
+        apiKey: encrypt(parsed.data.apiKey),
+        apiSecret: encrypt(parsed.data.apiSecret),
         environment: parsed.data.environment,
       })
       .returning();
@@ -117,6 +120,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const csrfError = await requireCsrf(request);
+  if (csrfError) return csrfError;
+
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -139,8 +145,8 @@ export async function PATCH(request: Request) {
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.label !== undefined) updates.label = parsed.data.label;
-  if (parsed.data.apiKey !== undefined) updates.apiKey = parsed.data.apiKey; // TODO: encrypt
-  if (parsed.data.apiSecret !== undefined) updates.apiSecret = parsed.data.apiSecret; // TODO: encrypt
+  if (parsed.data.apiKey !== undefined) updates.apiKey = encrypt(parsed.data.apiKey);
+  if (parsed.data.apiSecret !== undefined) updates.apiSecret = encrypt(parsed.data.apiSecret);
   if (parsed.data.environment !== undefined) updates.environment = parsed.data.environment;
   if (parsed.data.isActive !== undefined) updates.isActive = parsed.data.isActive;
 
@@ -186,6 +192,9 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const csrfError = await requireCsrf(request);
+  if (csrfError) return csrfError;
+
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

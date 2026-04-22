@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { traderStatus, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
+import { decrypt } from "@/lib/crypto";
 import { autoStartIfNeeded, getBrokerPositionCache } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 
@@ -48,7 +49,7 @@ export async function GET() {
       brokerName = conn.broker;
       brokerEnv = conn.environment;
       try {
-        const client = createBrokerClient(conn.broker, conn.apiKey, conn.apiSecret, conn.environment);
+        const client = createBrokerClient(conn.broker, decrypt(conn.apiKey), decrypt(conn.apiSecret), conn.environment);
         const [acct, pos] = await Promise.allSettled([client.getAccount(), client.getPositions()]);
         if (acct.status === "fulfilled") {
           const a = acct.value;
