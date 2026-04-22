@@ -32,6 +32,8 @@ export const traderTrades = pgTable("trader_trades", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id"),
   traderId: integer("trader_id"),
+  brokerOrderId: text("broker_order_id"),
+  signalId: uuid("signal_id"),
   symbol: text("symbol").notNull(),
   signal: text("signal").notNull(),
   action: text("action").notNull(),
@@ -51,6 +53,7 @@ export const traderTrades = pgTable("trader_trades", {
   index("trader_trades_status_idx").on(t.status),
   index("trader_trades_created_idx").on(t.createdAt),
   index("trader_trades_user_idx").on(t.userId),
+  index("trader_trades_broker_order_idx").on(t.brokerOrderId),
 ]);
 
 export const traderDailyPnl = pgTable("trader_daily_pnl", {
