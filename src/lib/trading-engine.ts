@@ -31,7 +31,6 @@ import {
   userRiskProfiles,
   traderSignals,
   traderTrades,
-  traderPositions,
   traderStatus,
   traderDailyPnl,
   optimizationRuns,
@@ -808,67 +807,6 @@ async function logTrade(
   }
 }
 
-async function upsertPosition(
-  symbol: string,
-  quantity: number,
-  entryPrice: number,
-  currentPrice: number,
-  stopPrice: number | null
-): Promise<void> {
-  const engine = getEngine();
-  try {
-    const existing = await db
-      .select()
-      .from(traderPositions)
-      .where(and(eq(traderPositions.symbol, symbol), eq(traderPositions.userId, engine.userId!)));
-
-    const unrealizedPnl = (currentPrice - entryPrice) * quantity;
-
-    if (existing.length > 0) {
-      await db
-        .update(traderPositions)
-        .set({
-          quantity,
-          entryPrice,
-          currentPrice,
-          unrealizedPnl,
-          stopPrice,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(traderPositions.symbol, symbol), eq(traderPositions.userId, engine.userId!)));
-    } else {
-      await db.insert(traderPositions).values({
-        userId: engine.userId,
-        symbol,
-        quantity,
-        entryPrice,
-        currentPrice,
-        unrealizedPnl,
-        stopPrice,
-      });
-    }
-  } catch (err) {
-    log.error(
-      { err: err instanceof Error ? err.message : "unknown", symbol },
-      "Failed to upsert position"
-    );
-  }
-}
-
-async function removePosition(symbol: string): Promise<void> {
-  const engine = getEngine();
-  try {
-    await db
-      .delete(traderPositions)
-      .where(and(eq(traderPositions.symbol, symbol), eq(traderPositions.userId, engine.userId!)));
-  } catch (err) {
-    log.error(
-      { err: err instanceof Error ? err.message : "unknown", symbol },
-      "Failed to remove position"
-    );
-  }
-}
-
 async function updateHeartbeat(watchlist: string[]): Promise<void> {
   const engine = getEngine();
   const modeStr = `paper:${engine.mode}`; // persist engine mode for auto-restart
@@ -1009,7 +947,7 @@ export function getBrokerPositionCache(userId: string): CachedBrokerPositions | 
  * - Removes positions that no longer exist on the broker (manual sells, external closures)
  * - Adds positions that exist on the broker but not in the map (manual buys, fills between scans)
  * - Updates qty/currentPrice for existing positions
- * - Cleans up stale DB records via removePosition()
+ * - No DB writes — broker is the source of truth
  */
 async function syncPositionMapFromBroker(
   brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number }[],
@@ -1023,7 +961,7 @@ async function syncPositionMapFromBroker(
     if (!brokerSymbols.has(symbol)) {
       log.info({ symbol, userId }, "Position no longer on broker — removing");
       positionMap.delete(symbol);
-      await removePosition(symbol);
+
     }
   }
 
@@ -1779,7 +1717,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
               sellOrder.id
             );
 
-            await removePosition(symbol);
+      
             positionMap.delete(symbol);
 
             log.info(
@@ -1802,15 +1740,6 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
               `Order failed: ${msg}`
             );
           }
-        } else {
-          // Update position tracking in DB
-          await upsertPosition(
-            symbol,
-            heldPosition.qty,
-            heldPosition.entryPrice,
-            currentPrice,
-            Math.max(heldPosition.stopLoss, trailingStopPrice)
-          );
         }
 
         continue; // Already holding, don't buy again
@@ -1944,7 +1873,6 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             sigId
           );
 
-          await upsertPosition(symbol, qty, currentPrice, currentPrice, stopLossPrice);
         } catch (err) {
           const msg = err instanceof Error ? err.message : "unknown";
           log.error({ err: msg, symbol }, "Failed to place buy order");
@@ -2259,7 +2187,7 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
               haltOrder.id
             );
 
-            await removePosition(pos.symbol);
+
             positionMap.delete(pos.symbol);
 
             log.info(

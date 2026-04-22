@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { brokerConnections, traderTrades, traderDailyPnl, traderPositions } from "@/lib/db/schema";
+import { brokerConnections, traderTrades, traderDailyPnl } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { createRouteLogger } from "@/lib/logger";
@@ -45,17 +45,9 @@ export async function POST(request: NextRequest) {
           : positions;
 
         if (toClose.length === 0) {
-          // Position doesn't exist on broker — clean up stale DB record
-          if (symbol) {
-            await db.delete(traderPositions).where(
-              and(eq(traderPositions.symbol, symbol), eq(traderPositions.userId, session.userId))
-            ).catch(() => {});
-            // Also try without userId for legacy records
-            await db.delete(traderPositions).where(eq(traderPositions.symbol, symbol)).catch(() => {});
-            log.info({ symbol }, "Cleaned up stale DB position — not found on broker");
-            return NextResponse.json({ status: "ok", closed: [{ symbol, qty: 0, status: "removed_stale" }] });
-          }
-          return NextResponse.json({ error: "No positions found on broker" }, { status: 404 });
+          return NextResponse.json({
+            error: `No position found${symbol ? ` for ${symbol}` : ""} on broker`,
+          }, { status: 404 });
         }
 
         // Cancel all open orders first — stop orders block market sells

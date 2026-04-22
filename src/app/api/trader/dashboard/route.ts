@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { traderStatus, traderPositions, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
+import { traderStatus, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { autoStartIfNeeded, getBrokerPositionCache } from "@/lib/trading-engine";
@@ -178,10 +178,8 @@ export async function GET() {
           marketValue: p.marketValue, stopPrice: null, updatedAt: cached.fetchedAt.toISOString(),
         }));
       } else {
-        // Fall back to DB
-        const dbPositions = await db.select().from(traderPositions).where(eq(traderPositions.userId, session.userId)).limit(500);
-        positionsStale = dbPositions.length > 0;
-        finalPositions = dbPositions.map((p) => ({ ...p, updatedAt: p.updatedAt.toISOString() }));
+        // No broker data and no cache — empty positions
+        finalPositions = [];
       }
     }
 
