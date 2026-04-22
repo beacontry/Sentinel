@@ -719,8 +719,10 @@ async function logSignal(
   indicators: Record<string, unknown>,
   actedOn: boolean
 ): Promise<void> {
+  const engine = getEngine();
   try {
     await db.insert(traderSignals).values({
+      userId: engine.userId,
       symbol,
       signal,
       price,
@@ -747,8 +749,10 @@ async function logTrade(
   pnl: number | null,
   notes: string | null
 ): Promise<void> {
+  const engine = getEngine();
   try {
     await db.insert(traderTrades).values({
+      userId: engine.userId,
       symbol,
       signal,
       action,
@@ -776,11 +780,12 @@ async function upsertPosition(
   currentPrice: number,
   stopPrice: number | null
 ): Promise<void> {
+  const engine = getEngine();
   try {
     const existing = await db
       .select()
       .from(traderPositions)
-      .where(eq(traderPositions.symbol, symbol));
+      .where(and(eq(traderPositions.symbol, symbol), eq(traderPositions.userId, engine.userId!)));
 
     const unrealizedPnl = (currentPrice - entryPrice) * quantity;
 
@@ -795,9 +800,10 @@ async function upsertPosition(
           stopPrice,
           updatedAt: new Date(),
         })
-        .where(eq(traderPositions.symbol, symbol));
+        .where(and(eq(traderPositions.symbol, symbol), eq(traderPositions.userId, engine.userId!)));
     } else {
       await db.insert(traderPositions).values({
+        userId: engine.userId,
         symbol,
         quantity,
         entryPrice,
@@ -815,10 +821,11 @@ async function upsertPosition(
 }
 
 async function removePosition(symbol: string): Promise<void> {
+  const engine = getEngine();
   try {
     await db
       .delete(traderPositions)
-      .where(eq(traderPositions.symbol, symbol));
+      .where(and(eq(traderPositions.symbol, symbol), eq(traderPositions.userId, engine.userId!)));
   } catch (err) {
     log.error(
       { err: err instanceof Error ? err.message : "unknown", symbol },
@@ -831,7 +838,9 @@ async function updateHeartbeat(watchlist: string[]): Promise<void> {
   const engine = getEngine();
   const modeStr = `paper:${engine.mode}`; // persist engine mode for auto-restart
   try {
-    const rows = await db.select().from(traderStatus);
+    const rows = engine.userId
+      ? await db.select().from(traderStatus).where(eq(traderStatus.userId, engine.userId))
+      : await db.select().from(traderStatus);
     if (rows.length > 0) {
       await db
         .update(traderStatus)
@@ -844,6 +853,7 @@ async function updateHeartbeat(watchlist: string[]): Promise<void> {
         .where(eq(traderStatus.id, rows[0].id));
     } else {
       await db.insert(traderStatus).values({
+        userId: engine.userId,
         connected: true,
         mode: modeStr,
         lastHeartbeat: new Date(),
@@ -865,11 +875,15 @@ async function upsertDailyPnl(
   tradesCountDelta: number,
   halted: boolean
 ): Promise<void> {
+  const engine = getEngine();
   try {
+    const conditions = [eq(traderDailyPnl.date, date)];
+    if (engine.userId) conditions.push(eq(traderDailyPnl.userId, engine.userId));
+
     const existing = await db
       .select()
       .from(traderDailyPnl)
-      .where(eq(traderDailyPnl.date, date));
+      .where(and(...conditions));
 
     if (existing.length > 0) {
       const row = existing[0];
@@ -881,9 +895,10 @@ async function upsertDailyPnl(
           tradesCount: (row.tradesCount ?? 0) + tradesCountDelta,
           halted,
         })
-        .where(eq(traderDailyPnl.date, date));
+        .where(eq(traderDailyPnl.id, row.id));
     } else {
       await db.insert(traderDailyPnl).values({
+        userId: engine.userId,
         date,
         realizedPnl: realizedDelta,
         unrealizedPnl,

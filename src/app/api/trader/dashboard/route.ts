@@ -68,40 +68,43 @@ export async function GET() {
 
     const isConnected = traderServiceAlive || brokerConnected;
 
-    // Today's P&L
+    // Today's P&L — scoped to current user
     const today = new Date().toISOString().slice(0, 10);
     const [todayPnl] = await db
       .select()
       .from(traderDailyPnl)
-      .where(eq(traderDailyPnl.date, today))
+      .where(and(eq(traderDailyPnl.date, today), eq(traderDailyPnl.userId, session.userId)))
       .limit(1);
 
-    // Recent trades
+    // Recent trades — scoped to current user
     const trades = await db
       .select()
       .from(traderTrades)
+      .where(eq(traderTrades.userId, session.userId))
       .orderBy(desc(traderTrades.createdAt))
       .limit(20);
 
-    // Recent signals
+    // Recent signals — scoped to current user
     const signals = await db
       .select()
       .from(traderSignals)
+      .where(eq(traderSignals.userId, session.userId))
       .orderBy(desc(traderSignals.createdAt))
       .limit(20);
 
-    // P&L history (last 30 days)
+    // P&L history (last 30 days) — scoped to current user
     const pnlHistory = await db
       .select()
       .from(traderDailyPnl)
+      .where(eq(traderDailyPnl.userId, session.userId))
       .orderBy(desc(traderDailyPnl.date))
       .limit(30);
 
-    // Analytics — all filled trades with P&L
+    // Analytics — all filled trades with P&L — scoped to current user
     const filledTrades = await db
       .select({ pnl: traderTrades.pnl })
       .from(traderTrades)
-      .where(and(eq(traderTrades.status, "FILLED"), isNotNull(traderTrades.pnl)));
+      .where(and(eq(traderTrades.status, "FILLED"), isNotNull(traderTrades.pnl), eq(traderTrades.userId, session.userId)));
 
     const pnls = filledTrades.map((t) => t.pnl ?? 0);
     const wins = pnls.filter((p) => p > 0);
@@ -150,7 +153,7 @@ export async function GET() {
     };
 
     // Normalize positions — prefer broker data (always live), fall back to DB
-    const dbPositions = await db.select().from(traderPositions).limit(500);
+    const dbPositions = await db.select().from(traderPositions).where(eq(traderPositions.userId, session.userId)).limit(500);
     const useBroker = brokerPositions.length > 0;
     const finalPositions = useBroker
       ? brokerPositions.map((p) => ({
