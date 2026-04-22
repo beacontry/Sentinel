@@ -64,6 +64,8 @@ export const traderDailyPnl = pgTable("trader_daily_pnl", {
   unrealizedPnl: real("unrealized_pnl").notNull().default(0),
   tradesCount: integer("trades_count").notNull().default(0),
   halted: boolean("halted").notNull().default(false),
+  haltReason: text("halt_reason"),
+  engineMode: text("engine_mode"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("trader_daily_pnl_date_user_idx").on(t.date, t.userId),

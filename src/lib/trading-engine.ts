@@ -908,7 +908,8 @@ async function upsertDailyPnl(
   realizedDelta: number,
   unrealizedPnl: number,
   tradesCountDelta: number,
-  halted: boolean
+  halted: boolean,
+  haltReason?: string
 ): Promise<void> {
   const engine = getEngine();
   try {
@@ -929,6 +930,8 @@ async function upsertDailyPnl(
           unrealizedPnl,
           tradesCount: (row.tradesCount ?? 0) + tradesCountDelta,
           halted,
+          ...(haltReason ? { haltReason } : {}),
+          engineMode: engine.mode,
         })
         .where(eq(traderDailyPnl.id, row.id));
     } else {
@@ -939,6 +942,8 @@ async function upsertDailyPnl(
         unrealizedPnl,
         tradesCount: tradesCountDelta,
         halted,
+        haltReason: haltReason ?? null,
+        engineMode: engine.mode,
       });
     }
   } catch (err) {
@@ -1603,7 +1608,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     );
     engine.halted = true;
     pushError(engine, `Daily loss limit hit: $${engine.dailyLoss.toFixed(2)}`);
-    await upsertDailyPnl(today, 0, 0, 0, true);
+    await upsertDailyPnl(today, 0, 0, 0, true, `Daily loss limit exceeded: $${engine.dailyLoss.toFixed(2)}`);
     return;
   }
 
