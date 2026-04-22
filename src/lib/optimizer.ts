@@ -109,12 +109,21 @@ const WINDOW_SIZE = 50;
 const STEP_SIZE = 15;
 const ELITISM = 2;
 const TOURNAMENT_SIZE = 3;
-const MUTATION_RATE = 0.20;
+const MUTATION_RATE_BASE = 0.20;
+const MUTATION_RATE_MIN = 0.10;
+const MUTATION_RATE_MAX = 0.50;
 const CROSSOVER_RATE = 0.85;
 const DATA_DAYS = 1825;
 const FETCH_CONCURRENCY = 3;
 const FETCH_DELAY_MS = 300;
 const INITIAL_CASH = 10000;
+
+// ── Diversity constants ────────────────────────────────────────────
+const DIVERSITY_LOW = 0.15;        // below this → boost mutation
+const DIVERSITY_HIGH = 0.40;       // above this → ease off mutation
+const IMMIGRANT_RATE = 0.10;       // 10% of pop replaced with random each gen
+const STAGNATION_GENS = 5;         // gens without improvement before restart
+const STAGNATION_IMMIGRANT_RATE = 0.30; // 30% replacement on stagnation
 
 const CACHE_DIR = join(
   process.env.CACHE_DIR ?? (process.env.NODE_ENV === "production" ? "/data/cache" : join(process.cwd(), "data")),
@@ -248,7 +257,7 @@ async function fetchAllBars(
 
 // ── Signal evaluation (shared with compare route) ──────────────────
 
-import { evaluateBarSignal, sma, ema, rsi } from "./signal-eval";
+import { evaluateBarSignal } from "./signal-eval";
 import type { SignalType } from "./signal-eval";
 export type { SignalType };
 
@@ -291,7 +300,7 @@ function buildPortfolioData(allBars: Map<string, Bar[]>, trainPct: number): Port
 
   // Compute average buy-and-hold for train and test
   let bhTrainSum = 0, bhTestSum = 0, bhTrainN = 0, bhTestN = 0;
-  for (const [symbol, lookup] of barLookup) {
+  for (const [, lookup] of barLookup) {
     // Train period
     let firstTrain: number | null = null, lastTrain: number | null = null;
     let firstTest: number | null = null, lastTest: number | null = null;
@@ -571,10 +580,10 @@ function crossover(a: OptimizableParams, b: OptimizableParams): OptimizableParam
   return child as unknown as OptimizableParams;
 }
 
-function mutate(params: OptimizableParams): OptimizableParams {
+function mutate(params: OptimizableParams, rate: number = MUTATION_RATE_BASE): OptimizableParams {
   const m = { ...params };
   for (const key of Object.keys(PARAM_RANGES) as (keyof OptimizableParams)[]) {
-    if (Math.random() < MUTATION_RATE) {
+    if (Math.random() < rate) {
       const range = PARAM_RANGES[key];
       m[key] = clampParam(key, params[key] + (Math.random() - 0.5) * (range.max - range.min) * 0.4);
     }
@@ -590,6 +599,63 @@ function tournamentSelect(pop: Individual[]): Individual {
     if (!best || c.fitness > best.fitness) best = c;
   }
   return best!;
+}
+
+// ── Diversity helpers ──────────────────────────────────────────────
+
+const paramKeys = Object.keys(PARAM_RANGES) as (keyof OptimizableParams)[];
+const paramRangeWidths = paramKeys.map((k) => PARAM_RANGES[k].max - PARAM_RANGES[k].min);
+
+/** Average normalized Euclidean distance across sampled pairs (0 = identical, ~1 = max spread) */
+function computeDiversity(pop: Individual[]): number {
+  const n = pop.length;
+  if (n < 2) return 0;
+
+  const maxPairs = 500;
+  let totalDist = 0;
+  let pairs = 0;
+
+  if ((n * (n - 1)) / 2 <= maxPairs) {
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        let dist = 0;
+        for (let k = 0; k < paramKeys.length; k++) {
+          const diff = (pop[i].params[paramKeys[k]] - pop[j].params[paramKeys[k]]) / paramRangeWidths[k];
+          dist += diff * diff;
+        }
+        totalDist += Math.sqrt(dist);
+        pairs++;
+      }
+    }
+  } else {
+    for (let s = 0; s < maxPairs; s++) {
+      const i = Math.floor(Math.random() * n);
+      let j = Math.floor(Math.random() * (n - 1));
+      if (j >= i) j++;
+      let dist = 0;
+      for (let k = 0; k < paramKeys.length; k++) {
+        const diff = (pop[i].params[paramKeys[k]] - pop[j].params[paramKeys[k]]) / paramRangeWidths[k];
+        dist += diff * diff;
+      }
+      totalDist += Math.sqrt(dist);
+      pairs++;
+    }
+  }
+
+  return pairs > 0 ? totalDist / pairs : 0;
+}
+
+/** Scale mutation rate based on current population diversity */
+function adaptiveMutationRate(diversity: number): number {
+  if (diversity < DIVERSITY_LOW) {
+    // Ramp up as diversity collapses
+    return MUTATION_RATE_BASE + (MUTATION_RATE_MAX - MUTATION_RATE_BASE) * (1 - diversity / DIVERSITY_LOW);
+  }
+  if (diversity > DIVERSITY_HIGH) {
+    // Ease off — population is well-spread
+    return MUTATION_RATE_BASE - (MUTATION_RATE_BASE - MUTATION_RATE_MIN) * Math.min(1, (diversity - DIVERSITY_HIGH) / DIVERSITY_HIGH);
+  }
+  return MUTATION_RATE_BASE;
 }
 
 // ── Main Optimization Loop ──────────────────────────────────────────
@@ -672,41 +738,80 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     population.sort((a, b) => b.fitness - a.fitness);
     let bestEver = population[0];
 
+    let stagnationCount = 0;
+
     for (let gen = 0; gen < config.generations; gen++) {
+      // ── Measure diversity & adapt mutation ──
+      const diversity = computeDiversity(population);
+      const isStagnant = stagnationCount >= STAGNATION_GENS;
+      const mutRate = isStagnant
+        ? MUTATION_RATE_MAX   // hypermutation on stagnation
+        : adaptiveMutationRate(diversity);
+
       const nextPop: Individual[] = [];
 
+      // ── Elitism: top N survive unchanged ──
       for (let i = 0; i < ELITISM && i < population.length; i++) nextPop.push(population[i]);
 
+      // ── Random immigrants: inject fresh genes ──
+      const immigrantCount = Math.floor(
+        config.populationSize * (isStagnant ? STAGNATION_IMMIGRANT_RATE : IMMIGRANT_RATE)
+      );
       let evalCount = 0;
+      for (let i = 0; i < immigrantCount; i++) {
+        const imm = randomIndividual();
+        const r = portfolioBacktest(portfolioData, imm, "train");
+        nextPop.push({ params: imm, fitness: r.excessReturn });
+        if (++evalCount % 3 === 0) await new Promise((r) => setTimeout(r, 1));
+      }
+
+      // ── Breed the rest via crossover + adaptive mutation ──
       while (nextPop.length < config.populationSize) {
         const p1 = tournamentSelect(population), p2 = tournamentSelect(population);
         const childParams = Math.random() < CROSSOVER_RATE
-          ? mutate(crossover(p1.params, p2.params))
-          : mutate(p1.params);
+          ? mutate(crossover(p1.params, p2.params), mutRate)
+          : mutate(p1.params, mutRate);
         const r = portfolioBacktest(portfolioData, childParams, "train");
         nextPop.push({ params: childParams, fitness: r.excessReturn });
-        // Yield every 3 evaluations to prevent event loop starvation
         if (++evalCount % 3 === 0) await new Promise((r) => setTimeout(r, 1));
       }
 
       population = nextPop.sort((a, b) => b.fitness - a.fitness);
+      const prevBest = bestEver.fitness;
       if (population[0].fitness > bestEver.fitness) bestEver = population[0];
+
+      // ── Stagnation tracking ──
+      if (bestEver.fitness <= prevBest + 0.01) {
+        stagnationCount++;
+      } else {
+        stagnationCount = 0;
+      }
 
       progress.currentGeneration = gen + 1;
       progress.bestFitness = bestEver.fitness;
       progress.bestParams = bestEver.params;
 
       const fitnesses = population.map((i) => i.fitness);
+      const avgFitness = fitnesses.reduce((a, b) => a + b, 0) / fitnesses.length;
       await db.insert(optimizationGenerations).values({
         runId, generation: gen + 1,
         bestFitness: population[0].fitness,
-        avgFitness: fitnesses.reduce((a, b) => a + b, 0) / fitnesses.length,
+        avgFitness,
         worstFitness: fitnesses[fitnesses.length - 1],
         bestParams: population[0].params,
+        diversity,
       });
       await db.update(optimizationRuns).set({ currentGeneration: gen + 1 }).where(eq(optimizationRuns.id, runId));
 
-      logger.info({ runId, gen: gen + 1, bestExcess: population[0].fitness.toFixed(1), avg: (fitnesses.reduce((a, b) => a + b, 0) / fitnesses.length).toFixed(1) }, "Generation complete");
+      logger.info({
+        runId, gen: gen + 1,
+        bestExcess: population[0].fitness.toFixed(1),
+        avg: avgFitness.toFixed(1),
+        diversity: diversity.toFixed(3),
+        mutRate: mutRate.toFixed(2),
+        immigrants: immigrantCount,
+        stagnation: stagnationCount,
+      }, "Generation complete");
     }
 
     // ── Validate ──
