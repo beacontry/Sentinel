@@ -1913,6 +1913,9 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   const engine = getEngine();
 
   if (engine.running) {
+    if (engine.userId && engine.userId !== userId) {
+      return { ok: false, error: "Engine is running for another user. Only one user can run the engine at a time." };
+    }
     return { ok: false, error: "Engine is already running" };
   }
 
