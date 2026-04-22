@@ -50,7 +50,7 @@ export async function checkSignalOutcome(signalId: string): Promise<void> {
 }
 
 /** Map timeframe to appropriate hold period in hours before checking accuracy. */
-function holdHoursForTimeframe(timeframe: string | null, checkHours: number | null): number {
+export function holdHoursForTimeframe(timeframe: string | null, checkHours: number | null): number {
   if (checkHours && checkHours > 0) return checkHours;
   switch (timeframe) {
     case "5m": return 2;    // Intraday signals: check after 2 hours
