@@ -10,7 +10,7 @@ import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("trader-engine-api");
 
-// ─── GET /api/trader/engine — Engine Status ──────────────────────────────────
+// ─── GET /api/trader/engine — Engine Status (per-user) ──────────────────────
 
 export async function GET() {
   const session = await getSession();
@@ -18,14 +18,14 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const status = getEngineStatus();
-  const isOwner = !status.userId || status.userId === session.userId;
-  return NextResponse.json({ data: { ...status, isOwner } }, {
+  // Each user gets their own engine status
+  const status = getEngineStatus(session.userId);
+  return NextResponse.json({ data: status }, {
     headers: { "Cache-Control": "private, no-store" },
   });
 }
 
-// ─── POST /api/trader/engine — Start / Stop / Halt ──────────────────────────
+// ─── POST /api/trader/engine — Start / Stop / Halt (per-user) ───────────────
 
 export async function POST(request: NextRequest) {
   const session = await getSession();
@@ -52,27 +52,20 @@ export async function POST(request: NextRequest) {
   type Mode = typeof validModes[number];
   const mode: Mode = validModes.includes(body.mode as Mode) ? (body.mode as Mode) : "optimized";
 
-  // Guard: stop/halt/switch only allowed by the user who started the engine (or if idle)
-  const engineOwner = getEngineStatus().userId;
-  const isOwner = !engineOwner || engineOwner === session.userId;
-
   try {
     switch (action) {
       case "switch": {
-        if (!isOwner) {
-          return NextResponse.json({ error: "Engine is running for another user. You cannot switch modes." }, { status: 403 });
-        }
         log.info({ userId: session.userId, mode }, "Engine mode switch requested");
-        const status = getEngineStatus();
+        const status = getEngineStatus(session.userId);
         if (status.running) {
-          await stopEngine();
+          await stopEngine(session.userId);
         }
         const result = await startEngine(session.userId, mode);
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         return NextResponse.json({
-          data: { message: `Engine switched to ${mode}`, ...getEngineStatus() },
+          data: { message: `Engine switched to ${mode}`, ...getEngineStatus(session.userId) },
         });
       }
 
@@ -83,37 +76,31 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         return NextResponse.json({
-          data: { message: "Trading engine started", ...getEngineStatus() },
+          data: { message: "Trading engine started", ...getEngineStatus(session.userId) },
         });
       }
 
       case "stop": {
-        if (!isOwner) {
-          return NextResponse.json({ error: "Engine is running for another user. You cannot stop it." }, { status: 403 });
-        }
         log.info({ userId: session.userId }, "Engine stop requested");
-        const result = await stopEngine();
+        const result = await stopEngine(session.userId);
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         return NextResponse.json({
-          data: { message: "Trading engine stopped", ...getEngineStatus() },
+          data: { message: "Trading engine stopped", ...getEngineStatus(session.userId) },
         });
       }
 
       case "halt": {
-        if (!isOwner) {
-          return NextResponse.json({ error: "Engine is running for another user. You cannot halt it." }, { status: 403 });
-        }
         log.warn({ userId: session.userId }, "Engine emergency halt requested");
-        const result = await haltEngine();
+        const result = await haltEngine(session.userId);
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         return NextResponse.json({
           data: {
             message: "Trading engine halted — all positions closed",
-            ...getEngineStatus(),
+            ...getEngineStatus(session.userId),
           },
         });
       }

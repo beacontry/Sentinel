@@ -76,11 +76,11 @@ export interface EngineState {
 }
 
 const g = globalThis as typeof globalThis & {
-  __tradingEngine?: EngineState;
+  __tradingEngines?: Map<string, EngineState>;
 };
 
-function getEngine(): EngineState {
-  g.__tradingEngine ??= {
+function createDefaultEngine(): EngineState {
+  return {
     running: false,
     halted: false,
     mode: "optimized",
@@ -96,7 +96,29 @@ function getEngine(): EngineState {
     externalSignals: [],
     errors: [],
   };
-  return g.__tradingEngine!;
+}
+
+/** Get the engine for a specific user, or fall back to legacy singleton behavior. */
+function getEngine(userId?: string): EngineState {
+  g.__tradingEngines ??= new Map();
+  // If userId provided, get/create that user's engine
+  if (userId) {
+    if (!g.__tradingEngines.has(userId)) {
+      g.__tradingEngines.set(userId, createDefaultEngine());
+    }
+    return g.__tradingEngines.get(userId)!;
+  }
+  // Legacy fallback: return first running engine or create a temp one
+  for (const engine of g.__tradingEngines.values()) {
+    if (engine.running) return engine;
+  }
+  return createDefaultEngine();
+}
+
+/** Get all active engines (for status display). */
+function getAllEngines(): Map<string, EngineState> {
+  g.__tradingEngines ??= new Map();
+  return g.__tradingEngines;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -642,8 +664,8 @@ async function resolveStrategy(
 
 // ─── Exit Check (intraday 1-min price monitoring) ───────────────────────────
 
-async function runExitCheck(): Promise<void> {
-  const engine = getEngine();
+async function runExitCheck(engineUserId?: string): Promise<void> {
+  const engine = getEngine(engineUserId);
   if (!engine.userId || !engine.running || engine.halted) return;
   if (!isMarketOpen()) return;
 
@@ -651,7 +673,7 @@ async function runExitCheck(): Promise<void> {
   if (!resolved) return;
 
   const { client } = resolved;
-  const positionMap = getPositionMap();
+  const positionMap = getPositionMap(engine?.userId ?? engineUserId);
   if (positionMap.size === 0) return;
 
   const provider = getMarketDataProvider();
@@ -935,20 +957,24 @@ interface TrackedPosition {
 }
 
 const g2 = globalThis as typeof globalThis & {
-  __enginePositions?: Map<string, TrackedPosition>;
+  __enginePositionMaps?: Map<string, Map<string, TrackedPosition>>;
 };
 
-function getPositionMap(): Map<string, TrackedPosition> {
-  g2.__enginePositions ??= new Map();
-  return g2.__enginePositions;
+function getPositionMap(userId?: string): Map<string, TrackedPosition> {
+  g2.__enginePositionMaps ??= new Map();
+  const key = userId ?? "_default";
+  if (!g2.__enginePositionMaps.has(key)) {
+    g2.__enginePositionMaps.set(key, new Map());
+  }
+  return g2.__enginePositionMaps.get(key)!;
 }
 
 // ─── Core Scan ───────────────────────────────────────────────────────────────
 
 // ─── Tactical Scan: Stay invested, exit on market weakness ──────────────────
 
-async function runTacticalScan(): Promise<void> {
-  const engine = getEngine();
+async function runTacticalScan(engineUserId?: string): Promise<void> {
+  const engine = getEngine(engineUserId);
   if (!engine.userId || !engine.running || engine.halted) return;
   if (!isMarketOpen()) return;
   try { SCAN_UNIVERSE = await getSP500Symbols(); } catch { /* keep current */ }
@@ -973,7 +999,7 @@ async function runTacticalScan(): Promise<void> {
 
   const equity = account.equity;
   const provider = getMarketDataProvider();
-  const positionMap = getPositionMap();
+  const positionMap = getPositionMap(engine?.userId ?? engineUserId);
 
   // Fetch SPY bars for trend analysis
   let spyBars: Bar[];
@@ -1105,8 +1131,8 @@ async function runTacticalScan(): Promise<void> {
 
 // ─── Tactical Smart: SPY trend + screener-weighted entries ──────────────────
 
-async function runTacticalSmartScan(): Promise<void> {
-  const engine = getEngine();
+async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
+  const engine = getEngine(engineUserId);
   if (!engine.userId || !engine.running || engine.halted) return;
   if (!isMarketOpen()) return;
 
@@ -1127,7 +1153,7 @@ async function runTacticalSmartScan(): Promise<void> {
 
   const equity = account.equity;
   const provider = getMarketDataProvider();
-  const positionMap = getPositionMap();
+  const positionMap = getPositionMap(engine?.userId ?? engineUserId);
 
   // SPY trend check (same as tactical)
   let spyBars: Bar[];
@@ -1416,8 +1442,8 @@ async function runTacticalSmartScan(): Promise<void> {
 
 // ─── Standard Signal-Based Scan ─────────────────────────────────────────────
 
-async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
-  const engine = getEngine();
+async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string): Promise<void> {
+  const engine = getEngine(engineUserId);
 
   // Refresh S&P 500 universe (auto-updates daily from Wikipedia)
   try { SCAN_UNIVERSE = await getSP500Symbols(); } catch { /* keep current */ }
@@ -1442,7 +1468,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
   if (isIntradayMode(engine.mode)) {
     const now = getETDate();
     if (now.getHours() >= 15) {
-      const positionMap = getPositionMap();
+      const positionMap = getPositionMap(engine?.userId ?? engineUserId);
       if (positionMap.size > 0) {
         log.info({ positions: positionMap.size }, "Flatten time (3:00 PM ET) — closing all intraday positions");
         for (const [sym, pos] of positionMap) {
@@ -1549,7 +1575,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
     );
   }
 
-  const positionMap = getPositionMap();
+  const positionMap = getPositionMap(engine?.userId ?? engineUserId);
 
   // Reconcile: remove positions from map AND database that no longer exist on broker
   // (handles manual sells on Alpaca, external closures, etc.)
@@ -1920,12 +1946,9 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   ok: boolean;
   error?: string;
 }> {
-  const engine = getEngine();
+  const engine = getEngine(userId);
 
   if (engine.running) {
-    if (engine.userId && engine.userId !== userId) {
-      return { ok: false, error: "Engine is running for another user. Only one user can run the engine at a time." };
-    }
     return { ok: false, error: "Engine is already running" };
   }
 
@@ -1975,10 +1998,10 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
 
   log.info({ userId, mode, scanIntervalMs }, "Trading engine started");
 
-  // Pick the right scan function based on mode
-  const scanFn = mode === "tactical" ? runTacticalScan
-    : mode === "tactical-smart" ? runTacticalSmartScan
-    : () => runScan(barResolution);
+  // Pick the right scan function based on mode — capture userId in closure
+  const scanFn = mode === "tactical" ? () => runTacticalScan(userId)
+    : mode === "tactical-smart" ? () => runTacticalSmartScan(userId)
+    : () => runScan(barResolution, userId);
 
   // Run initial scan immediately
   scanFn().catch((err) => {
@@ -1999,7 +2022,7 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   if (mode === "intraday") {
     engine.exitCheckId = setInterval(() => {
       if (!engine.running || engine.halted) return;
-      runExitCheck().catch((err) => {
+      runExitCheck(userId).catch((err) => {
         log.error({ err: err instanceof Error ? err.message : "unknown" }, "Exit check failed");
       });
     }, EXIT_CHECK_MS);
@@ -2008,8 +2031,8 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   return { ok: true };
 }
 
-export async function stopEngine(): Promise<{ ok: boolean; error?: string }> {
-  const engine = getEngine();
+export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?: string }> {
+  const engine = userId ? getEngine(userId) : getEngine();
 
   if (!engine.running) {
     return { ok: false, error: "Engine is not running" };
@@ -2108,8 +2131,8 @@ async function placeSafetyStops(userId: string | null): Promise<void> {
   }
 }
 
-export async function haltEngine(): Promise<{ ok: boolean; error?: string }> {
-  const engine = getEngine();
+export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?: string }> {
+  const engine = userId ? getEngine(userId) : getEngine();
 
   // Stop the loop
   if (engine.intervalId) {
@@ -2136,7 +2159,7 @@ export async function haltEngine(): Promise<{ ok: boolean; error?: string }> {
           }
         }
 
-        const positionMap = getPositionMap();
+        const positionMap = getPositionMap(engine.userId);
         const positions = Array.from(positionMap.values());
 
         for (const pos of positions) {
@@ -2220,7 +2243,7 @@ export function pushExternalSignal(signal: ExternalSignal): boolean {
  * Called on first dashboard API hit after a deploy/restart.
  */
 export async function autoStartIfNeeded(userId: string): Promise<void> {
-  const engine = getEngine();
+  const engine = getEngine(userId);
   if (engine.running) return;
 
   const resolved = await resolveBrokerClient(userId);
@@ -2243,7 +2266,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
       log.info({ positions: positions.length, userId, mode: lastMode }, "Open positions detected — auto-starting engine with last mode");
 
       // Sync broker positions into in-memory map so engine manages them immediately
-      const positionMap = getPositionMap();
+      const positionMap = getPositionMap(userId);
       const strategy = await resolveStrategy(userId, "default");
       for (const bp of positions) {
         if (positionMap.has(bp.symbol)) continue; // already tracked
@@ -2268,7 +2291,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
   }
 }
 
-export function getEngineStatus(): {
+export function getEngineStatus(userId?: string): {
   running: boolean;
   halted: boolean;
   mode: EngineMode;
@@ -2280,7 +2303,7 @@ export function getEngineStatus(): {
   errors: string[];
   userId: string | null;
 } {
-  const engine = getEngine();
+  const engine = userId ? getEngine(userId) : getEngine();
   return {
     running: engine.running,
     halted: engine.halted,
