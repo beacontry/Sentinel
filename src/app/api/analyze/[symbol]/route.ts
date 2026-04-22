@@ -36,7 +36,15 @@ export async function GET(
 
   try {
     const provider = getMarketDataProvider();
-    const bars = await provider.fetchBars(upperSymbol, 5);
+    const url = new URL(_request.url);
+
+    // Allow callers to specify timeframe (screener uses 90d daily bars)
+    const daysParam = parseInt(url.searchParams.get("days") ?? "5", 10);
+    const resolutionParam = url.searchParams.get("resolution") ?? "5m";
+    const days = daysParam > 0 && daysParam <= 365 ? daysParam : 5;
+    const resolution = resolutionParam === "1d" ? "1d" : "5m";
+
+    const bars = await provider.fetchBars(upperSymbol, days, resolution);
 
     if (controller.signal.aborted) throw new Error("Route timeout");
 
@@ -48,7 +56,6 @@ export async function GET(
     }
 
     // Check if AI scoring is explicitly requested via query param
-    const url = new URL(_request.url);
     const enableAi = url.searchParams.get("ai") === "true";
 
     const result = await analyzeHybrid(upperSymbol, bars, {
@@ -77,7 +84,7 @@ export async function GET(
       .values({
         signalId: saved.id,
         entryPrice: result.price,
-        timeframe: "5m",
+        timeframe: resolution,
       })
       .onConflictDoNothing();
 
