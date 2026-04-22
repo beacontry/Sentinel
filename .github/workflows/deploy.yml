@@ -92,8 +92,8 @@ jobs:
             sudo -u sn-deploy -i bash -c "
               echo '$GHCR_PAT' | podman login ghcr.io -u ixiondt --password-stdin 2>/dev/null
               podman pull ghcr.io/ixiondt/sentinel:latest
-              podman stop sentinel-app 2>/dev/null || true
-              podman rm sentinel-app 2>/dev/null || true
+              podman rm -f sentinel-app 2>/dev/null || true
+              sleep 2
               mkdir -p /opt/apps/sentinel/cache
               podman run -d \
                 --name sentinel-app \
