@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
           tradesCount: traderDailyPnl.tradesCount,
         })
         .from(traderDailyPnl)
-        .where(gte(traderDailyPnl.date, cutoffStr))
+        .where(and(gte(traderDailyPnl.date, cutoffStr), eq(traderDailyPnl.userId, session.userId)))
         .orderBy(desc(traderDailyPnl.date));
 
       for (const row of traderRows) {

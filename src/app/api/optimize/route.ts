@@ -19,6 +19,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Only admins can run optimization — results are shared globally
+  if (session.role !== "admin") {
+    return NextResponse.json({ error: "Only admins can run the optimizer" }, { status: 403 });
+  }
+
   const body = await request.json().catch(() => ({}));
   const parsed = startSchema.safeParse(body);
   if (!parsed.success) {
