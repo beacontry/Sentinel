@@ -2092,6 +2092,17 @@ export async function haltEngine(): Promise<{ ok: boolean; error?: string }> {
     try {
       const resolved = await resolveBrokerClient(engine.userId);
       if (resolved) {
+        // Cancel all pending orders first — orphaned stop-loss/take-profit
+        // orders from bracket orders will block position sells
+        if (resolved.client.cancelAllOrders) {
+          try {
+            await resolved.client.cancelAllOrders();
+            log.info("Cancelled all pending orders before halt liquidation");
+          } catch (err) {
+            log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders on halt");
+          }
+        }
+
         const positionMap = getPositionMap();
         const positions = Array.from(positionMap.values());
 
