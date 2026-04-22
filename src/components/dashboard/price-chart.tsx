@@ -87,10 +87,13 @@ function makeChartOptions(container: HTMLElement, height: number) {
 export function PriceChart({ analysis, height = 400, events }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const overlaySeriesRef = useRef<ReturnType<IChartApi["addSeries"]>[]>([]);
+  const timesRef = useRef<Time[]>([]);
   const [visible, setVisible] = useState<VisibleIndicators>(defaultVisible);
   const [showRsi, setShowRsi] = useState(false);
   const [showMacd, setShowMacd] = useState(false);
 
+  // Effect 1: Create chart with candlestick + volume (only on data change)
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -98,12 +101,14 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
       chartRef.current.remove();
       chartRef.current = null;
     }
+    overlaySeriesRef.current = [];
 
     const container = containerRef.current;
     const chart = createChart(container, makeChartOptions(container, height));
     chartRef.current = chart;
 
     const times = analysis.bars.map((b) => toTime(b.date));
+    timesRef.current = times;
 
     // Candlestick series
     const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -152,7 +157,35 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
     }));
     volumeSeries.setData(volumeData);
 
-    // Indicator overlay lines
+    chart.timeScale().fitContent();
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        chart.applyOptions({ width: entry.contentRect.width });
+      }
+    });
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+      chart.remove();
+      chartRef.current = null;
+      overlaySeriesRef.current = [];
+    };
+  }, [analysis, height, events]);
+
+  // Effect 2: Add/remove indicator overlays without recreating chart
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const times = timesRef.current;
+
+    // Remove previous overlay series
+    for (const s of overlaySeriesRef.current) {
+      try { chart.removeSeries(s); } catch { /* already removed */ }
+    }
+    overlaySeriesRef.current = [];
+
     const overlayKeys = ["sma_9", "sma_20", "sma_50", "ema_9", "ema_21", "vwap"] as const;
 
     for (const key of overlayKeys) {
@@ -177,23 +210,9 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
         crosshairMarkerVisible: false,
       });
       lineSeries.setData(lineData);
+      overlaySeriesRef.current.push(lineSeries);
     }
-
-    chart.timeScale().fitContent();
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        chart.applyOptions({ width: entry.contentRect.width });
-      }
-    });
-    resizeObserver.observe(container);
-
-    return () => {
-      resizeObserver.disconnect();
-      chart.remove();
-      chartRef.current = null;
-    };
-  }, [analysis, height, visible, events]);
+  }, [visible, analysis]);
 
   function toggleIndicator(key: string) {
     setVisible((prev) => ({ ...prev, [key]: !prev[key] }));

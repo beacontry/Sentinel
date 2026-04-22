@@ -104,10 +104,14 @@ export async function GET(
             if (strength < wh.minSignalStrength) continue;
             const whSymbols = wh.symbols as string[];
             if (whSymbols.length > 0 && !whSymbols.includes(upperSymbol)) continue;
-            sendDiscordWebhook(wh.webhookUrl, result).catch(() => {});
+            sendDiscordWebhook(wh.webhookUrl, result).catch((err) => {
+              log.warn({ err: err instanceof Error ? err.message : String(err), symbol: upperSymbol }, "Discord webhook failed");
+            });
           }
         })
-        .catch(() => {});
+        .catch((err) => {
+          log.warn({ err: err instanceof Error ? err.message : String(err) }, "Failed to query Discord webhooks");
+        });
     }
 
     pushSignalToTrader(result.symbol, result.signal, result.confidence, result.price);
@@ -117,7 +121,9 @@ export async function GET(
       price: result.price,
       volume: result.volume,
       signal: result.signal,
-    }).catch(() => {});
+    }).catch((err) => {
+      log.warn({ err: err instanceof Error ? err.message : String(err), symbol: upperSymbol }, "Alert rule evaluation failed");
+    });
 
     return NextResponse.json(result, {
       headers: { "Cache-Control": "private, max-age=60" },

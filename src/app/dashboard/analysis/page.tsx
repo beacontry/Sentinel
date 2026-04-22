@@ -58,7 +58,7 @@ export default function AnalysisCockpit() {
   const analyzeSymbol = useCallback(async (symbol: string) => {
     setAnalyzingSymbols((prev) => new Set(prev).add(symbol));
     try {
-      const res = await fetch(`/api/analyze/${encodeURIComponent(symbol)}`);
+      const res = await fetch(`/api/analyze/${encodeURIComponent(symbol)}?days=5&resolution=5m`);
       if (res.ok) {
         const data: AnalysisResult = await res.json();
         setAnalyses((prev) => ({ ...prev, [symbol]: data }));
@@ -177,16 +177,28 @@ export default function AnalysisCockpit() {
     setShowAddInput(false);
     setNewSymbol("");
 
-    await fetch("/api/watchlist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: sym }),
-    });
+    try {
+      const res = await fetch("/api/watchlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: sym }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+    } catch {
+      // Revert on failure
+      setSymbols((prev) => prev.filter((s) => s !== sym));
+      setSelectedSymbol((prev) => (prev === sym ? symbols[0] ?? null : prev));
+      return;
+    }
 
     analyzeSymbol(sym);
   }
 
   async function handleRemoveSymbol(symbol: string) {
+    const prevSymbols = symbols;
+    const prevAnalyses = analyses;
+    const prevSelected = selectedSymbol;
+
     setSymbols((prev) => prev.filter((s) => s !== symbol));
     setAnalyses((prev) => {
       const next = { ...prev };
@@ -197,11 +209,19 @@ export default function AnalysisCockpit() {
       setSelectedSymbol(symbols.find((s) => s !== symbol) ?? null);
     }
 
-    await fetch("/api/watchlist", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol }),
-    });
+    try {
+      const res = await fetch("/api/watchlist", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol }),
+      });
+      if (!res.ok) throw new Error("Failed to remove");
+    } catch {
+      // Revert on failure
+      setSymbols(prevSymbols);
+      setAnalyses(prevAnalyses);
+      setSelectedSymbol(prevSelected);
+    }
   }
 
   function handleSelectSignal(symbol: string) {
