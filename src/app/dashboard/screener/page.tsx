@@ -227,7 +227,8 @@ export default function ScreenerPage() {
     setAnalysisLoading(true);
     setAnalysisError(null);
     try {
-      const res = await fetch(`/api/analyze/${encodeURIComponent(symbol)}`);
+      // Use same timeframe as screener scan (90 days, daily bars) for consistency
+      const res = await fetch(`/api/analyze/${encodeURIComponent(symbol)}?days=90&resolution=1d`);
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error ?? "Analysis failed");
