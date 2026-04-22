@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { traderStatus, traderPositions, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
-import { autoStartIfNeeded } from "@/lib/trading-engine";
+import { autoStartIfNeeded, getBrokerPositionCache } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("trader-dashboard");
@@ -152,23 +152,38 @@ export async function GET() {
       sharpeRatio: Math.round(sharpeRatio * 100) / 100,
     };
 
-    // Normalize positions — prefer broker data (always live), fall back to DB
-    const dbPositions = await db.select().from(traderPositions).where(eq(traderPositions.userId, session.userId)).limit(500);
-    const useBroker = brokerPositions.length > 0;
-    const finalPositions = useBroker
-      ? brokerPositions.map((p) => ({
-          symbol: p.symbol,
-          quantity: p.qty,
-          qty: p.qty,
-          entryPrice: p.avgEntryPrice,
-          currentPrice: p.currentPrice,
-          unrealizedPnl: p.unrealizedPnl,
-          pnl: p.unrealizedPnl,
-          marketValue: p.marketValue,
-          stopPrice: null,
-          updatedAt: new Date().toISOString(),
-        }))
-      : dbPositions.map((p) => ({ ...p, updatedAt: p.updatedAt.toISOString() }));
+    // Normalize positions — prefer live broker data, fall back to engine cache, then DB
+    let finalPositions: Array<Record<string, unknown>>;
+    let positionsStale = false;
+    let positionsAgeSeconds = 0;
+
+    if (brokerPositions.length > 0) {
+      // Live broker data
+      finalPositions = brokerPositions.map((p) => ({
+        symbol: p.symbol, quantity: p.qty, qty: p.qty,
+        entryPrice: p.avgEntryPrice, currentPrice: p.currentPrice,
+        unrealizedPnl: p.unrealizedPnl, pnl: p.unrealizedPnl,
+        marketValue: p.marketValue, stopPrice: null, updatedAt: new Date().toISOString(),
+      }));
+    } else {
+      // Try engine's in-memory cache
+      const cached = getBrokerPositionCache(session.userId);
+      if (cached && cached.positions.length > 0) {
+        positionsStale = true;
+        positionsAgeSeconds = Math.floor((Date.now() - cached.fetchedAt.getTime()) / 1000);
+        finalPositions = cached.positions.map((p) => ({
+          symbol: p.symbol, quantity: p.qty, qty: p.qty,
+          entryPrice: p.avgEntryPrice, currentPrice: p.currentPrice,
+          unrealizedPnl: p.unrealizedPnl, pnl: p.unrealizedPnl,
+          marketValue: p.marketValue, stopPrice: null, updatedAt: cached.fetchedAt.toISOString(),
+        }));
+      } else {
+        // Fall back to DB
+        const dbPositions = await db.select().from(traderPositions).where(eq(traderPositions.userId, session.userId)).limit(500);
+        positionsStale = dbPositions.length > 0;
+        finalPositions = dbPositions.map((p) => ({ ...p, updatedAt: p.updatedAt.toISOString() }));
+      }
+    }
 
     return NextResponse.json({
       status: {
@@ -213,6 +228,8 @@ export async function GET() {
         return null;
       })(),
       positions: finalPositions,
+      positionsStale,
+      positionsAgeSeconds,
       trades: trades.map((t) => ({
         ...t,
         fillTime: t.fillTime?.toISOString() ?? null,

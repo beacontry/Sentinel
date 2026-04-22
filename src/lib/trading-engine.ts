@@ -73,6 +73,10 @@ export interface EngineState {
   positionCount: number;
   externalSignals: ExternalSignal[];
   errors: string[];
+  // Broker connectivity tracking
+  brokerConnected: boolean;
+  lastBrokerContact: Date | null;
+  consecutiveBrokerFailures: number;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -95,6 +99,9 @@ function createDefaultEngine(): EngineState {
     positionCount: 0,
     externalSignals: [],
     errors: [],
+    brokerConnected: false,
+    lastBrokerContact: null,
+    consecutiveBrokerFailures: 0,
   };
 }
 
@@ -969,6 +976,27 @@ function getPositionMap(userId?: string): Map<string, TrackedPosition> {
   return g2.__enginePositionMaps.get(key)!;
 }
 
+// ─── Broker Position Cache ──────────────────────────────────────────────────
+
+interface CachedBrokerPositions {
+  positions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number; unrealizedPnl: number; marketValue: number }[];
+  fetchedAt: Date;
+}
+
+const g3 = globalThis as typeof globalThis & {
+  __brokerPositionCache?: Map<string, CachedBrokerPositions>;
+};
+
+function setBrokerPositionCache(userId: string, positions: CachedBrokerPositions["positions"]): void {
+  g3.__brokerPositionCache ??= new Map();
+  g3.__brokerPositionCache.set(userId, { positions, fetchedAt: new Date() });
+}
+
+/** Get cached broker positions for a user. Returns null if no cache exists. */
+export function getBrokerPositionCache(userId: string): CachedBrokerPositions | null {
+  return g3.__brokerPositionCache?.get(userId) ?? null;
+}
+
 // ─── Broker Position Sync ───────────────────────────────────────────────────
 
 /**
@@ -1607,9 +1635,18 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   let brokerPositions: Awaited<ReturnType<BrokerClient["getPositions"]>> = [];
   try {
     brokerPositions = await client.getPositions();
+    engine.brokerConnected = true;
+    engine.lastBrokerContact = new Date();
+    engine.consecutiveBrokerFailures = 0;
+    setBrokerPositionCache(engine.userId!, brokerPositions);
   } catch (err) {
+    engine.consecutiveBrokerFailures++;
+    if (engine.consecutiveBrokerFailures >= 5) {
+      engine.brokerConnected = false;
+      log.error({ failures: engine.consecutiveBrokerFailures }, "Broker unreachable — 5+ consecutive failures");
+    }
     log.warn(
-      { err: err instanceof Error ? err.message : "unknown" },
+      { err: err instanceof Error ? err.message : "unknown", failures: engine.consecutiveBrokerFailures },
       "Failed to fetch broker positions"
     );
   }
@@ -2317,6 +2354,8 @@ export function getEngineStatus(userId?: string): {
   dailyLossLimit: number;
   errors: string[];
   userId: string | null;
+  brokerConnected: boolean;
+  lastBrokerContact: string | null;
 } {
   const engine = userId ? getEngine(userId) : getEngine();
   return {
@@ -2330,5 +2369,7 @@ export function getEngineStatus(userId?: string): {
     dailyLossLimit: engine.dailyLossLimit,
     errors: engine.errors.slice(-20),
     userId: engine.userId,
+    brokerConnected: engine.brokerConnected,
+    lastBrokerContact: engine.lastBrokerContact?.toISOString() ?? null,
   };
 }
