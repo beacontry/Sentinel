@@ -390,14 +390,16 @@ export default function AnalysisCockpit() {
             </div>
 
             <div className="flex shrink-0 flex-col" style={{ maxHeight: "45%" }}>
-              <CockpitWatchlist
-                symbols={symbols}
-                selectedSymbol={selectedSymbol}
-                onSelectSymbol={handleSelectSignal}
-                onRemoveSymbol={handleRemoveSymbol}
-                analyses={watchlistAnalyses}
-                loading={isAnyLoading}
-              />
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <CockpitWatchlist
+                  symbols={symbols}
+                  selectedSymbol={selectedSymbol}
+                  onSelectSymbol={handleSelectSignal}
+                  onRemoveSymbol={handleRemoveSymbol}
+                  analyses={watchlistAnalyses}
+                  loading={isAnyLoading}
+                />
+              </div>
 
               <div className="shrink-0 space-y-2 border-t border-border p-3">
                 <form
