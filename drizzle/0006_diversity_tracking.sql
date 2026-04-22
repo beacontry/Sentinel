@@ -1,0 +1,1 @@
+ALTER TABLE "optimization_generations" ADD COLUMN "diversity" real;
