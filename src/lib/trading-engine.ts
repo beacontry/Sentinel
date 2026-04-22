@@ -1225,7 +1225,7 @@ async function runTacticalSmartScan(): Promise<void> {
       const volWeight = totalInvVol > 0 ? invVol / totalInvVol : 1 / toBuy.length;
       const positionValue = equity * Math.min(volWeight, riskLimits.positionPct);
       const qty = Math.min(Math.floor(positionValue / price), riskLimits.maxPositionSize);
-      if (qty <= 0 || qty * price > account.cash) continue;
+      if (qty <= 0 || qty * price > account.buyingPower) continue;
 
       try {
         const limitPrice = (price * 1.001).toFixed(2);
@@ -1347,7 +1347,7 @@ async function runTacticalSmartScan(): Promise<void> {
 
       const positionValue = equity * riskLimits.positionPct;
       const qty = Math.min(Math.floor(positionValue / cand.price), riskLimits.maxPositionSize);
-      if (qty <= 0 || qty * cand.price > account.cash) continue;
+      if (qty <= 0 || qty * cand.price > account.buyingPower) continue;
 
       // Check exposure
       const currentExposure = Array.from(positionMap.values())
@@ -1727,9 +1727,11 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
           continue;
         }
 
-        // Check cash availability before sending order to broker
-        if (qty * currentPrice > account.cash) {
-          log.debug({ symbol, qty, required: qty * currentPrice, cash: account.cash }, "Insufficient cash, skipping");
+        // Check buying power before sending order to broker
+        // Use buyingPower (not cash) — margin accounts can have negative cash but positive buying power
+        const orderCost = qty * currentPrice;
+        if (orderCost > account.buyingPower) {
+          log.debug({ symbol, qty, required: orderCost, buyingPower: account.buyingPower }, "Insufficient buying power, skipping");
           continue;
         }
 
@@ -1771,7 +1773,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
             type: "limit",
             timeInForce: "day",
             limitPrice: String(limitPrice),
-            stopPrice: String(stopLossPrice),
+            orderClass: "bracket",
+            stopLossPrice: String(stopLossPrice),
+            takeProfitPrice: String(takeProfitPrice),
           });
 
           tradesThisScan++;
