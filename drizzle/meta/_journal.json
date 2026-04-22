@@ -22,6 +22,13 @@
       "when": 1776700000000,
       "tag": "0002_risk_profile_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776886685412,
+      "tag": "0003_smart_human_fly",
+      "breakpoints": true
     }
   ]
 }

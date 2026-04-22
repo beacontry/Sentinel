@@ -13,6 +13,7 @@ import {
 
 export const traderSignals = pgTable("trader_signals", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id"),
   symbol: text("symbol").notNull(),
   signal: text("signal").notNull(),
   price: real("price").notNull(),
@@ -24,10 +25,12 @@ export const traderSignals = pgTable("trader_signals", {
 }, (t) => [
   index("trader_signals_symbol_idx").on(t.symbol),
   index("trader_signals_created_idx").on(t.createdAt),
+  index("trader_signals_user_idx").on(t.userId),
 ]);
 
 export const traderTrades = pgTable("trader_trades", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id"),
   traderId: integer("trader_id"),
   symbol: text("symbol").notNull(),
   signal: text("signal").notNull(),
@@ -47,11 +50,12 @@ export const traderTrades = pgTable("trader_trades", {
   index("trader_trades_symbol_idx").on(t.symbol),
   index("trader_trades_status_idx").on(t.status),
   index("trader_trades_created_idx").on(t.createdAt),
-  uniqueIndex("trader_trades_trader_id_idx").on(t.traderId),
+  index("trader_trades_user_idx").on(t.userId),
 ]);
 
 export const traderDailyPnl = pgTable("trader_daily_pnl", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id"),
   date: text("date").notNull(),
   realizedPnl: real("realized_pnl").notNull().default(0),
   unrealizedPnl: real("unrealized_pnl").notNull().default(0),
@@ -59,11 +63,12 @@ export const traderDailyPnl = pgTable("trader_daily_pnl", {
   halted: boolean("halted").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
-  uniqueIndex("trader_daily_pnl_date_idx").on(t.date),
+  uniqueIndex("trader_daily_pnl_date_user_idx").on(t.date, t.userId),
 ]);
 
 export const traderPositions = pgTable("trader_positions", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id"),
   symbol: text("symbol").notNull(),
   quantity: integer("quantity").notNull(),
   entryPrice: real("entry_price").notNull(),
@@ -72,11 +77,12 @@ export const traderPositions = pgTable("trader_positions", {
   stopPrice: real("stop_price"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
-  uniqueIndex("trader_positions_symbol_idx").on(t.symbol),
+  uniqueIndex("trader_positions_symbol_user_idx").on(t.symbol, t.userId),
 ]);
 
 export const traderStatus = pgTable("trader_status", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id"),
   connected: boolean("connected").notNull().default(true),
   mode: text("mode").notNull().default("paper"),
   lastHeartbeat: timestamp("last_heartbeat", { withTimezone: true }).defaultNow().notNull(),
