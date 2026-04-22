@@ -969,6 +969,61 @@ function getPositionMap(userId?: string): Map<string, TrackedPosition> {
   return g2.__enginePositionMaps.get(key)!;
 }
 
+// ─── Broker Position Sync ───────────────────────────────────────────────────
+
+/**
+ * Sync the in-memory positionMap with the broker's actual positions.
+ * - Removes positions that no longer exist on the broker (manual sells, external closures)
+ * - Adds positions that exist on the broker but not in the map (manual buys, fills between scans)
+ * - Updates qty/currentPrice for existing positions
+ * - Cleans up stale DB records via removePosition()
+ */
+async function syncPositionMapFromBroker(
+  brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number }[],
+  positionMap: Map<string, TrackedPosition>,
+  userId: string
+): Promise<void> {
+  const brokerSymbols = new Set(brokerPositions.map(p => p.symbol));
+
+  // Remove positions that no longer exist on broker
+  for (const [symbol] of positionMap) {
+    if (!brokerSymbols.has(symbol)) {
+      log.info({ symbol, userId }, "Position no longer on broker — removing");
+      positionMap.delete(symbol);
+      await removePosition(symbol);
+    }
+  }
+
+  // Add/update positions from broker
+  for (const bp of brokerPositions) {
+    const existing = positionMap.get(bp.symbol);
+    if (existing) {
+      // Update qty and currentPrice if broker differs
+      if (existing.qty !== bp.qty) {
+        log.info({ symbol: bp.symbol, oldQty: existing.qty, newQty: bp.qty }, "Position qty changed on broker");
+        existing.qty = bp.qty;
+      }
+      // Update peak price tracking
+      existing.peakPrice = Math.max(existing.peakPrice, bp.currentPrice);
+    } else {
+      // New position discovered on broker — add with conservative defaults
+      const strategy = await resolveStrategy(userId, bp.symbol);
+      positionMap.set(bp.symbol, {
+        symbol: bp.symbol,
+        qty: bp.qty,
+        entryPrice: bp.avgEntryPrice,
+        peakPrice: Math.max(bp.currentPrice, bp.avgEntryPrice),
+        stopLoss: bp.avgEntryPrice * (1 - strategy.stopLossPct),
+        takeProfit: bp.avgEntryPrice * (1 + strategy.takeProfitPct),
+        trailingStopPct: strategy.trailingStopPct,
+        entryDate: new Date(),
+        holdPeriod: strategy.holdPeriod,
+      });
+      log.info({ symbol: bp.symbol, qty: bp.qty, entry: bp.avgEntryPrice }, "New position discovered on broker — tracking");
+    }
+  }
+}
+
 // ─── Core Scan ───────────────────────────────────────────────────────────────
 
 // ─── Tactical Scan: Stay invested, exit on market weakness ──────────────────
@@ -1045,15 +1100,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   const confirmedBelow = belowCount >= TACTICAL_CONFIG.confirmBars;
 
   const currentPositions = await client.getPositions().catch(() => []);
-
-  // Reconcile: remove positions from map that no longer exist on broker
-  const brokerSyms = new Set(currentPositions.map(p => p.symbol));
-  for (const [sym] of positionMap) {
-    if (!brokerSyms.has(sym)) {
-      log.info({ symbol: sym }, "Position no longer on broker — removing from engine map");
-      positionMap.delete(sym);
-    }
-  }
+  await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!);
   engine.positionCount = positionMap.size;
 
   const isInvested = currentPositions.length > 0;
@@ -1180,17 +1227,9 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   const confirmedBelow = belowCount >= 3;
 
   const currentPositions = await client.getPositions().catch(() => []);
-  const isInvested = currentPositions.length > 0;
-
-  // Reconcile: remove positions from map that no longer exist on broker
-  const brokerSyms = new Set(currentPositions.map(p => p.symbol));
-  for (const [sym] of positionMap) {
-    if (!brokerSyms.has(sym)) {
-      log.info({ symbol: sym }, "Position no longer on broker — removing from engine map");
-      positionMap.delete(sym);
-    }
-  }
+  await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!);
   engine.positionCount = positionMap.size;
+  const isInvested = currentPositions.length > 0;
 
   log.info({ spyPrice: spyPrice.toFixed(2), sma20: sma20.toFixed(2), sma50: sma50.toFixed(2), confirmedBelow, isInvested, positions: positionMap.size }, "Tactical Smart scan");
 
@@ -1577,19 +1616,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
   const positionMap = getPositionMap(engine?.userId ?? engineUserId);
 
-  // Reconcile: remove positions from map AND database that no longer exist on broker
-  // (handles manual sells on Alpaca, external closures, etc.)
-  if (brokerPositions.length > 0 || positionMap.size > 0) {
-    const brokerSymbols = new Set(brokerPositions.map(p => p.symbol));
-    for (const [symbol] of positionMap) {
-      if (!brokerSymbols.has(symbol)) {
-        log.info({ symbol }, "Position no longer on broker — removing from engine");
-        positionMap.delete(symbol);
-        await removePosition(symbol);
-      }
-    }
-    engine.positionCount = positionMap.size;
-  }
+  // Sync position map with broker — handles manual sells/buys on Alpaca
+  await syncPositionMapFromBroker(brokerPositions, positionMap, engine.userId!);
+  engine.positionCount = positionMap.size;
 
   let realizedPnlThisScan = 0;
   let tradesThisScan = 0;
@@ -2267,21 +2296,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
 
       // Sync broker positions into in-memory map so engine manages them immediately
       const positionMap = getPositionMap(userId);
-      const strategy = await resolveStrategy(userId, "default");
-      for (const bp of positions) {
-        if (positionMap.has(bp.symbol)) continue; // already tracked
-        positionMap.set(bp.symbol, {
-          symbol: bp.symbol,
-          qty: bp.qty,
-          entryPrice: bp.avgEntryPrice,
-          peakPrice: Math.max(bp.currentPrice, bp.avgEntryPrice), // conservative: at least entry or current
-          stopLoss: bp.avgEntryPrice * (1 - strategy.stopLossPct),
-          takeProfit: bp.avgEntryPrice * (1 + strategy.takeProfitPct),
-          trailingStopPct: strategy.trailingStopPct,
-          entryDate: new Date(), // unknown — use now so hold period counts from restart
-          holdPeriod: strategy.holdPeriod,
-        });
-      }
+      await syncPositionMapFromBroker(positions, positionMap, userId);
       log.info({ synced: positionMap.size }, "Synced broker positions into engine");
 
       await startEngine(userId, lastMode);
