@@ -51,10 +51,16 @@ export async function POST(request: NextRequest) {
   type Mode = typeof validModes[number];
   const mode: Mode = validModes.includes(body.mode as Mode) ? (body.mode as Mode) : "optimized";
 
+  // Guard: stop/halt/switch only allowed by the user who started the engine (or if idle)
+  const engineOwner = getEngineStatus().userId;
+  const isOwner = !engineOwner || engineOwner === session.userId;
+
   try {
     switch (action) {
       case "switch": {
-        // Stop current engine (without placing safety stops since we're restarting immediately)
+        if (!isOwner) {
+          return NextResponse.json({ error: "Engine is running for another user. You cannot switch modes." }, { status: 403 });
+        }
         log.info({ userId: session.userId, mode }, "Engine mode switch requested");
         const status = getEngineStatus();
         if (status.running) {
@@ -81,6 +87,9 @@ export async function POST(request: NextRequest) {
       }
 
       case "stop": {
+        if (!isOwner) {
+          return NextResponse.json({ error: "Engine is running for another user. You cannot stop it." }, { status: 403 });
+        }
         log.info({ userId: session.userId }, "Engine stop requested");
         const result = await stopEngine();
         if (!result.ok) {
@@ -92,6 +101,9 @@ export async function POST(request: NextRequest) {
       }
 
       case "halt": {
+        if (!isOwner) {
+          return NextResponse.json({ error: "Engine is running for another user. You cannot halt it." }, { status: 403 });
+        }
         log.warn({ userId: session.userId }, "Engine emergency halt requested");
         const result = await haltEngine();
         if (!result.ok) {
