@@ -1727,6 +1727,12 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
           continue;
         }
 
+        // Check cash availability before sending order to broker
+        if (qty * currentPrice > account.cash) {
+          log.debug({ symbol, qty, required: qty * currentPrice, cash: account.cash }, "Insufficient cash, skipping");
+          continue;
+        }
+
         // Check max portfolio exposure
         const currentExposure = Array.from(positionMap.values())
           .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
