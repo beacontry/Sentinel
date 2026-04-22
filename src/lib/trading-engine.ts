@@ -1529,14 +1529,15 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
 
   const positionMap = getPositionMap();
 
-  // Reconcile: remove positions from map that no longer exist on broker
+  // Reconcile: remove positions from map AND database that no longer exist on broker
   // (handles manual sells on Alpaca, external closures, etc.)
   if (brokerPositions.length > 0 || positionMap.size > 0) {
     const brokerSymbols = new Set(brokerPositions.map(p => p.symbol));
     for (const [symbol] of positionMap) {
       if (!brokerSymbols.has(symbol)) {
-        log.info({ symbol }, "Position no longer on broker — removing from engine map");
+        log.info({ symbol }, "Position no longer on broker — removing from engine");
         positionMap.delete(symbol);
+        await removePosition(symbol);
       }
     }
     engine.positionCount = positionMap.size;
