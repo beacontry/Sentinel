@@ -29,6 +29,13 @@
       "when": 1776886685412,
       "tag": "0003_smart_human_fly",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776893031675,
+      "tag": "0004_hot_sentinel",
+      "breakpoints": true
     }
   ]
 }

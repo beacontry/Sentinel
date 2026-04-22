@@ -688,11 +688,11 @@ async function runExitCheck(): Promise<void> {
       if (exitReason) {
         log.info({ symbol, exitReason, currentPrice, entryPrice: pos.entryPrice }, "Exit triggered by 1-min check");
         try {
-          await client.placeOrder({ symbol, qty: String(pos.qty), side: "sell", type: "market", timeInForce: "day" });
+          const exitOrder = await client.placeOrder({ symbol, qty: String(pos.qty), side: "sell", type: "market", timeInForce: "day" });
           const pnl = (currentPrice - pos.entryPrice) * pos.qty;
           engine.dailyLoss += pnl < 0 ? pnl : 0;
 
-          await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "FILLED", pnl, exitReason);
+          await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "FILLED", pnl, exitReason, exitOrder.id);
           positionMap.delete(symbol);
           engine.positionCount = positionMap.size;
         } catch (err) {
@@ -718,10 +718,10 @@ async function logSignal(
   volume: number,
   indicators: Record<string, unknown>,
   actedOn: boolean
-): Promise<void> {
+): Promise<string | null> {
   const engine = getEngine();
   try {
-    await db.insert(traderSignals).values({
+    const [row] = await db.insert(traderSignals).values({
       userId: engine.userId,
       symbol,
       signal,
@@ -730,12 +730,14 @@ async function logSignal(
       indicators,
       actedOn,
       traderTimestamp: new Date(),
-    });
+    }).returning({ id: traderSignals.id });
+    return row?.id ?? null;
   } catch (err) {
     log.error(
       { err: err instanceof Error ? err.message : "unknown", symbol },
       "Failed to log signal"
     );
+    return null;
   }
 }
 
@@ -747,12 +749,16 @@ async function logTrade(
   fillPrice: number | null,
   status: string,
   pnl: number | null,
-  notes: string | null
+  notes: string | null,
+  brokerOrderId: string | null = null,
+  signalId: string | null = null
 ): Promise<void> {
   const engine = getEngine();
   try {
     await db.insert(traderTrades).values({
       userId: engine.userId,
+      brokerOrderId,
+      signalId,
       symbol,
       signal,
       action,
@@ -1038,8 +1044,8 @@ async function runTacticalScan(): Promise<void> {
     for (const pos of currentPositions) {
       if (pos.qty <= 0) continue;
       try {
-        await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical exit: SPY below SMA");
+        const texitOrder = await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
+        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical exit: SPY below SMA", texitOrder.id);
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -1066,7 +1072,8 @@ async function runTacticalScan(): Promise<void> {
         if (qty <= 0) continue;
 
         const limitPrice = (quote.price * 1.001).toFixed(2);
-        await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        const tentryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "FILLED", null, "Tactical entry: SPY above SMA", tentryOrder.id);
 
         positionMap.set(symbol, {
           symbol, qty, entryPrice: quote.price, peakPrice: quote.price,
@@ -1167,8 +1174,8 @@ async function runTacticalSmartScan(): Promise<void> {
     for (const pos of currentPositions) {
       if (pos.qty <= 0) continue;
       try {
-        await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical Smart exit");
+        const tsExitOrder = await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
+        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical Smart exit", tsExitOrder.id);
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -1244,8 +1251,8 @@ async function runTacticalSmartScan(): Promise<void> {
 
       try {
         const limitPrice = (price * 1.001).toFixed(2);
-        await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
-        await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Smart: momentum + signal + invVol weighted");
+        const tsEntryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Smart: momentum + signal + invVol weighted", tsEntryOrder.id);
         positionMap.set(symbol, {
           symbol, qty, entryPrice: price, peakPrice: price,
           stopLoss: price * 0.88, takeProfit: price * 1.5,
@@ -1322,8 +1329,8 @@ async function runTacticalSmartScan(): Promise<void> {
 
       // Sell the weak position
       try {
-        await client.placeOrder({ symbol: weak.symbol, side: "sell", qty: String(bp.qty), type: "market", timeInForce: "day" });
-        await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "FILLED", bp.unrealizedPnl, `Swap out: ${weak.signal}`);
+        const swapSellOrder = await client.placeOrder({ symbol: weak.symbol, side: "sell", qty: String(bp.qty), type: "market", timeInForce: "day" });
+        await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "FILLED", bp.unrealizedPnl, `Swap out: ${weak.signal}`, swapSellOrder.id);
         positionMap.delete(weak.symbol);
         heldSymbols.delete(weak.symbol);
       } catch (err) {
@@ -1339,8 +1346,8 @@ async function runTacticalSmartScan(): Promise<void> {
 
       try {
         const limitPrice = (replacement.price * 1.001).toFixed(2);
-        await client.placeOrder({ symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
-        await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "FILLED", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`);
+        const swapBuyOrder = await client.placeOrder({ symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "FILLED", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`, swapBuyOrder.id);
         positionMap.set(replacement.symbol, {
           symbol: replacement.symbol, qty, entryPrice: replacement.price, peakPrice: replacement.price,
           stopLoss: replacement.price * 0.88, takeProfit: replacement.price * 1.5,
@@ -1372,8 +1379,8 @@ async function runTacticalSmartScan(): Promise<void> {
 
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
-        await client.placeOrder({ symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
-        await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "FILLED", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`);
+        const addOrder = await client.placeOrder({ symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "FILLED", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`, addOrder.id);
         positionMap.set(cand.symbol, {
           symbol: cand.symbol, qty, entryPrice: cand.price, peakPrice: cand.price,
           stopLoss: cand.price * 0.88, takeProfit: cand.price * 1.5,
@@ -1442,8 +1449,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
           try {
             const resolved = await resolveBrokerClient(engine.userId);
             if (resolved) {
-              await resolved.client.placeOrder({ symbol: sym, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-              await logTrade(sym, "flatten", "SELL", pos.qty, pos.entryPrice, "FILLED", null, "EOD flatten");
+              const flattenOrder = await resolved.client.placeOrder({ symbol: sym, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
+              await logTrade(sym, "flatten", "SELL", pos.qty, pos.entryPrice, "FILLED", null, "EOD flatten", flattenOrder.id);
             }
             positionMap.delete(sym);
           } catch (err) {
@@ -1649,7 +1656,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
               ? brokerPos.qty
               : heldPosition.qty;
 
-            await client.placeOrder({
+            const sellOrder = await client.placeOrder({
               symbol,
               side: "sell",
               qty: String(sellQty),
@@ -1671,7 +1678,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
               currentPrice,
               "FILLED",
               pnl,
-              exitReason
+              exitReason,
+              sellOrder.id
             );
 
             await removePosition(symbol);
@@ -1785,7 +1793,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
         try {
           // Place limit buy order — stop-loss and take-profit are managed
           // internally by the engine's exit logic (trailing stop, hold period)
-          await client.placeOrder({
+          const buyOrder = await client.placeOrder({
             symbol,
             side: "buy",
             qty: String(qty),
@@ -1816,6 +1824,16 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
           };
           positionMap.set(symbol, tracked);
 
+          // Mark signal as acted on and get its ID for trade linkage
+          const sigId = await logSignal(
+            symbol,
+            signal,
+            currentPrice,
+            analysis.volume,
+            analysis.indicators as unknown as Record<string, unknown>,
+            true
+          );
+
           await logTrade(
             symbol,
             signal,
@@ -1824,20 +1842,12 @@ async function runScan(barResolution: "1d" | "5m" = "1d"): Promise<void> {
             currentPrice,
             "FILLED",
             null,
-            `Entry: ${signal} (${(confidence * 100).toFixed(0)}% confidence)`
+            `Entry: ${signal} (${(confidence * 100).toFixed(0)}% confidence)`,
+            buyOrder.id,
+            sigId
           );
 
           await upsertPosition(symbol, qty, currentPrice, currentPrice, stopLossPrice);
-
-          // Mark signal as acted on
-          await logSignal(
-            symbol,
-            signal,
-            currentPrice,
-            analysis.volume,
-            analysis.indicators as unknown as Record<string, unknown>,
-            true
-          );
         } catch (err) {
           const msg = err instanceof Error ? err.message : "unknown";
           log.error({ err: msg, symbol }, "Failed to place buy order");
@@ -2131,7 +2141,7 @@ export async function haltEngine(): Promise<{ ok: boolean; error?: string }> {
 
         for (const pos of positions) {
           try {
-            await resolved.client.placeOrder({
+            const haltOrder = await resolved.client.placeOrder({
               symbol: pos.symbol,
               side: "sell",
               qty: String(pos.qty),
@@ -2151,7 +2161,8 @@ export async function haltEngine(): Promise<{ ok: boolean; error?: string }> {
               closePrice,
               "FILLED",
               pnl,
-              "Emergency halt — all positions closed"
+              "Emergency halt — all positions closed",
+              haltOrder.id
             );
 
             await removePosition(pos.symbol);
