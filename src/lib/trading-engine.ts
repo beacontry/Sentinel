@@ -1936,6 +1936,10 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   engine.dailyLoss = 0;
   engine.dailyLossDate = getETDateString();
 
+  // Clear halted flag in database so UI stops showing "Trading Halted"
+  const today = getETDateString();
+  upsertDailyPnl(today, 0, 0, 0, false).catch(() => {});
+
   const intraday = isIntradayMode(mode);
   const scanIntervalMs = intraday ? INTRADAY_SCAN_MS : SWING_SCAN_MS;
   const barResolution = intraday ? "5m" : "1d";
