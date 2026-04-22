@@ -25,8 +25,8 @@ export async function GET() {
       autoStartIfNeeded(session.userId).catch(() => {});
     }
 
-    // Status — check trader service heartbeat first
-    const [status] = await db.select().from(traderStatus).limit(1);
+    // Status — check this user's trader service heartbeat
+    const [status] = await db.select().from(traderStatus).where(eq(traderStatus.userId, session.userId)).limit(1);
     const traderServiceAlive = status
       ? Date.now() - status.lastHeartbeat.getTime() < 5 * 60 * 1000
       : false;

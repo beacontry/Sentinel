@@ -648,7 +648,7 @@ async function resolveStrategy(
     );
   }
 
-  const engine = getEngine();
+  const engine = getEngine(userId);
   // For optimized/tactical modes, use latest optimizer results from DB
   if (engine.mode === "optimized" || engine.mode === "tactical" || engine.mode === "tactical-smart") {
     const latest = await getLatestOptimizedParams();
@@ -2222,8 +2222,8 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
  * Push an external signal into the engine (from Screener, manual, etc.)
  * The engine will act on it during its next scan cycle.
  */
-export function pushExternalSignal(signal: ExternalSignal): boolean {
-  const engine = getEngine();
+export function pushExternalSignal(signal: ExternalSignal, userId?: string): boolean {
+  const engine = getEngine(userId);
   if (!engine.running || engine.halted) return false;
 
   // Dedup: don't accept the same symbol+signal within 30 minutes
@@ -2254,7 +2254,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
       // Recover last engine mode from DB
       let lastMode: EngineMode = "optimized";
       try {
-        const [status] = await db.select().from(traderStatus).limit(1);
+        const [status] = await db.select().from(traderStatus).where(eq(traderStatus.userId, userId)).limit(1);
         if (status?.mode?.startsWith("paper:")) {
           const savedMode = status.mode.split(":")[1] as EngineMode;
           const validModes: EngineMode[] = ["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical", "tactical-smart"];
