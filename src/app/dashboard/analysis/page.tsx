@@ -389,7 +389,7 @@ export default function AnalysisCockpit() {
               />
             </div>
 
-            <div className="flex shrink-0 flex-col" style={{ maxHeight: "45%" }}>
+            <div className="flex shrink-0 flex-col overflow-hidden" style={{ maxHeight: "45%" }}>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <CockpitWatchlist
                   symbols={symbols}
