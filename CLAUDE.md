@@ -7,6 +7,38 @@
 - Anthropic SDK for AI chat analysis
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
+- Vitest for testing (88 tests across indicators, analyzer, validators, signal translator)
+- Alpaca Markets API for paper/live trading
+
+## Architecture: Multi-Tenant Trading Engine
+
+### Engine Isolation
+Each user gets their own independent trading engine instance:
+- `globalThis.__tradingEngines`: `Map<userId, EngineState>` — per-user engine state
+- `globalThis.__enginePositionMaps`: `Map<userId, Map<symbol, TrackedPosition>>` — per-user position tracking
+- Users can run different modes simultaneously (admin on optimized, user B on tactical)
+- Engine controls (start/stop/halt/switch) are scoped to the authenticated user
+
+### Data Scoping
+All trader tables are scoped by `userId`:
+- `traderTrades` — trade history with `broker_order_id` (Alpaca) and `signal_id` (Sentinel)
+- `traderDailyPnl` — daily P&L with `halt_reason` and `engine_mode`
+- `traderSignals` — signal log (pure Sentinel metadata, Alpaca doesn't track these)
+- `traderStatus` — engine heartbeat, mode, watchlist (per-user)
+- `traderPositions` — **DEPRECATED** (table exists but is never read/written; broker is source of truth)
+
+### Alpaca as Source of Truth
+Positions come from the broker API, not the database:
+1. **Live broker data** — `client.getPositions()` on every scan and dashboard load
+2. **Engine cache fallback** — `getBrokerPositionCache(userId)` when broker is temporarily unreachable
+3. **No DB fallback** — the `traderPositions` table is unused
+4. `syncPositionMapFromBroker()` runs on every scan to reconcile the in-memory position map
+
+### Screener (Shared)
+The screener scans market data and is shared across users (not user-specific). Optimization runs are admin-only but results (strategy params) are shared globally.
+
+### Broker Connections
+Each user has their own broker connection (`brokerConnections` table, scoped by `userId`). The engine resolves the active connection for the authenticated user via `resolveBrokerClient(userId)`.
 
 ## Design System
 
