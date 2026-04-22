@@ -7,7 +7,6 @@ import {
   TrendingUp,
   TrendingDown,
   BarChart3,
-  Clock,
   Target,
   Zap,
   ChevronDown,
@@ -15,6 +14,7 @@ import {
   Download,
   RefreshCw,
   Activity,
+  Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +57,7 @@ interface Generation {
   avgFitness: number;
   worstFitness: number;
   bestParams: Record<string, number>;
+  diversity: number | null;
 }
 
 interface SymbolResult {
@@ -84,35 +85,12 @@ export default function OptimizerPage() {
   const [selectedRun, setSelectedRun] = useState<RunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
-
-  // Check user role
-  useEffect(() => {
-    fetch("/api/auth/me").then(r => r.json()).then(d => setUserRole(d.user?.role ?? "user")).catch(() => setUserRole("user"));
-  }, []);
-
-  if (userRole !== null && userRole !== "admin") {
-    return (
-      <div className="p-4 lg:p-6 space-y-6">
-        <div className="rounded-xl border border-border bg-bg-surface p-12 text-center">
-          <Target className="w-12 h-12 text-text-muted mx-auto mb-4" />
-          <h2 className="text-lg font-semibold text-text-primary mb-2">Admin Access Required</h2>
-          <p className="text-sm text-text-secondary max-w-md mx-auto">
-            The Strategy Optimizer runs computationally expensive genetic algorithms. Only admins can start optimization runs. The optimized parameters are shared with all users automatically.
-          </p>
-        </div>
-      </div>
-    );
-  }
   const [showConfig, setShowConfig] = useState(false);
   const [symbolSort, setSymbolSort] = useState<"return" | "sharpe" | "drawdown">("return");
   const [symbolOrder, setSymbolOrder] = useState<"desc" | "asc">("desc");
   const [showAllSymbols, setShowAllSymbols] = useState(false);
-
-  // Mode comparison
   const [comparison, setComparison] = useState<{ mode: string; label: string; totalReturn: number; finalValue: number; maxDrawdown: number; sharpe: number; trades: number; timeInMarket: number }[] | null>(null);
   const [comparingModes, setComparingModes] = useState(false);
-
-  // Config form
   const [popSize, setPopSize] = useState(30);
   const [gens, setGens] = useState(25);
   const [trainPct, setTrainPct] = useState(60);
@@ -162,6 +140,26 @@ export default function OptimizerPage() {
     return () => clearInterval(interval);
   }, [runs, selectedRun, fetchRuns, fetchRunDetail]);
 
+  // Check user role
+  useEffect(() => {
+    fetch("/api/auth/me").then(r => r.json()).then(d => setUserRole(d.user?.role ?? "user")).catch(() => setUserRole("user"));
+  }, []);
+
+  // Admin-only gate — all hooks are above this point
+  if (userRole !== null && userRole !== "admin") {
+    return (
+      <div className="p-4 lg:p-6 space-y-6">
+        <div className="rounded-xl border border-border bg-bg-surface p-12 text-center">
+          <Target className="w-12 h-12 text-text-muted mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-text-primary mb-2">Admin Access Required</h2>
+          <p className="text-sm text-text-secondary max-w-md mx-auto">
+            The Strategy Optimizer runs computationally expensive genetic algorithms. Only admins can start optimization runs. The optimized parameters are shared with all users automatically.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   async function handleStart() {
     setStarting(true);
     try {
@@ -196,6 +194,14 @@ export default function OptimizerPage() {
   const activeRun = runs.find((r) =>
     ["pending", "fetching_data", "optimizing"].includes(r.status)
   );
+
+  // Top 5 completed runs by test return, plus any non-complete runs
+  const completedRuns = runs
+    .filter((r) => r.status === "complete" && r.bestTestReturn != null)
+    .sort((a, b) => (b.bestTestReturn ?? 0) - (a.bestTestReturn ?? 0));
+  const bestRunId = completedRuns[0]?.id ?? null;
+  const nonCompleteRuns = runs.filter((r) => r.status !== "complete");
+  const displayedRuns = [...nonCompleteRuns, ...completedRuns.slice(0, 5)];
 
   // Sort symbol results
   const sortedSymbols = selectedRun?.symbolResults
@@ -412,9 +418,16 @@ export default function OptimizerPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Run History */}
+        {/* Run History — Top 5 by test return */}
         <div className="lg:col-span-1 space-y-3">
-          <h2 className="text-sm font-semibold text-text-primary">Run History</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-text-primary">Top Runs</h2>
+            {completedRuns.length > 5 && (
+              <span className="text-[11px] text-text-muted">
+                {completedRuns.length} total
+              </span>
+            )}
+          </div>
           {runs.length === 0 ? (
             <EmptyState
               icon={<Activity className="h-10 w-10" />}
@@ -423,41 +436,64 @@ export default function OptimizerPage() {
             />
           ) : (
             <div className="space-y-2">
-              {runs.map((run) => (
-                <Card
-                  key={run.id}
-                  hover
-                  className={`cursor-pointer transition-colors ${
-                    selectedRun?.run.id === run.id ? "border-accent/50" : ""
-                  }`}
-                  onClick={() => selectRun(run)}
-                >
-                  <div className="p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <StatusBadge status={run.status} />
-                      <span className="text-[11px] text-text-muted">
-                        {new Date(run.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                    {run.bestTrainReturn !== null && (
-                      <div className="flex items-center gap-3 mt-2">
-                        <div>
-                          <span className="text-[11px] text-text-muted">Train</span>
-                          <p className={`text-sm font-mono ${run.bestTrainReturn >= 0 ? "text-bullish" : "text-bearish"}`}>
-                            {run.bestTrainReturn.toFixed(1)}%
-                          </p>
+              {displayedRuns.map((run) => {
+                const isWinner = run.id === bestRunId;
+                const rank = run.status === "complete"
+                  ? completedRuns.findIndex((r) => r.id === run.id) + 1
+                  : null;
+                return (
+                  <Card
+                    key={run.id}
+                    hover
+                    className={`cursor-pointer transition-colors ${
+                      selectedRun?.run.id === run.id ? "border-accent/50" : ""
+                    } ${isWinner ? "border-accent/30 bg-accent/[0.03]" : ""}`}
+                    onClick={() => selectRun(run)}
+                  >
+                    <div className="p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-1.5">
+                          {isWinner && (
+                            <Trophy className="h-3.5 w-3.5 text-accent shrink-0" />
+                          )}
+                          {rank && !isWinner && (
+                            <span className="text-[11px] font-mono font-medium text-text-muted w-4 text-center">
+                              #{rank}
+                            </span>
+                          )}
+                          <StatusBadge status={run.status} />
                         </div>
-                        <div>
-                          <span className="text-[11px] text-text-muted">Test</span>
-                          <p className={`text-sm font-mono ${(run.bestTestReturn ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-                            {run.bestTestReturn?.toFixed(1) ?? "—"}%
-                          </p>
-                        </div>
+                        <span className="text-[11px] text-text-muted">
+                          {new Date(run.createdAt).toLocaleDateString()}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                </Card>
-              ))}
+                      {run.bestTrainReturn !== null && (
+                        <div className="flex items-center gap-3 mt-2">
+                          <div>
+                            <span className="text-[11px] text-text-muted">Train</span>
+                            <p className={`text-sm font-mono ${run.bestTrainReturn >= 0 ? "text-bullish" : "text-bearish"}`}>
+                              {run.bestTrainReturn.toFixed(1)}%
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-[11px] text-text-muted">Test</span>
+                            <p className={`text-sm font-mono font-semibold ${(run.bestTestReturn ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+                              {run.bestTestReturn?.toFixed(1) ?? "—"}%
+                            </p>
+                          </div>
+                          {run.universe && (
+                            <div className="ml-auto">
+                              <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                                {run.universe}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -884,10 +920,11 @@ function ConvergenceChart({ generations }: { generations: Generation[] }) {
   const maxFitness = Math.max(...generations.map((g) => g.bestFitness));
   const minFitness = Math.min(...generations.map((g) => g.worstFitness));
   const range = maxFitness - minFitness || 1;
+  const hasDiversity = generations.some((g) => g.diversity != null);
 
   const width = 100;
   const height = 120;
-  const padding = { top: 10, right: 10, bottom: 20, left: 40 };
+  const padding = { top: 10, right: hasDiversity ? 28 : 10, bottom: 20, left: 40 };
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
 
@@ -897,9 +934,21 @@ function ConvergenceChart({ generations }: { generations: Generation[] }) {
   function y(val: number) {
     return padding.top + chartH - ((val - minFitness) / range) * chartH;
   }
+  // Diversity on 0-1 scale, mapped to full chart height
+  function yDiv(val: number) {
+    return padding.top + chartH - val * chartH;
+  }
 
   const bestLine = generations.map((g, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(g.bestFitness).toFixed(1)}`).join(" ");
   const avgLine = generations.map((g, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(g.avgFitness).toFixed(1)}`).join(" ");
+
+  let diversityLine = "";
+  if (hasDiversity) {
+    diversityLine = generations
+      .filter((g) => g.diversity != null)
+      .map((g, i) => `${i === 0 ? "M" : "L"}${x(generations.indexOf(g)).toFixed(1)},${yDiv(g.diversity!).toFixed(1)}`)
+      .join(" ");
+  }
 
   return (
     <div>
@@ -921,8 +970,20 @@ function ConvergenceChart({ generations }: { generations: Generation[] }) {
           );
         })}
 
+        {/* Diversity right-axis labels */}
+        {hasDiversity && [0, 0.5, 1].map((pct) => (
+          <text key={`div-${pct}`} x={width - padding.right + 2} y={yDiv(pct) + 1} textAnchor="start" className="fill-warning" style={{ fontSize: 2.5, opacity: 0.6 }}>
+            {pct.toFixed(1)}
+          </text>
+        ))}
+
         {/* Avg line */}
         <path d={avgLine} fill="none" stroke="var(--color-text-muted)" strokeWidth="0.5" opacity={0.5} />
+
+        {/* Diversity line */}
+        {hasDiversity && diversityLine && (
+          <path d={diversityLine} fill="none" stroke="var(--color-warning)" strokeWidth="0.5" strokeDasharray="1.5,1" opacity={0.7} />
+        )}
 
         {/* Best line */}
         <path d={bestLine} fill="none" stroke="var(--color-accent)" strokeWidth="0.8" />
@@ -939,6 +1000,11 @@ function ConvergenceChart({ generations }: { generations: Generation[] }) {
         <span className="flex items-center gap-1">
           <span className="w-3 h-[2px] bg-text-muted inline-block rounded opacity-50" /> Average
         </span>
+        {hasDiversity && (
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-[2px] bg-warning inline-block rounded opacity-70" style={{ borderTop: "1px dashed" }} /> Diversity
+          </span>
+        )}
       </div>
     </div>
   );

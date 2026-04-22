@@ -1,4 +1,3 @@
-import { db } from "./db";
 import { createRouteLogger } from "./logger";
 
 const log = createRouteLogger("sp500");

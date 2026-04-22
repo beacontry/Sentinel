@@ -55,6 +55,7 @@ export const optimizationGenerations = pgTable("optimization_generations", {
   avgFitness: real("avg_fitness").notNull(),
   worstFitness: real("worst_fitness").notNull(),
   bestParams: jsonb("best_params").notNull(),
+  diversity: real("diversity"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("optimization_generations_run_idx").on(t.runId),

@@ -13,9 +13,8 @@ import { createBrokerClient } from "./brokers";
 import type { BrokerClient, BrokerAccount } from "./brokers";
 import { decrypt } from "./crypto";
 import { getMarketDataProvider } from "./market-data";
-import { analyzeBars } from "./indicators/analyzer";
 import { analyzeHybrid } from "./hybrid/pipeline";
-import { evaluateBarSignal, type SignalParams } from "./signal-eval";
+import type { SignalParams } from "./signal-eval";
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { SP500_SYMBOLS, getSP500Symbols } from "./sp500";
 import { getFinnhubClient } from "./finnhub";
@@ -122,12 +121,6 @@ function getEngine(userId?: string): EngineState {
   return createDefaultEngine();
 }
 
-/** Get all active engines (for status display). */
-function getAllEngines(): Map<string, EngineState> {
-  g.__tradingEngines ??= new Map();
-  return g.__tradingEngines;
-}
-
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SWING_SCAN_MS = 15 * 60 * 1000;    // 15 minutes for swing mode
@@ -145,7 +138,8 @@ const TACTICAL_CONFIG = {
   fullExitPct: 1.0,   // go 100% cash on confirmed exit
 };
 
-// #3: Sector groups for rotation weighting (covers full S&P 500)
+// #3: Sector groups for rotation weighting (covers full S&P 500) — reserved for future use
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SECTOR_MAP: Record<string, string> = {
   // Tech
   AAPL: "tech", MSFT: "tech", NVDA: "tech", AMD: "tech", INTC: "tech", GOOGL: "tech", GOOG: "tech",
@@ -218,8 +212,9 @@ function calcMomentumAndVol(bars: Bar[]): { momentum: number; volatility: number
 }
 
 /**
- * #3: Calculate sector relative strength
+ * #3: Calculate sector relative strength — reserved for future use
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function calcSectorStrength(
   sectorReturns: Map<string, number[]>
 ): Map<string, number> {
@@ -570,6 +565,7 @@ async function getLatestOptimizedParams(): Promise<StrategyParams | null> {
 }
 
 /** Get tuned signal params (EMA/RSI) from latest optimizer run, or null if unavailable */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function getOptimizedSignalParams(): Promise<SignalParams | null> {
   if (_optimizedParamsCache && Date.now() - _optimizedParamsCache.fetchedAt < OPTIMIZER_CACHE_TTL) {
     return _optimizedParamsCache.signalParams;

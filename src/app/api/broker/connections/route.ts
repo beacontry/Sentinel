@@ -8,7 +8,7 @@ import {
   updateBrokerConnectionSchema,
   deleteBrokerConnectionSchema,
 } from "@/lib/validators";
-import { encrypt, decrypt } from "@/lib/crypto";
+import { encrypt } from "@/lib/crypto";
 import { requireCsrf } from "@/lib/csrf";
 import { createRouteLogger } from "@/lib/logger";
 
