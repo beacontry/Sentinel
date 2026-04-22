@@ -15,7 +15,7 @@ export default function DashboardPage() {
   const [activeWidgetIds, setActiveWidgetIds] = useState<string[]>(DEFAULT_LAYOUT);
 
   return (
-    <div className="p-4 lg:p-8 space-y-6">
+    <div className="p-4 lg:p-6 space-y-6">
       {/* Header — S6 style: bold title, subtitle, actions on right */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
         <div>
