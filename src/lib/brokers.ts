@@ -56,6 +56,10 @@ export interface PlaceOrderParams {
   timeInForce: string;
   limitPrice?: string;
   stopPrice?: string;
+  /** Alpaca bracket order: "bracket" sends entry + stop-loss + take-profit as one order */
+  orderClass?: "simple" | "bracket" | "oco" | "oto";
+  takeProfitPrice?: string;
+  stopLossPrice?: string;
 }
 
 export interface BrokerClient {
@@ -273,7 +277,7 @@ class AlpacaClient implements BrokerClient {
   }
 
   async placeOrder(params: PlaceOrderParams): Promise<BrokerOrder> {
-    const payload: Record<string, string> = {
+    const payload: Record<string, unknown> = {
       symbol: params.symbol,
       side: params.side,
       qty: params.qty,
@@ -281,7 +285,19 @@ class AlpacaClient implements BrokerClient {
       time_in_force: params.timeInForce,
     };
     if (params.limitPrice) payload.limit_price = params.limitPrice;
-    if (params.stopPrice) payload.stop_price = params.stopPrice;
+
+    // Bracket orders: entry + stop-loss + take-profit as one atomic order
+    if (params.orderClass === "bracket") {
+      payload.order_class = "bracket";
+      if (params.takeProfitPrice) {
+        payload.take_profit = { limit_price: params.takeProfitPrice };
+      }
+      if (params.stopLossPrice) {
+        payload.stop_loss = { stop_price: params.stopLossPrice };
+      }
+    } else {
+      if (params.stopPrice) payload.stop_price = params.stopPrice;
+    }
 
     const res = await brokerFetch(`${this.baseUrl}/v2/orders`, {
       method: "POST",
