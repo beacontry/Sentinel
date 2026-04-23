@@ -387,7 +387,7 @@ export function analyzeSignalOnly(
   symbol: string,
   bars: Bar[],
   signalParams?: SignalParams
-): { signal: SignalType; confidence: number } {
+): { signal: SignalType; confidence: number; atr: number | null } {
   const ind = createIndicators(signalParams);
 
   for (const bar of bars) {
@@ -400,6 +400,7 @@ export function analyzeSignalOnly(
     ind.vwap.update(bar);
     ind.rsi.update(bar);
     ind.macd.update(bar);
+    ind.atr.update(bar);
     if (bar.volume > 0) {
       ind.volumeHistory.push(bar.volume);
       if (ind.volumeHistory.length > 100) ind.volumeHistory.shift();
@@ -408,5 +409,5 @@ export function analyzeSignalOnly(
 
   const lastBar = bars[bars.length - 1];
   const { signal, confidence } = evaluateSignal(lastBar.close, lastBar.volume, ind, signalParams);
-  return { signal, confidence };
+  return { signal, confidence, atr: ind.atr.value() };
 }

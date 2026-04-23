@@ -553,7 +553,7 @@ async function resolveBrokerClient(
 // ─── Latest Optimizer Results ────────────────────────────────────────────────
 
 // Cache to avoid hitting DB on every symbol every scan
-let _optimizedParamsCache: { params: StrategyParams; signalParams: SignalParams | null; fetchedAt: number } | null = null;
+let _optimizedParamsCache: { params: StrategyParams; signalParams: SignalParams | null; takeProfitAtrMult: number | null; fetchedAt: number } | null = null;
 const OPTIMIZER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 async function getLatestOptimizedParams(): Promise<StrategyParams | null> {
@@ -562,6 +562,15 @@ async function getLatestOptimizedParams(): Promise<StrategyParams | null> {
   }
   await _loadOptimizedParams();
   return _optimizedParamsCache?.params ?? null;
+}
+
+/** Get ATR multiplier for adaptive take profit, or null for fixed TP */
+async function getOptimizedTpAtrMult(): Promise<number | null> {
+  if (_optimizedParamsCache && Date.now() - _optimizedParamsCache.fetchedAt < OPTIMIZER_CACHE_TTL) {
+    return _optimizedParamsCache.takeProfitAtrMult;
+  }
+  await _loadOptimizedParams();
+  return _optimizedParamsCache?.takeProfitAtrMult ?? null;
 }
 
 /** Get tuned signal params (EMA/RSI) from latest optimizer run, or null if unavailable */
@@ -585,11 +594,15 @@ async function _loadOptimizedParams(): Promise<void> {
     if (!run?.bestParams) return;
 
     const p = run.bestParams as Record<string, number>;
-    if (p.stopLossPct == null || p.takeProfitPct == null) return;
+    if (p.stopLossPct == null) return;
 
+    // New runs have takeProfitAtrMult; old runs have takeProfitPct
+    const takeProfitAtrMult = p.takeProfitAtrMult ?? null;
     const params: StrategyParams = {
       stopLossPct: p.stopLossPct,
-      takeProfitPct: p.takeProfitPct,
+      // For old runs: use stored takeProfitPct. For new runs: use a high fallback
+      // since the engine computes ATR-based TP per-position at entry time.
+      takeProfitPct: p.takeProfitPct ?? 5.0,
       trailingStopPct: p.trailingStopPct ?? 0.09,
       holdPeriod: Math.round(p.holdPeriod ?? 43),
     };
@@ -604,8 +617,8 @@ async function _loadOptimizedParams(): Promise<void> {
         }
       : null;
 
-    _optimizedParamsCache = { params, signalParams, fetchedAt: Date.now() };
-    log.info({ params, signalParams, testReturn: run.bestTestReturn }, "Loaded latest optimizer params");
+    _optimizedParamsCache = { params, signalParams, takeProfitAtrMult, fetchedAt: Date.now() };
+    log.info({ params, signalParams, takeProfitAtrMult, testReturn: run.bestTestReturn }, "Loaded latest optimizer params");
   } catch (err) {
     log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to load optimizer params");
   }
@@ -1804,7 +1817,12 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
         // Calculate bracket levels
         const stopLossPrice = parseFloat((currentPrice * (1 - strategy.stopLossPct)).toFixed(2));
-        const takeProfitPrice = parseFloat((currentPrice * (1 + strategy.takeProfitPct)).toFixed(2));
+        // Adaptive TP: use ATR × multiplier from optimizer if available, else fixed %
+        const tpAtrMult = engine.mode === "optimized" ? await getOptimizedTpAtrMult() : null;
+        const atrVal = analysis.indicators.atr_14;
+        const takeProfitPrice = tpAtrMult && atrVal
+          ? parseFloat((currentPrice + atrVal * tpAtrMult).toFixed(2))
+          : parseFloat((currentPrice * (1 + strategy.takeProfitPct)).toFixed(2));
         // Limit price: slight premium for entry (0.1% above current)
         const limitPrice = parseFloat((currentPrice * 1.001).toFixed(2));
 
