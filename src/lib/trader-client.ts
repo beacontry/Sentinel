@@ -1,5 +1,5 @@
 import type { ScreenerResult } from "./screener";
-import { pushExternalSignal } from "./trading-engine";
+import { broadcastExternalSignal } from "./trading-engine";
 
 export interface TraderPushResult {
   symbol: string;
@@ -63,7 +63,7 @@ export async function pushScreenerSignals(
       continue;
     }
 
-    const accepted = pushExternalSignal({
+    const acceptedCount = broadcastExternalSignal({
       symbol: r.symbol,
       signal: r.signal,
       confidence: r.confidence,
@@ -72,13 +72,14 @@ export async function pushScreenerSignals(
       receivedAt: now,
     });
 
-    if (accepted) {
+    if (acceptedCount > 0) {
       g.__signalsSent!.set(r.symbol, { signal: r.signal, sentAt: now });
       pushResults.push({
         symbol: r.symbol,
         signal: r.signal,
         confidence: r.confidence,
         status: "executed",
+        reason: `pushed to ${acceptedCount} engine(s)`,
       });
     } else {
       pushResults.push({
@@ -86,7 +87,7 @@ export async function pushScreenerSignals(
         signal: r.signal,
         confidence: r.confidence,
         status: "rejected",
-        reason: "engine not running or duplicate",
+        reason: "no running engines or duplicate",
       });
     }
   }
