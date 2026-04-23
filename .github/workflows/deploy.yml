@@ -89,11 +89,14 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           envs: GHCR_PAT
           script: |
+            export GHCR_PAT="$GHCR_PAT"
             sudo -u sn-deploy -i bash -c "
-              echo '$GHCR_PAT' | podman login ghcr.io -u ixiondt --password-stdin 2>/dev/null
+              echo '${GHCR_PAT}' | podman login ghcr.io -u ixiondt --password-stdin
               podman pull ghcr.io/ixiondt/sentinel:latest
+              echo 'Pull complete, stopping old container...'
               podman stop sentinel-app 2>/dev/null || true
               podman rm sentinel-app 2>/dev/null || true
+              echo 'Starting new container...'
               mkdir -p /opt/apps/sentinel/cache
               podman run -d \
                 --name sentinel-app \
@@ -108,6 +111,7 @@ jobs:
                 --restart always \
                 -m 1g \
                 ghcr.io/ixiondt/sentinel:latest
+              echo 'Container started'
             "
             # Health check — wait for app to be ready
             for i in 1 2 3 4 5; do
