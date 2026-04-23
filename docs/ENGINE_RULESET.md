@@ -340,21 +340,23 @@ The screener (`src/lib/screener.ts`) is a shared, user-independent market scanne
 
 ## Optimizer → Engine Flow
 
-### 7 Optimizable Parameters
+### 8 Optimizable Parameters
 
-The optimizer tunes 7 parameters via genetic algorithm:
+The optimizer tunes 8 parameters via genetic algorithm:
 
 | Parameter | Range | Type | Used For |
 |-----------|-------|------|----------|
-| stopLossPct | 1–12% | Exit | Fixed stop loss |
-| takeProfitPct | 10–100% | Exit | Take profit target |
-| trailingStopPct | 1–15% | Exit | Trailing stop base width |
+| stopLossPct | 1–12% | Exit | Fixed stop loss from entry |
+| takeProfitAtrMult | 3–15× | Exit | Adaptive TP: entry + ATR(14) × multiplier |
+| trailingStopPct | 1–15% | Exit | Trailing stop base width (tightens with profit) |
 | holdPeriod | 5–60 days | Exit | Max hold before forced exit |
 | emaFast | 5–15 | Signal | Short-term EMA period |
 | emaSlow | 15–50 | Signal | Long-term EMA period |
-| rsThreshold | -20% to +10% | Filter | 60-day relative strength gate |
 | rsiOversold | 20–40 | Signal | RSI oversold threshold |
 | rsiOverbought | 60–80 | Signal | RSI overbought threshold |
+| rsThreshold | -20% to +10% | Filter | 60-day relative strength gate |
+
+**Adaptive take profit:** Instead of a fixed percentage from entry, the optimizer tunes an ATR multiplier. At entry, `takeProfit = entryPrice + ATR(14) × multiplier`. Volatile stocks (high ATR) get wider targets; stable stocks get tighter targets. This prevents capping upside on momentum stocks while still taking profits on range-bound ones.
 
 Position sizing (positionPct, maxPositions) is NOT optimized — it belongs to user risk profiles.
 
@@ -362,27 +364,32 @@ Position sizing (positionPct, maxPositions) is NOT optimized — it belongs to u
 
 ```
 Optimizer completes GA run
-  → saves bestParams (7 fields) to optimization_runs.bestParams (JSONB)
+  → saves bestParams (8 fields) to optimization_runs.bestParams (JSONB)
     ↓
 Engine loads latest completed run every 5 minutes (cached)
-  → Extracts exit params: stopLossPct, takeProfitPct, trailingStopPct, holdPeriod
+  → Extracts exit params: stopLossPct, takeProfitAtrMult, trailingStopPct, holdPeriod
   → Extracts signal params: emaFast, emaSlow, rsiOversold, rsiOverbought
   → Extracts filter params: rsThreshold
+  → Computes ATR-based take profit per position at entry time
     ↓
 Per-symbol overrides from Strategies page take priority over GA params
 ```
 
+### Screener vs Engine Authority
+
+The screener only pushes BUY/STRONG_BUY signals to the engine — never SELL signals. Once a position is entered, it is managed entirely by the engine's exit logic (stop loss, trailing stop, ATR-based take profit, sell signal from `analyzeHybrid()`, hold period). The screener has no influence on exits.
+
 ### Which Modes Use Optimizer Params
 
-| Mode | Signal Params (EMA/RSI) | Exit Params (stops/TP/hold) | RS Threshold | Screener Signals |
-|------|------------------------|---------------------------|-------------|-----------------|
-| Conservative | Defaults | Hardcoded preset | From optimizer | Yes |
-| Moderate | Defaults | Hardcoded preset | From optimizer | Yes |
-| **Optimized** | **GA-tuned** | **GA-tuned** | **GA-tuned** | Yes |
-| Aggressive | Defaults | Hardcoded preset | From optimizer | Yes |
-| Intraday | Defaults | Hardcoded intraday | From optimizer | Yes |
-| Tactical | N/A (SPY only) | GA-tuned or swing preset | N/A | No |
-| Tactical Smart | Defaults | GA-tuned | N/A | **Yes (score boost)** |
+| Mode | Signal Params (EMA/RSI) | Exit Params | Take Profit | RS Threshold | Screener |
+|------|------------------------|-------------|-------------|-------------|----------|
+| Conservative | Defaults | Hardcoded preset | Fixed % | From optimizer | Yes |
+| Moderate | Defaults | Hardcoded preset | Fixed % | From optimizer | Yes |
+| **Optimized** | **GA-tuned** | **GA-tuned** | **ATR × mult** | **GA-tuned** | Yes |
+| Aggressive | Defaults | Hardcoded preset | Fixed % | From optimizer | Yes |
+| Intraday | Defaults | Hardcoded intraday | Fixed % | From optimizer | Yes |
+| Tactical | N/A (SPY only) | GA or swing preset | Fixed % | N/A | No |
+| Tactical Smart | Defaults | GA-tuned | Fixed % | N/A | **Yes (boost)** |
 
 **Note:** rsThreshold affects ALL standard modes via `passesSmartFilters()`, not just optimized mode. Tactical modes don't use smart filters.
 
@@ -392,11 +399,15 @@ The Mode Comparison backtest uses `analyzeBars()` for all modes. The Optimized (
 
 ### Optimizer Diversity Mechanisms
 
-The GA maintains population diversity through four mechanisms:
-- **Adaptive mutation:** Rate scales from 10% (healthy diversity) to 50% (collapsed population)
-- **Random immigrants:** 10% of each generation replaced with fresh random individuals
-- **Stagnation restart:** After 5 gens without improvement, 30% replaced + max mutation rate
-- **Diversity tracking:** Per-generation diversity metric logged to DB and shown on convergence chart
+The GA search uses lightweight diversity controls to avoid getting stuck in local optima without overwhelming good solutions with random noise:
+
+- **Diversity measurement:** Average normalized Euclidean distance across sampled parameter pairs (0 = identical clones, ~1 = max spread). Logged per generation.
+- **Adaptive mutation:** Rate scales from 10% (healthy, diversity > 0.35) → 20% (baseline) → 50% (collapsed, diversity < 0.10)
+- **Random immigrants:** 5% of each generation replaced with fresh random individuals — enough to inject new genes without dragging down the average
+- **Stagnation restart:** After 8 gens without improvement (< 0.01% gain), inject 15% immigrants + force max mutation. Resets when improvement resumes.
+- **Convergence chart:** Best, average, and diversity lines shown per generation on the optimizer dashboard
+
+Diversity is purely a GA search mechanism — it has no effect on live trading. It controls how the optimizer explores the 8-dimensional parameter space to find the best strategy.
 
 ## Risk Overrides (from DB)
 
