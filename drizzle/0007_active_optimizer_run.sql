@@ -1,0 +1,1 @@
+ALTER TABLE "optimization_runs" ADD COLUMN "is_active" boolean DEFAULT false;

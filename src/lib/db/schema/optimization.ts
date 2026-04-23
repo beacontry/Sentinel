@@ -5,6 +5,7 @@ import {
   uuid,
   integer,
   real,
+  boolean,
   index,
   jsonb,
 } from "drizzle-orm/pg-core";
@@ -37,6 +38,9 @@ export const optimizationRuns = pgTable("optimization_runs", {
   testSharpe: real("test_sharpe"),
   trainMaxDrawdown: real("train_max_drawdown"),
   testMaxDrawdown: real("test_max_drawdown"),
+
+  // Active preset — only one run should be active at a time
+  isActive: boolean("is_active").default(false),
 
   // Timing
   startedAt: timestamp("started_at", { withTimezone: true }),
