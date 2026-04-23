@@ -549,8 +549,8 @@
       <a href="#intraday" data-num="09">Intraday Mode</a>
       <a href="#optimizer" data-num="10">Optimizer Flow</a>
       <a href="#risk" data-num="11">Risk Overrides</a>
-      <a href="#signal-arch" data-num="12">Signal Evaluator Architecture</a>
-      <a href="#mode-compare" data-num="13">Mode Comparison Integration</a>
+      <a href="#screener" data-num="12">Screener Flow</a>
+      <a href="#mode-matrix" data-num="13">Mode &times; Optimizer Matrix</a>
       <a href="#data" data-num="14">Data Sources</a>
     </div>
   </nav>
@@ -586,14 +586,14 @@
         </div>
       </div>
       <div class="mode-card featured">
-        <span class="mode-tag tag-signal">Signal</span>
+        <span class="mode-tag tag-signal">Signal + GA</span>
         <div class="mode-name">Optimized</div>
         <div class="mode-params">
-          <span class="mode-param-label">Stop Loss</span><span class="mode-param-val">8.5%</span>
-          <span class="mode-param-label">Take Profit</span><span class="mode-param-val">36.9%</span>
-          <span class="mode-param-label">Trailing</span><span class="mode-param-val">12.6%</span>
-          <span class="mode-param-label">Hold Period</span><span class="mode-param-val">33 bars</span>
-          <span class="mode-param-label">Position Size</span><span class="mode-param-val">20%</span>
+          <span class="mode-param-label">Stop Loss</span><span class="mode-param-val">GA-tuned</span>
+          <span class="mode-param-label">Take Profit</span><span class="mode-param-val">GA-tuned</span>
+          <span class="mode-param-label">Trailing</span><span class="mode-param-val">GA-tuned</span>
+          <span class="mode-param-label">Hold Period</span><span class="mode-param-val">GA-tuned</span>
+          <span class="mode-param-label">EMA / RSI</span><span class="mode-param-val">GA-tuned</span>
         </div>
       </div>
       <div class="mode-card">
@@ -644,24 +644,26 @@
       <div class="section-num">02</div>
       <h2>Signal Generation</h2>
     </div>
-    <p>Every stock in the universe is evaluated on each scan cycle using six technical indicators. A composite score determines the signal.</p>
+    <p>All components &mdash; engine, optimizer, screener, mode comparison &mdash; use the same signal function: <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">analyzeBars()</code> from the unified indicator pipeline. In <strong>optimized mode</strong>, the engine passes GA-tuned signal params (EMA periods, RSI thresholds) through the pipeline. All other modes use defaults.</p>
 
     <h3>Indicators</h3>
     <div class="indicator-row">
-      <span class="indicator-pill">EMA crossover (7/38)</span>
-      <span class="indicator-pill">RSI (14)</span>
+      <span class="indicator-pill">VWAP</span>
+      <span class="indicator-pill">EMA crossover (9/21, tunable)</span>
+      <span class="indicator-pill">RSI 14 (30/70, tunable)</span>
       <span class="indicator-pill">SMA (20)</span>
       <span class="indicator-pill">SMA (50)</span>
-      <span class="indicator-pill">MACD histogram</span>
+      <span class="indicator-pill">MACD (12/26/9)</span>
       <span class="indicator-pill">Volume (1.5&times; avg)</span>
     </div>
 
     <h3>BUY Signal</h3>
     <p>Fires when bullish count exceeds bearish count by 2+ (minimum 4 bullish indicators):</p>
     <ol>
-      <li>Price above VWAP <em>or</em> fast EMA &gt; slow EMA</li>
+      <li>Price above VWAP (bullish positioning)</li>
+      <li>Fast EMA &gt; slow EMA (uptrend)</li>
       <li>Fresh EMA crossover within lookback window</li>
-      <li>RSI below oversold threshold (value) <em>or</em> above 55 (momentum)</li>
+      <li>RSI below oversold threshold <em>or</em> above 55 (momentum)</li>
       <li>Price above SMA(20)</li>
       <li>MACD histogram positive</li>
     </ol>
@@ -1004,25 +1006,51 @@
       <div class="section-num">10</div>
       <h2>Optimizer &rarr; Engine Flow</h2>
     </div>
-    <p>The genetic algorithm optimizer finds the best parameters by backtesting across the S&P 500. The engine picks them up automatically.</p>
+    <p>The genetic algorithm optimizer finds the best parameters by backtesting across the S&P 500 using the same <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">analyzeBars()</code> function the engine uses live. The engine picks up results automatically.</p>
 
+    <h3>7 Optimizable Parameters</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr><th>Parameter</th><th class="right">Range</th><th>Type</th><th>Used For</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">stopLossPct</td><td class="right mono">1&ndash;12%</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Fixed stop loss</td></tr>
+          <tr><td class="mono">takeProfitPct</td><td class="right mono">10&ndash;100%</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Take profit target</td></tr>
+          <tr><td class="mono">trailingStopPct</td><td class="right mono">1&ndash;15%</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Trailing stop base width</td></tr>
+          <tr><td class="mono">holdPeriod</td><td class="right mono">5&ndash;60 days</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Max hold before forced exit</td></tr>
+          <tr><td class="mono">emaFast</td><td class="right mono">5&ndash;15</td><td>Signal</td><td style="font-size:0.78rem;color:var(--text-muted)">Short-term EMA period</td></tr>
+          <tr><td class="mono">emaSlow</td><td class="right mono">15&ndash;50</td><td>Signal</td><td style="font-size:0.78rem;color:var(--text-muted)">Long-term EMA period</td></tr>
+          <tr><td class="mono">rsiOversold</td><td class="right mono">20&ndash;40</td><td>Signal</td><td style="font-size:0.78rem;color:var(--text-muted)">RSI oversold threshold</td></tr>
+          <tr><td class="mono">rsiOverbought</td><td class="right mono">60&ndash;80</td><td>Signal</td><td style="font-size:0.78rem;color:var(--text-muted)">RSI overbought threshold</td></tr>
+          <tr><td class="mono">rsThreshold</td><td class="right mono">&minus;20% to +10%</td><td>Filter</td><td style="font-size:0.78rem;color:var(--text-muted)">60-day relative strength gate</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span>Position sizing (positionPct, maxPositions) is <strong>not</strong> optimized &mdash; it belongs to user risk profiles. The optimizer backtests with fixed 10% / 10 positions.</span>
+    </div>
+
+    <h3>Parameter Flow</h3>
     <div class="flow">
       <div class="flow-step">
         <span class="flow-step-icon">&#129516;</span>
         <div class="flow-step-title">Optimizer</div>
-        <div class="flow-step-desc">GA finds best params via backtest</div>
+        <div class="flow-step-desc">GA tunes 7 params via analyzeSignalOnly() backtest</div>
       </div>
       <div class="flow-arrow">&#10132;</div>
       <div class="flow-step">
         <span class="flow-step-icon">&#128451;</span>
         <div class="flow-step-title">Database</div>
-        <div class="flow-step-desc">Saves bestParams to optimization_runs</div>
+        <div class="flow-step-desc">bestParams saved to optimization_runs (JSONB)</div>
       </div>
       <div class="flow-arrow">&#10132;</div>
       <div class="flow-step">
         <span class="flow-step-icon">&#9881;</span>
         <div class="flow-step-title">Engine</div>
-        <div class="flow-step-desc">Reads latest run every 5 min (cached)</div>
+        <div class="flow-step-desc">Loads every 5 min &mdash; passes signal params to analyzeHybrid()</div>
       </div>
       <div class="flow-arrow">&#10132;</div>
       <div class="flow-step">
@@ -1031,6 +1059,14 @@
         <div class="flow-step-desc">Per-symbol strategies take priority</div>
       </div>
     </div>
+
+    <h3>GA Diversity Mechanisms</h3>
+    <ul>
+      <li><strong>Adaptive mutation:</strong> Rate scales from 10% (healthy diversity) to 50% (collapsed population)</li>
+      <li><strong>Random immigrants:</strong> 10% of each generation replaced with fresh random individuals</li>
+      <li><strong>Stagnation restart:</strong> After 5 gens without improvement, 30% replaced + max mutation</li>
+      <li><strong>Diversity tracking:</strong> Per-generation metric logged to DB and shown on convergence chart</li>
+    </ul>
   </section>
 
   <!-- ===== 11 · RISK SETTINGS ===== -->
@@ -1064,73 +1100,98 @@
     </div>
   </section>
 
-  <!-- ===== 12 · SIGNAL EVALUATOR ARCHITECTURE ===== -->
-  <section class="section" id="signal-arch">
+  <!-- ===== 12 · SCREENER FLOW ===== -->
+  <section class="section" id="screener">
     <div class="section-header">
       <div class="section-num">12</div>
-      <h2>Signal Evaluator Architecture</h2>
+      <h2>Screener &rarr; Engine Flow</h2>
     </div>
-    <p>Two signal evaluation paths exist, each serving different consumers:</p>
+    <p>The screener is a shared, user-independent market scanner that feeds signals to the trading engine. It uses default signal params (not optimizer-tuned).</p>
+
+    <div class="flow">
+      <div class="flow-step">
+        <span class="flow-step-icon">&#128269;</span>
+        <div class="flow-step-title">Scan 500+ Stocks</div>
+        <div class="flow-step-desc">Daily at open + every 5 min intraday</div>
+      </div>
+      <div class="flow-arrow">&#10132;</div>
+      <div class="flow-step">
+        <span class="flow-step-icon">&#128202;</span>
+        <div class="flow-step-title">analyzeHybrid()</div>
+        <div class="flow-step-desc">Default signal params (EMA 9/21, RSI 30/70)</div>
+      </div>
+      <div class="flow-arrow">&#10132;</div>
+      <div class="flow-step">
+        <span class="flow-step-icon">&#128232;</span>
+        <div class="flow-step-title">Push Signals</div>
+        <div class="flow-step-desc">BUY/STRONG_BUY (conf &ge; 0.6) to engine</div>
+      </div>
+      <div class="flow-arrow">&#10132;</div>
+      <div class="flow-step">
+        <span class="flow-step-icon">&#9881;</span>
+        <div class="flow-step-title">Engine</div>
+        <div class="flow-step-desc">Adds to scan universe or boosts scores</div>
+      </div>
+    </div>
+
+    <ul>
+      <li><strong>Dedup:</strong> Same symbol+signal ignored within 30 minutes</li>
+      <li><strong>Expiry:</strong> External signals auto-expire after 30 minutes</li>
+      <li><strong>In-memory only:</strong> Signals are not persisted &mdash; lost on container restart</li>
+      <li><strong>Shared:</strong> Screener is not per-user and always uses default signal params</li>
+    </ul>
+
+    <h3>How Each Mode Consumes Screener Signals</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Mode</th><th>Consumes?</th><th>How</th></tr></thead>
+        <tbody>
+          <tr><td>Conservative</td><td class="mono" style="color:var(--bullish)">Yes</td><td style="font-size:0.78rem;color:var(--text-muted)">External signal symbols added to scan universe; can trigger entry</td></tr>
+          <tr><td>Moderate</td><td class="mono" style="color:var(--bullish)">Yes</td><td style="font-size:0.78rem;color:var(--text-muted)">Same</td></tr>
+          <tr><td>Optimized</td><td class="mono" style="color:var(--bullish)">Yes</td><td style="font-size:0.78rem;color:var(--text-muted)">Same</td></tr>
+          <tr><td>Aggressive</td><td class="mono" style="color:var(--bullish)">Yes</td><td style="font-size:0.78rem;color:var(--text-muted)">Same</td></tr>
+          <tr><td>Intraday</td><td class="mono" style="color:var(--bullish)">Yes</td><td style="font-size:0.78rem;color:var(--text-muted)">Same (on 5-min bars)</td></tr>
+          <tr><td>Tactical</td><td class="mono" style="color:var(--bearish)">No</td><td style="font-size:0.78rem;color:var(--text-muted)">Pure SPY timing &mdash; ignores screener</td></tr>
+          <tr><td>Tactical Smart</td><td class="mono" style="color:var(--bullish)">Yes</td><td style="font-size:0.78rem;color:var(--text-muted)">Boosts candidate scores (STRONG_BUY +3pts, BUY +1pt)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===== 13 · MODE × OPTIMIZER MATRIX ===== -->
+  <section class="section" id="mode-matrix">
+    <div class="section-header">
+      <div class="section-num">13</div>
+      <h2>Mode &times; Optimizer Matrix</h2>
+    </div>
+    <p>Which optimizer parameters are used by which mode. Signal params (EMA/RSI) change how <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">analyzeBars()</code> evaluates signals. Exit params (stops/TP/hold) change when positions close. RS threshold filters which stocks are eligible.</p>
 
     <div class="table-wrap">
       <table class="data-table">
         <thead>
           <tr>
-            <th>Component</th>
-            <th>Signal Source</th>
-            <th>Used By</th>
+            <th>Mode</th>
+            <th>Signal Params<br><span style="font-weight:400;text-transform:none;letter-spacing:0">(EMA/RSI)</span></th>
+            <th>Exit Params<br><span style="font-weight:400;text-transform:none;letter-spacing:0">(stops/TP/hold)</span></th>
+            <th>RS Threshold</th>
+            <th>Screener</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td><code style="font-family:'JetBrains Mono',monospace;font-size:0.78rem">signal-eval.ts</code></td>
-            <td>Shared evaluator with tunable params (EMA fast/slow, RSI oversold/overbought)</td>
-            <td style="font-size:0.8rem">Optimizer, Mode Comparison (Optimized/GA row), Live engine (signal decisions)</td>
-          </tr>
-          <tr>
-            <td><code style="font-family:'JetBrains Mono',monospace;font-size:0.78rem">analyzeBars()</code></td>
-            <td>Standard indicator module (price, volume, indicators for logging)</td>
-            <td style="font-size:0.8rem">Live engine (data extraction), Mode Comparison (non-Optimized rows)</td>
-          </tr>
+          <tr><td>Conservative</td><td style="color:var(--text-muted)">Defaults</td><td style="color:var(--text-muted)">Hardcoded preset</td><td class="mono" style="color:var(--bullish)">From GA</td><td class="mono" style="color:var(--bullish)">Yes</td></tr>
+          <tr><td>Moderate</td><td style="color:var(--text-muted)">Defaults</td><td style="color:var(--text-muted)">Hardcoded preset</td><td class="mono" style="color:var(--bullish)">From GA</td><td class="mono" style="color:var(--bullish)">Yes</td></tr>
+          <tr style="background:var(--accent-bg)"><td><strong>Optimized</strong></td><td class="mono" style="color:var(--accent)"><strong>GA-tuned</strong></td><td class="mono" style="color:var(--accent)"><strong>GA-tuned</strong></td><td class="mono" style="color:var(--accent)"><strong>GA-tuned</strong></td><td class="mono" style="color:var(--bullish)">Yes</td></tr>
+          <tr><td>Aggressive</td><td style="color:var(--text-muted)">Defaults</td><td style="color:var(--text-muted)">Hardcoded preset</td><td class="mono" style="color:var(--bullish)">From GA</td><td class="mono" style="color:var(--bullish)">Yes</td></tr>
+          <tr><td>Intraday</td><td style="color:var(--text-muted)">Defaults</td><td style="color:var(--text-muted)">Hardcoded intraday</td><td class="mono" style="color:var(--bullish)">From GA</td><td class="mono" style="color:var(--bullish)">Yes</td></tr>
+          <tr><td>Tactical</td><td style="color:var(--text-muted)">N/A (SPY only)</td><td style="color:var(--text-muted)">GA or swing preset</td><td style="color:var(--text-muted)">N/A</td><td class="mono" style="color:var(--bearish)">No</td></tr>
+          <tr><td>Tactical Smart</td><td style="color:var(--text-muted)">Defaults</td><td class="mono" style="color:var(--bullish)">GA-tuned</td><td style="color:var(--text-muted)">N/A</td><td class="mono" style="color:var(--bullish)">Yes (boost)</td></tr>
         </tbody>
       </table>
     </div>
 
-    <p>The live engine uses the same tuned signal parameters as the optimizer. On each scan, it loads the latest optimizer params (EMA periods, RSI thresholds) and uses <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">evaluateBarSignal</code> for signal decisions, while still calling <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">analyzeBars</code> for price/volume/indicator data needed for logging and display. If no optimizer run exists, it falls back to <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">analyzeBars</code> defaults.</p>
-  </section>
-
-  <!-- ===== 13 · MODE COMPARISON INTEGRATION ===== -->
-  <section class="section" id="mode-compare">
-    <div class="section-header">
-      <div class="section-num">13</div>
-      <h2>Mode Comparison Integration</h2>
-    </div>
-    <p>The Mode Comparison feature loads all 11 optimizer parameters from the latest completed run (not just the 4 strategy params). For the Optimized (GA) row, it uses the shared signal evaluator (<code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">signal-eval.ts</code>) with the full optimizer param set. All other mode rows use <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">analyzeBars()</code> from the standard indicator module.</p>
-
-    <div class="flow">
-      <div class="flow-step">
-        <span class="flow-step-icon">&#128203;</span>
-        <div class="flow-step-title">Load Params</div>
-        <div class="flow-step-desc">All 11 optimizer params from latest run</div>
-      </div>
-      <div class="flow-arrow">&#10132;</div>
-      <div class="flow-step">
-        <span class="flow-step-icon">&#9881;</span>
-        <div class="flow-step-title">Signal Eval</div>
-        <div class="flow-step-desc">Optimized row uses signal-eval.ts</div>
-      </div>
-      <div class="flow-arrow">&#10132;</div>
-      <div class="flow-step">
-        <span class="flow-step-icon">&#128202;</span>
-        <div class="flow-step-title">analyzeBars</div>
-        <div class="flow-step-desc">All other mode rows use standard indicators</div>
-      </div>
-      <div class="flow-arrow">&#10132;</div>
-      <div class="flow-step">
-        <span class="flow-step-icon">&#128200;</span>
-        <div class="flow-step-title">Compare</div>
-        <div class="flow-step-desc">Side-by-side backtest results per mode</div>
-      </div>
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span><strong>Mode Comparison</strong> uses <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">analyzeBars()</code> for all modes. The Optimized (GA) row passes tuned signal params; all other rows use defaults. This ensures the comparison honestly reflects what each mode does in production.</span>
     </div>
   </section>
 
