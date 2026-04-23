@@ -259,7 +259,7 @@ export default function ForumPage() {
             label="Body"
             value={newBody}
             onChange={(e) => setNewBody(e.target.value)}
-            placeholder="What's on your mind?"
+            placeholder="Share your analysis... Use $NVDA to mention tickers, [[screener]] to link pages"
             rows={5}
             maxLength={10000}
           />

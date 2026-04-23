@@ -9,10 +9,23 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PostCard } from "@/components/social/post-card";
 import { CommentList } from "@/components/social/comment-list";
 
+interface SharedTrade {
+  symbol: string;
+  action: "BUY" | "SELL";
+  quantity: number;
+  entryPrice: number;
+  exitPrice?: number | null;
+  pnl?: number | null;
+  pnlPercent?: number | null;
+  strategy?: string | null;
+  timestamp: string;
+}
+
 interface Post {
   id: string;
   content: string;
   symbol: string | null;
+  sharedTrade?: SharedTrade | null;
   createdAt: string;
   userId: string;
   authorName: string;
@@ -125,6 +138,7 @@ export default function PostDetailPage({
         id={post.id}
         content={post.content}
         symbol={post.symbol}
+        sharedTrade={post.sharedTrade}
         createdAt={post.createdAt}
         authorName={post.authorName}
         userId={post.userId}

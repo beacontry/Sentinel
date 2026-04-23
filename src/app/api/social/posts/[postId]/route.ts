@@ -28,6 +28,7 @@ export async function GET(
         id: socialPosts.id,
         content: socialPosts.content,
         symbol: socialPosts.symbol,
+        sharedTrade: socialPosts.sharedTrade,
         createdAt: socialPosts.createdAt,
         userId: socialPosts.userId,
         authorName: users.name,

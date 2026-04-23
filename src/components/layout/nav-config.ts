@@ -172,7 +172,8 @@ export const SUB_NAV: Record<string, SubNavTab[]> = {
     { href: "/dashboard/journal", label: "Journal" },
     { href: "/dashboard/performance", label: "Performance" },
     { href: "/dashboard/pnl-calendar", label: "P&L Calendar" },
-    { href: "/dashboard/tax-center", label: "Tax" },
+    { href: "/dashboard/tax-center", label: "Tax Center" },
+    { href: "/dashboard/tax", label: "Tax Report" },
   ],
   research: [
     { href: "/dashboard/news", label: "News" },

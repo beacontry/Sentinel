@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui/empty-state";
+import { RichText } from "@/components/social/rich-text";
 
 interface Thread {
   id: string;
@@ -205,9 +206,9 @@ export default function ThreadDetailPage({
                 </span>
                 {thread.locked && <Badge variant="warning">Locked</Badge>}
               </div>
-              <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">
-                {thread.body}
-              </p>
+              <div className="text-sm text-text-secondary whitespace-pre-wrap break-words">
+                <RichText content={thread.body} />
+              </div>
             </div>
           </div>
         </div>
@@ -237,9 +238,9 @@ export default function ThreadDetailPage({
                         {relativeTime(reply.createdAt)}
                       </span>
                     </div>
-                    <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">
-                      {reply.body}
-                    </p>
+                    <div className="text-sm text-text-secondary whitespace-pre-wrap break-words">
+                      <RichText content={reply.body} />
+                    </div>
                   </div>
                 </div>
               </Card>
@@ -256,7 +257,7 @@ export default function ThreadDetailPage({
               label="Reply"
               value={replyBody}
               onChange={(e) => setReplyBody(e.target.value)}
-              placeholder="Write your reply..."
+              placeholder="Write your reply... Use $NVDA for tickers, [[screener]] for app links"
               rows={3}
               maxLength={5000}
             />
