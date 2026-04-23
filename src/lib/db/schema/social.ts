@@ -7,6 +7,7 @@ import {
   boolean,
   index,
   uniqueIndex,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
@@ -53,6 +54,7 @@ export const socialPosts = pgTable("social_posts", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
   symbol: text("symbol"),
+  sharedTrade: jsonb("shared_trade"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("social_posts_user_idx").on(t.userId),

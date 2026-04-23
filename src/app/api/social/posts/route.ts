@@ -43,6 +43,7 @@ export async function GET(request: Request) {
         id: socialPosts.id,
         content: socialPosts.content,
         symbol: socialPosts.symbol,
+        sharedTrade: socialPosts.sharedTrade,
         createdAt: socialPosts.createdAt,
         userId: socialPosts.userId,
         authorName: users.name,
@@ -108,12 +109,15 @@ export async function POST(request: Request) {
   }
 
   try {
+    const sharedTrade = body.sharedTrade ?? null;
+
     const [post] = await db
       .insert(socialPosts)
       .values({
         userId: session.userId,
         content: parsed.data.content,
         symbol: parsed.data.symbol?.toUpperCase() || null,
+        sharedTrade,
       })
       .returning();
 
@@ -125,6 +129,7 @@ export async function POST(request: Request) {
           likeCount: 0,
           commentCount: 0,
           liked: false,
+          sharedTrade: post.sharedTrade,
           createdAt: post.createdAt.toISOString(),
         },
       },

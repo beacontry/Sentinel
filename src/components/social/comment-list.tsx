@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Send } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { RichText } from "@/components/social/rich-text";
 
 interface Comment {
   id: string;
@@ -116,9 +117,9 @@ export function CommentList({ postId, initialComments }: CommentListProps) {
                     {relativeTime(c.createdAt)}
                   </span>
                 </div>
-                <p className="text-sm text-text-secondary whitespace-pre-wrap break-words">
-                  {c.content}
-                </p>
+                <div className="text-sm text-text-secondary whitespace-pre-wrap break-words">
+                  <RichText content={c.content} />
+                </div>
               </div>
             </div>
           ))}

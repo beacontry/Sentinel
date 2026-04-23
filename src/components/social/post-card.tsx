@@ -5,6 +5,8 @@ import { Heart, MessageSquare } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { RichText } from "@/components/social/rich-text";
+import { TradeShareCard, type SharedTrade } from "@/components/social/trade-share-card";
 
 interface PostCardProps {
   id: string;
@@ -16,6 +18,7 @@ interface PostCardProps {
   likeCount: number;
   commentCount: number;
   liked: boolean;
+  sharedTrade?: SharedTrade | null;
   onClick?: () => void;
 }
 
@@ -45,6 +48,7 @@ export function PostCard({
   likeCount: initialLikeCount,
   commentCount,
   liked: initialLiked,
+  sharedTrade,
   onClick,
 }: PostCardProps) {
   const [liked, setLiked] = useState(initialLiked);
@@ -96,14 +100,15 @@ export function PostCard({
               {relativeTime(createdAt)}
             </span>
           </div>
-          <p className="text-sm text-text-secondary whitespace-pre-wrap break-words mb-2">
-            {content}
-          </p>
+          <div className="text-sm text-text-secondary whitespace-pre-wrap break-words mb-2">
+            <RichText content={content} />
+          </div>
           {symbol && (
             <div className="mb-2">
               <Badge variant="default">${symbol}</Badge>
             </div>
           )}
+          {sharedTrade && <TradeShareCard trade={sharedTrade} />}
           <div className="flex items-center gap-4">
             <button
               onClick={handleLike}
