@@ -1008,16 +1008,16 @@
     </div>
     <p>The genetic algorithm optimizer finds the best parameters by backtesting across the S&P 500 using the same <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">analyzeBars()</code> function the engine uses live. The engine picks up results automatically.</p>
 
-    <h3>7 Optimizable Parameters</h3>
+    <h3>8 Optimizable Parameters</h3>
     <div class="table-wrap">
       <table class="data-table">
         <thead>
           <tr><th>Parameter</th><th class="right">Range</th><th>Type</th><th>Used For</th></tr>
         </thead>
         <tbody>
-          <tr><td class="mono">stopLossPct</td><td class="right mono">1&ndash;12%</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Fixed stop loss</td></tr>
-          <tr><td class="mono">takeProfitPct</td><td class="right mono">10&ndash;100%</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Take profit target</td></tr>
-          <tr><td class="mono">trailingStopPct</td><td class="right mono">1&ndash;15%</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Trailing stop base width</td></tr>
+          <tr><td class="mono">stopLossPct</td><td class="right mono">1&ndash;12%</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Fixed stop loss from entry</td></tr>
+          <tr><td class="mono">takeProfitAtrMult</td><td class="right mono">3&ndash;15&times;</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Adaptive TP: entry + ATR(14) &times; multiplier</td></tr>
+          <tr><td class="mono">trailingStopPct</td><td class="right mono">1&ndash;15%</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Trailing stop base width (tightens with profit)</td></tr>
           <tr><td class="mono">holdPeriod</td><td class="right mono">5&ndash;60 days</td><td>Exit</td><td style="font-size:0.78rem;color:var(--text-muted)">Max hold before forced exit</td></tr>
           <tr><td class="mono">emaFast</td><td class="right mono">5&ndash;15</td><td>Signal</td><td style="font-size:0.78rem;color:var(--text-muted)">Short-term EMA period</td></tr>
           <tr><td class="mono">emaSlow</td><td class="right mono">15&ndash;50</td><td>Signal</td><td style="font-size:0.78rem;color:var(--text-muted)">Long-term EMA period</td></tr>
@@ -1030,7 +1030,7 @@
 
     <div class="callout info">
       <span class="callout-icon">&#8505;</span>
-      <span>Position sizing (positionPct, maxPositions) is <strong>not</strong> optimized &mdash; it belongs to user risk profiles. The optimizer backtests with fixed 10% / 10 positions.</span>
+      <span><strong>Adaptive take profit:</strong> Instead of a fixed % from entry, the optimizer tunes an ATR multiplier. At entry, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">TP = price + ATR(14) &times; mult</code>. Volatile stocks get wider targets; stable stocks get tighter targets. Position sizing (positionPct, maxPositions) is <strong>not</strong> optimized &mdash; it belongs to user risk profiles.</span>
     </div>
 
     <h3>Parameter Flow</h3>
@@ -1038,7 +1038,7 @@
       <div class="flow-step">
         <span class="flow-step-icon">&#129516;</span>
         <div class="flow-step-title">Optimizer</div>
-        <div class="flow-step-desc">GA tunes 7 params via analyzeSignalOnly() backtest</div>
+        <div class="flow-step-desc">GA tunes 8 params via analyzeSignalOnly() backtest</div>
       </div>
       <div class="flow-arrow">&#10132;</div>
       <div class="flow-step">
@@ -1050,7 +1050,7 @@
       <div class="flow-step">
         <span class="flow-step-icon">&#9881;</span>
         <div class="flow-step-title">Engine</div>
-        <div class="flow-step-desc">Loads every 5 min &mdash; passes signal params to analyzeHybrid()</div>
+        <div class="flow-step-desc">Loads every 5 min &mdash; computes ATR-based TP per position at entry</div>
       </div>
       <div class="flow-arrow">&#10132;</div>
       <div class="flow-step">
@@ -1060,12 +1060,17 @@
       </div>
     </div>
 
+    <h3>Screener vs Engine Authority</h3>
+    <p>The screener only pushes BUY/STRONG_BUY signals to the engine &mdash; never SELL signals. Once a position is entered, it is managed entirely by the engine's exit logic. The screener has no influence on exits, stop losses, or take profits. If the screener and engine disagree on a stock (they use different signal params), the engine's analysis controls the position.</p>
+
     <h3>GA Diversity Mechanisms</h3>
+    <p>Diversity is purely a GA search mechanism &mdash; it has no effect on live trading. It controls how the optimizer explores the 8-dimensional parameter space.</p>
     <ul>
-      <li><strong>Adaptive mutation:</strong> Rate scales from 10% (healthy diversity) to 50% (collapsed population)</li>
-      <li><strong>Random immigrants:</strong> 10% of each generation replaced with fresh random individuals</li>
-      <li><strong>Stagnation restart:</strong> After 5 gens without improvement, 30% replaced + max mutation</li>
-      <li><strong>Diversity tracking:</strong> Per-generation metric logged to DB and shown on convergence chart</li>
+      <li><strong>Diversity measurement:</strong> Average normalized distance across sampled parameter pairs (0 = clones, ~1 = max spread)</li>
+      <li><strong>Adaptive mutation:</strong> Rate scales from 10% (healthy, diversity &gt; 0.35) &rarr; 20% (baseline) &rarr; 50% (collapsed, diversity &lt; 0.10)</li>
+      <li><strong>Random immigrants:</strong> 5% of each generation replaced with fresh random individuals</li>
+      <li><strong>Stagnation restart:</strong> After 8 gens without improvement, inject 15% immigrants + max mutation</li>
+      <li><strong>Convergence chart:</strong> Best, average, and diversity lines shown per generation on dashboard</li>
     </ul>
   </section>
 
