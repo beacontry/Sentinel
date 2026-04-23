@@ -98,7 +98,7 @@ const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
   rsiOverbought:   { min: 60,    max: 80, step: 1 },
   emaFast:         { min: 5,     max: 15, step: 1 },
   emaSlow:         { min: 15,    max: 50, step: 1 },
-  rsThreshold:     { min: -0.20, max: 0.10 },
+  rsThreshold:     { min: -0.10, max: 0.10 },
 };
 
 // Fixed position sizing for backtesting (user risk profiles control live sizing)
@@ -735,12 +735,18 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     }));
 
+    // Blended fitness: train + test to penalize overfitting
+    function blendedFitness(params: OptimizableParams): number {
+      const train = portfolioBacktest(portfolioData, params, "train");
+      const test = portfolioBacktest(portfolioData, params, "test");
+      return 0.6 * train.excessReturn + 0.4 * test.excessReturn;
+    }
+
     let population: Individual[] = [];
     const initParams = [...presetSeeds, ...Array.from({ length: Math.max(0, config.populationSize - presetSeeds.length) }, () => randomIndividual())];
 
     for (let pi = 0; pi < initParams.length; pi++) {
-      const r = portfolioBacktest(portfolioData, initParams[pi], "train");
-      population.push({ params: initParams[pi], fitness: r.excessReturn });
+      population.push({ params: initParams[pi], fitness: blendedFitness(initParams[pi]) });
       // Yield every 5 evaluations to keep HTTP alive
       if (pi % 5 === 0) await new Promise((r) => setTimeout(r, 1));
     }
@@ -769,8 +775,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       let evalCount = 0;
       for (let i = 0; i < immigrantCount; i++) {
         const imm = randomIndividual();
-        const r = portfolioBacktest(portfolioData, imm, "train");
-        nextPop.push({ params: imm, fitness: r.excessReturn });
+        nextPop.push({ params: imm, fitness: blendedFitness(imm) });
         if (++evalCount % 3 === 0) await new Promise((r) => setTimeout(r, 1));
       }
 
@@ -780,8 +785,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
         const childParams = Math.random() < CROSSOVER_RATE
           ? mutate(crossover(p1.params, p2.params), mutRate)
           : mutate(p1.params, mutRate);
-        const r = portfolioBacktest(portfolioData, childParams, "train");
-        nextPop.push({ params: childParams, fitness: r.excessReturn });
+        nextPop.push({ params: childParams, fitness: blendedFitness(childParams) });
         if (++evalCount % 3 === 0) await new Promise((r) => setTimeout(r, 1));
       }
 
