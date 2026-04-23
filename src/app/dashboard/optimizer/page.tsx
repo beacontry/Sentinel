@@ -49,6 +49,7 @@ interface OptimizationRun {
   completedAt: string | null;
   createdAt: string;
   error: string | null;
+  isActive: boolean | null;
 }
 
 interface Generation {
@@ -465,6 +466,11 @@ export default function OptimizerPage() {
                             </span>
                           )}
                           <StatusBadge status={run.status} />
+                          {run.isActive && (
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-accent bg-accent/10 px-1.5 py-0.5 rounded-full">
+                              Active
+                            </span>
+                          )}
                         </div>
                         <span className="text-[11px] text-text-muted">
                           {new Date(run.createdAt).toLocaleDateString()}
