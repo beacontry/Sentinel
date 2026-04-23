@@ -18,11 +18,11 @@ export async function GET() {
 
   try {
     // Auto-start engine if there are open positions after a restart
-    // Only auto-start once per container lifecycle (not on every page load)
-    const autoStartKey = "__autoStartDone";
-    const gAuto = globalThis as typeof globalThis & { [key: string]: boolean | undefined };
-    if (!gAuto[autoStartKey]) {
-      gAuto[autoStartKey] = true;
+    // Track per-user so every user's engine gets a chance to auto-start
+    const gAuto = globalThis as typeof globalThis & { __autoStartDone?: Set<string> };
+    gAuto.__autoStartDone ??= new Set();
+    if (!gAuto.__autoStartDone.has(session.userId)) {
+      gAuto.__autoStartDone.add(session.userId);
       autoStartIfNeeded(session.userId).catch(() => {});
     }
 
