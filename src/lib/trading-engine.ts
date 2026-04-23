@@ -14,7 +14,7 @@ import type { BrokerClient, BrokerAccount } from "./brokers";
 import { decrypt } from "./crypto";
 import { getMarketDataProvider } from "./market-data";
 import { analyzeHybrid } from "./hybrid/pipeline";
-import type { SignalParams } from "./signal-eval";
+import type { SignalParams } from "./indicators/analyzer";
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { SP500_SYMBOLS, getSP500Symbols } from "./sp500";
 import { getFinnhubClient } from "./finnhub";
@@ -565,7 +565,6 @@ async function getLatestOptimizedParams(): Promise<StrategyParams | null> {
 }
 
 /** Get tuned signal params (EMA/RSI) from latest optimizer run, or null if unavailable */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function getOptimizedSignalParams(): Promise<SignalParams | null> {
   if (_optimizedParamsCache && Date.now() - _optimizedParamsCache.fetchedAt < OPTIMIZER_CACHE_TTL) {
     return _optimizedParamsCache.signalParams;
@@ -1571,6 +1570,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     .map((s) => s.symbol);
   const symbols = [...SCAN_UNIVERSE, ...new Set(externalSymbols)];
 
+  // Load optimized signal params for "optimized" mode (tuned EMA/RSI from GA)
+  const optSignalParams = engine.mode === "optimized" ? await getOptimizedSignalParams() : null;
+  const hybridOpts = optSignalParams ? { signalParams: optSignalParams } : undefined;
+
   // 4. Get current broker positions
   let brokerPositions: Awaited<ReturnType<BrokerClient["getPositions"]>> = [];
   try {
@@ -1617,7 +1620,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
       }
 
       // Use hybrid pipeline (technical + sentiment + analyst + options) for signal decisions
-      const analysis = await analyzeHybrid(symbol, bars);
+      const analysis = await analyzeHybrid(symbol, bars, hybridOpts);
       const currentPrice = analysis.price;
       const confidence = analysis.confidence;
       const signal = analysis.signal;

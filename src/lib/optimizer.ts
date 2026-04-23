@@ -58,8 +58,6 @@ export interface OptimizableParams {
   takeProfitPct: number;
   trailingStopPct: number;
   holdPeriod: number;
-  positionPct: number;
-  maxPositions: number;
   rsiOversold: number;
   rsiOverbought: number;
   emaFast: number;
@@ -96,16 +94,18 @@ const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
   takeProfitPct:   { min: 0.10,  max: 1.00 },
   trailingStopPct: { min: 0.01,  max: 0.15 },
   holdPeriod:      { min: 5,     max: 60, step: 1 },
-  positionPct:     { min: 0.03,  max: 0.20 },
-  maxPositions:    { min: 3,     max: 20, step: 1 },
   rsiOversold:     { min: 20,    max: 40, step: 1 },
   rsiOverbought:   { min: 60,    max: 80, step: 1 },
   emaFast:         { min: 5,     max: 15, step: 1 },
   emaSlow:         { min: 15,    max: 50, step: 1 },
-  rsThreshold:     { min: -0.20, max: 0.10 }, // -20% to +10% (negative = allow beaten-down stocks)
+  rsThreshold:     { min: -0.20, max: 0.10 },
 };
 
-const WINDOW_SIZE = 50;
+// Fixed position sizing for backtesting (user risk profiles control live sizing)
+const BACKTEST_POSITION_PCT = 0.10;
+const BACKTEST_MAX_POSITIONS = 10;
+
+const WINDOW_SIZE = 90;
 const STEP_SIZE = 15;
 const ELITISM = 2;
 const TOURNAMENT_SIZE = 3;
@@ -255,10 +255,10 @@ async function fetchAllBars(
   return barsMap;
 }
 
-// ── Signal evaluation (shared with compare route) ──────────────────
+// ── Signal evaluation (uses same analyzer as live engine) ───────────
 
-import { evaluateBarSignal } from "./signal-eval";
-import type { SignalType } from "./signal-eval";
+import { analyzeSignalOnly, type SignalParams } from "./indicators/analyzer";
+import type { SignalType } from "@/types";
 export type { SignalType };
 
 // ── Portfolio data preparation ──────────────────────────────────────
@@ -364,6 +364,14 @@ function portfolioBacktest(
   const endIdx = segment === "train" ? data.trainEnd : data.dates.length;
   const buyHold = segment === "train" ? data.avgBuyHoldTrain : data.avgBuyHoldTest;
 
+  // Build signal params from optimizer's tunable values
+  const signalParams: SignalParams = {
+    emaFast: params.emaFast,
+    emaSlow: params.emaSlow,
+    rsiOversold: params.rsiOversold,
+    rsiOverbought: params.rsiOverbought,
+  };
+
   let cash = INITIAL_CASH;
   const positions: Position[] = [];
   let wins = 0, losses = 0;
@@ -411,11 +419,11 @@ function portfolioBacktest(
         if (bar.high >= tp) exitPrice = tp;
       }
 
-      // Sell signal (step boundaries only)
+      // Sell signal (step boundaries only) — uses same analyzer as live engine
       if (!exitPrice && isStepBoundary) {
         const w = windows.get(pos.symbol);
-        if (w && w.length >= 30) {
-          const sig = evaluateBarSignal(w, params);
+        if (w && w.length >= 60) {
+          const { signal: sig } = analyzeSignalOnly(pos.symbol, w, signalParams);
           if (sig === "SELL" || sig === "STRONG_SELL") exitPrice = bar.close;
         }
       }
@@ -439,14 +447,14 @@ function portfolioBacktest(
     }
 
     // ── Check entries (step boundaries only) ──
-    if (isStepBoundary && positions.length < params.maxPositions) {
+    if (isStepBoundary && positions.length < BACKTEST_MAX_POSITIONS) {
       const heldSymbols = new Set(positions.map((p) => p.symbol));
       const candidates: { symbol: string; signal: SignalType; price: number }[] = [];
 
       for (const symbol of data.symbols) {
         if (heldSymbols.has(symbol)) continue;
         const w = windows.get(symbol);
-        if (!w || w.length < 30) continue;
+        if (!w || w.length < 60) continue;
         const bar = data.barLookup.get(symbol)?.get(date);
         if (!bar) continue;
 
@@ -456,7 +464,7 @@ function portfolioBacktest(
           if (rs60 < params.rsThreshold) continue;
         }
 
-        const sig = evaluateBarSignal(w, params);
+        const { signal: sig } = analyzeSignalOnly(symbol, w, signalParams);
         if (sig === "BUY" || sig === "STRONG_BUY") {
           candidates.push({ symbol, signal: sig, price: bar.close });
         }
@@ -465,15 +473,15 @@ function portfolioBacktest(
       // Rank: STRONG_BUY first
       candidates.sort((a, b) => (a.signal === "STRONG_BUY" ? 0 : 1) - (b.signal === "STRONG_BUY" ? 0 : 1));
 
-      const slots = params.maxPositions - positions.length;
+      const slots = BACKTEST_MAX_POSITIONS - positions.length;
       for (const cand of candidates.slice(0, slots)) {
-        // Size: positionPct of total portfolio value
+        // Size: fixed backtest position sizing
         let portfolioValue = cash;
         for (const pos of positions) {
           const b = data.barLookup.get(pos.symbol)?.get(date);
           portfolioValue += pos.shares * (b?.close ?? pos.entryPrice);
         }
-        const posSize = portfolioValue * params.positionPct;
+        const posSize = portfolioValue * BACKTEST_POSITION_PCT;
         const shares = Math.floor(posSize / cand.price);
         if (shares <= 0 || shares * cand.price > cash) continue;
 
@@ -712,7 +720,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     // ── Baseline ──
     const baselineParams: OptimizableParams = {
       stopLossPct: 0.02, takeProfitPct: 0.03, trailingStopPct: 0.015, holdPeriod: 20,
-      positionPct: 0.10, maxPositions: 10, rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
+      rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     };
     const baselineTrain = portfolioBacktest(portfolioData, baselineParams, "train");
     const baselineTest = portfolioBacktest(portfolioData, baselineParams, "test");
@@ -723,7 +731,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     const presetSeeds: OptimizableParams[] = Object.values(STRATEGY_PRESETS).map((p) => ({
       stopLossPct: p.stopLossPct, takeProfitPct: p.takeProfitPct,
       trailingStopPct: p.trailingStopPct, holdPeriod: p.holdPeriod,
-      positionPct: 0.10, maxPositions: 10, rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
+      rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     }));
 
     let population: Individual[] = [];
