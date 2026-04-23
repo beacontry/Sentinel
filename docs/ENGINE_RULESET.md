@@ -12,7 +12,7 @@ The trading engine scans the S&P 500, generates signals using technical analysis
 |------|-----------|-------------|---------------|-------------|---------------|---------------|
 | Conservative | 1.5% | 2% | 1% | 30 bars | From risk settings | From risk settings |
 | Moderate | 2% | 3% | 1.5% | 20 bars | From risk settings | From risk settings |
-| **Optimized** | 8.5% | 36.9% | 12.6% | 33 bars | 20% | From risk settings |
+| **Optimized** | GA-tuned | GA-tuned | GA-tuned | GA-tuned | From risk settings | From risk settings |
 | Aggressive | 3% | 5% | 2.5% | 15 bars | From risk settings | From risk settings |
 | Intraday | 1.5% | 2.5% | 1% | 12 bars (1hr) | From risk settings | From risk settings |
 
@@ -27,24 +27,39 @@ The trading engine scans the S&P 500, generates signals using technical analysis
 
 ## Signal Generation
 
-### Signal Evaluator Architecture
+### Unified Signal Pipeline
 
-Two signal evaluation paths exist:
+All components use the same signal function — `analyzeBars()` from `src/lib/indicators/analyzer.ts`. The optimizer backtests against this function, the engine calls it live, and the screener uses it for scanning. There is no separate signal evaluator.
 
-| Component | Signal Source | Used By |
-|-----------|-------------|---------|
-| **`src/lib/signal-eval.ts`** | Shared evaluator with tunable params (EMA fast/slow, RSI oversold/overbought) | Optimizer, Mode Comparison (Optimized/GA row), Live engine (signal decisions) |
-| **`src/lib/indicators/analyzeBars()`** | Standard indicator module (price, volume, indicators for logging) | Live engine (data extraction), Mode Comparison (non-Optimized rows) |
+**`analyzeBars(symbol, bars, signalParams?)`** accepts optional `SignalParams` to tune EMA periods and RSI thresholds:
 
-The live engine uses the same tuned signal parameters as the optimizer. On each scan, it loads the latest optimizer params (EMA periods, RSI thresholds) and uses `evaluateBarSignal` for signal decisions, while still calling `analyzeBars` for price/volume/indicator data needed for logging and display. If no optimizer run exists, it falls back to `analyzeBars` defaults.
+```typescript
+interface SignalParams {
+  emaFast: number;       // default 9
+  emaSlow: number;       // default 21
+  rsiOversold: number;   // default 30
+  rsiOverbought: number; // default 70
+}
+```
+
+| Component | Function | Signal Params | Purpose |
+|-----------|----------|---------------|---------|
+| **Engine (optimized mode)** | `analyzeHybrid()` → `analyzeBars(symbol, bars, optimizedSignalParams)` | GA-tuned | Live trading decisions |
+| **Engine (other modes)** | `analyzeHybrid()` → `analyzeBars(symbol, bars)` | Defaults | Live trading decisions |
+| **Screener** | `analyzeHybrid()` → `analyzeBars(symbol, bars)` | Defaults | Batch scanning, push signals to engine |
+| **Optimizer** | `analyzeSignalOnly(symbol, bars, candidateParams)` | Per-candidate | GA backtesting (lightweight variant, same logic) |
+| **Mode Comparison** | `analyzeBars(symbol, bars, signalParams?)` | GA-tuned for optimized row | Backtest comparison across modes |
+
+`analyzeSignalOnly()` is a lightweight variant that skips series building, fibonacci, reasons, and plainEnglish — same signal logic, 10-100x faster for the optimizer's thousands of evaluations per generation.
 
 ### Entry Signals (BUY / STRONG_BUY)
 
 All conditions evaluated per stock at each scan interval:
 
 **Indicators Used:**
-- EMA crossover (fast/slow periods — code default 9/21, overridden by optimizer at runtime)
-- RSI (14-period, oversold/overbought — code default 30/70, overridden by optimizer at runtime)
+- EMA crossover (fast/slow periods — default 9/21, tunable by optimizer)
+- RSI (14-period, oversold/overbought — default 30/70, tunable by optimizer)
+- VWAP — price above = bullish positioning
 - SMA(20) — price above = bullish
 - SMA(50) — alignment confirmation
 - MACD histogram — positive = bullish
@@ -278,6 +293,38 @@ When invested and SPY is healthy, the engine actively manages the portfolio ever
 
 ---
 
+## Screener → Engine Signal Flow
+
+The screener (`src/lib/screener.ts`) is a shared, user-independent market scanner that feeds signals to the trading engine.
+
+### How It Works
+
+1. **Daily scan** at market open: fetches 90-day bars for 500+ popular stocks, runs `analyzeHybrid()` with default signal params
+2. **Intraday scan** every 5 minutes: fetches 5-min bars (2 days), same pipeline
+3. **Push to engine:** actionable signals (BUY/STRONG_BUY with confidence ≥ 0.6) auto-pushed via `pushExternalSignal()`
+4. **Dedup:** same symbol+signal ignored within 30 minutes
+5. **Expiry:** external signals expire after 30 minutes
+
+### How Each Mode Consumes Screener Signals
+
+| Mode | Consumes? | How |
+|------|-----------|-----|
+| Conservative | Yes | External signal symbols added to scan universe; if signal matches, can trigger entry |
+| Moderate | Yes | Same |
+| Optimized | Yes | Same |
+| Aggressive | Yes | Same |
+| Intraday | Yes | Same (on 5-min bars) |
+| Tactical | **No** | Ignores screener — pure SPY timing |
+| Tactical Smart | **Yes** | Boosts candidate scores during stock selection (STRONG_BUY +3pts, BUY +1pt) |
+
+### Key Properties
+
+- Screener always uses **default** signal params (EMA 9/21, RSI 30/70) — not optimizer-tuned
+- Screener signals are **in-memory only** (not persisted to DB) — lost on container restart
+- Screener is **shared across all users** — not per-tenant
+
+---
+
 ## Data Sources
 
 | Source | Data | Used For | Caching |
@@ -289,21 +336,67 @@ When invested and SPY is healthy, the engine actively manages the portfolio ever
 | **Wikipedia** | S&P 500 constituents | Universe auto-update | Daily |
 | **Alpaca** | Account, positions, orders | Execution, P&L | Real-time |
 
+---
+
 ## Optimizer → Engine Flow
 
+### 7 Optimizable Parameters
+
+The optimizer tunes 7 parameters via genetic algorithm:
+
+| Parameter | Range | Type | Used For |
+|-----------|-------|------|----------|
+| stopLossPct | 1–12% | Exit | Fixed stop loss |
+| takeProfitPct | 10–100% | Exit | Take profit target |
+| trailingStopPct | 1–15% | Exit | Trailing stop base width |
+| holdPeriod | 5–60 days | Exit | Max hold before forced exit |
+| emaFast | 5–15 | Signal | Short-term EMA period |
+| emaSlow | 15–50 | Signal | Long-term EMA period |
+| rsThreshold | -20% to +10% | Filter | 60-day relative strength gate |
+| rsiOversold | 20–40 | Signal | RSI oversold threshold |
+| rsiOverbought | 60–80 | Signal | RSI overbought threshold |
+
+Position sizing (positionPct, maxPositions) is NOT optimized — it belongs to user risk profiles.
+
+### Parameter Flow
+
 ```
-Optimizer completes run → saves bestParams to optimization_runs table
-                                    ↓
-Engine reads latest completed run every 5 minutes (cached)
-                                    ↓
-Uses those params for Optimized + Tactical modes
-                                    ↓
-Per-symbol overrides from Strategies page take priority
+Optimizer completes GA run
+  → saves bestParams (7 fields) to optimization_runs.bestParams (JSONB)
+    ↓
+Engine loads latest completed run every 5 minutes (cached)
+  → Extracts exit params: stopLossPct, takeProfitPct, trailingStopPct, holdPeriod
+  → Extracts signal params: emaFast, emaSlow, rsiOversold, rsiOverbought
+  → Extracts filter params: rsThreshold
+    ↓
+Per-symbol overrides from Strategies page take priority over GA params
 ```
+
+### Which Modes Use Optimizer Params
+
+| Mode | Signal Params (EMA/RSI) | Exit Params (stops/TP/hold) | RS Threshold | Screener Signals |
+|------|------------------------|---------------------------|-------------|-----------------|
+| Conservative | Defaults | Hardcoded preset | From optimizer | Yes |
+| Moderate | Defaults | Hardcoded preset | From optimizer | Yes |
+| **Optimized** | **GA-tuned** | **GA-tuned** | **GA-tuned** | Yes |
+| Aggressive | Defaults | Hardcoded preset | From optimizer | Yes |
+| Intraday | Defaults | Hardcoded intraday | From optimizer | Yes |
+| Tactical | N/A (SPY only) | GA-tuned or swing preset | N/A | No |
+| Tactical Smart | Defaults | GA-tuned | N/A | **Yes (score boost)** |
+
+**Note:** rsThreshold affects ALL standard modes via `passesSmartFilters()`, not just optimized mode. Tactical modes don't use smart filters.
 
 ### Mode Comparison Integration
 
-The Mode Comparison feature loads all 11 optimizer parameters from the latest completed run (not just the 4 strategy params). For the Optimized (GA) row, it uses the shared signal evaluator (`signal-eval.ts`) with the full optimizer param set. All other mode rows use `analyzeBars()` from the standard indicator module.
+The Mode Comparison backtest uses `analyzeBars()` for all modes. The Optimized (GA) row passes the optimizer's signal params (emaFast/emaSlow/rsiOversold/rsiOverbought) through to `analyzeBars()`. All other rows use default indicator params. This ensures the comparison honestly reflects what each mode does in production.
+
+### Optimizer Diversity Mechanisms
+
+The GA maintains population diversity through four mechanisms:
+- **Adaptive mutation:** Rate scales from 10% (healthy diversity) to 50% (collapsed population)
+- **Random immigrants:** 10% of each generation replaced with fresh random individuals
+- **Stagnation restart:** After 5 gens without improvement, 30% replaced + max mutation rate
+- **Diversity tracking:** Per-generation diversity metric logged to DB and shown on convergence chart
 
 ## Risk Overrides (from DB)
 
