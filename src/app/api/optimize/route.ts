@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { startOptimization, getJobProgress, type OptimizationConfig } from "@/lib/optimizer";
 import { db } from "@/lib/db";
 import { optimizationRuns } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, count, and } from "drizzle-orm";
 import { z } from "zod";
 
 const startSchema = z.object({
@@ -60,12 +60,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const runs = await db
-    .select()
-    .from(optimizationRuns)
-    .where(eq(optimizationRuns.userId, session.userId))
-    .orderBy(desc(optimizationRuns.createdAt))
-    .limit(20);
+  const [runs, [{ total }]] = await Promise.all([
+    db
+      .select()
+      .from(optimizationRuns)
+      .where(eq(optimizationRuns.userId, session.userId))
+      .orderBy(desc(optimizationRuns.createdAt))
+      .limit(20),
+    db
+      .select({ total: count() })
+      .from(optimizationRuns)
+      .where(and(
+        eq(optimizationRuns.userId, session.userId),
+        eq(optimizationRuns.status, "complete"),
+      )),
+  ]);
 
   // Enrich active runs with live progress
   const enriched = runs.map((run) => {
@@ -81,7 +90,7 @@ export async function GET(request: NextRequest) {
     return run;
   });
 
-  return NextResponse.json({ runs: enriched }, {
+  return NextResponse.json({ runs: enriched, totalCompleted: total }, {
     headers: { "Cache-Control": "private, no-store" },
   });
 }
