@@ -34,8 +34,15 @@ Positions come from the broker API, not the database:
 3. **No DB fallback** — the `traderPositions` table is unused
 4. `syncPositionMapFromBroker()` runs on every scan to reconcile the in-memory position map
 
+### Signal Pipeline (Unified)
+All components use the same signal function — `analyzeBars()` from `src/lib/indicators/analyzer.ts`:
+- **Engine** calls `analyzeHybrid()` → `analyzeBars(symbol, bars, signalParams?)` — passes optimizer-tuned signal params in "optimized" mode
+- **Optimizer** uses `analyzeSignalOnly()` — lightweight variant with same logic, accepts tunable `SignalParams`
+- **Screener** calls `analyzeHybrid()` → `analyzeBars()` with default params (shared resource, not per-user)
+- `SignalParams` (emaFast, emaSlow, rsiOversold, rsiOverbought) flow through `HybridPipelineOptions.signalParams`
+
 ### Screener (Shared)
-The screener scans market data and is shared across users (not user-specific). Optimization runs are admin-only but results (strategy params) are shared globally.
+The screener scans market data and is shared across users (not user-specific). It pushes actionable signals (BUY/STRONG_BUY, confidence ≥ 0.6) to the engine via `pushExternalSignal()`. Signals are in-memory, expire after 30 minutes. Optimization runs are admin-only but results (strategy params) are shared globally.
 
 ### Broker Connections
 Each user has their own broker connection (`brokerConnections` table, scoped by `userId`). The engine resolves the active connection for the authenticated user via `resolveBrokerClient(userId)`.
