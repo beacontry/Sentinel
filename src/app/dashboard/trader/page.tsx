@@ -65,6 +65,19 @@ interface TraderData {
     unrealizedPnl: number;
     stopPrice: number | null;
   }>;
+  openOrders: Array<{
+    id: string;
+    symbol: string;
+    side: string;
+    type: string;
+    qty: number;
+    filledQty: number;
+    status: string;
+    stopPrice: string | null;
+    limitPrice: string | null;
+    timeInForce: string;
+    submittedAt: string;
+  }>;
   trades: Array<{
     id: string;
     symbol: string;
@@ -261,7 +274,7 @@ export default function TraderPage() {
     );
   }
 
-  const { status, todayPnl, positions, trades, signals, pnlHistory, analytics } = data;
+  const { status, todayPnl, positions, openOrders = [], trades, signals, pnlHistory, analytics } = data;
 
   async function handleCommand(cmd: string, payload: Record<string, unknown> = {}) {
     setCmdLoading(cmd);
@@ -585,6 +598,56 @@ export default function TraderPage() {
           </div>
         )}
       </Card>
+
+      {/* Open Orders */}
+      {openOrders.length > 0 && (
+        <Card>
+          <CardHeader className="p-0 pb-3">
+            <CardTitle>Open Orders ({openOrders.length})</CardTitle>
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-text-muted text-left">
+                  <th className="pb-2 pr-4 font-medium">Symbol</th>
+                  <th className="pb-2 pr-4 font-medium">Side</th>
+                  <th className="pb-2 pr-4 font-medium">Type</th>
+                  <th className="pb-2 font-medium text-right">Qty</th>
+                  <th className="pb-2 font-medium text-right">Price</th>
+                  <th className="pb-2 pr-4 font-medium">TIF</th>
+                  <th className="pb-2 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono">
+                {openOrders.map((o) => (
+                  <tr key={o.id} className="border-b border-border/50">
+                    <td className="py-2 pr-4 font-medium text-text-primary">{o.symbol}</td>
+                    <td className={`py-2 pr-4 ${o.side === "buy" ? "text-bullish" : "text-bearish"}`}>
+                      {o.side.toUpperCase()}
+                    </td>
+                    <td className="py-2 pr-4 text-text-secondary">
+                      {o.type === "stop" ? `Stop @ $${Number(o.stopPrice).toFixed(2)}` :
+                       o.type === "limit" ? `Limit @ $${Number(o.limitPrice).toFixed(2)}` :
+                       o.type === "stop_limit" ? `Stop-Limit $${Number(o.stopPrice).toFixed(2)}` :
+                       o.type}
+                    </td>
+                    <td className="py-2 text-right">{o.qty}</td>
+                    <td className="py-2 text-right text-text-secondary">
+                      {o.stopPrice ? `$${Number(o.stopPrice).toFixed(2)}` : o.limitPrice ? `$${Number(o.limitPrice).toFixed(2)}` : "\u2014"}
+                    </td>
+                    <td className="py-2 pr-4 text-text-muted uppercase text-xs">{o.timeInForce}</td>
+                    <td className="py-2">
+                      <Badge variant={o.filledQty > 0 ? "warning" : "neutral"}>
+                        {o.filledQty > 0 ? `Partial ${o.filledQty}/${o.qty}` : o.status}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent signals */}
