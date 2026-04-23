@@ -2432,3 +2432,28 @@ export function getEngineStatus(userId?: string): {
     lastBrokerContact: engine.lastBrokerContact?.toISOString() ?? null,
   };
 }
+
+/**
+ * Get tracked stop/target prices for a user's positions.
+ * Returns a map of symbol → { stopLoss, takeProfit, trailingStopPct, peakPrice }.
+ */
+export function getTrackedPositionData(userId: string): Map<string, {
+  stopLoss: number;
+  takeProfit: number;
+  trailingStopPct: number;
+  peakPrice: number;
+  entryDate: Date;
+}> {
+  const positionMap = getPositionMap(userId);
+  const result = new Map<string, { stopLoss: number; takeProfit: number; trailingStopPct: number; peakPrice: number; entryDate: Date }>();
+  for (const [symbol, pos] of positionMap) {
+    result.set(symbol, {
+      stopLoss: pos.stopLoss,
+      takeProfit: pos.takeProfit,
+      trailingStopPct: pos.trailingStopPct,
+      peakPrice: pos.peakPrice,
+      entryDate: pos.entryDate,
+    });
+  }
+  return result;
+}
