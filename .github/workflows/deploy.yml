@@ -95,19 +95,8 @@ jobs:
             echo "Pull done, replacing container..."
             sudo -u sn-deploy -i podman stop sentinel-app 2>/dev/null || true
             sudo -u sn-deploy -i podman rm sentinel-app 2>/dev/null || true
-            sudo -u sn-deploy -i bash -c 'mkdir -p /opt/apps/sentinel/cache && podman run -d \
-              --name sentinel-app \
-              --network=host \
-              --env-file /opt/apps/sentinel/.env \
-              -e NODE_ENV=production \
-              -e HOSTNAME=0.0.0.0 \
-              -e PORT=3010 \
-              -e NEXT_TELEMETRY_DISABLED=1 \
-              -e CACHE_DIR=/data/cache \
-              -v /opt/apps/sentinel/cache:/data/cache:Z \
-              --restart always \
-              -m 1g \
-              ghcr.io/ixiondt/sentinel:latest'
+            sudo -u sn-deploy -i bash -c 'mkdir -p /opt/apps/sentinel/cache'
+            sudo -u sn-deploy -i podman run -d --name sentinel-app --network=host --env-file /opt/apps/sentinel/.env -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache -v /opt/apps/sentinel/cache:/data/cache:Z --restart always -m 1g ghcr.io/ixiondt/sentinel:latest
             echo "Container started"
             # Health check — wait for app to be ready
             for i in 1 2 3 4 5; do
