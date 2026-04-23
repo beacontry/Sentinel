@@ -818,7 +818,7 @@
       <div class="section-num">06</div>
       <h2>Pre-Buy Safety Filters</h2>
     </div>
-    <p>Every buy signal must pass through <strong>nine sequential gates</strong> before an order reaches the broker. If any gate blocks, the signal is discarded.</p>
+    <p>Every buy signal must pass through <strong>ten sequential gates</strong> before an order reaches the broker. If any gate blocks, the signal is discarded.</p>
 
     <div class="filter-pipeline">
       <div class="filter-gate">
@@ -891,6 +891,14 @@
           <div class="gate-name">Daily Loss Halt</div>
           <div class="gate-rule">If daily losses exceed the configured % of equity (default 2%), halt everything.</div>
           <div class="gate-action">Halt engine, cancel ALL pending orders</div>
+        </div>
+      </div>
+      <div class="filter-gate">
+        <div class="gate-num">10</div>
+        <div class="gate-body">
+          <div class="gate-name">Pending Order Check</div>
+          <div class="gate-rule">Don't buy a symbol that already has a pending buy order on the broker. Engine fetches open orders from Alpaca at each scan cycle.</div>
+          <div class="gate-action">Skip symbol if pending buy order exists (new, accepted, partially filled, held)</div>
         </div>
       </div>
     </div>
