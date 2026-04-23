@@ -55,7 +55,6 @@ const logger = pino({ name: "optimizer" });
 
 export interface OptimizableParams {
   stopLossPct: number;
-  takeProfitPct: number;
   trailingStopPct: number;
   holdPeriod: number;
   rsiOversold: number;
@@ -91,7 +90,6 @@ export interface OptimizationProgress {
 
 const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
   stopLossPct:     { min: 0.01,  max: 0.12 },
-  takeProfitPct:   { min: 0.10,  max: 1.00 },
   trailingStopPct: { min: 0.01,  max: 0.15 },
   holdPeriod:      { min: 5,     max: 60, step: 1 },
   rsiOversold:     { min: 20,    max: 40, step: 1 },
@@ -119,11 +117,11 @@ const FETCH_DELAY_MS = 300;
 const INITIAL_CASH = 10000;
 
 // ── Diversity constants ────────────────────────────────────────────
-const DIVERSITY_LOW = 0.15;        // below this → boost mutation
-const DIVERSITY_HIGH = 0.40;       // above this → ease off mutation
-const IMMIGRANT_RATE = 0.10;       // 10% of pop replaced with random each gen
-const STAGNATION_GENS = 5;         // gens without improvement before restart
-const STAGNATION_IMMIGRANT_RATE = 0.30; // 30% replacement on stagnation
+const DIVERSITY_LOW = 0.10;        // below this → boost mutation
+const DIVERSITY_HIGH = 0.35;       // above this → ease off mutation
+const IMMIGRANT_RATE = 0.05;       // 5% of pop replaced with random each gen
+const STAGNATION_GENS = 8;         // gens without improvement before restart
+const STAGNATION_IMMIGRANT_RATE = 0.15; // 15% replacement on stagnation
 
 const CACHE_DIR = join(
   process.env.CACHE_DIR ?? (process.env.NODE_ENV === "production" ? "/data/cache" : join(process.cwd(), "data")),
@@ -413,11 +411,7 @@ function portfolioBacktest(
       const trailStop = pos.peakPrice * (1 - dynTrail);
       if (bar.low <= Math.max(fixedStop, trailStop)) exitPrice = Math.max(fixedStop, trailStop);
 
-      // Take profit
-      if (!exitPrice) {
-        const tp = pos.entryPrice * (1 + params.takeProfitPct);
-        if (bar.high >= tp) exitPrice = tp;
-      }
+      // No fixed take profit — trailing stop locks in gains dynamically
 
       // Sell signal (step boundaries only) — uses same analyzer as live engine
       if (!exitPrice && isStepBoundary) {
@@ -719,7 +713,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
 
     // ── Baseline ──
     const baselineParams: OptimizableParams = {
-      stopLossPct: 0.02, takeProfitPct: 0.03, trailingStopPct: 0.015, holdPeriod: 20,
+      stopLossPct: 0.02, trailingStopPct: 0.015, holdPeriod: 20,
       rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     };
     const baselineTrain = portfolioBacktest(portfolioData, baselineParams, "train");
@@ -729,7 +723,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     // ── GA ──
     // Fitness = portfolio total return (excess over buy-and-hold)
     const presetSeeds: OptimizableParams[] = Object.values(STRATEGY_PRESETS).map((p) => ({
-      stopLossPct: p.stopLossPct, takeProfitPct: p.takeProfitPct,
+      stopLossPct: p.stopLossPct,
       trailingStopPct: p.trailingStopPct, holdPeriod: p.holdPeriod,
       rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     }));
