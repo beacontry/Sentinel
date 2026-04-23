@@ -585,13 +585,11 @@ async function _loadOptimizedParams(): Promise<void> {
     if (!run?.bestParams) return;
 
     const p = run.bestParams as Record<string, number>;
-    if (p.stopLossPct == null) return;
+    if (p.stopLossPct == null || p.takeProfitPct == null) return;
 
     const params: StrategyParams = {
       stopLossPct: p.stopLossPct,
-      // New GA runs don't tune take profit — trailing stop handles exits.
-      // Old runs may have it; 999 effectively disables fixed TP.
-      takeProfitPct: p.takeProfitPct ?? 999,
+      takeProfitPct: p.takeProfitPct,
       trailingStopPct: p.trailingStopPct ?? 0.09,
       holdPeriod: Math.round(p.holdPeriod ?? 43),
     };
