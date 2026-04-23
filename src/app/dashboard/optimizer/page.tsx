@@ -82,6 +82,7 @@ interface RunDetail {
 export default function OptimizerPage() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [runs, setRuns] = useState<OptimizationRun[]>([]);
+  const [totalCompleted, setTotalCompleted] = useState(0);
   const [selectedRun, setSelectedRun] = useState<RunDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -102,6 +103,7 @@ export default function OptimizerPage() {
       if (!res.ok) return;
       const data = await res.json();
       setRuns(data.runs);
+      if (data.totalCompleted != null) setTotalCompleted(data.totalCompleted);
     } catch {
       // Silently fail — will retry on next poll
     }
@@ -189,19 +191,20 @@ export default function OptimizerPage() {
 
   function selectRun(run: OptimizationRun) {
     fetchRunDetail(run.id);
+    setComparison(null); // clear stale comparison when switching runs
   }
 
   const activeRun = runs.find((r) =>
     ["pending", "fetching_data", "optimizing"].includes(r.status)
   );
 
-  // Top 5 completed runs by test return, plus any non-complete runs
+  // Top 5 completed runs by test return, plus any actively running
   const completedRuns = runs
     .filter((r) => r.status === "complete" && r.bestTestReturn != null)
     .sort((a, b) => (b.bestTestReturn ?? 0) - (a.bestTestReturn ?? 0));
   const bestRunId = completedRuns[0]?.id ?? null;
-  const nonCompleteRuns = runs.filter((r) => r.status !== "complete");
-  const displayedRuns = [...nonCompleteRuns, ...completedRuns.slice(0, 5)];
+  const activeRuns = runs.filter((r) => ["pending", "fetching_data", "optimizing"].includes(r.status));
+  const displayedRuns = [...activeRuns, ...completedRuns.slice(0, 5)];
 
   // Sort symbol results
   const sortedSymbols = selectedRun?.symbolResults
@@ -424,7 +427,7 @@ export default function OptimizerPage() {
             <h2 className="text-sm font-semibold text-text-primary">Top Runs</h2>
             {completedRuns.length > 5 && (
               <span className="text-[11px] text-text-muted">
-                {completedRuns.length} total
+                {totalCompleted} total
               </span>
             )}
           </div>
