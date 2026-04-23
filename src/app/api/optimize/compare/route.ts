@@ -7,17 +7,11 @@ import { db } from "@/lib/db";
 import { optimizationRuns } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
+import { TOP_50, TOP_150 } from "@/lib/optimizer";
+import { SP500_SYMBOLS } from "@/lib/sp500";
 import type { Bar } from "@/types";
 
 const log = createRouteLogger("mode-comparison");
-
-const SCAN_UNIVERSE = [
-  "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "TSLA", "JPM", "V",
-  "UNH", "MA", "HD", "PG", "JNJ", "COST", "ABBV", "BAC", "CRM", "AMD",
-  "NFLX", "WMT", "PEP", "TMO", "AVGO", "LLY", "MRK", "ORCL", "ADBE", "CSCO",
-  "ACN", "DIS", "INTC", "VZ", "CMCSA", "PFE", "T", "KO", "NKE", "MCD",
-  "QCOM", "GS", "MS", "CAT", "BA", "GE", "RTX", "LOW", "SBUX", "PYPL",
-];
 
 interface ModeResult {
   mode: string;
@@ -82,7 +76,7 @@ function simulateSignalStrategy(
     const date = dates[di];
 
     // Update windows
-    for (const sym of SCAN_UNIVERSE) {
+    for (const sym of allBars.keys()) {
       const bar = barLookup.get(sym)?.get(date);
       if (!bar) continue;
       let w = windows.get(sym);
@@ -126,7 +120,7 @@ function simulateSignalStrategy(
 
     // Check entries every 15 days
     if (di % 15 === 0 && positions.size < maxPositions) {
-      for (const sym of SCAN_UNIVERSE) {
+      for (const sym of allBars.keys()) {
         if (positions.has(sym)) continue;
         const w = windows.get(sym);
         if (!w || w.length < 60) continue;
@@ -281,8 +275,8 @@ function simulateTactical(
 
     // Check for entry: SPY above 50 SMA and not invested
     if (!isInvested && sma50 && spyPrice > sma50) {
-      const perPosition = cash / Math.min(SCAN_UNIVERSE.length, 16);
-      for (const sym of SCAN_UNIVERSE) {
+      const perPosition = cash / Math.min(allBars.size, 16);
+      for (const sym of allBars.keys()) {
         if (positions.size >= 16) break;
         const b = barLookup.get(sym)?.get(date);
         if (!b) continue;
@@ -375,7 +369,7 @@ function simulateTacticalSmart(
     if (spyBar) spyCloses.push(spyBar.close);
 
     // Update rolling windows for signal scoring
-    for (const sym of SCAN_UNIVERSE) {
+    for (const sym of allBars.keys()) {
       const bar = barLookup.get(sym)?.get(date);
       if (!bar) continue;
       let w = windows.get(sym);
@@ -414,7 +408,7 @@ function simulateTacticalSmart(
     if (!isInvested && sma50 && spyPrice > sma50) {
       const scored: { symbol: string; score: number; price: number }[] = [];
 
-      for (const sym of SCAN_UNIVERSE) {
+      for (const sym of allBars.keys()) {
         const w = windows.get(sym);
         if (!w || w.length < 60) continue;
         const bar = barLookup.get(sym)?.get(date);
@@ -497,11 +491,24 @@ export async function GET() {
   try {
     const provider = getMarketDataProvider();
 
+    // Determine universe from latest saved optimizer run
+    let universe: string[] = TOP_50;
+    try {
+      const [latestRun] = await db
+        .select({ universe: optimizationRuns.universe })
+        .from(optimizationRuns)
+        .where(eq(optimizationRuns.status, "complete"))
+        .orderBy(desc(optimizationRuns.completedAt))
+        .limit(1);
+      if (latestRun?.universe === "sp500") universe = SP500_SYMBOLS;
+      else if (latestRun?.universe === "top150") universe = TOP_150;
+    } catch { /* use default top50 */ }
+
     // Fetch 5Y data for all stocks + SPY
-    log.info("Starting mode comparison backtest — fetching data");
+    log.info({ universe: universe.length }, "Starting mode comparison backtest — fetching data");
     const allBars = new Map<string, Bar[]>();
 
-    for (const sym of SCAN_UNIVERSE) {
+    for (const sym of universe) {
       try {
         const bars = await Promise.race([
           provider.fetchBars(sym, 1825, "1d"),
