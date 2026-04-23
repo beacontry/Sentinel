@@ -762,7 +762,9 @@ function RunDetailView({
           <div className="px-4 pb-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               <ParamDisplay label="Stop Loss" value={`${(bestParams.stopLossPct * 100).toFixed(1)}%`} />
-              <ParamDisplay label="Take Profit" value={`${(bestParams.takeProfitPct * 100).toFixed(1)}%`} />
+              {bestParams.takeProfitPct != null && bestParams.takeProfitPct < 900 && (
+                <ParamDisplay label="Take Profit" value={`${(bestParams.takeProfitPct * 100).toFixed(1)}%`} />
+              )}
               <ParamDisplay label="Trailing Stop" value={`${(bestParams.trailingStopPct * 100).toFixed(1)}%`} />
               <ParamDisplay label="Hold Period" value={`${Math.round(bestParams.holdPeriod)} bars`} />
               {bestParams.positionPct != null && (

@@ -55,6 +55,7 @@ const logger = pino({ name: "optimizer" });
 
 export interface OptimizableParams {
   stopLossPct: number;
+  takeProfitPct: number;
   trailingStopPct: number;
   holdPeriod: number;
   rsiOversold: number;
@@ -90,6 +91,7 @@ export interface OptimizationProgress {
 
 const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
   stopLossPct:     { min: 0.01,  max: 0.12 },
+  takeProfitPct:   { min: 0.10,  max: 1.00 },
   trailingStopPct: { min: 0.01,  max: 0.15 },
   holdPeriod:      { min: 5,     max: 60, step: 1 },
   rsiOversold:     { min: 20,    max: 40, step: 1 },
@@ -411,7 +413,11 @@ function portfolioBacktest(
       const trailStop = pos.peakPrice * (1 - dynTrail);
       if (bar.low <= Math.max(fixedStop, trailStop)) exitPrice = Math.max(fixedStop, trailStop);
 
-      // No fixed take profit — trailing stop locks in gains dynamically
+      // Take profit
+      if (!exitPrice) {
+        const tp = pos.entryPrice * (1 + params.takeProfitPct);
+        if (bar.high >= tp) exitPrice = tp;
+      }
 
       // Sell signal (step boundaries only) — uses same analyzer as live engine
       if (!exitPrice && isStepBoundary) {
@@ -713,7 +719,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
 
     // ── Baseline ──
     const baselineParams: OptimizableParams = {
-      stopLossPct: 0.02, trailingStopPct: 0.015, holdPeriod: 20,
+      stopLossPct: 0.02, takeProfitPct: 0.03, trailingStopPct: 0.015, holdPeriod: 20,
       rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     };
     const baselineTrain = portfolioBacktest(portfolioData, baselineParams, "train");
@@ -723,7 +729,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     // ── GA ──
     // Fitness = portfolio total return (excess over buy-and-hold)
     const presetSeeds: OptimizableParams[] = Object.values(STRATEGY_PRESETS).map((p) => ({
-      stopLossPct: p.stopLossPct,
+      stopLossPct: p.stopLossPct, takeProfitPct: p.takeProfitPct,
       trailingStopPct: p.trailingStopPct, holdPeriod: p.holdPeriod,
       rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     }));
