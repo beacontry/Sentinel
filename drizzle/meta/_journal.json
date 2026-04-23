@@ -50,6 +50,13 @@
       "when": 1776960000000,
       "tag": "0006_diversity_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777020000000,
+      "tag": "0007_active_optimizer_run",
+      "breakpoints": true
     }
   ]
 }

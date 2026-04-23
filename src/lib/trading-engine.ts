@@ -584,7 +584,13 @@ async function getOptimizedSignalParams(): Promise<SignalParams | null> {
 
 async function _loadOptimizedParams(): Promise<void> {
   try {
-    const [run] = await db
+    // Prefer the explicitly saved "active" run; fall back to latest completed
+    const [activeRun] = await db
+      .select({ bestParams: optimizationRuns.bestParams, bestTestReturn: optimizationRuns.bestTestReturn })
+      .from(optimizationRuns)
+      .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+      .limit(1);
+    const [run] = activeRun ? [activeRun] : await db
       .select({ bestParams: optimizationRuns.bestParams, bestTestReturn: optimizationRuns.bestTestReturn })
       .from(optimizationRuns)
       .where(eq(optimizationRuns.status, "complete"))
@@ -717,8 +723,8 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
         exitReason = currentPrice <= fixedStop ? "stop_loss" : "trailing_stop";
       }
 
-      // Take profit
-      if (!exitReason && currentPrice >= pos.entryPrice * (1 + params.takeProfitPct)) {
+      // Take profit (uses stored price — ATR-based in optimized mode, fixed % in others)
+      if (!exitReason && currentPrice >= pos.takeProfit) {
         exitReason = "take_profit";
       }
 

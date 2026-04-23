@@ -5,7 +5,7 @@ import { analyzeBars, type SignalParams } from "@/lib/indicators/analyzer";
 import { STRATEGY_PRESETS } from "@/lib/strategy-presets";
 import { db } from "@/lib/db";
 import { optimizationRuns } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
 import { TOP_50, TOP_150 } from "@/lib/optimizer";
 import { SP500_SYMBOLS } from "@/lib/sp500";
@@ -491,17 +491,22 @@ export async function GET() {
   try {
     const provider = getMarketDataProvider();
 
-    // Determine universe from latest saved optimizer run
+    // Determine universe from active optimizer run (or latest completed)
     let universe: string[] = TOP_50;
     try {
-      const [latestRun] = await db
+      const [activeRun] = await db
+        .select({ universe: optimizationRuns.universe })
+        .from(optimizationRuns)
+        .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+        .limit(1);
+      const savedRun = activeRun ?? (await db
         .select({ universe: optimizationRuns.universe })
         .from(optimizationRuns)
         .where(eq(optimizationRuns.status, "complete"))
         .orderBy(desc(optimizationRuns.completedAt))
-        .limit(1);
-      if (latestRun?.universe === "sp500") universe = SP500_SYMBOLS;
-      else if (latestRun?.universe === "top150") universe = TOP_150;
+        .limit(1))[0];
+      if (savedRun?.universe === "sp500") universe = SP500_SYMBOLS;
+      else if (savedRun?.universe === "top150") universe = TOP_150;
     } catch { /* use default top50 */ }
 
     // Fetch 5Y data for all stocks + SPY
@@ -535,11 +540,15 @@ export async function GET() {
 
     log.info({ symbols: allBars.size, spyBars: spyBars.length }, "Data fetched, running backtests");
 
-    // Get latest optimizer params
+    // Get active optimizer params (or latest completed)
     let optimizedParams: StrategyParams = STRATEGY_PRESETS.optimized;
     let optimizedExtra: OptimizerExtraParams = {};
     try {
-      const [run] = await db.select({ bestParams: optimizationRuns.bestParams })
+      const [activeParams] = await db.select({ bestParams: optimizationRuns.bestParams })
+        .from(optimizationRuns)
+        .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+        .limit(1);
+      const [run] = activeParams ? [activeParams] : await db.select({ bestParams: optimizationRuns.bestParams })
         .from(optimizationRuns).where(eq(optimizationRuns.status, "complete"))
         .orderBy(desc(optimizationRuns.completedAt)).limit(1);
       if (run?.bestParams) {
@@ -547,7 +556,9 @@ export async function GET() {
         if (p.stopLossPct != null) {
           optimizedParams = {
             stopLossPct: p.stopLossPct,
-            takeProfitPct: p.takeProfitPct,
+            // Old runs have takeProfitPct; new runs have takeProfitAtrMult instead.
+            // High fallback ensures fixed TP never fires when ATR-based is active.
+            takeProfitPct: p.takeProfitPct ?? 5.0,
             trailingStopPct: p.trailingStopPct ?? 0.09,
             holdPeriod: Math.round(p.holdPeriod ?? 43),
           };

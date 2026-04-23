@@ -10,10 +10,8 @@ const log = createRouteLogger("save-preset");
 /**
  * POST /api/optimize/save-preset
  * Marks an optimization run as the "active" preset.
- * The trading engine reads the latest completed run's bestParams,
- * so this just ensures that run is the most recent completed one.
- *
- * In the future this could write to a dedicated presets table.
+ * Clears isActive on all other runs, sets it on the selected one.
+ * The engine and compare route read the active run first.
  */
 export async function POST(request: NextRequest) {
   const session = await getSession();
@@ -48,11 +46,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Run is not complete" }, { status: 400 });
     }
 
-    // Update completedAt to NOW so this becomes the "latest" completed run
-    // that the engine reads from
+    // Deactivate all runs for this user, then activate the selected one
     await db
       .update(optimizationRuns)
-      .set({ completedAt: new Date() })
+      .set({ isActive: false })
+      .where(eq(optimizationRuns.userId, session.userId));
+
+    await db
+      .update(optimizationRuns)
+      .set({ isActive: true })
       .where(eq(optimizationRuns.id, runId));
 
     log.info({ runId, params: run.bestParams }, "Saved optimization run as active preset");
