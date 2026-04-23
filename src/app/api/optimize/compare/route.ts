@@ -40,6 +40,7 @@ interface StrategyParams {
 interface OptimizerExtraParams {
   signalParams?: SignalParams;
   rsThreshold?: number;
+  takeProfitAtrMult?: number;
 }
 
 /**
@@ -71,7 +72,7 @@ function simulateSignalStrategy(
 
   const INITIAL = 10000;
   let cash = INITIAL;
-  const positions = new Map<string, { qty: number; entryPrice: number; peakPrice: number; entryIdx: number }>();
+  const positions = new Map<string, { qty: number; entryPrice: number; peakPrice: number; entryIdx: number; takeProfitPrice: number }>();
   const equityHistory: number[] = [INITIAL];
   let wins = 0, losses = 0;
   let daysInMarket = 0;
@@ -104,7 +105,7 @@ function simulateSignalStrategy(
       const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
       const trailStop = pos.peakPrice * (1 - dynT);
       if (bar.low <= Math.max(fixedStop, trailStop)) exit = true;
-      if (bar.high >= pos.entryPrice * (1 + params.takeProfitPct)) exit = true;
+      if (bar.high >= pos.takeProfitPrice) exit = true;
       if (di - pos.entryIdx >= params.holdPeriod) exit = true;
 
       // Sell signal check every 15 days — uses same analyzer as live engine
@@ -138,8 +139,8 @@ function simulateSignalStrategy(
           if (rs60 < extra.rsThreshold) continue;
         }
 
-        const signal = analyzeBars(sym, w, signalParams).signal;
-        if (signal !== "BUY" && signal !== "STRONG_BUY") continue;
+        const result = analyzeBars(sym, w, signalParams);
+        if (result.signal !== "BUY" && result.signal !== "STRONG_BUY") continue;
         if (positions.size >= maxPositions) break;
 
         let equity = cash;
@@ -152,8 +153,14 @@ function simulateSignalStrategy(
         const qty = Math.floor(posValue / bar.close);
         if (qty <= 0 || qty * bar.close > cash) continue;
 
+        // Compute take profit: ATR-based for optimized, fixed % for others
+        const atr = result.indicators.atr_14;
+        const tp = extra?.takeProfitAtrMult && atr
+          ? bar.close + atr * extra.takeProfitAtrMult
+          : bar.close * (1 + params.takeProfitPct);
+
         cash -= qty * bar.close;
-        positions.set(sym, { qty, entryPrice: bar.close, peakPrice: bar.close, entryIdx: di });
+        positions.set(sym, { qty, entryPrice: bar.close, peakPrice: bar.close, entryIdx: di, takeProfitPrice: tp });
       }
     }
 
@@ -539,6 +546,7 @@ export async function GET() {
           };
           optimizedExtra = {
             rsThreshold: p.rsThreshold ?? -0.05,
+            takeProfitAtrMult: p.takeProfitAtrMult ?? undefined,
             signalParams: p.emaFast != null && p.emaSlow != null ? {
               emaFast: Math.round(p.emaFast),
               emaSlow: Math.round(p.emaSlow),

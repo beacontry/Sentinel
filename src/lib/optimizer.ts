@@ -55,7 +55,7 @@ const logger = pino({ name: "optimizer" });
 
 export interface OptimizableParams {
   stopLossPct: number;
-  takeProfitPct: number;
+  takeProfitAtrMult: number; // take profit = entry + ATR × this multiplier
   trailingStopPct: number;
   holdPeriod: number;
   rsiOversold: number;
@@ -90,9 +90,9 @@ export interface OptimizationProgress {
 // ── Constants ───────────────────────────────────────────────────────
 
 const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
-  stopLossPct:     { min: 0.01,  max: 0.12 },
-  takeProfitPct:   { min: 0.10,  max: 1.00 },
-  trailingStopPct: { min: 0.01,  max: 0.15 },
+  stopLossPct:      { min: 0.01,  max: 0.12 },
+  takeProfitAtrMult:{ min: 3,     max: 15, step: 0.5 },
+  trailingStopPct:  { min: 0.01,  max: 0.15 },
   holdPeriod:      { min: 5,     max: 60, step: 1 },
   rsiOversold:     { min: 20,    max: 40, step: 1 },
   rsiOverbought:   { min: 60,    max: 80, step: 1 },
@@ -341,6 +341,7 @@ interface Position {
   entryDateIdx: number;
   shares: number;
   peakPrice: number;
+  takeProfitPrice: number; // entry + ATR × multiplier (computed at entry)
 }
 
 interface PortfolioResult {
@@ -413,10 +414,9 @@ function portfolioBacktest(
       const trailStop = pos.peakPrice * (1 - dynTrail);
       if (bar.low <= Math.max(fixedStop, trailStop)) exitPrice = Math.max(fixedStop, trailStop);
 
-      // Take profit
-      if (!exitPrice) {
-        const tp = pos.entryPrice * (1 + params.takeProfitPct);
-        if (bar.high >= tp) exitPrice = tp;
+      // Take profit (ATR-adaptive: computed at entry time)
+      if (!exitPrice && bar.high >= pos.takeProfitPrice) {
+        exitPrice = pos.takeProfitPrice;
       }
 
       // Sell signal (step boundaries only) — uses same analyzer as live engine
@@ -449,7 +449,7 @@ function portfolioBacktest(
     // ── Check entries (step boundaries only) ──
     if (isStepBoundary && positions.length < BACKTEST_MAX_POSITIONS) {
       const heldSymbols = new Set(positions.map((p) => p.symbol));
-      const candidates: { symbol: string; signal: SignalType; price: number }[] = [];
+      const candidates: { symbol: string; signal: SignalType; price: number; atr: number }[] = [];
 
       for (const symbol of data.symbols) {
         if (heldSymbols.has(symbol)) continue;
@@ -464,9 +464,9 @@ function portfolioBacktest(
           if (rs60 < params.rsThreshold) continue;
         }
 
-        const { signal: sig } = analyzeSignalOnly(symbol, w, signalParams);
-        if (sig === "BUY" || sig === "STRONG_BUY") {
-          candidates.push({ symbol, signal: sig, price: bar.close });
+        const { signal: sig, atr } = analyzeSignalOnly(symbol, w, signalParams);
+        if ((sig === "BUY" || sig === "STRONG_BUY") && atr !== null) {
+          candidates.push({ symbol, signal: sig, price: bar.close, atr });
         }
       }
 
@@ -492,6 +492,7 @@ function portfolioBacktest(
           entryDateIdx: di,
           shares,
           peakPrice: cand.price,
+          takeProfitPrice: cand.price + cand.atr * params.takeProfitAtrMult,
         });
       }
     }
@@ -719,7 +720,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
 
     // ── Baseline ──
     const baselineParams: OptimizableParams = {
-      stopLossPct: 0.02, takeProfitPct: 0.03, trailingStopPct: 0.015, holdPeriod: 20,
+      stopLossPct: 0.02, takeProfitAtrMult: 5, trailingStopPct: 0.015, holdPeriod: 20,
       rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     };
     const baselineTrain = portfolioBacktest(portfolioData, baselineParams, "train");
@@ -729,7 +730,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     // ── GA ──
     // Fitness = portfolio total return (excess over buy-and-hold)
     const presetSeeds: OptimizableParams[] = Object.values(STRATEGY_PRESETS).map((p) => ({
-      stopLossPct: p.stopLossPct, takeProfitPct: p.takeProfitPct,
+      stopLossPct: p.stopLossPct, takeProfitAtrMult: 6,
       trailingStopPct: p.trailingStopPct, holdPeriod: p.holdPeriod,
       rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     }));
