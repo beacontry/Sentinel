@@ -533,7 +533,7 @@ export async function GET() {
         if (p.stopLossPct != null) {
           optimizedParams = {
             stopLossPct: p.stopLossPct,
-            takeProfitPct: p.takeProfitPct,
+            takeProfitPct: p.takeProfitPct ?? 999, // new runs don't tune TP; trailing stop handles exits
             trailingStopPct: p.trailingStopPct ?? 0.09,
             holdPeriod: Math.round(p.holdPeriod ?? 43),
           };
