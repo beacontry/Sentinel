@@ -68,6 +68,7 @@ export interface BrokerClient {
   getPositions(): Promise<BrokerPosition[]>;
   getOrders(limit?: number): Promise<BrokerOrder[]>;
   placeOrder(params: PlaceOrderParams): Promise<BrokerOrder>;
+  cancelOrder?(orderId: string): Promise<void>;
   cancelAllOrders?(): Promise<void>;
 }
 
@@ -356,6 +357,17 @@ class AlpacaClient implements BrokerClient {
       filledAt: o.filled_at != null ? toString(o.filled_at) : null,
       canceledAt: o.canceled_at != null ? toString(o.canceled_at) : null,
     };
+  }
+
+  async cancelOrder(orderId: string): Promise<void> {
+    const res = await brokerFetch(`${this.baseUrl}/v2/orders/${orderId}`, {
+      method: "DELETE",
+      headers: this.headers,
+    });
+    if (!res.ok && res.status !== 404) {
+      const msg = await res.text().catch(() => "Unknown");
+      throw new BrokerError(`Failed to cancel order ${orderId}: ${msg}`, res.status, `Cancel order failed: ${msg}`);
+    }
   }
 
   async cancelAllOrders(): Promise<void> {

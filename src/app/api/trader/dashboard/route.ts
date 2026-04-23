@@ -35,6 +35,11 @@ export async function GET() {
     // Always fetch broker account data when a connection exists
     let brokerAccount: { equity: number; cash: number; buyingPower: number; portfolioValue: number } | null = null;
     let brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number; unrealizedPnl: number; marketValue: number }[] = [];
+    let brokerOpenOrders: Array<{
+      id: string; symbol: string; side: string; type: string; qty: number;
+      filledQty: number; status: string; stopPrice: string | null;
+      limitPrice: string | null; timeInForce: string; submittedAt: string;
+    }> = [];
     let brokerConnected = false;
     let brokerName = "";
     let brokerEnv = "";
@@ -50,7 +55,7 @@ export async function GET() {
       brokerEnv = conn.environment;
       try {
         const client = createBrokerClient(conn.broker, decrypt(conn.apiKey), decrypt(conn.apiSecret), conn.environment);
-        const [acct, pos] = await Promise.allSettled([client.getAccount(), client.getPositions()]);
+        const [acct, pos, orders] = await Promise.allSettled([client.getAccount(), client.getPositions(), client.getOrders(50)]);
         if (acct.status === "fulfilled") {
           const a = acct.value;
           brokerAccount = { equity: a.equity, cash: a.cash, buyingPower: a.buyingPower, portfolioValue: a.portfolioValue ?? a.equity };
@@ -61,6 +66,17 @@ export async function GET() {
             symbol: p.symbol, qty: p.qty, avgEntryPrice: p.avgEntryPrice,
             currentPrice: p.currentPrice, unrealizedPnl: p.unrealizedPnl, marketValue: p.marketValue,
           }));
+        }
+        if (orders.status === "fulfilled") {
+          // Only include open/pending orders (not filled/canceled)
+          brokerOpenOrders = orders.value
+            .filter((o) => ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status))
+            .map((o) => ({
+              id: o.id, symbol: o.symbol, side: o.side, type: o.type,
+              qty: o.qty, filledQty: o.filledQty, status: o.status,
+              stopPrice: o.stopPrice, limitPrice: o.limitPrice,
+              timeInForce: o.timeInForce, submittedAt: o.submittedAt,
+            }));
         }
       } catch {
         // Broker connection failed — show as offline
@@ -242,6 +258,7 @@ export async function GET() {
       positions: finalPositions,
       positionsStale,
       positionsAgeSeconds,
+      openOrders: brokerOpenOrders,
       trades: trades.map((t) => ({
         ...t,
         fillTime: t.fillTime?.toISOString() ?? null,

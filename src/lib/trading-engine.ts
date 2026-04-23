@@ -1660,6 +1660,23 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   await syncPositionMapFromBroker(brokerPositions, positionMap, engine.userId!);
   engine.positionCount = positionMap.size;
 
+  // Fetch open orders to avoid conflicts (duplicate buys, stale stops)
+  const pendingBuySymbols = new Set<string>();
+  try {
+    const openOrders = await client.getOrders(100);
+    const pendingOrders = openOrders.filter((o) =>
+      ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)
+    );
+    for (const o of pendingOrders) {
+      if (o.side === "buy") pendingBuySymbols.add(o.symbol);
+    }
+    if (pendingBuySymbols.size > 0) {
+      log.info({ symbols: [...pendingBuySymbols] }, "Pending buy orders detected — will skip these symbols");
+    }
+  } catch {
+    // If order fetch fails, proceed without conflict check
+  }
+
   let realizedPnlThisScan = 0;
   let tradesThisScan = 0;
 
@@ -1823,6 +1840,12 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
       const hardCap = Math.floor(riskLimits.maxPositions * 1.5);
       const positionCap = isStrongSignal ? hardCap : riskLimits.maxPositions;
       if (shouldBuy && positionMap.size < positionCap) {
+        // Skip if there's already a pending buy order for this symbol
+        if (pendingBuySymbols.has(symbol)) {
+          log.debug({ symbol }, "Skipping — pending buy order already exists on broker");
+          continue;
+        }
+
         // Smart filters: earnings blackout, relative strength, sentiment
         const filterResult = await passesSmartFilters(symbol, bars);
         if (!filterResult.allowed) {
