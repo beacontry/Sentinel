@@ -44,7 +44,7 @@ export async function analyzeHybrid(
   const startMs = Date.now();
 
   // Step 1: Run technical analysis (synchronous, always runs)
-  const technicalResult = analyzeBars(symbol, bars);
+  const technicalResult = analyzeBars(symbol, bars, options?.signalParams);
   const technicalSignal = technicalResult.signal;
   const technicalConfidence = technicalResult.confidence;
 

@@ -10,12 +10,30 @@ import { BollingerBands } from "./bollinger";
 import { calculateFibLevels } from "./fibonacci";
 import { translateSignal } from "../signal-translator";
 
+// ── Tunable signal params (optimizer can override defaults) ─────────
+
+export interface SignalParams {
+  emaFast: number;       // default 9
+  emaSlow: number;       // default 21
+  rsiOversold: number;   // default 30
+  rsiOverbought: number; // default 70
+}
+
+const DEFAULT_SIGNAL_PARAMS: SignalParams = {
+  emaFast: INDICATOR_DEFAULTS.ema.windows[0],   // 9
+  emaSlow: INDICATOR_DEFAULTS.ema.windows[1],    // 21
+  rsiOversold: 30,
+  rsiOverbought: 70,
+};
+
+// ── Indicator instances ─────────────────────────────────────────────
+
 interface SymbolIndicators {
   sma9: SMA;
   sma20: SMA;
   sma50: SMA;
-  ema9: EMA;
-  ema21: EMA;
+  emaFast: EMA;
+  emaSlow: EMA;
   ema50: EMA;
   vwap: VWAP;
   rsi: RSI;
@@ -25,13 +43,14 @@ interface SymbolIndicators {
   volumeHistory: number[];
 }
 
-function createIndicators(): SymbolIndicators {
+function createIndicators(sp?: SignalParams): SymbolIndicators {
+  const p = sp ?? DEFAULT_SIGNAL_PARAMS;
   return {
     sma9: new SMA(INDICATOR_DEFAULTS.sma.windows[0]),
     sma20: new SMA(INDICATOR_DEFAULTS.sma.windows[1]),
     sma50: new SMA(INDICATOR_DEFAULTS.sma.windows[2]),
-    ema9: new EMA(INDICATOR_DEFAULTS.ema.windows[0]),
-    ema21: new EMA(INDICATOR_DEFAULTS.ema.windows[1]),
+    emaFast: new EMA(p.emaFast),
+    emaSlow: new EMA(p.emaSlow),
     ema50: new EMA(INDICATOR_DEFAULTS.ema.windows[2]),
     vwap: new VWAP(),
     rsi: new RSI(INDICATOR_DEFAULTS.rsi.period),
@@ -83,15 +102,17 @@ function detectCrossunder(
 function evaluateSignal(
   price: number,
   volume: number,
-  ind: SymbolIndicators
+  ind: SymbolIndicators,
+  sp?: SignalParams
 ): { signal: SignalType; confidence: number; reasons: string[] } {
+  const p = sp ?? DEFAULT_SIGNAL_PARAMS;
   const reasons: string[] = [];
   let bullScore = 0;
   let bearScore = 0;
 
   const vwap = ind.vwap.value();
-  const ema9 = ind.ema9.value();
-  const ema21 = ind.ema21.value();
+  const ema9 = ind.emaFast.value();
+  const ema21 = ind.emaSlow.value();
   const sma20 = ind.sma20.value();
   const sma50 = ind.sma50.value();
   const rsi = ind.rsi.value();
@@ -131,8 +152,8 @@ function evaluateSignal(
   }
 
   // Fresh crossover
-  const ema9Hist = ind.ema9.history();
-  const ema21Hist = ind.ema21.history();
+  const ema9Hist = ind.emaFast.history();
+  const ema21Hist = ind.emaSlow.history();
   const hasBullCross = detectCrossover(
     ema9Hist,
     ema21Hist,
@@ -155,10 +176,10 @@ function evaluateSignal(
 
   // RSI
   if (rsi !== null) {
-    if (rsi < 30) {
+    if (rsi < p.rsiOversold) {
       bullScore += 2;
       reasons.push(`RSI oversold at ${rsi.toFixed(1)} (potential reversal up)`);
-    } else if (rsi > 70) {
+    } else if (rsi > p.rsiOverbought) {
       bearScore += 2;
       reasons.push(`RSI overbought at ${rsi.toFixed(1)} (potential reversal down)`);
     } else if (rsi > 55) {
@@ -239,8 +260,8 @@ function evaluateSignal(
   return { signal, confidence, reasons };
 }
 
-export function analyzeBars(symbol: string, bars: Bar[]): AnalysisResult {
-  const ind = createIndicators();
+export function analyzeBars(symbol: string, bars: Bar[], signalParams?: SignalParams): AnalysisResult {
+  const ind = createIndicators(signalParams);
 
   const series: IndicatorSeries = {
     sma_9: [],
@@ -264,8 +285,8 @@ export function analyzeBars(symbol: string, bars: Bar[]): AnalysisResult {
     ind.sma9.update(bar);
     ind.sma20.update(bar);
     ind.sma50.update(bar);
-    ind.ema9.update(bar);
-    ind.ema21.update(bar);
+    ind.emaFast.update(bar);
+    ind.emaSlow.update(bar);
     ind.ema50.update(bar);
     ind.vwap.update(bar);
     ind.rsi.update(bar);
@@ -284,8 +305,8 @@ export function analyzeBars(symbol: string, bars: Bar[]): AnalysisResult {
     series.sma_9.push(ind.sma9.value());
     series.sma_20.push(ind.sma20.value());
     series.sma_50.push(ind.sma50.value());
-    series.ema_9.push(ind.ema9.value());
-    series.ema_21.push(ind.ema21.value());
+    series.ema_9.push(ind.emaFast.value());
+    series.ema_21.push(ind.emaSlow.value());
     series.ema_50.push(ind.ema50.value());
     series.vwap.push(ind.vwap.value());
     series.rsi_14.push(ind.rsi.value());
@@ -303,15 +324,15 @@ export function analyzeBars(symbol: string, bars: Bar[]): AnalysisResult {
   const price = lastBar.close;
   const volume = lastBar.volume;
 
-  const { signal, confidence, reasons } = evaluateSignal(price, volume, ind);
+  const { signal, confidence, reasons } = evaluateSignal(price, volume, ind, signalParams);
 
   const macdVals = ind.macd.values();
   const indicators: IndicatorSnapshot = {
     sma_9: ind.sma9.value(),
     sma_20: ind.sma20.value(),
     sma_50: ind.sma50.value(),
-    ema_9: ind.ema9.value(),
-    ema_21: ind.ema21.value(),
+    ema_9: ind.emaFast.value(),
+    ema_21: ind.emaSlow.value(),
     ema_50: ind.ema50.value(),
     vwap: ind.vwap.value(),
     vwap_upper_1: ind.vwap.upperBand(1),
@@ -355,4 +376,37 @@ export function analyzeBars(symbol: string, bars: Bar[]): AnalysisResult {
     unusualVolume,
     volumeRatio,
   };
+}
+
+/**
+ * Lightweight signal-only evaluation — same logic as analyzeBars() but skips
+ * series building, fibonacci, reasons, and plainEnglish. Used by the optimizer
+ * backtester where only the signal matters and performance is critical.
+ */
+export function analyzeSignalOnly(
+  symbol: string,
+  bars: Bar[],
+  signalParams?: SignalParams
+): { signal: SignalType; confidence: number } {
+  const ind = createIndicators(signalParams);
+
+  for (const bar of bars) {
+    ind.sma9.update(bar);
+    ind.sma20.update(bar);
+    ind.sma50.update(bar);
+    ind.emaFast.update(bar);
+    ind.emaSlow.update(bar);
+    ind.ema50.update(bar);
+    ind.vwap.update(bar);
+    ind.rsi.update(bar);
+    ind.macd.update(bar);
+    if (bar.volume > 0) {
+      ind.volumeHistory.push(bar.volume);
+      if (ind.volumeHistory.length > 100) ind.volumeHistory.shift();
+    }
+  }
+
+  const lastBar = bars[bars.length - 1];
+  const { signal, confidence } = evaluateSignal(lastBar.close, lastBar.volume, ind, signalParams);
+  return { signal, confidence };
 }

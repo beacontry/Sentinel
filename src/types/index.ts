@@ -152,6 +152,8 @@ export interface HybridPipelineOptions {
   enableAnalyst?: boolean;
   enableAiScoring?: boolean;
   aiScoringTimeout?: number;
+  /** Tuned EMA/RSI params from optimizer — omit to use defaults */
+  signalParams?: import("@/lib/indicators/analyzer").SignalParams;
 }
 
 // ─── Watchlist ────────────────────────────────────────────────────

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getMarketDataProvider } from "@/lib/market-data";
-import { analyzeBars } from "@/lib/indicators/analyzer";
-import { evaluateBarSignal, type SignalParams } from "@/lib/signal-eval";
+import { analyzeBars, type SignalParams } from "@/lib/indicators/analyzer";
 import { STRATEGY_PRESETS } from "@/lib/strategy-presets";
 import { db } from "@/lib/db";
 import { optimizationRuns } from "@/lib/db/schema";
@@ -38,28 +37,21 @@ interface StrategyParams {
   holdPeriod: number;
 }
 
-/** Full optimizer params — includes signal tuning + position sizing */
-interface FullOptimizerParams extends StrategyParams {
-  emaFast: number;
-  emaSlow: number;
-  rsiOversold: number;
-  rsiOverbought: number;
-  rsThreshold: number;
-  positionPct: number;
-  maxPositions: number;
+interface OptimizerExtraParams {
+  signalParams?: SignalParams;
+  rsThreshold?: number;
 }
 
 /**
  * Simulate a signal-based strategy on the portfolio of stocks.
- * When fullParams is provided, uses the optimizer's signal evaluation
- * with tuned EMA/RSI/RS params. Otherwise falls back to analyzeBars().
+ * Uses analyzeBars() for all modes — same signal function as the live engine.
  */
 function simulateSignalStrategy(
   allBars: Map<string, Bar[]>,
   params: StrategyParams,
   maxPositions: number,
   positionPct: number,
-  fullParams?: FullOptimizerParams,
+  extra?: OptimizerExtraParams,
 ): ModeResult & { mode: string; label: string } {
   // Build unified date index
   const dateSet = new Set<string>();
@@ -75,12 +67,7 @@ function simulateSignalStrategy(
   }
   const dates = [...dateSet].sort();
 
-  const signalParams: SignalParams | undefined = fullParams ? {
-    emaFast: fullParams.emaFast,
-    emaSlow: fullParams.emaSlow,
-    rsiOversold: fullParams.rsiOversold,
-    rsiOverbought: fullParams.rsiOverbought,
-  } : undefined;
+  const signalParams = extra?.signalParams;
 
   const INITIAL = 10000;
   let cash = INITIAL;
@@ -100,7 +87,7 @@ function simulateSignalStrategy(
       let w = windows.get(sym);
       if (!w) { w = []; windows.set(sym, w); }
       w.push(bar);
-      if (w.length > 50) w.shift();
+      if (w.length > 90) w.shift();
     }
 
     if (positions.size > 0) daysInMarket++;
@@ -120,17 +107,12 @@ function simulateSignalStrategy(
       if (bar.high >= pos.entryPrice * (1 + params.takeProfitPct)) exit = true;
       if (di - pos.entryIdx >= params.holdPeriod) exit = true;
 
-      // Sell signal check every 15 days
+      // Sell signal check every 15 days — uses same analyzer as live engine
       if (!exit && di % 15 === 0) {
         const w = windows.get(sym);
-        if (w && w.length >= 30) {
-          if (signalParams) {
-            const sig = evaluateBarSignal(w, signalParams);
-            if (sig === "SELL" || sig === "STRONG_SELL") exit = true;
-          } else {
-            const result = analyzeBars(sym, w);
-            if (result.signal === "SELL" || result.signal === "STRONG_SELL") exit = true;
-          }
+        if (w && w.length >= 60) {
+          const result = analyzeBars(sym, w, signalParams);
+          if (result.signal === "SELL" || result.signal === "STRONG_SELL") exit = true;
         }
       }
 
@@ -146,22 +128,17 @@ function simulateSignalStrategy(
       for (const sym of SCAN_UNIVERSE) {
         if (positions.has(sym)) continue;
         const w = windows.get(sym);
-        if (!w || w.length < 30) continue;
+        if (!w || w.length < 60) continue;
         const bar = barLookup.get(sym)?.get(date);
         if (!bar) continue;
 
         // RS threshold filter (when using optimizer params)
-        if (fullParams && w.length >= 60) {
+        if (extra?.rsThreshold != null && w.length >= 60) {
           const rs60 = (w[w.length - 1].close - w[w.length - 60].close) / w[w.length - 60].close;
-          if (rs60 < fullParams.rsThreshold) continue;
+          if (rs60 < extra.rsThreshold) continue;
         }
 
-        let signal: string;
-        if (signalParams) {
-          signal = evaluateBarSignal(w, signalParams);
-        } else {
-          signal = analyzeBars(sym, w).signal;
-        }
+        const signal = analyzeBars(sym, w, signalParams).signal;
         if (signal !== "BUY" && signal !== "STRONG_BUY") continue;
         if (positions.size >= maxPositions) break;
 
@@ -397,7 +374,7 @@ function simulateTacticalSmart(
       let w = windows.get(sym);
       if (!w) { w = []; windows.set(sym, w); }
       w.push(bar);
-      if (w.length > 50) w.shift();
+      if (w.length > 90) w.shift();
     }
 
     if (isInvested) daysInMarket++;
@@ -432,7 +409,7 @@ function simulateTacticalSmart(
 
       for (const sym of SCAN_UNIVERSE) {
         const w = windows.get(sym);
-        if (!w || w.length < 30) continue;
+        if (!w || w.length < 60) continue;
         const bar = barLookup.get(sym)?.get(date);
         if (!bar) continue;
 
@@ -544,11 +521,9 @@ export async function GET() {
 
     log.info({ symbols: allBars.size, spyBars: spyBars.length }, "Data fetched, running backtests");
 
-    // Get latest optimizer params (all 11 fields)
-    let fullOptimizerParams: FullOptimizerParams | null = null;
+    // Get latest optimizer params
     let optimizedParams: StrategyParams = STRATEGY_PRESETS.optimized;
-    let optimizedMaxPos = 16;
-    let optimizedPosPct = 0.15;
+    let optimizedExtra: OptimizerExtraParams = {};
     try {
       const [run] = await db.select({ bestParams: optimizationRuns.bestParams })
         .from(optimizationRuns).where(eq(optimizationRuns.status, "complete"))
@@ -562,21 +537,15 @@ export async function GET() {
             trailingStopPct: p.trailingStopPct ?? 0.09,
             holdPeriod: Math.round(p.holdPeriod ?? 43),
           };
-          // Load full params if signal tuning fields exist
-          if (p.emaFast != null && p.emaSlow != null) {
-            optimizedMaxPos = Math.round(p.maxPositions ?? 16);
-            optimizedPosPct = p.positionPct ?? 0.15;
-            fullOptimizerParams = {
-              ...optimizedParams,
+          optimizedExtra = {
+            rsThreshold: p.rsThreshold ?? -0.05,
+            signalParams: p.emaFast != null && p.emaSlow != null ? {
               emaFast: Math.round(p.emaFast),
               emaSlow: Math.round(p.emaSlow),
               rsiOversold: Math.round(p.rsiOversold ?? 30),
               rsiOverbought: Math.round(p.rsiOverbought ?? 70),
-              rsThreshold: p.rsThreshold ?? -0.05,
-              positionPct: optimizedPosPct,
-              maxPositions: optimizedMaxPos,
-            };
-          }
+            } : undefined,
+          };
         }
       }
     } catch { /* use default */ }
@@ -606,9 +575,9 @@ export async function GET() {
       await new Promise(r => setTimeout(r, 1));
     }
 
-    // Optimized (GA) — uses full optimizer signal params when available
+    // Optimized (GA) — uses tuned signal params when available
     const optResult = simulateSignalStrategy(
-      allBars, optimizedParams, optimizedMaxPos, optimizedPosPct, fullOptimizerParams ?? undefined,
+      allBars, optimizedParams, 10, 0.10, optimizedExtra,
     );
     results.push({ ...optResult, mode: "optimized", label: "Optimized (GA)" });
     await new Promise(r => setTimeout(r, 1));
