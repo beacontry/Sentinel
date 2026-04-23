@@ -7,7 +7,7 @@ import { SP500_SYMBOLS } from "./sp500";
  * to keep run times under 2 hours. Full S&P 500 list is still used
  * for per-symbol validation after the best params are found.
  */
-const TOP_50 = [
+export const TOP_50 = [
   "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "TSLA", "BRK-B", "JPM", "V",
   "UNH", "MA", "HD", "PG", "JNJ", "COST", "ABBV", "BAC", "CRM", "AMD",
   "NFLX", "WMT", "PEP", "TMO", "AVGO", "LLY", "MRK", "ORCL", "ADBE", "CSCO",
@@ -16,7 +16,7 @@ const TOP_50 = [
 ];
 
 /** Top 150 most liquid S&P 500 stocks by market cap + volume */
-const TOP_150 = [
+export const TOP_150 = [
   // Top 50 (mega cap)
   "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "TSLA", "BRK-B", "JPM", "V",
   "UNH", "MA", "HD", "PG", "JNJ", "COST", "ABBV", "BAC", "CRM", "AMD",
