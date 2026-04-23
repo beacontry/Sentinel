@@ -171,7 +171,7 @@ Re-entry occurs when SPY recovers above the 50-day SMA (or above 20-SMA with RSI
 
 ## Pre-Buy Safety Filters
 
-Every buy signal passes through these gates before an order is placed:
+Every buy signal passes through ten sequential gates before an order is placed:
 
 ### 1. Market Hours
 - **Rule:** Only trade 9:30 AM – 4:00 PM ET, Monday – Friday
@@ -217,6 +217,11 @@ Every buy signal passes through these gates before an order is placed:
 - **Rule:** Stop all trading if daily losses exceed configured % of equity
 - **Action:** Halt engine, cancel all pending orders
 - **Source:** User risk profile in DB (default 2%)
+
+### 10. Pending Order Check
+- **Rule:** Don't buy a symbol that already has a pending buy order on the broker
+- **Action:** Engine fetches open orders from Alpaca at each scan cycle; skips any symbol with an existing pending buy order (status: new, accepted, partially_filled, held)
+- **Benefit:** Prevents duplicate buy orders after engine restarts, avoids tying up buying power with conflicting orders
 
 ---
 
