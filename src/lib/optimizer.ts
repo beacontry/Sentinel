@@ -1,11 +1,11 @@
 import type { Bar } from "@/types";
 import { getMarketDataProvider } from "./market-data";
-import { SP500_SYMBOLS } from "./sp500";
+import { SP500_SYMBOLS, getSP500Symbols } from "./sp500";
 
 /**
- * Top 50 most liquid S&P 500 stocks — used for portfolio optimization
- * to keep run times under 2 hours. Full S&P 500 list is still used
- * for per-symbol validation after the best params are found.
+ * Top 50/150 most liquid S&P 500 stocks by market cap — curated lists
+ * for fast optimizer runs. Review periodically when major S&P changes
+ * happen. The "sp500" universe uses the live Wikipedia-fetched list instead.
  */
 export const TOP_50 = [
   "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "META", "TSLA", "BRK-B", "JPM", "V",
@@ -694,8 +694,9 @@ export async function startOptimization(userId: string, config: OptimizationConf
 async function runOptimization(runId: string, config: OptimizationConfig) {
   const progress = g.__optimizerJobs!.get(runId)!;
   try {
-    // ── Select universe ──
-    const universeSymbols = config.universe === "sp500" ? SP500_SYMBOLS
+    // ── Select universe (sp500 uses live list from Wikipedia) ──
+    const universeSymbols = config.universe === "sp500"
+      ? await getSP500Symbols().catch(() => SP500_SYMBOLS)
       : config.universe === "top150" ? TOP_150
       : TOP_50;
     logger.info({ runId, universe: config.universe, symbols: universeSymbols.length }, "Universe selected");
