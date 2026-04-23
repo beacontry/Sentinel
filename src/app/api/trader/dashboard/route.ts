@@ -5,7 +5,7 @@ import { traderStatus, traderTrades, traderDailyPnl, traderSignals, brokerConnec
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
-import { autoStartIfNeeded, getBrokerPositionCache } from "@/lib/trading-engine";
+import { autoStartIfNeeded, getBrokerPositionCache, getTrackedPositionData } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("trader-dashboard");
@@ -158,26 +158,39 @@ export async function GET() {
     let positionsStale = false;
     let positionsAgeSeconds = 0;
 
+    // Get tracked stop/target data from engine's in-memory position map
+    const trackedData = getTrackedPositionData(session.userId);
+
     if (brokerPositions.length > 0) {
-      // Live broker data
-      finalPositions = brokerPositions.map((p) => ({
-        symbol: p.symbol, quantity: p.qty, qty: p.qty,
-        entryPrice: p.avgEntryPrice, currentPrice: p.currentPrice,
-        unrealizedPnl: p.unrealizedPnl, pnl: p.unrealizedPnl,
-        marketValue: p.marketValue, stopPrice: null, updatedAt: new Date().toISOString(),
-      }));
+      // Live broker data — merge with engine's tracked stop prices
+      finalPositions = brokerPositions.map((p) => {
+        const tracked = trackedData.get(p.symbol);
+        return {
+          symbol: p.symbol, quantity: p.qty, qty: p.qty,
+          entryPrice: p.avgEntryPrice, currentPrice: p.currentPrice,
+          unrealizedPnl: p.unrealizedPnl, pnl: p.unrealizedPnl,
+          marketValue: p.marketValue,
+          stopPrice: tracked?.stopLoss ?? null,
+          updatedAt: new Date().toISOString(),
+        };
+      });
     } else {
       // Try engine's in-memory cache
       const cached = getBrokerPositionCache(session.userId);
       if (cached && cached.positions.length > 0) {
         positionsStale = true;
         positionsAgeSeconds = Math.floor((Date.now() - cached.fetchedAt.getTime()) / 1000);
-        finalPositions = cached.positions.map((p) => ({
-          symbol: p.symbol, quantity: p.qty, qty: p.qty,
-          entryPrice: p.avgEntryPrice, currentPrice: p.currentPrice,
-          unrealizedPnl: p.unrealizedPnl, pnl: p.unrealizedPnl,
-          marketValue: p.marketValue, stopPrice: null, updatedAt: cached.fetchedAt.toISOString(),
-        }));
+        finalPositions = cached.positions.map((p) => {
+          const tracked = trackedData.get(p.symbol);
+          return {
+            symbol: p.symbol, quantity: p.qty, qty: p.qty,
+            entryPrice: p.avgEntryPrice, currentPrice: p.currentPrice,
+            unrealizedPnl: p.unrealizedPnl, pnl: p.unrealizedPnl,
+            marketValue: p.marketValue,
+            stopPrice: tracked?.stopLoss ?? null,
+            updatedAt: cached.fetchedAt.toISOString(),
+          };
+        });
       } else {
         // No broker data and no cache — empty positions
         finalPositions = [];
