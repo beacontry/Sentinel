@@ -108,6 +108,67 @@ Floor: 2% minimum trailing stop regardless of profit level.
 
 ---
 
+## Exit Behavior by Mode
+
+Exit logic varies dramatically between mode families. Signal-based modes (like Optimized GA) manage each position independently with multiple exit triggers. Tactical modes treat the portfolio as a unit — all in or all out based on SPY health.
+
+### Comparison
+
+| Aspect | Optimized GA | Tactical Smart | Tactical |
+|--------|---|---|---|
+| **Exit scope** | Individual position | Portfolio-wide + individual swaps | Portfolio-wide only |
+| **Primary exit** | First of 5 conditions fires | SPY < 20-SMA for 3 days | SPY < 20-SMA for 3 days |
+| **Stop loss** | ~8.5% (GA-tuned) | 12% (set at entry, rarely fires first) | None (SPY-driven exits) |
+| **Take profit** | ATR × mult or ~37% (GA-tuned) | 50% (set at entry, rarely fires first) | None (SPY-driven exits) |
+| **Trailing stop** | ~12.6% base, tightens with profit | 11.7% base, tightens with profit | None (SPY-driven exits) |
+| **Hold period** | ~33 days (GA-tuned) | 999 days (effectively never) | None (SPY-driven exits) |
+| **Sell signal** | SELL/STRONG_SELL → exit position | SELL/STRONG_SELL → swap for stronger stock | Not used |
+| **Market regime** | SPY < SMA(20) blocks new buys only | SPY < SMA(20) ×3d → liquidate ALL | SPY < SMA(20) ×3d → liquidate ALL |
+| **Active management** | No — exit or hold | Yes — swap weak, add strong | No — full in or full out |
+| **Signal params** | GA-tuned (EMA/RSI) | Default (EMA 9/21, RSI 30/70) | Not applicable |
+
+### Optimized GA — Individual Position Exits
+
+Each position is managed independently. On every scan (~15 min), the engine checks 5 exit conditions in priority order. First trigger wins:
+
+1. **Stop loss** — price ≤ entry × (1 − stopLossPct). GA-tuned, typically ~8.5%
+2. **Take profit** — price ≥ entry + ATR(14) × multiplier (adaptive) or entry × (1 + takeProfitPct) (fallback)
+3. **Trailing stop** — price ≤ peak × (1 − dynamicTrailPct). Tightens exponentially as profit grows (see Dynamic Trailing Stop)
+4. **Hold period** — position held ≥ holdPeriod trading days. GA-tuned, typically ~33 days
+5. **SELL/STRONG_SELL signal** — `analyzeBars()` with GA-tuned signal params scores bearish
+
+SPY health filter only blocks new entries (SPY < SMA(20)), does NOT force exits of held positions.
+
+### Tactical Smart — Market Regime + Active Swapping
+
+Two layers of exit logic:
+
+**Layer 1 — SPY Weakness (portfolio-wide):**
+SPY closes below its 20-day SMA for 3 consecutive trading days → sell ALL positions immediately at market. No graduated exit. This is the primary exit mechanism and overrides everything else.
+
+**Layer 2 — Active Management (while SPY is healthy):**
+While invested and SPY is above the 50-day SMA, the engine scans every 15 minutes:
+- Identifies held positions with SELL/STRONG_SELL signals (weak stocks)
+- Finds STRONG_BUY candidates not already held (strong replacements)
+- Sells weak positions at market → buys replacements at limit
+- Can also add new STRONG_BUY positions if cash is available (up to 1.5× maxPositions)
+
+Individual stop/TP/trail levels exist (12% stop, 50% TP, 11.7% trail) but with a 999-day hold period, the SPY weakness trigger almost always fires before individual position exits.
+
+### Tactical — Pure Market Timing
+
+Simplest exit logic of all three modes:
+
+- **Only exit trigger:** SPY closes below its 20-day SMA for 3 consecutive days
+- **Action:** Market-sell ALL positions to 100% cash immediately
+- No individual position management, no stop losses, no trailing stops, no sell signals
+- No swapping or active management while holding
+- Full in or full out — the only decision is SPY trend direction
+
+Re-entry occurs when SPY recovers above the 50-day SMA (or above 20-SMA with RSI < 40).
+
+---
+
 ## Pre-Buy Safety Filters
 
 Every buy signal passes through these gates before an order is placed:

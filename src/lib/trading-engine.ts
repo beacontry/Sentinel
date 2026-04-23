@@ -63,6 +63,7 @@ export interface EngineState {
   mode: EngineMode;
   intervalId: ReturnType<typeof setInterval> | null;
   exitCheckId: ReturnType<typeof setInterval> | null;
+  marketOpenTimeoutId: ReturnType<typeof setTimeout> | null;
   lastScanAt: Date | null;
   scanCount: number;
   dailyLoss: number;
@@ -89,6 +90,7 @@ function createDefaultEngine(): EngineState {
     mode: "optimized",
     intervalId: null,
     exitCheckId: null,
+    marketOpenTimeoutId: null,
     lastScanAt: null,
     scanCount: 0,
     dailyLoss: 0,
@@ -487,6 +489,41 @@ function isMarketOpen(): boolean {
   return timeMinutes >= 570 && timeMinutes < 960;
 }
 
+/**
+ * Returns milliseconds until the next market open (9:30 AM ET on a weekday).
+ * Returns 0 if the market is currently open.
+ */
+function msUntilMarketOpen(): number {
+  const now = getETDate();
+  const day = now.getDay();
+  const timeMinutes = now.getHours() * 60 + now.getMinutes();
+
+  // Market is currently open
+  if (day >= 1 && day <= 5 && timeMinutes >= 570 && timeMinutes < 960) return 0;
+
+  // Find the next weekday 9:30 AM ET
+  const target = new Date(now);
+  target.setHours(9, 30, 0, 0);
+
+  if (day >= 1 && day <= 5 && timeMinutes < 570) {
+    // Today before open — target is today 9:30
+  } else if (day === 5 && timeMinutes >= 960) {
+    // Friday after close — next Monday
+    target.setDate(target.getDate() + 3);
+  } else if (day === 6) {
+    // Saturday — next Monday
+    target.setDate(target.getDate() + 2);
+  } else if (day === 0) {
+    // Sunday — next Monday
+    target.setDate(target.getDate() + 1);
+  } else {
+    // Weekday after close — tomorrow
+    target.setDate(target.getDate() + 1);
+  }
+
+  return Math.max(0, target.getTime() - now.getTime());
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function pushError(engine: EngineState, msg: string) {
@@ -735,7 +772,7 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
           const pnl = (currentPrice - pos.entryPrice) * pos.qty;
           engine.dailyLoss += pnl < 0 ? pnl : 0;
 
-          await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "FILLED", pnl, exitReason, exitOrder.id);
+          await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "FILLED", pnl, exitReason, exitOrder.id, null, engine.userId);
           positionMap.delete(symbol);
           engine.positionCount = positionMap.size;
         } catch (err) {
@@ -760,9 +797,10 @@ async function logSignal(
   price: number,
   volume: number,
   indicators: Record<string, unknown>,
-  actedOn: boolean
+  actedOn: boolean,
+  userId?: string | null
 ): Promise<string | null> {
-  const engine = getEngine();
+  const engine = userId ? getEngine(userId) : getEngine();
   try {
     const [row] = await db.insert(traderSignals).values({
       userId: engine.userId,
@@ -794,9 +832,10 @@ async function logTrade(
   pnl: number | null,
   notes: string | null,
   brokerOrderId: string | null = null,
-  signalId: string | null = null
+  signalId: string | null = null,
+  userId?: string | null
 ): Promise<void> {
-  const engine = getEngine();
+  const engine = userId ? getEngine(userId) : getEngine();
   try {
     await db.insert(traderTrades).values({
       userId: engine.userId,
@@ -822,8 +861,8 @@ async function logTrade(
   }
 }
 
-async function updateHeartbeat(watchlist: string[]): Promise<void> {
-  const engine = getEngine();
+async function updateHeartbeat(watchlist: string[], userId?: string | null): Promise<void> {
+  const engine = userId ? getEngine(userId) : getEngine();
   const modeStr = `paper:${engine.mode}`; // persist engine mode for auto-restart
   try {
     const rows = engine.userId
@@ -862,12 +901,14 @@ async function upsertDailyPnl(
   unrealizedPnl: number,
   tradesCountDelta: number,
   halted: boolean,
-  haltReason?: string
+  haltReason?: string,
+  userId?: string | null
 ): Promise<void> {
-  const engine = getEngine();
+  const engine = userId ? getEngine(userId) : getEngine();
+  const effectiveUserId = userId ?? engine.userId;
   try {
     const conditions = [eq(traderDailyPnl.date, date)];
-    if (engine.userId) conditions.push(eq(traderDailyPnl.userId, engine.userId));
+    if (effectiveUserId) conditions.push(eq(traderDailyPnl.userId, effectiveUserId));
 
     const existing = await db
       .select()
@@ -889,7 +930,7 @@ async function upsertDailyPnl(
         .where(eq(traderDailyPnl.id, row.id));
     } else {
       await db.insert(traderDailyPnl).values({
-        userId: engine.userId,
+        userId: effectiveUserId,
         date,
         realizedPnl: realizedDelta,
         unrealizedPnl,
@@ -1104,7 +1145,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
       if (pos.qty <= 0) continue;
       try {
         const texitOrder = await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical exit: SPY below SMA", texitOrder.id);
+        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical exit: SPY below SMA", texitOrder.id, null, engine.userId);
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -1132,7 +1173,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
 
         const limitPrice = (quote.price * 1.001).toFixed(2);
         const tentryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
-        await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "FILLED", null, "Tactical entry: SPY above SMA", tentryOrder.id);
+        await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "FILLED", null, "Tactical entry: SPY above SMA", tentryOrder.id, null, engine.userId);
 
         positionMap.set(symbol, {
           symbol, qty, entryPrice: quote.price, peakPrice: quote.price,
@@ -1154,12 +1195,12 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
       totalUnrealizedPnl += bp.unrealizedPnl;
     }
   } catch { /* use 0 */ }
-  await upsertDailyPnl(today, 0, totalUnrealizedPnl, 0, engine.halted);
+  await upsertDailyPnl(today, 0, totalUnrealizedPnl, 0, engine.halted, undefined, engine.userId);
 
   // Update status
   engine.lastScanAt = new Date();
   engine.scanCount++;
-  await updateHeartbeat(SCAN_UNIVERSE);
+  await updateHeartbeat(SCAN_UNIVERSE, engine.userId);
 }
 
 // ─── Tactical Smart: SPY trend + screener-weighted entries ──────────────────
@@ -1226,7 +1267,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       if (pos.qty <= 0) continue;
       try {
         const tsExitOrder = await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical Smart exit", tsExitOrder.id);
+        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical Smart exit", tsExitOrder.id, null, engine.userId);
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -1303,7 +1344,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const limitPrice = (price * 1.001).toFixed(2);
         const tsEntryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
-        await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Smart: momentum + signal + invVol weighted", tsEntryOrder.id);
+        await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Smart: momentum + signal + invVol weighted", tsEntryOrder.id, null, engine.userId);
         positionMap.set(symbol, {
           symbol, qty, entryPrice: price, peakPrice: price,
           stopLoss: price * 0.88, takeProfit: price * 1.5,
@@ -1366,7 +1407,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 
     // Log signals for visibility (even if not acting)
     for (const c of candidates.slice(0, 5)) {
-      await logSignal(c.symbol, c.signal as SignalType, c.price, 0, {}, false);
+      await logSignal(c.symbol, c.signal as SignalType, c.price, 0, {}, false, engine.userId);
     }
 
     // 1. Swap: sell weak held positions and replace with top STRONG_BUY candidates
@@ -1381,7 +1422,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       // Sell the weak position
       try {
         const swapSellOrder = await client.placeOrder({ symbol: weak.symbol, side: "sell", qty: String(bp.qty), type: "market", timeInForce: "day" });
-        await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "FILLED", bp.unrealizedPnl, `Swap out: ${weak.signal}`, swapSellOrder.id);
+        await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "FILLED", bp.unrealizedPnl, `Swap out: ${weak.signal}`, swapSellOrder.id, null, engine.userId);
         positionMap.delete(weak.symbol);
         heldSymbols.delete(weak.symbol);
       } catch (err) {
@@ -1398,7 +1439,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const limitPrice = (replacement.price * 1.001).toFixed(2);
         const swapBuyOrder = await client.placeOrder({ symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
-        await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "FILLED", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`, swapBuyOrder.id);
+        await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "FILLED", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`, swapBuyOrder.id, null, engine.userId);
         positionMap.set(replacement.symbol, {
           symbol: replacement.symbol, qty, entryPrice: replacement.price, peakPrice: replacement.price,
           stopLoss: replacement.price * 0.88, takeProfit: replacement.price * 1.5,
@@ -1431,7 +1472,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
         const addOrder = await client.placeOrder({ symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
-        await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "FILLED", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`, addOrder.id);
+        await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "FILLED", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`, addOrder.id, null, engine.userId);
         positionMap.set(cand.symbol, {
           symbol: cand.symbol, qty, entryPrice: cand.price, peakPrice: cand.price,
           stopLoss: cand.price * 0.88, takeProfit: cand.price * 1.5,
@@ -1458,11 +1499,11 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       totalUnrealizedPnl += bp.unrealizedPnl;
     }
   } catch { /* use 0 */ }
-  await upsertDailyPnl(today, 0, totalUnrealizedPnl, 0, engine.halted);
+  await upsertDailyPnl(today, 0, totalUnrealizedPnl, 0, engine.halted, undefined, engine.userId);
 
   engine.lastScanAt = new Date();
   engine.scanCount++;
-  await updateHeartbeat([...positionMap.keys()]);
+  await updateHeartbeat([...positionMap.keys()], engine.userId);
 }
 
 // ─── Standard Signal-Based Scan ─────────────────────────────────────────────
@@ -1501,7 +1542,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             const resolved = await resolveBrokerClient(engine.userId);
             if (resolved) {
               const flattenOrder = await resolved.client.placeOrder({ symbol: sym, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-              await logTrade(sym, "flatten", "SELL", pos.qty, pos.entryPrice, "FILLED", null, "EOD flatten", flattenOrder.id);
+              await logTrade(sym, "flatten", "SELL", pos.qty, pos.entryPrice, "FILLED", null, "EOD flatten", flattenOrder.id, null, engine.userId);
             }
             positionMap.delete(sym);
           } catch (err) {
@@ -1561,7 +1602,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     );
     engine.halted = true;
     pushError(engine, `Daily loss limit hit: $${engine.dailyLoss.toFixed(2)}`);
-    await upsertDailyPnl(today, 0, 0, 0, true, `Daily loss limit exceeded: $${engine.dailyLoss.toFixed(2)}`);
+    await upsertDailyPnl(today, 0, 0, 0, true, `Daily loss limit exceeded: $${engine.dailyLoss.toFixed(2)}`, engine.userId);
     return;
   }
 
@@ -1651,7 +1692,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         currentPrice,
         analysis.volume,
         analysis.indicators as unknown as Record<string, unknown>,
-        false // will update to true if we act on it
+        false, // will update to true if we act on it
+        engine.userId
       );
 
       const heldPosition = positionMap.get(symbol);
@@ -1733,7 +1775,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
               "FILLED",
               pnl,
               exitReason,
-              sellOrder.id
+              sellOrder.id,
+              null,
+              engine.userId
             );
 
       
@@ -1756,7 +1800,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
               null,
               "FAILED",
               null,
-              `Order failed: ${msg}`
+              `Order failed: ${msg}`,
+              null,
+              null,
+              engine.userId
             );
           }
         }
@@ -1881,7 +1928,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             currentPrice,
             analysis.volume,
             analysis.indicators as unknown as Record<string, unknown>,
-            true
+            true,
+            engine.userId
           );
 
           await logTrade(
@@ -1894,7 +1942,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             null,
             `Entry: ${signal} (${(confidence * 100).toFixed(0)}% confidence)`,
             buyOrder.id,
-            sigId
+            sigId,
+            engine.userId
           );
 
         } catch (err) {
@@ -1910,7 +1959,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             null,
             "FAILED",
             null,
-            `Order failed: ${msg}`
+            `Order failed: ${msg}`,
+            null,
+            null,
+            engine.userId
           );
         }
       }
@@ -1947,9 +1999,11 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     realizedPnlThisScan,
     totalUnrealizedPnl,
     tradesThisScan,
-    engine.halted
+    engine.halted,
+    undefined,
+    engine.userId
   );
-  await updateHeartbeat(symbols);
+  await updateHeartbeat(symbols, engine.userId);
 
   log.info(
     {
@@ -2013,7 +2067,7 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
 
   // Clear halted flag in database so UI stops showing "Trading Halted"
   const today = getETDateString();
-  upsertDailyPnl(today, 0, 0, 0, false).catch(() => {});
+  upsertDailyPnl(today, 0, 0, 0, false, undefined, userId).catch(() => {});
 
   const intraday = isIntradayMode(mode);
   const scanIntervalMs = intraday ? INTRADAY_SCAN_MS : SWING_SCAN_MS;
@@ -2026,11 +2080,26 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     : mode === "tactical-smart" ? () => runTacticalSmartScan(userId)
     : () => runScan(barResolution, userId);
 
-  // Run initial scan immediately
+  // Run initial scan immediately (will skip if market is closed)
   scanFn().catch((err) => {
     log.error({ err: err instanceof Error ? err.message : "unknown" }, "Initial scan failed");
     pushError(engine, `Initial scan failed: ${err instanceof Error ? err.message : "unknown"}`);
   });
+
+  // If market is not yet open, schedule a scan at exactly 9:30 AM ET
+  const msToOpen = msUntilMarketOpen();
+  if (msToOpen > 0) {
+    log.info({ userId, msToOpen, minutesToOpen: Math.round(msToOpen / 60000) }, "Market closed — scheduling scan at next open");
+    engine.marketOpenTimeoutId = setTimeout(() => {
+      if (!engine.running || engine.halted) return;
+      engine.marketOpenTimeoutId = null;
+      log.info({ userId }, "Market just opened — running scheduled scan");
+      scanFn().catch((err) => {
+        log.error({ err: err instanceof Error ? err.message : "unknown" }, "Market-open scan failed");
+        pushError(engine, `Market-open scan failed: ${err instanceof Error ? err.message : "unknown"}`);
+      });
+    }, msToOpen);
+  }
 
   // Set up scan interval
   engine.intervalId = setInterval(() => {
@@ -2068,6 +2137,10 @@ export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?
   if (engine.exitCheckId) {
     clearInterval(engine.exitCheckId);
     engine.exitCheckId = null;
+  }
+  if (engine.marketOpenTimeoutId) {
+    clearTimeout(engine.marketOpenTimeoutId);
+    engine.marketOpenTimeoutId = null;
   }
 
   engine.running = false;
@@ -2162,6 +2235,10 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
     clearInterval(engine.intervalId);
     engine.intervalId = null;
   }
+  if (engine.marketOpenTimeoutId) {
+    clearTimeout(engine.marketOpenTimeoutId);
+    engine.marketOpenTimeoutId = null;
+  }
 
   engine.running = false;
   engine.halted = true;
@@ -2208,7 +2285,9 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
               "FILLED",
               pnl,
               "Emergency halt — all positions closed",
-              haltOrder.id
+              haltOrder.id,
+              null,
+              engine.userId
             );
 
 
@@ -2259,6 +2338,29 @@ export function pushExternalSignal(signal: ExternalSignal, userId?: string): boo
   engine.externalSignals.push(signal);
   log.info({ symbol: signal.symbol, signal: signal.signal, source: signal.source }, "External signal received");
   return true;
+}
+
+/**
+ * Broadcast an external signal to ALL running engines (every user).
+ * Used by the screener which is global/shared — not per-user.
+ * Returns the number of engines that accepted the signal.
+ */
+export function broadcastExternalSignal(signal: ExternalSignal): number {
+  g.__tradingEngines ??= new Map();
+  let accepted = 0;
+  for (const [userId, engine] of g.__tradingEngines) {
+    if (!engine.running || engine.halted) continue;
+
+    const isDup = engine.externalSignals.some(
+      (s) => s.symbol === signal.symbol && s.signal === signal.signal && Date.now() - s.receivedAt < 30 * 60 * 1000
+    );
+    if (isDup) continue;
+
+    engine.externalSignals.push(signal);
+    accepted++;
+    log.info({ symbol: signal.symbol, signal: signal.signal, source: signal.source, userId }, "External signal broadcast to engine");
+  }
+  return accepted;
 }
 
 /**
