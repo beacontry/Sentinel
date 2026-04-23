@@ -63,7 +63,7 @@ export function Select({
           <SelectPrimitive.Content
             position="popper"
             sideOffset={4}
-            className="z-50 w-[var(--radix-select-trigger-width)] max-h-60 overflow-y-auto
+            className="z-[100] w-[var(--radix-select-trigger-width)] max-h-60 overflow-y-auto
               rounded-lg border border-border bg-bg-surface p-1 shadow-xl animate-scale-in"
           >
             <SelectPrimitive.Viewport>
