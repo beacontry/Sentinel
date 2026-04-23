@@ -620,7 +620,7 @@ export async function GET() {
     log.info("Mode comparison complete");
 
     return NextResponse.json({ results, period: "5 years", startingCapital: 10000 }, {
-      headers: { "Cache-Control": "private, max-age=300" },
+      headers: { "Cache-Control": "private, no-store" },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
