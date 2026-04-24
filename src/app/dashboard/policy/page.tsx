@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { Scale, ChevronDown, ChevronUp } from "lucide-react";
+import { Scale, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 
 interface PolicyItem {
   id: string;
@@ -19,6 +19,7 @@ interface PolicyItem {
   affectedSectors: string[];
   dateIntroduced: string;
   lastUpdated: string;
+  sourceUrl?: string | null;
 }
 
 const STATUS_TABS = [
@@ -56,6 +57,7 @@ export default function PolicyPage() {
   const [items, setItems] = useState<PolicyItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [source, setSource] = useState<string>("");
 
   const fetchPolicies = useCallback(async () => {
     setLoading(true);
@@ -65,6 +67,7 @@ export default function PolicyPage() {
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       setItems(data.items ?? []);
+      setSource(data.source ?? "");
     } catch {
       setItems([]);
     } finally {
@@ -96,6 +99,12 @@ export default function PolicyPage() {
           { label: "Enacted", value: loading ? "-" : enactedCount, tone: "bullish" },
         ]}
       />
+
+      {source && (
+        <div className="text-xs text-text-muted">
+          Data source: {source === "database" ? "Live — SEC, Federal Register, CFTC feeds" : source === "static" ? "Static dataset — run policy cron to enable live updates" : "Static fallback"}
+        </div>
+      )}
 
       {/* Status Filter Tabs */}
       <Tabs tabs={STATUS_TABS} activeTab={activeTab} onChange={setActiveTab} />
@@ -173,13 +182,25 @@ export default function PolicyPage() {
                       <p className="text-sm text-text-secondary leading-relaxed">
                         {item.summary}
                       </p>
-                      <div className="flex items-center gap-4 mt-4 text-xs text-text-muted">
+                      <div className="flex items-center flex-wrap gap-4 mt-4 text-xs text-text-muted">
                         <span>
                           Introduced: {formatDate(item.dateIntroduced)}
                         </span>
                         <span>
                           Last Updated: {formatDate(item.lastUpdated)}
                         </span>
+                        {item.sourceUrl && (
+                          <a
+                            href={item.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-accent hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            Source
+                          </a>
+                        )}
                       </div>
                     </div>
                   )}

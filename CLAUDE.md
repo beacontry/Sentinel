@@ -36,9 +36,10 @@ Positions come from the broker API, not the database:
 
 ### Signal Pipeline (Unified)
 All components use the same signal function — `analyzeBars()` from `src/lib/indicators/analyzer.ts`:
-- **Engine** calls `analyzeHybrid()` → `analyzeBars(symbol, bars, signalParams?)` — passes optimizer-tuned signal params in "optimized" mode
+- **Engine** calls `analyzeHybrid()` ��� `analyzeBars(symbol, bars, signalParams?)` — passes optimizer-tuned signal params in "optimized" mode
 - **Optimizer** uses `analyzeSignalOnly()` — lightweight variant with same logic, accepts tunable `SignalParams`
 - **Screener** calls `analyzeHybrid()` → `analyzeBars()` with default params (shared resource, not per-user)
+- **Multi-Timeframe** API calls `analyzeBars()` at both 5m and 1d resolutions, computes confluence
 - `SignalParams` (emaFast, emaSlow, rsiOversold, rsiOverbought) flow through `HybridPipelineOptions.signalParams`
 
 ### Screener (Shared)
@@ -160,13 +161,36 @@ Always use existing components — never recreate them:
 - Error display: `text-sm text-bearish`
 - Empty state: EmptyState component or inline centered block with muted icon
 
-## Dashboard Pages (33 total)
-Located at `src/app/dashboard/*/page.tsx`: alerts, analysis, articles, backtest, calculator, calendar, chat, correlation, currency, education, feed, filings, forum, heatmap, insights, journal, news, paper-trading, performance, pnl-calendar, policy, portfolio, posts, relative-strength, screener, settings, strategies, tax, tax-center, trader
+## Dashboard Pages (46 total)
+Located at `src/app/dashboard/*/page.tsx`:
+
+**Core:** alerts, analysis, calculator, chat, screener, settings, trader
+**Analysis & Market:** breadth, correlation, heatmap, multi-timeframe, relative-strength, risk-correlation, sector-rotation, unusual-activity
+**Trading Tools:** backtest, replay, risk-simulator, strategies, strategy-builder, watchlists
+**Journal & Analytics:** drawdown, journal, performance, pnl-calendar, reports
+**Research:** articles, education, filings, insights, news, sentiment
+**Macro:** calendar, currency, earnings, policy
+**Community:** feed, forum, posts
+**Admin:** admin, paper-trading, portfolio, tax, tax-center
+
+### New API Routes
+- `/api/multi-timeframe` — dual-timeframe (5m + 1d) analysis with confluence scoring
+- `/api/breadth` — market breadth: advance/decline, % above SMA 50/200, avg RSI, sector breakdown
+- `/api/sector-rotation` — rolling 1w/1m/3m sector performance with rotation phase classification (leading/weakening/lagging/improving)
+- `/api/unusual-activity` — volume spike detection (2x+ 20-day avg) across tracked symbols
+
+### Sub-Navigation Groups
+Pages are organized under sidebar nav items via `SUB_NAV` in `nav-config.ts`:
+- **Analysis:** Analysis, Multi-TF, Heatmap, Breadth, Correlation, Risk, Relative Strength, Sector Rotation, Unusual Activity
+- **Trader:** Live Trader, Strategies, Builder, Backtest, Replay, Optimizer, Alerts, Watchlists, Risk Sim, Calculator
+- **Journal:** Journal, Performance, Reports, Drawdown, P&L Calendar, Tax Center, Tax Report
+- **Research:** News, Sentiment, Articles, Filings, Insights, Education
+- **Macro:** Calendar, Earnings, Currency, Policy
 
 ## Detailed Design Reference
 For exhaustive design tokens, component APIs, and page templates, see `.claude/skills/sentinel-redesign/references/`:
 - `design-tokens.md` — every color, font, spacing, shadow, animation value
 - `component-patterns.md` — all component usage with code examples
-- `page-templates.md` — 5 page templates, all 33 pages, responsive checklist
+- `page-templates.md` — 5 page templates, all 46 pages, responsive checklist
 
 Invoke `/sentinel-redesign` to activate the full redesign workflow.
