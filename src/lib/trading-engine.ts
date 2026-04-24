@@ -2254,16 +2254,11 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
   if (positionMap.size === 0) return;
 
   try {
-    // Get all open stop orders
-    const openOrders = await client.getOrders(100);
+    // Get only open stop orders (avoids old filled/cancelled orders eating the limit)
+    const openOrders = await client.getOrders(100, "open");
     const stopOrders = new Map<string, { id: string; stopPrice: number }>();
     for (const o of openOrders) {
-      if (
-        o.type === "stop" &&
-        o.side === "sell" &&
-        o.stopPrice &&
-        ["new", "accepted", "held"].includes(o.status)
-      ) {
+      if (o.type === "stop" && o.side === "sell" && o.stopPrice) {
         stopOrders.set(o.symbol, { id: o.id, stopPrice: parseFloat(o.stopPrice) });
       }
     }
