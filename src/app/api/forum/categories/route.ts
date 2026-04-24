@@ -48,7 +48,7 @@ export async function GET() {
         replyCount: sql<number>`(
           SELECT count(*)::int FROM forum_replies
           WHERE forum_replies.thread_id IN (
-            SELECT id FROM forum_threads WHERE forum_threads.category_id = ${forumCategories.id}
+            SELECT forum_threads.id FROM forum_threads WHERE forum_threads.category_id = ${forumCategories.id}
           )
         )`,
         lastThreadTitle: sql<string | null>`(
