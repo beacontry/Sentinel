@@ -63,7 +63,7 @@ export default function PolicyPage() {
     setLoading(true);
     try {
       const params = activeTab !== "all" ? `?status=${activeTab}` : "";
-      const res = await fetch(`/api/policy${params}`);
+      const res = await fetch(`/api/policy${params}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       setItems(data.items ?? []);
