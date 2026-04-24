@@ -70,6 +70,7 @@ export interface BrokerClient {
   placeOrder(params: PlaceOrderParams): Promise<BrokerOrder>;
   cancelOrder?(orderId: string): Promise<void>;
   cancelAllOrders?(): Promise<void>;
+  replaceOrder?(orderId: string, updates: { stopPrice?: string; limitPrice?: string; qty?: string }): Promise<BrokerOrder>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -379,6 +380,41 @@ class AlpacaClient implements BrokerClient {
       const msg = await res.text().catch(() => "Unknown");
       console.error("Alpaca cancel all orders failed:", res.status, msg);
     }
+  }
+
+  async replaceOrder(orderId: string, updates: { stopPrice?: string; limitPrice?: string; qty?: string }): Promise<BrokerOrder> {
+    const body: Record<string, string> = {};
+    if (updates.stopPrice) body.stop_price = updates.stopPrice;
+    if (updates.limitPrice) body.limit_price = updates.limitPrice;
+    if (updates.qty) body.qty = updates.qty;
+
+    const res = await brokerFetch(`${this.baseUrl}/v2/orders/${orderId}`, {
+      method: "PATCH",
+      headers: { ...this.headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "Unknown");
+      throw new BrokerError(`Failed to replace order ${orderId}: ${msg}`, res.status, `Replace order failed: ${msg}`);
+    }
+    const o = await res.json();
+    const toString = (v: unknown) => (v == null ? "" : String(v));
+    return {
+      id: toString(o.id),
+      symbol: toString(o.symbol),
+      side: toString(o.side),
+      qty: Number(o.qty) || 0,
+      filledQty: Number(o.filled_qty) || 0,
+      type: toString(o.type),
+      status: toString(o.status),
+      filledPrice: o.filled_avg_price != null ? Number(o.filled_avg_price) : null,
+      timeInForce: toString(o.time_in_force),
+      limitPrice: o.limit_price != null ? toString(o.limit_price) : null,
+      stopPrice: o.stop_price != null ? toString(o.stop_price) : null,
+      submittedAt: toString(o.submitted_at),
+      filledAt: o.filled_at != null ? toString(o.filled_at) : null,
+      canceledAt: o.canceled_at != null ? toString(o.canceled_at) : null,
+    };
   }
 }
 
