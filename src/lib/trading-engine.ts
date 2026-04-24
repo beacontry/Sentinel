@@ -768,6 +768,7 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
       if (exitReason) {
         log.info({ symbol, exitReason, currentPrice, entryPrice: pos.entryPrice }, "Exit triggered by 1-min check");
         try {
+          await cancelPendingOrdersForSymbol(client, symbol);
           const exitOrder = await client.placeOrder({ symbol, qty: String(pos.qty), side: "sell", type: "market", timeInForce: "day" });
           const pnl = (currentPrice - pos.entryPrice) * pos.qty;
           engine.dailyLoss += pnl < 0 ? pnl : 0;
@@ -819,6 +820,36 @@ async function logSignal(
       "Failed to log signal"
     );
     return null;
+  }
+}
+
+/** Cancel all pending orders for a symbol before placing a market sell */
+async function cancelPendingOrdersForSymbol(
+  client: import("./brokers").BrokerClient,
+  symbol: string
+): Promise<void> {
+  if (!client.cancelOrder) return;
+  try {
+    const orders = await client.getOrders(100);
+    const pending = orders.filter(
+      (o) =>
+        o.symbol === symbol &&
+        ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)
+    );
+    for (const o of pending) {
+      try {
+        await client.cancelOrder(o.id);
+        log.info({ symbol, orderId: o.id, type: o.type }, "Cancelled pending order before exit");
+      } catch {
+        // Best effort — order may have already filled/expired
+      }
+    }
+    if (pending.length > 0) {
+      // Brief pause for broker to release held shares
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  } catch {
+    // If order fetch fails, proceed — the sell may still work
   }
 }
 
@@ -1662,6 +1693,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
   // Fetch open orders to avoid conflicts (duplicate buys, stale stops)
   const pendingBuySymbols = new Set<string>();
+  const pendingOrdersBySymbol = new Map<string, { id: string; side: string; type: string }[]>();
   try {
     const openOrders = await client.getOrders(100);
     const pendingOrders = openOrders.filter((o) =>
@@ -1669,6 +1701,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     );
     for (const o of pendingOrders) {
       if (o.side === "buy") pendingBuySymbols.add(o.symbol);
+      const existing = pendingOrdersBySymbol.get(o.symbol) ?? [];
+      existing.push({ id: o.id, side: o.side, type: o.type ?? "unknown" });
+      pendingOrdersBySymbol.set(o.symbol, existing);
     }
     if (pendingBuySymbols.size > 0) {
       log.info({ symbols: [...pendingBuySymbols] }, "Pending buy orders detected — will skip these symbols");
@@ -1765,6 +1800,21 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           log.info({ symbol, reason: exitReason }, "Exiting position");
 
           try {
+            // Cancel any pending orders for this symbol (stops, limits) before market sell
+            const pendingForSymbol = pendingOrdersBySymbol.get(symbol) ?? [];
+            if (pendingForSymbol.length > 0 && client.cancelOrder) {
+              for (const pending of pendingForSymbol) {
+                try {
+                  await client.cancelOrder(pending.id);
+                  log.info({ symbol, orderId: pending.id, type: pending.type }, "Cancelled pending order before exit");
+                } catch (cancelErr) {
+                  log.warn({ symbol, orderId: pending.id, err: cancelErr instanceof Error ? cancelErr.message : "unknown" }, "Failed to cancel pending order");
+                }
+              }
+              // Brief pause for Alpaca to release the held shares
+              await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+
             const sellQty = brokerPos
               ? brokerPos.qty
               : heldPosition.qty;
