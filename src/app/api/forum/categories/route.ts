@@ -14,6 +14,26 @@ export async function GET() {
   }
 
   try {
+    // Auto-seed categories if table is empty
+    const countResult = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(forumCategories);
+
+    if (Number(countResult[0]?.count) === 0) {
+      await db.insert(forumCategories).values([
+        { name: "General Discussion", description: "Market chatter, news reactions, and anything trading-related.", sortOrder: 0 },
+        { name: "Trade Ideas & Setups", description: "Share your trade setups, entries, targets, and stop levels.", sortOrder: 1 },
+        { name: "Technical Analysis", description: "Chart patterns, indicator readings, and price action analysis.", sortOrder: 2 },
+        { name: "Due Diligence", description: "Deep dives into fundamentals, earnings, and long-form research.", sortOrder: 3 },
+        { name: "Options & Derivatives", description: "Options strategies, flow analysis, and derivatives discussion.", sortOrder: 4 },
+        { name: "Earnings Plays", description: "Pre-earnings setups, post-earnings reactions, and earnings strategy.", sortOrder: 5 },
+        { name: "Small Caps & Penny Stocks", description: "Micro and small cap opportunities and momentum plays.", sortOrder: 6 },
+        { name: "Post-Mortems", description: "Review past trades — wins and losses. Lessons learned.", sortOrder: 7 },
+        { name: "Beginner Corner", description: "New to trading? Ask questions and learn the basics.", sortOrder: 8 },
+      ]);
+      log.info("Auto-seeded forum categories");
+    }
+
     const categories = await db
       .select({
         id: forumCategories.id,
