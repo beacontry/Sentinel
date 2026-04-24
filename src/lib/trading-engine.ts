@@ -2078,6 +2078,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   );
   await updateHeartbeat(symbols, engine.userId);
 
+  // Sync broker stop orders to match dynamic trailing stops
+  await syncBrokerStops(engine.userId);
+
   log.info(
     {
       scan: engine.scanCount,
@@ -2231,6 +2234,82 @@ export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?
  * These act as a safety net when the engine isn't running.
  */
 const DISASTER_STOP_PCT = 0.18; // 18% below entry — only fires if server is down for hours
+
+/**
+ * Sync broker stop orders to match the engine's dynamic trailing stops.
+ * For each position, computes the current dynamic trail and updates the
+ * Alpaca stop order to that level. This ensures broker-side protection
+ * matches in-memory trailing — even if the server goes down.
+ *
+ * Only ratchets stops UP (tighter) — never lowers an existing stop.
+ */
+async function syncBrokerStops(userId: string | null): Promise<void> {
+  if (!userId) return;
+
+  const resolved = await resolveBrokerClient(userId);
+  if (!resolved || !resolved.client.replaceOrder) return;
+  const { client } = resolved;
+
+  const positionMap = getPositionMap(userId);
+  if (positionMap.size === 0) return;
+
+  try {
+    // Get all open stop orders
+    const openOrders = await client.getOrders(100);
+    const stopOrders = new Map<string, { id: string; stopPrice: number }>();
+    for (const o of openOrders) {
+      if (
+        o.type === "stop" &&
+        o.side === "sell" &&
+        o.stopPrice &&
+        ["new", "accepted", "held"].includes(o.status)
+      ) {
+        stopOrders.set(o.symbol, { id: o.id, stopPrice: parseFloat(o.stopPrice) });
+      }
+    }
+
+    let updated = 0;
+
+    for (const [symbol, pos] of positionMap) {
+      const existing = stopOrders.get(symbol);
+      if (!existing) continue; // no stop order on broker — skip
+
+      // Compute dynamic trailing stop
+      const strategy = await resolveStrategy(userId, symbol);
+      const dynTrailPct = getDynamicTrailingPct(pos.entryPrice, pos.peakPrice, strategy.trailingStopPct);
+      const trailStop = pos.peakPrice * (1 - dynTrailPct);
+      const fixedStop = pos.entryPrice * (1 - strategy.stopLossPct);
+      const targetStop = Math.max(fixedStop, trailStop);
+
+      // Only ratchet UP — never lower the stop
+      if (targetStop <= existing.stopPrice) continue;
+
+      // Don't update if difference is less than $0.10 (avoid excessive API calls)
+      if (targetStop - existing.stopPrice < 0.10) continue;
+
+      try {
+        await client.replaceOrder!(existing.id, { stopPrice: targetStop.toFixed(2) });
+        updated++;
+        log.info(
+          { symbol, oldStop: existing.stopPrice.toFixed(2), newStop: targetStop.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
+          "Broker stop updated to match dynamic trail"
+        );
+      } catch (err) {
+        // Replace can fail if order was already triggered — not critical
+        log.warn(
+          { symbol, err: err instanceof Error ? err.message : "unknown" },
+          "Failed to update broker stop"
+        );
+      }
+    }
+
+    if (updated > 0) {
+      log.info({ updated }, "Broker stops synced");
+    }
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to sync broker stops");
+  }
+}
 
 /**
  * Place wide disaster stops on Alpaca for all positions.
