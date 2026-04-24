@@ -66,7 +66,7 @@ export interface BrokerClient {
   testConnection(): Promise<BrokerAccount>;
   getAccount(): Promise<BrokerAccount>;
   getPositions(): Promise<BrokerPosition[]>;
-  getOrders(limit?: number): Promise<BrokerOrder[]>;
+  getOrders(limit?: number, status?: "all" | "open" | "closed"): Promise<BrokerOrder[]>;
   placeOrder(params: PlaceOrderParams): Promise<BrokerOrder>;
   cancelOrder?(orderId: string): Promise<void>;
   cancelAllOrders?(): Promise<void>;
@@ -234,9 +234,9 @@ class AlpacaClient implements BrokerClient {
     }));
   }
 
-  async getOrders(limit = 50): Promise<BrokerOrder[]> {
+  async getOrders(limit = 50, status: "all" | "open" | "closed" = "all"): Promise<BrokerOrder[]> {
     const res = await brokerFetch(
-      `${this.baseUrl}/v2/orders?status=all&limit=${limit}&direction=desc`,
+      `${this.baseUrl}/v2/orders?status=${status}&limit=${limit}&direction=desc`,
       { headers: this.headers }
     );
 
