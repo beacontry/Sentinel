@@ -274,7 +274,7 @@ export default function ForumPage() {
             title="Forum"
             description="Pick a room and jump in. Share setups, post-mortems, and DD with other traders."
             actions={
-              <Button size="md" onClick={() => setShowNewThread(true)}>
+              <Button size="md" onClick={() => setShowNewThread(true)} disabled={categories.length === 0}>
                 <Plus className="h-4 w-4" />
                 <span className="hidden sm:inline">New</span> Thread
               </Button>
