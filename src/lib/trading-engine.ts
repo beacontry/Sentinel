@@ -2277,10 +2277,22 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
       const targetStop = Math.max(fixedStop, trailStop);
 
       // Only ratchet UP — never lower the stop
-      if (targetStop <= existing.stopPrice) continue;
+      if (targetStop <= existing.stopPrice) {
+        log.debug(
+          { symbol, targetStop: targetStop.toFixed(2), existingStop: existing.stopPrice.toFixed(2), peakPrice: pos.peakPrice.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
+          "Stop sync skipped — target not higher than existing"
+        );
+        continue;
+      }
 
       // Don't update if difference is less than $0.10 (avoid excessive API calls)
-      if (targetStop - existing.stopPrice < 0.10) continue;
+      if (targetStop - existing.stopPrice < 0.10) {
+        log.debug(
+          { symbol, targetStop: targetStop.toFixed(2), existingStop: existing.stopPrice.toFixed(2), diff: (targetStop - existing.stopPrice).toFixed(2) },
+          "Stop sync skipped — difference < $0.10"
+        );
+        continue;
+      }
 
       try {
         await client.replaceOrder!(existing.id, { stopPrice: targetStop.toFixed(2) });
@@ -2307,9 +2319,10 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
 }
 
 /**
- * Place wide disaster stops on Alpaca for all positions.
- * These are a safety net while the engine is running — the engine manages
- * tighter dynamic exits, but if the server crashes these prevent catastrophic loss.
+ * Place protective stops on Alpaca for all positions.
+ * Uses the tighter of: disaster stop (18% below entry) or dynamic trailing
+ * stop based on current price. This ensures crash protection reflects
+ * current gains — not just the entry price.
  */
 async function placeDisasterStops(userId: string | null): Promise<void> {
   if (!userId) return;
@@ -2321,19 +2334,34 @@ async function placeDisasterStops(userId: string | null): Promise<void> {
     const positions = await resolved.client.getPositions();
     for (const pos of positions) {
       if (pos.qty <= 0) continue;
-      const stopPrice = (pos.avgEntryPrice * (1 - DISASTER_STOP_PCT)).toFixed(2);
+
+      const disasterStop = pos.avgEntryPrice * (1 - DISASTER_STOP_PCT);
+      const strategy = await resolveStrategy(userId, pos.symbol);
+
+      // Use current price as peak — if price has run up, trail from there
+      const peakPrice = Math.max(pos.currentPrice, pos.avgEntryPrice);
+      const dynTrailPct = getDynamicTrailingPct(pos.avgEntryPrice, peakPrice, strategy.trailingStopPct);
+      const trailStop = peakPrice * (1 - dynTrailPct);
+      const fixedStop = pos.avgEntryPrice * (1 - strategy.stopLossPct);
+
+      // Use the tightest (highest) stop that protects gains
+      const stopPrice = Math.max(disasterStop, trailStop, fixedStop).toFixed(2);
+
       try {
         await resolved.client.placeOrder({
           symbol: pos.symbol, side: "sell", qty: String(pos.qty),
           type: "stop", timeInForce: "gtc", stopPrice,
         });
-        log.info({ symbol: pos.symbol, stopPrice, qty: pos.qty, pct: DISASTER_STOP_PCT }, "Disaster stop placed");
+        log.info(
+          { symbol: pos.symbol, stopPrice, qty: pos.qty, peak: peakPrice.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
+          "Protective stop placed"
+        );
       } catch (err) {
-        log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Failed to place disaster stop");
+        log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Failed to place protective stop");
       }
     }
   } catch (err) {
-    log.error({ err: err instanceof Error ? err.message : "unknown" }, "Failed to place disaster stops");
+    log.error({ err: err instanceof Error ? err.message : "unknown" }, "Failed to place protective stops");
   }
 }
 
