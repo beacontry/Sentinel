@@ -25,7 +25,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -344,16 +343,31 @@ export default function ForumPage() {
               <Badge variant="default">{activeCategory.name}</Badge>
             </div>
           ) : (
-            <Select
-              label="Category"
-              value={newCategoryId}
-              onChange={(value) => setNewCategoryId(value)}
-              placeholder="Select a board"
-              options={categories.map((c) => ({
-                value: c.id,
-                label: c.name,
-              }))}
-            />
+            <div className="space-y-1.5">
+              <label
+                htmlFor="new-thread-category"
+                className="block text-xs font-medium text-text-secondary"
+              >
+                Category
+              </label>
+              <select
+                id="new-thread-category"
+                value={newCategoryId}
+                onChange={(e) => setNewCategoryId(e.target.value)}
+                className="w-full min-h-[44px] rounded-lg border border-border bg-bg-elevated px-3 py-2.5
+                  text-sm text-text-primary transition-colors duration-150
+                  focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
+              >
+                <option value="" disabled>
+                  Select a board
+                </option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
           <Textarea
             label="Body"
