@@ -12,10 +12,14 @@ interface ModalProps {
 
 export function Modal({ open, onClose, children, className = "" }: ModalProps) {
   return (
-    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) onClose(); }} modal={false}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-fade-in" />
+        <Dialog.Overlay
+          className="fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-fade-in"
+          onClick={onClose}
+        />
         <Dialog.Content
+          onEscapeKeyDown={onClose}
           className={`fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2
             rounded-xl border border-border bg-bg-surface p-6
             shadow-2xl animate-scale-in
