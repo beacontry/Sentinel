@@ -7,7 +7,7 @@
 - Anthropic SDK for AI chat analysis
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
-- Vitest for testing (88 tests across indicators, analyzer, validators, signal translator)
+- Vitest for testing (96 tests across indicators, analyzer, validators, signal translator, rate-limiter, db-timeout)
 - Alpaca Markets API for paper/live trading
 
 ## Architecture: Multi-Tenant Trading Engine
@@ -109,6 +109,45 @@ Always use existing components — never recreate them:
 - **Dropdown** — solid `bg-bg-elevated` (no gradients), `rounded-lg`
 - **Tooltip** — solid `bg-bg-elevated` (no gradients), `rounded-lg`
 - **Avatar, SearchInput, CommandPalette, DataTable**
+
+## Security & Route Patterns
+
+### Auth on Mutating Routes
+All POST/PUT/PATCH/DELETE route handlers use `requireAuthWithCsrf(request)` from `@/lib/auth`:
+```typescript
+const auth = await requireAuthWithCsrf(request);
+if (auth instanceof Response) return auth;
+// auth is JWTPayload — use auth.userId, auth.email, etc.
+```
+Admin routes: `requireAuthWithCsrf(request, ["admin"])`. GET handlers use `getSession()`.
+
+**Excluded from CSRF:** `auth/login`, `auth/register`, `auth/logout`, `csrf`, `cron/*`, trader-secret routes (`trader/pnl`, `trader/signals`, `trader/trades`).
+
+### Statement Timeouts on GET Routes
+All GET routes with DB queries use `withTimeout()` from `@/lib/db`:
+```typescript
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
+
+const results = await withTimeout(3000, async (tx) => {
+  return tx.select().from(table).where(...);
+});
+```
+Use **3s** for user-facing, **5s** for admin/export. Catch `isStatementTimeout(err)` → return 504 with `X-Query-Timeout: true` header.
+
+### Client-Side Session Handling
+- **`CsrfInit`** — patches `window.fetch` to inject CSRF token + detect 401 → redirect to `/login`
+- **`SessionGuard`** — 30-min idle timeout, network online/offline toasts
+- **`ToastProvider`** + `useToast()` — success/error/warning/info toasts
+
+All mounted in `src/app/dashboard/layout.tsx`.
+
+## Shared Hooks (`src/hooks/`)
+
+- **`usePolling(callback, intervalMs, { enabled? })`** — shared polling with Page Visibility pause/resume. All dashboard polling must use this hook, never raw `setInterval`
+- Polling intervals defined in `POLLING_INTERVALS` from `src/lib/config.ts`
+
+## Pre-commit Hooks
+Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatically on `git commit`.
 
 ## Page Layout Rules
 
