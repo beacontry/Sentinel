@@ -51,9 +51,79 @@
   --space-2xl: 32px;
   --space-3xl: 48px;
   --space-4xl: 64px;
+
+  /* ── Landing page ── */
+  --color-ld-deep: #f8fafc;
+  --color-ld-panel: #f1f5f9;
+  --color-ld-card: #ffffff;
+  --color-ld-card-hover: #f8fafc;
+  --color-ld-border: #e2e8f0;
+  --color-ld-border-accent: #d1fae5;
+  --color-ld-text: #0f172a;
+  --color-ld-text-secondary: #334155;
+  --color-ld-text-muted: #64748b;
+  --color-ld-accent: #059669;
+  --color-ld-accent-dim: #047857;
+  --color-ld-red: #dc2626;
+  --color-ld-cyan: #0891b2;
+  --color-ld-amber: #d97706;
+  --color-ld-green: #059669;
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+@layer base {
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* ── Dark mode overrides ── */
+  html.dark {
+    /* Dashboard surfaces */
+    --color-bg-primary: #0d1511;
+    --color-bg-secondary: #131d18;
+    --color-bg-surface: #18241e;
+    --color-bg-elevated: #1e2e27;
+    --color-bg-hover: #25382f;
+    --color-border: #2d4038;
+    --color-border-hover: #3d5349;
+    --color-text-primary: #edf3f0;
+    --color-text-secondary: #8da69c;
+    --color-text-muted: #607b71;
+    --color-accent: #10b981;
+    --color-accent-hover: #34d399;
+    --color-accent-muted: rgba(16, 185, 129, 0.15);
+    --color-bullish: #10b981;
+    --color-bullish-muted: rgba(16, 185, 129, 0.15);
+    --color-bearish: #ef4444;
+    --color-bearish-muted: rgba(239, 68, 68, 0.15);
+    --color-warning: #f59e0b;
+    --color-warning-muted: rgba(245, 158, 11, 0.15);
+    --color-neutral: #6b7f76;
+    --color-strong-buy: #10b981;
+    --color-buy: #34d399;
+    --color-hold: #6b7f76;
+    --color-sell: #ef4444;
+    --color-strong-sell: #dc2626;
+
+    /* Landing page surfaces */
+    --color-ld-deep: #0a0a0f;
+    --color-ld-panel: #0f0f18;
+    --color-ld-card: #12121e;
+    --color-ld-card-hover: #181828;
+    --color-ld-border: #1e1e35;
+    --color-ld-border-accent: #0a3d2a;
+    --color-ld-text: #e8e6f0;
+    --color-ld-text-secondary: #9b96b3;
+    --color-ld-text-muted: #67627e;
+    --color-ld-accent: #10b981;
+    --color-ld-accent-dim: #059669;
+    --color-ld-red: #ef4444;
+    --color-ld-cyan: #4df0e6;
+    --color-ld-amber: #ffa94d;
+    --color-ld-green: #54d38a;
+  }
+
+  html.dark ::-webkit-scrollbar-thumb { background: #3d5349; }
+  html.dark ::-webkit-scrollbar-thumb:hover { background: #4d6559; }
+  html.dark ::selection { background-color: rgba(16, 185, 129, 0.30); }
+}
 
 html {
   background-color: var(--color-bg-primary);
@@ -138,6 +208,56 @@ input, textarea, select, button { font-family: var(--font-body); }
 .focus-ring {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-bg-secondary), 0 0 0 4px var(--color-accent);
+}
+
+/* ── Landing page styles ── */
+
+.landing-grid-bg {
+  background-image:
+    linear-gradient(var(--color-ld-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-ld-border) 1px, transparent 1px);
+  background-size: 62px 62px;
+  opacity: 0.28;
+  mask-image: radial-gradient(ellipse at center, black 36%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 36%, transparent 72%);
+}
+
+.card-accent-line {
+  position: relative;
+  overflow: hidden;
+}
+.card-accent-line::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--color-ld-accent), transparent);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.card-accent-line:hover::before {
+  opacity: 1;
+}
+
+.top-accent-line {
+  position: relative;
+  overflow: hidden;
+}
+.top-accent-line::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--color-ld-accent), var(--color-ld-cyan), transparent);
+  opacity: 0.9;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
