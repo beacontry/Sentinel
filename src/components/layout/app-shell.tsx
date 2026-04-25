@@ -8,6 +8,8 @@ import {
   Menu,
   Radar,
   Sparkles,
+  Sun,
+  Moon,
   X,
 } from "lucide-react";
 import {
@@ -15,11 +17,13 @@ import {
   isActivePath,
 } from "./nav-config";
 import { useAi } from "@/components/ai/ai-provider";
+import { useTheme } from "@/components/theme-provider";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isChatOpen, toggleChat } = useAi();
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -50,7 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Desktop sidebar */}
         <aside
           className="hidden lg:flex"
-          style={{ width: 260, flexShrink: 0, backgroundColor: "#1e293b", flexDirection: "column", height: "100vh", overflow: "hidden" }}
+          style={{ width: 260, flexShrink: 0, backgroundColor: "var(--color-bg-elevated)", flexDirection: "column", height: "100vh", overflow: "hidden" }}
         >
           <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
             {/* Logo */}
@@ -60,8 +64,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Radar className="h-4 w-4" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>Sentinel</div>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Trading Intelligence</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Sentinel</div>
+                  <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>Trading Intelligence</div>
                 </div>
               </Link>
             </div>
@@ -81,8 +85,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       padding: "7px 10px",
                       borderRadius: 6,
                       fontSize: 13,
-                      color: active ? "#fff" : "rgba(255,255,255,0.7)",
-                      backgroundColor: active ? "rgba(255,255,255,0.1)" : "transparent",
+                      color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                      backgroundColor: active ? "var(--color-bg-hover)" : "transparent",
                       fontWeight: active ? 500 : 400,
                       textDecoration: "none",
                       marginBottom: 1,
@@ -99,6 +103,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div style={{ padding: "4px 10px 12px" }}>
               <button
                 type="button"
+                onClick={toggleTheme}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "7px 10px",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  width: "100%",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--color-text-secondary)",
+                  backgroundColor: "transparent",
+                  marginBottom: 1,
+                }}
+              >
+                {theme === "dark" ? <Sun style={{ width: 16, height: 16 }} /> : <Moon style={{ width: 16, height: 16 }} />}
+                {theme === "dark" ? "Light Mode" : "Dark Mode"}
+              </button>
+              <button
+                type="button"
                 onClick={toggleChat}
                 style={{
                   display: "flex",
@@ -110,8 +135,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   width: "100%",
                   border: "none",
                   cursor: "pointer",
-                  color: isChatOpen ? "#fff" : "rgba(255,255,255,0.7)",
-                  backgroundColor: isChatOpen ? "rgba(255,255,255,0.1)" : "transparent",
+                  color: isChatOpen ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                  backgroundColor: isChatOpen ? "var(--color-bg-hover)" : "transparent",
                 }}
               >
                 <Sparkles style={{ width: 16, height: 16 }} />
@@ -130,7 +155,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   width: "100%",
                   border: "none",
                   cursor: "pointer",
-                  color: "rgba(255,255,255,0.7)",
+                  color: "var(--color-text-secondary)",
                   backgroundColor: "transparent",
                   marginTop: 1,
                 }}
@@ -154,13 +179,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setMobileOpen(false)} />
           <aside
             className="fixed left-0 top-0 bottom-0 z-50 lg:hidden animate-slide-in-left"
-            style={{ width: 280, backgroundColor: "#1e293b", display: "flex", flexDirection: "column" }}
+            style={{ width: 280, backgroundColor: "var(--color-bg-elevated)", display: "flex", flexDirection: "column" }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px" }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>Menu</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>Menu</span>
               <button
                 onClick={() => setMobileOpen(false)}
-                style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, border: "none", cursor: "pointer", color: "rgba(255,255,255,0.7)", backgroundColor: "transparent" }}
+                style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, border: "none", cursor: "pointer", color: "var(--color-text-secondary)", backgroundColor: "transparent" }}
               >
                 <X style={{ width: 20, height: 20 }} />
               </button>
@@ -173,8 +198,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Radar className="h-4 w-4" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>Sentinel</div>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Trading Intelligence</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Sentinel</div>
+                  <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>Trading Intelligence</div>
                 </div>
               </Link>
             </div>
@@ -194,8 +219,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       padding: "7px 10px",
                       borderRadius: 6,
                       fontSize: 13,
-                      color: active ? "#fff" : "rgba(255,255,255,0.7)",
-                      backgroundColor: active ? "rgba(255,255,255,0.1)" : "transparent",
+                      color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                      backgroundColor: active ? "var(--color-bg-hover)" : "transparent",
                       fontWeight: active ? 500 : 400,
                       textDecoration: "none",
                       marginBottom: 1,
@@ -215,7 +240,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "7px 10px",
                   borderRadius: 6, fontSize: 13, width: "100%", border: "none", cursor: "pointer",
-                  color: "rgba(255,255,255,0.7)", backgroundColor: "transparent",
+                  color: "var(--color-text-secondary)", backgroundColor: "transparent",
                 }}
               >
                 <Sparkles style={{ width: 16, height: 16 }} />
@@ -227,7 +252,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "7px 10px",
                   borderRadius: 6, fontSize: 13, width: "100%", border: "none", cursor: "pointer",
-                  color: "rgba(255,255,255,0.7)", backgroundColor: "transparent", marginTop: 1,
+                  color: "var(--color-text-secondary)", backgroundColor: "transparent", marginTop: 1,
                 }}
               >
                 <LogOut style={{ width: 16, height: 16 }} />
