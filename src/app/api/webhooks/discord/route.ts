@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { discordWebhooks } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createWebhookSchema } from "@/lib/validators";
@@ -13,29 +13,39 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const webhooks = await db
-    .select()
-    .from(discordWebhooks)
-    .where(eq(discordWebhooks.userId, session.userId));
+  try {
+    const webhooks = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(discordWebhooks)
+        .where(eq(discordWebhooks.userId, session.userId));
+    });
 
-  return NextResponse.json({
-    webhooks: webhooks.map((w) => ({
-      id: w.id,
-      name: w.name,
-      webhookUrl: w.webhookUrl,
-      channelName: w.channelName,
-      minSignalStrength: w.minSignalStrength,
-      symbols: w.symbols,
-      enabled: w.enabled,
-    })),
-  });
+    return NextResponse.json({
+      webhooks: webhooks.map((w) => ({
+        id: w.id,
+        name: w.name,
+        webhookUrl: w.webhookUrl,
+        channelName: w.channelName,
+        minSignalStrength: w.minSignalStrength,
+        symbols: w.symbols,
+        enabled: w.enabled,
+      })),
+    });
+  } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
+    return NextResponse.json({ error: "Failed to load webhooks" }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const parsed = createWebhookSchema.safeParse(body);
@@ -51,7 +61,7 @@ export async function POST(request: Request) {
   const existing = await db
     .select({ id: discordWebhooks.id })
     .from(discordWebhooks)
-    .where(eq(discordWebhooks.userId, session.userId));
+    .where(eq(discordWebhooks.userId, auth.userId));
 
   if (existing.length >= DISCORD_CONFIG.maxWebhooksPerUser) {
     return NextResponse.json(
@@ -63,7 +73,7 @@ export async function POST(request: Request) {
   const [webhook] = await db
     .insert(discordWebhooks)
     .values({
-      userId: session.userId,
+      userId: auth.userId,
       name: parsed.data.name,
       webhookUrl: parsed.data.webhookUrl,
       channelName: parsed.data.channelName ?? null,
@@ -89,10 +99,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const schema = z.object({
@@ -121,7 +129,7 @@ export async function PATCH(request: Request) {
     .where(
       and(
         eq(discordWebhooks.id, parsed.data.id),
-        eq(discordWebhooks.userId, session.userId)
+        eq(discordWebhooks.userId, auth.userId)
       )
     );
 
@@ -129,10 +137,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const id = body.id;
@@ -146,7 +152,7 @@ export async function DELETE(request: Request) {
     .where(
       and(
         eq(discordWebhooks.id, id),
-        eq(discordWebhooks.userId, session.userId)
+        eq(discordWebhooks.userId, auth.userId)
       )
     );
 

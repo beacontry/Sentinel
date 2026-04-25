@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { analyzeBars, type SignalParams } from "@/lib/indicators/analyzer";
 import { STRATEGY_PRESETS } from "@/lib/strategy-presets";
-import { db } from "@/lib/db";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { optimizationRuns } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
@@ -494,17 +494,21 @@ export async function GET() {
     // Determine universe from active optimizer run (or latest completed)
     let universe: string[] = TOP_50;
     try {
-      const [activeRun] = await db
-        .select({ universe: optimizationRuns.universe })
-        .from(optimizationRuns)
-        .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
-        .limit(1);
-      const savedRun = activeRun ?? (await db
-        .select({ universe: optimizationRuns.universe })
-        .from(optimizationRuns)
-        .where(eq(optimizationRuns.status, "complete"))
-        .orderBy(desc(optimizationRuns.completedAt))
-        .limit(1))[0];
+      const savedRun = await withTimeout(5000, async (tx) => {
+        const [activeRun] = await tx
+          .select({ universe: optimizationRuns.universe })
+          .from(optimizationRuns)
+          .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+          .limit(1);
+        if (activeRun) return activeRun;
+        const [fallback] = await tx
+          .select({ universe: optimizationRuns.universe })
+          .from(optimizationRuns)
+          .where(eq(optimizationRuns.status, "complete"))
+          .orderBy(desc(optimizationRuns.completedAt))
+          .limit(1);
+        return fallback ?? null;
+      });
       if (savedRun?.universe === "sp500") universe = SP500_SYMBOLS;
       else if (savedRun?.universe === "top150") universe = TOP_150;
     } catch { /* use default top50 */ }
@@ -544,13 +548,17 @@ export async function GET() {
     let optimizedParams: StrategyParams = STRATEGY_PRESETS.optimized;
     let optimizedExtra: OptimizerExtraParams = {};
     try {
-      const [activeParams] = await db.select({ bestParams: optimizationRuns.bestParams })
-        .from(optimizationRuns)
-        .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
-        .limit(1);
-      const [run] = activeParams ? [activeParams] : await db.select({ bestParams: optimizationRuns.bestParams })
-        .from(optimizationRuns).where(eq(optimizationRuns.status, "complete"))
-        .orderBy(desc(optimizationRuns.completedAt)).limit(1);
+      const run = await withTimeout(5000, async (tx) => {
+        const [activeParams] = await tx.select({ bestParams: optimizationRuns.bestParams })
+          .from(optimizationRuns)
+          .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+          .limit(1);
+        if (activeParams) return activeParams;
+        const [fallback] = await tx.select({ bestParams: optimizationRuns.bestParams })
+          .from(optimizationRuns).where(eq(optimizationRuns.status, "complete"))
+          .orderBy(desc(optimizationRuns.completedAt)).limit(1);
+        return fallback ?? null;
+      });
       if (run?.bestParams) {
         const p = run.bestParams as Record<string, number>;
         if (p.stopLossPct != null) {
@@ -623,6 +631,12 @@ export async function GET() {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const msg = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: msg }, "Mode comparison failed");
     return NextResponse.json({ error: "Comparison failed" }, { status: 500 });

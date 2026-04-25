@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { savedStrategies } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import {
@@ -19,12 +19,14 @@ export async function GET() {
   }
 
   try {
-    const strategies = await db
-      .select()
-      .from(savedStrategies)
-      .where(eq(savedStrategies.userId, session.userId))
-      .orderBy(desc(savedStrategies.createdAt))
-      .limit(50);
+    const strategies = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(savedStrategies)
+        .where(eq(savedStrategies.userId, session.userId))
+        .orderBy(desc(savedStrategies.createdAt))
+        .limit(50);
+    });
 
     return NextResponse.json({
       strategies: strategies.map((s) => ({
@@ -34,6 +36,12 @@ export async function GET() {
       })),
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Strategies list error");
     return NextResponse.json({ error: "Failed to load strategies" }, { status: 500 });
@@ -41,10 +49,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body;
   try {
@@ -65,7 +71,7 @@ export async function POST(request: Request) {
     const [strategy] = await db
       .insert(savedStrategies)
       .values({
-        userId: session.userId,
+        userId: auth.userId,
         name: parsed.data.name,
         description: parsed.data.description ?? null,
         config: parsed.data.config,
@@ -90,10 +96,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body;
   try {
@@ -121,7 +125,7 @@ export async function PATCH(request: Request) {
     if (existing.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (existing[0].userId !== session.userId) {
+    if (existing[0].userId !== auth.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -153,10 +157,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body;
   try {
@@ -181,7 +183,7 @@ export async function DELETE(request: Request) {
     if (existing.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (existing[0].userId !== session.userId) {
+    if (existing[0].userId !== auth.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

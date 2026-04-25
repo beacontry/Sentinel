@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
 import { getClaudeClient } from "@/lib/claude";
 import { gatherChatContext } from "@/lib/market-context";
 import { db } from "@/lib/db";
@@ -12,10 +12,8 @@ import { createRouteLogger } from "@/lib/logger";
 const log = createRouteLogger("chat");
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const claude = getClaudeClient();
   if (!claude.isConfigured) {
@@ -43,7 +41,7 @@ export async function POST(request: NextRequest) {
   try {
     // Save user message
     await db.insert(chatMessages).values({
-      userId: session.userId,
+      userId: auth.userId,
       sessionId,
       role: "user",
       content: message,
@@ -55,7 +53,7 @@ export async function POST(request: NextRequest) {
       .from(chatMessages)
       .where(
         and(
-          eq(chatMessages.userId, session.userId),
+          eq(chatMessages.userId, auth.userId),
           eq(chatMessages.sessionId, sessionId)
         )
       )
@@ -73,7 +71,7 @@ export async function POST(request: NextRequest) {
 
     // Save assistant response
     await db.insert(chatMessages).values({
-      userId: session.userId,
+      userId: auth.userId,
       sessionId,
       role: "assistant",
       content: result.response,

@@ -4,6 +4,10 @@
  * Configure via RESEND_API_KEY and EMAIL_FROM env vars.
  */
 
+import { createRouteLogger } from "./logger";
+
+const log = createRouteLogger("email");
+
 interface EmailResult {
   success: boolean;
   error?: string;
@@ -18,7 +22,7 @@ export async function sendAlertEmail(
   const from = process.env.EMAIL_FROM ?? "Sentinel <alerts@sentinel.app>";
 
   if (!apiKey) {
-    console.log(`[email] Would send to ${to}: ${subject}`);
+    log.info({ to, subject }, "Email not configured, would send");
     return { success: false, error: "Email not configured" };
   }
 
@@ -39,14 +43,14 @@ export async function sendAlertEmail(
 
     if (!res.ok) {
       const err = await res.text();
-      console.error("[email] Send failed:", err);
+      log.error({ err }, "Send failed");
       return { success: false, error: "Send failed" };
     }
 
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[email] Send error:", message);
+    log.error({ err: message }, "Send error");
     return { success: false, error: message };
   }
 }

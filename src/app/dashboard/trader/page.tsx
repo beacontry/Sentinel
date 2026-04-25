@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePolling } from "@/hooks/usePolling";
+import { POLLING_INTERVALS } from "@/lib/config";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SignalBadge } from "@/components/ui/signal-badge";
@@ -173,28 +175,32 @@ export default function TraderPage() {
   const [riskSaving, setRiskSaving] = useState(false);
   const [riskSaved, setRiskSaved] = useState(false);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [dashRes, engRes] = await Promise.allSettled([
-          fetch("/api/trader/dashboard"),
-          fetch("/api/trader/engine"),
-        ]);
-        if (dashRes.status === "fulfilled" && dashRes.value.ok) setData(await dashRes.value.json());
-        if (engRes.status === "fulfilled" && engRes.value.ok) {
-          const engJson = await engRes.value.json();
-          setEngine(engJson.data ?? engJson);
-        }
-      } catch {
-        // Silent
-      } finally {
-        setLoading(false);
+  async function load() {
+    try {
+      const [dashRes, engRes] = await Promise.allSettled([
+        fetch("/api/trader/dashboard"),
+        fetch("/api/trader/engine"),
+      ]);
+      if (dashRes.status === "fulfilled" && dashRes.value.ok) setData(await dashRes.value.json());
+      if (engRes.status === "fulfilled" && engRes.value.ok) {
+        const engJson = await engRes.value.json();
+        setEngine(engJson.data ?? engJson);
       }
+    } catch {
+      // Silent
+    } finally {
+      setLoading(false);
     }
+  }
+
+  // Initial load
+  useEffect(() => {
     load();
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
+   
   }, []);
+
+  // Poll for updates
+  usePolling(load, POLLING_INTERVALS.traderDashboard);
 
   // Load saved risk profile overrides
   useEffect(() => {

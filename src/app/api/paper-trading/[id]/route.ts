@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { paperTradingConfigs, paperTradingRuns } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
@@ -19,33 +19,47 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const [config] = await db
-      .select()
-      .from(paperTradingConfigs)
-      .where(
-        and(
-          eq(paperTradingConfigs.id, id),
-          eq(paperTradingConfigs.userId, session.userId as string)
+    const { config, runs } = await withTimeout(3000, async (tx) => {
+      const [cfg] = await tx
+        .select()
+        .from(paperTradingConfigs)
+        .where(
+          and(
+            eq(paperTradingConfigs.id, id),
+            eq(paperTradingConfigs.userId, session.userId as string)
+          )
         )
-      )
-      .limit(1);
+        .limit(1);
+
+      if (!cfg) {
+        return { config: null, runs: [] };
+      }
+
+      const r = await tx
+        .select()
+        .from(paperTradingRuns)
+        .where(eq(paperTradingRuns.configId, id))
+        .orderBy(sql`${paperTradingRuns.startedAt} DESC`)
+        .limit(20);
+
+      return { config: cfg, runs: r };
+    });
 
     if (!config) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-
-    const runs = await db
-      .select()
-      .from(paperTradingRuns)
-      .where(eq(paperTradingRuns.configId, id))
-      .orderBy(sql`${paperTradingRuns.startedAt} DESC`)
-      .limit(20);
 
     return NextResponse.json(
       { config, runs },
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Paper trading detail error");
     return NextResponse.json(
@@ -56,13 +70,11 @@ export async function GET(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const { id } = await params;
 
@@ -72,7 +84,7 @@ export async function DELETE(
       .where(
         and(
           eq(paperTradingConfigs.id, id),
-          eq(paperTradingConfigs.userId, session.userId as string)
+          eq(paperTradingConfigs.userId, auth.userId as string)
         )
       )
       .returning({ id: paperTradingConfigs.id });

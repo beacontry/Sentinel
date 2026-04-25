@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { socialFollows, users } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
@@ -19,16 +19,18 @@ export async function GET() {
   }
 
   try {
-    const following = await db
-      .select({
-        id: socialFollows.id,
-        followingId: socialFollows.followingId,
-        createdAt: socialFollows.createdAt,
-        userName: users.name,
-      })
-      .from(socialFollows)
-      .innerJoin(users, eq(socialFollows.followingId, users.id))
-      .where(eq(socialFollows.followerId, session.userId));
+    const following = await withTimeout(3000, async (tx) => {
+      return tx
+        .select({
+          id: socialFollows.id,
+          followingId: socialFollows.followingId,
+          createdAt: socialFollows.createdAt,
+          userName: users.name,
+        })
+        .from(socialFollows)
+        .innerJoin(users, eq(socialFollows.followingId, users.id))
+        .where(eq(socialFollows.followerId, session.userId));
+    });
 
     return NextResponse.json({
       following: following.map((f) => ({
@@ -37,6 +39,12 @@ export async function GET() {
       })),
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Follow list error");
     return NextResponse.json({ error: "Failed to load follows" }, { status: 500 });
@@ -44,10 +52,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body;
   try {
@@ -66,7 +72,7 @@ export async function POST(request: Request) {
 
   const targetUserId = parsed.data.userId;
 
-  if (targetUserId === session.userId) {
+  if (targetUserId === auth.userId) {
     return NextResponse.json({ error: "Cannot follow yourself" }, { status: 400 });
   }
 
@@ -88,7 +94,7 @@ export async function POST(request: Request) {
       .from(socialFollows)
       .where(
         and(
-          eq(socialFollows.followerId, session.userId),
+          eq(socialFollows.followerId, auth.userId),
           eq(socialFollows.followingId, targetUserId)
         )
       )
@@ -106,7 +112,7 @@ export async function POST(request: Request) {
       await db
         .insert(socialFollows)
         .values({
-          followerId: session.userId,
+          followerId: auth.userId,
           followingId: targetUserId,
         });
 

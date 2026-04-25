@@ -252,10 +252,12 @@ Every buy signal passes through ten sequential gates before an order is placed:
 
 ### Dual-Layer Stop Protection
 
-**While engine is running (disaster stops):**
-- Wide 18% GTC stop orders on Alpaca for every position
-- Only fire if the server is down for hours — engine manages tighter exits dynamically
-- Placed on engine start and after position sync on auto-restart
+**While engine is running (protective stops):**
+- Gain-aware GTC stop orders on Alpaca for every position
+- Computes `max(disasterStop, trailingStop, fixedStop)` using current broker price as peak
+- Positions with unrealized gains get tight trailing stops (not flat 18% from entry)
+- `syncBrokerStops()` runs every scan cycle and ratchets stops up (never down) as price rises
+- Dynamic trail: starts at base% (e.g. 9%), exponentially decays toward 2% floor as profit grows
 
 **When engine is stopped (safety stops):**
 - Tighter strategy-level GTC stops (~8.5% from optimizer) placed on Alpaca
@@ -263,8 +265,9 @@ Every buy signal passes through ten sequential gates before an order is placed:
 - Placed automatically when engine is stopped or halted
 
 **Transition:**
-- **On engine start:** Cancels old stops → places 18% disaster stops
-- **On engine stop:** Cancels disaster stops → places ~8.5% safety stops
+- **On engine start:** Cancels old stops → places gain-aware protective stops
+- **While running:** `syncBrokerStops()` updates stops every scan to match dynamic trailing
+- **On engine stop:** Cancels protective stops → places ~8.5% safety stops
 
 ### Auto-Restart After Deploy
 - On first dashboard page load after container restart:

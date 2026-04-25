@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { policyItems } from "@/lib/db/schema";
 import { eq, desc, sql } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
@@ -22,23 +22,31 @@ export async function GET(request: NextRequest) {
 
   try {
     // Try DB first
-    const [countResult] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(policyItems);
+    const { countResult, rows } = await withTimeout(3000, async (tx) => {
+      const [cr] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(policyItems);
 
-    if (Number(countResult?.count) > 0) {
-      // Serve from DB
-      let query = db
-        .select()
-        .from(policyItems)
-        .orderBy(desc(policyItems.lastUpdated))
-        .$dynamic();
+      if (Number(cr?.count) > 0) {
+        // Serve from DB
+        let query = tx
+          .select()
+          .from(policyItems)
+          .orderBy(desc(policyItems.lastUpdated))
+          .$dynamic();
 
-      if (statusParam && VALID_STATUSES.includes(statusParam as PolicyStatus)) {
-        query = query.where(eq(policyItems.status, statusParam));
+        if (statusParam && VALID_STATUSES.includes(statusParam as PolicyStatus)) {
+          query = query.where(eq(policyItems.status, statusParam));
+        }
+
+        const r = await query;
+        return { countResult: cr, rows: r };
       }
 
-      const rows = await query;
+      return { countResult: cr, rows: null };
+    });
+
+    if (rows) {
 
       let items = rows.map((r) => ({
         id: r.id,
@@ -81,6 +89,12 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "public, max-age=3600" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Policy fetch error");
 

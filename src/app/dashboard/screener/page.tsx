@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { usePolling } from "@/hooks/usePolling";
+import { POLLING_INTERVALS } from "@/lib/config";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -146,33 +148,32 @@ export default function ScreenerPage() {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
-  // Auto-refresh: poll cached results every 30s
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => {
-    async function pollCache() {
-      try {
-        const res = await fetch("/api/screener");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.results?.length > 0) {
-          setResults(data.results);
-          setTotalSymbols(data.count ?? data.results.length);
-          setScannedAt(data.scannedAt ?? null);
-          setStale(data.stale ?? false);
-          setTraderPush(data.traderPush ?? []);
-          setTraderConfigured(data.traderConfigured ?? false);
-        }
-      } catch {
-        // Non-critical polling failure
+  // Poll cached results
+  const pollCache = useCallback(async () => {
+    try {
+      const res = await fetch("/api/screener");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.results?.length > 0) {
+        setResults(data.results);
+        setTotalSymbols(data.count ?? data.results.length);
+        setScannedAt(data.scannedAt ?? null);
+        setStale(data.stale ?? false);
+        setTraderPush(data.traderPush ?? []);
+        setTraderConfigured(data.traderConfigured ?? false);
       }
+    } catch {
+      // Non-critical polling failure
     }
-    // Initial load of cached data
-    pollCache();
-    pollRef.current = setInterval(pollCache, 30_000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
   }, []);
+
+  // Initial load of cached data
+  useEffect(() => {
+    pollCache();
+  }, [pollCache]);
+
+  // Auto-refresh every 30s
+  usePolling(pollCache, POLLING_INTERVALS.screenerCache);
 
   // ─── Fetch / scan ───────────────────────────────────────────────
 

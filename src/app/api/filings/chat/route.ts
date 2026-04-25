@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
 import { CLAUDE_CONFIG } from "@/lib/config";
 import { getFilingContent } from "@/lib/sec-filings";
@@ -25,13 +25,11 @@ When answering questions about filings:
 - Do not provide investment advice or recommendations`;
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   // Rate limit: 10 req/min per user
-  const { allowed } = rateLimit(`filing-chat:${session.userId}`, 10, 60);
+  const { allowed } = rateLimit(`filing-chat:${auth.userId}`, 10, 60);
   if (!allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Try again in a minute." },

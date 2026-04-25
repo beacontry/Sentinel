@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { socialLikes, socialPosts } from "@/lib/db/schema";
 import { eq, and, count } from "drizzle-orm";
@@ -8,13 +8,11 @@ import { createRouteLogger } from "@/lib/logger";
 const log = createRouteLogger("social-like");
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ postId: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const { postId } = await params;
 
@@ -36,7 +34,7 @@ export async function POST(
       .from(socialLikes)
       .where(
         and(
-          eq(socialLikes.userId, session.userId),
+          eq(socialLikes.userId, auth.userId),
           eq(socialLikes.postId, postId)
         )
       )
@@ -52,7 +50,7 @@ export async function POST(
       await db
         .insert(socialLikes)
         .values({
-          userId: session.userId,
+          userId: auth.userId,
           postId,
         });
     }

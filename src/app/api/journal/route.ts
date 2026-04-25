@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { tradeJournal } from "@/lib/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import {
@@ -35,12 +35,14 @@ export async function GET(request: Request) {
       );
     }
 
-    const entries = await db
-      .select()
-      .from(tradeJournal)
-      .where(and(...conditions))
-      .orderBy(desc(tradeJournal.createdAt))
-      .limit(50);
+    const entries = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(tradeJournal)
+        .where(and(...conditions))
+        .orderBy(desc(tradeJournal.createdAt))
+        .limit(50);
+    });
 
     return NextResponse.json({
       entries: entries.map((e) => ({
@@ -51,6 +53,12 @@ export async function GET(request: Request) {
       })),
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Journal list error");
     return NextResponse.json({ error: "Failed to load journal" }, { status: 500 });
@@ -58,10 +66,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body;
   try {
@@ -82,7 +88,7 @@ export async function POST(request: Request) {
     const [entry] = await db
       .insert(tradeJournal)
       .values({
-        userId: session.userId,
+        userId: auth.userId,
         symbol: parsed.data.symbol,
         title: parsed.data.title,
         notes: parsed.data.notes,
@@ -113,10 +119,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body;
   try {
@@ -144,7 +148,7 @@ export async function PATCH(request: Request) {
     if (existing.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (existing[0].userId !== session.userId) {
+    if (existing[0].userId !== auth.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -179,10 +183,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body;
   try {
@@ -207,7 +209,7 @@ export async function DELETE(request: Request) {
     if (existing.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (existing[0].userId !== session.userId) {
+    if (existing[0].userId !== auth.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

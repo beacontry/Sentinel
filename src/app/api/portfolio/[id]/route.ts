@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getPortfolioDetails, getPortfolioValue } from "@/lib/portfolio-sim";
-import { db } from "@/lib/db";
+import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { portfolios } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
@@ -22,11 +22,13 @@ export async function GET(
 
   try {
     // Verify ownership
-    const [portfolio] = await db
-      .select()
-      .from(portfolios)
-      .where(eq(portfolios.id, id))
-      .limit(1);
+    const [portfolio] = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(portfolios)
+        .where(eq(portfolios.id, id))
+        .limit(1);
+    });
 
     if (!portfolio || portfolio.userId !== session.userId) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -73,6 +75,12 @@ export async function GET(
       })),
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Portfolio detail error");
     return NextResponse.json({ error: "Failed to load portfolio" }, { status: 500 });

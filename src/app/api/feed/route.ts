@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { feedPosts, feedLikes, signals, users } from "@/lib/db/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
 import { z } from "zod";
@@ -23,40 +23,52 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const posts = await db
-    .select({
-      id: feedPosts.id,
-      userId: feedPosts.userId,
-      userName: users.name,
-      comment: feedPosts.comment,
-      createdAt: feedPosts.createdAt,
-      symbol: signals.symbol,
-      signal: signals.signal,
-      confidence: signals.confidence,
-      price: signals.price,
-      plainEnglish: signals.plainEnglish,
-      likes: sql<number>`(SELECT count(*) FROM feed_likes WHERE post_id = ${feedPosts.id})`.as("likes"),
-      liked: sql<boolean>`EXISTS(SELECT 1 FROM feed_likes WHERE post_id = ${feedPosts.id} AND user_id = ${session.userId})`.as("liked"),
-    })
-    .from(feedPosts)
-    .innerJoin(users, eq(feedPosts.userId, users.id))
-    .innerJoin(signals, eq(feedPosts.signalId, signals.id))
-    .orderBy(desc(feedPosts.createdAt))
-    .limit(50);
+  try {
+    const posts = await withTimeout(3000, async (tx) => {
+      return tx
+        .select({
+          id: feedPosts.id,
+          userId: feedPosts.userId,
+          userName: users.name,
+          comment: feedPosts.comment,
+          createdAt: feedPosts.createdAt,
+          symbol: signals.symbol,
+          signal: signals.signal,
+          confidence: signals.confidence,
+          price: signals.price,
+          plainEnglish: signals.plainEnglish,
+          likes: sql<number>`(SELECT count(*) FROM feed_likes WHERE post_id = ${feedPosts.id})`.as("likes"),
+          liked: sql<boolean>`EXISTS(SELECT 1 FROM feed_likes WHERE post_id = ${feedPosts.id} AND user_id = ${session.userId})`.as("liked"),
+        })
+        .from(feedPosts)
+        .innerJoin(users, eq(feedPosts.userId, users.id))
+        .innerJoin(signals, eq(feedPosts.signalId, signals.id))
+        .orderBy(desc(feedPosts.createdAt))
+        .limit(50);
+    });
 
-  return NextResponse.json({
-    posts: posts.map((p) => ({
-      ...p,
-      createdAt: p.createdAt.toISOString(),
-    })),
-  });
+    return NextResponse.json({
+      posts: posts.map((p) => ({
+        ...p,
+        createdAt: p.createdAt.toISOString(),
+      })),
+    });
+  } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
+    const message = err instanceof Error ? err.message : "Unknown error";
+    log.error({ err: message }, "Feed list error");
+    return NextResponse.json({ error: "Failed to load feed" }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const parsed = createPostSchema.safeParse(body);
@@ -81,7 +93,7 @@ export async function POST(request: Request) {
       .returning({ id: signals.id });
 
     await db.insert(feedPosts).values({
-      userId: session.userId,
+      userId: auth.userId,
       signalId: signal.id,
       comment: parsed.data.comment ?? null,
     });
@@ -95,10 +107,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const postId = body.postId;
@@ -114,7 +124,7 @@ export async function PATCH(request: Request) {
     .where(
       and(
         eq(feedLikes.postId, postId),
-        eq(feedLikes.userId, session.userId)
+        eq(feedLikes.userId, auth.userId)
       )
     )
     .limit(1);
@@ -125,13 +135,13 @@ export async function PATCH(request: Request) {
       .where(
         and(
           eq(feedLikes.postId, postId),
-          eq(feedLikes.userId, session.userId)
+          eq(feedLikes.userId, auth.userId)
         )
       );
   } else {
     await db.insert(feedLikes).values({
       postId,
-      userId: session.userId,
+      userId: auth.userId,
     });
   }
 

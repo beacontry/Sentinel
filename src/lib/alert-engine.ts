@@ -4,6 +4,9 @@ import { eq, and } from "drizzle-orm";
 import { sendNotification } from "./notifications";
 import { getMarketDataProvider } from "./market-data";
 import { analyzeBars } from "./indicators/analyzer";
+import { createRouteLogger } from "./logger";
+
+const log = createRouteLogger("alert-engine");
 
 interface AlertContext {
   symbol: string;
@@ -72,7 +75,7 @@ export async function evaluateAlertRules(context: AlertContext): Promise<number>
         isTriggered = await checkIndicatorRule(rule.operator, rule.value, context.symbol);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
-        console.error(`Indicator rule check failed for ${rule.operator}:`, message);
+        log.error({ operator: rule.operator, err: message }, "Indicator rule check failed");
         continue;
       }
     } else {

@@ -2,6 +2,10 @@
 // Provides a unified interface for interacting with different brokerage APIs.
 // Each broker client normalizes responses to common types.
 
+import { createRouteLogger } from "./logger";
+
+const log = createRouteLogger("brokers");
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface BrokerAccount {
@@ -159,7 +163,7 @@ class AlpacaClient implements BrokerClient {
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
-      console.error("Alpaca account fetch failed:", res.status, errorText);
+      log.error({ broker: "alpaca", status: res.status, err: errorText }, "Account fetch failed");
       throw new BrokerError(
         `Alpaca ${res.status}: ${errorText}`,
         res.status === 403 ? 401 : 502,
@@ -202,7 +206,7 @@ class AlpacaClient implements BrokerClient {
     });
 
     if (!res.ok) {
-      console.error("Alpaca positions fetch failed:", res.status);
+      log.error({ broker: "alpaca", status: res.status }, "Positions fetch failed");
       throw new BrokerError(
         `Alpaca positions ${res.status}`,
         502,
@@ -241,7 +245,7 @@ class AlpacaClient implements BrokerClient {
     );
 
     if (!res.ok) {
-      console.error("Alpaca orders fetch failed:", res.status);
+      log.error({ broker: "alpaca", status: res.status }, "Orders fetch failed");
       throw new BrokerError(
         `Alpaca orders ${res.status}`,
         502,
@@ -312,7 +316,7 @@ class AlpacaClient implements BrokerClient {
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
-      console.error("Alpaca order placement failed:", res.status, errorText);
+      log.error({ broker: "alpaca", status: res.status, err: errorText }, "Order placement failed");
 
       let userError = "Failed to place order";
       try {
@@ -378,7 +382,7 @@ class AlpacaClient implements BrokerClient {
     });
     if (!res.ok) {
       const msg = await res.text().catch(() => "Unknown");
-      console.error("Alpaca cancel all orders failed:", res.status, msg);
+      log.error({ broker: "alpaca", status: res.status, err: msg }, "Cancel all orders failed");
     }
   }
 
@@ -447,7 +451,7 @@ class IBKRClient implements BrokerClient {
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
-      console.error("IBKR test connection failed:", res.status, errorText);
+      log.error({ broker: "ibkr", status: res.status, err: errorText }, "Test connection failed");
       throw new BrokerError(
         `IBKR ${res.status}: ${errorText}`,
         res.status === 401 ? 401 : 502,
@@ -493,7 +497,7 @@ class IBKRClient implements BrokerClient {
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
-      console.error("IBKR account fetch failed:", res.status, errorText);
+      log.error({ broker: "ibkr", status: res.status, err: errorText }, "Account fetch failed");
       throw new BrokerError(
         `IBKR account ${res.status}: ${errorText}`,
         res.status === 401 ? 401 : 502,
@@ -542,7 +546,7 @@ class IBKRClient implements BrokerClient {
     );
 
     if (!res.ok) {
-      console.error("IBKR positions fetch failed:", res.status);
+      log.error({ broker: "ibkr", status: res.status }, "Positions fetch failed");
       throw new BrokerError(
         `IBKR positions ${res.status}`,
         502,
@@ -584,7 +588,7 @@ class IBKRClient implements BrokerClient {
     );
 
     if (!res.ok) {
-      console.error("IBKR orders fetch failed:", res.status);
+      log.error({ broker: "ibkr", status: res.status }, "Orders fetch failed");
       throw new BrokerError(
         `IBKR orders ${res.status}`,
         502,
@@ -644,7 +648,7 @@ class IBKRClient implements BrokerClient {
     );
 
     if (!searchRes.ok) {
-      console.error("IBKR symbol search failed:", searchRes.status);
+      log.error({ broker: "ibkr", status: searchRes.status }, "Symbol search failed");
       throw new BrokerError(
         `IBKR symbol search ${searchRes.status}`,
         400,
@@ -705,7 +709,7 @@ class IBKRClient implements BrokerClient {
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
-      console.error("IBKR order placement failed:", res.status, errorText);
+      log.error({ broker: "ibkr", status: res.status, err: errorText }, "Order placement failed");
       throw new BrokerError(
         `IBKR order ${res.status}: ${errorText}`,
         400,
@@ -787,7 +791,7 @@ class TradierClient implements BrokerClient {
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
-      console.error("Tradier test connection failed:", res.status, errorText);
+      log.error({ broker: "tradier", status: res.status, err: errorText }, "Test connection failed");
       throw new BrokerError(
         `Tradier ${res.status}: ${errorText}`,
         res.status === 401 ? 401 : 502,
@@ -888,7 +892,7 @@ class TradierClient implements BrokerClient {
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
-      console.error("Tradier balances fetch failed:", res.status, errorText);
+      log.error({ broker: "tradier", status: res.status, err: errorText }, "Balances fetch failed");
       throw new BrokerError(
         `Tradier balances ${res.status}: ${errorText}`,
         res.status === 401 ? 401 : 502,
@@ -940,7 +944,7 @@ class TradierClient implements BrokerClient {
     );
 
     if (!res.ok) {
-      console.error("Tradier positions fetch failed:", res.status);
+      log.error({ broker: "tradier", status: res.status }, "Positions fetch failed");
       throw new BrokerError(
         `Tradier positions ${res.status}`,
         502,
@@ -997,7 +1001,7 @@ class TradierClient implements BrokerClient {
     );
 
     if (!res.ok) {
-      console.error("Tradier orders fetch failed:", res.status);
+      log.error({ broker: "tradier", status: res.status }, "Orders fetch failed");
       throw new BrokerError(
         `Tradier orders ${res.status}`,
         502,
@@ -1069,7 +1073,7 @@ class TradierClient implements BrokerClient {
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
-      console.error("Tradier order placement failed:", res.status, errorText);
+      log.error({ broker: "tradier", status: res.status, err: errorText }, "Order placement failed");
 
       let userError = "Failed to place order on Tradier";
       try {

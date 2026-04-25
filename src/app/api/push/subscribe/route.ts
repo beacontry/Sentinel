@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { pushSubscriptions } from "@/lib/db/schema";
 import { z } from "zod";
@@ -16,10 +16,8 @@ const subscribeSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const parsed = subscribeSchema.safeParse(body);
@@ -31,7 +29,7 @@ export async function POST(request: Request) {
     await db
       .insert(pushSubscriptions)
       .values({
-        userId: session.userId as string,
+        userId: auth.userId as string,
         endpoint: parsed.data.endpoint,
         p256dh: parsed.data.keys.p256dh,
         auth: parsed.data.keys.auth,

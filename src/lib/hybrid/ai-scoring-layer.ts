@@ -1,7 +1,10 @@
 import { SignalType } from "@/types";
 import { CLAUDE_CONFIG } from "../config";
+import { createRouteLogger } from "../logger";
 import type { SentimentLayer } from "./sentiment-layer";
 import type { OptionsFlowLayer } from "./options-layer";
+
+const log = createRouteLogger("ai-scoring");
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -165,7 +168,7 @@ export async function applyAiScoringLayer(
     try {
       parsed = JSON.parse(jsonStr);
     } catch {
-      console.error("AI scoring: failed to parse response JSON");
+      log.error("Failed to parse response JSON");
       return null;
     }
 
@@ -175,18 +178,14 @@ export async function applyAiScoringLayer(
 
     // Validate signal
     if (!VALID_SIGNALS.includes(adjustedSignalRaw)) {
-      console.error(
-        `AI scoring: invalid signal "${adjustedSignalRaw}", falling back`
-      );
+      log.error({ signal: adjustedSignalRaw }, "Invalid signal, falling back");
       return null;
     }
 
     // Enforce: no direction flips
     let adjustedSignal = adjustedSignalRaw as SignalType;
     if (isDirectionFlip(technicalSignal, adjustedSignal)) {
-      console.warn(
-        `AI scoring: direction flip blocked (${technicalSignal} -> ${adjustedSignal})`
-      );
+      log.warn({ from: technicalSignal, to: adjustedSignal }, "Direction flip blocked");
       adjustedSignal = technicalSignal;
     }
 
@@ -210,12 +209,9 @@ export async function applyAiScoringLayer(
     };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      console.error(`AI scoring: timed out after ${effectiveTimeout}ms`);
+      log.error({ timeoutMs: effectiveTimeout }, "Timed out");
     } else {
-      console.error(
-        "AI scoring layer failed:",
-        err instanceof Error ? err.message : "Unknown error"
-      );
+      log.error({ err: err instanceof Error ? err.message : "Unknown error" }, "Layer failed");
     }
     return null;
   } finally {

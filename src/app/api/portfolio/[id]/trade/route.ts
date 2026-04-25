@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { executeTrade } from "@/lib/portfolio-sim";
 import { db } from "@/lib/db";
 import { portfolios } from "@/lib/db/schema";
@@ -20,10 +20,8 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const { id } = await params;
 
@@ -34,7 +32,7 @@ export async function POST(
     .where(eq(portfolios.id, id))
     .limit(1);
 
-  if (!portfolio || portfolio.userId !== session.userId) {
+  if (!portfolio || portfolio.userId !== auth.userId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

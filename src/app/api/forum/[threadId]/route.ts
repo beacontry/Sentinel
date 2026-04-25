@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import {
   forumThreads,
   forumReplies,
@@ -24,54 +24,58 @@ export async function GET(
   const { threadId } = await params;
 
   try {
-    // Increment view count
-    await db
-      .update(forumThreads)
-      .set({ viewCount: sql`${forumThreads.viewCount} + 1` })
-      .where(eq(forumThreads.id, threadId));
+    const { threadRows, replies } = await withTimeout(3000, async (tx) => {
+      // Increment view count
+      await tx
+        .update(forumThreads)
+        .set({ viewCount: sql`${forumThreads.viewCount} + 1` })
+        .where(eq(forumThreads.id, threadId));
 
-    // Get thread with author and category
-    const threadRows = await db
-      .select({
-        id: forumThreads.id,
-        title: forumThreads.title,
-        body: forumThreads.body,
-        pinned: forumThreads.pinned,
-        locked: forumThreads.locked,
-        viewCount: forumThreads.viewCount,
-        createdAt: forumThreads.createdAt,
-        updatedAt: forumThreads.updatedAt,
-        userId: forumThreads.userId,
-        categoryId: forumThreads.categoryId,
-        authorName: users.name,
-        categoryName: forumCategories.name,
-      })
-      .from(forumThreads)
-      .innerJoin(users, eq(forumThreads.userId, users.id))
-      .innerJoin(forumCategories, eq(forumThreads.categoryId, forumCategories.id))
-      .where(eq(forumThreads.id, threadId))
-      .limit(1);
+      // Get thread with author and category
+      const threadRows = await tx
+        .select({
+          id: forumThreads.id,
+          title: forumThreads.title,
+          body: forumThreads.body,
+          pinned: forumThreads.pinned,
+          locked: forumThreads.locked,
+          viewCount: forumThreads.viewCount,
+          createdAt: forumThreads.createdAt,
+          updatedAt: forumThreads.updatedAt,
+          userId: forumThreads.userId,
+          categoryId: forumThreads.categoryId,
+          authorName: users.name,
+          categoryName: forumCategories.name,
+        })
+        .from(forumThreads)
+        .innerJoin(users, eq(forumThreads.userId, users.id))
+        .innerJoin(forumCategories, eq(forumThreads.categoryId, forumCategories.id))
+        .where(eq(forumThreads.id, threadId))
+        .limit(1);
+
+      // Get all replies with authors (flat, client can nest by parentReplyId)
+      const replies = await tx
+        .select({
+          id: forumReplies.id,
+          body: forumReplies.body,
+          parentReplyId: forumReplies.parentReplyId,
+          createdAt: forumReplies.createdAt,
+          userId: forumReplies.userId,
+          authorName: users.name,
+        })
+        .from(forumReplies)
+        .innerJoin(users, eq(forumReplies.userId, users.id))
+        .where(eq(forumReplies.threadId, threadId))
+        .orderBy(asc(forumReplies.createdAt));
+
+      return { threadRows, replies };
+    });
 
     if (threadRows.length === 0) {
       return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
 
     const thread = threadRows[0];
-
-    // Get all replies with authors (flat, client can nest by parentReplyId)
-    const replies = await db
-      .select({
-        id: forumReplies.id,
-        body: forumReplies.body,
-        parentReplyId: forumReplies.parentReplyId,
-        createdAt: forumReplies.createdAt,
-        userId: forumReplies.userId,
-        authorName: users.name,
-      })
-      .from(forumReplies)
-      .innerJoin(users, eq(forumReplies.userId, users.id))
-      .where(eq(forumReplies.threadId, threadId))
-      .orderBy(asc(forumReplies.createdAt));
 
     return NextResponse.json({
       thread: {
@@ -85,6 +89,12 @@ export async function GET(
       })),
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Forum thread error");
     return NextResponse.json({ error: "Failed to load thread" }, { status: 500 });
@@ -95,10 +105,8 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ threadId: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const { threadId } = await params;
 
@@ -120,7 +128,7 @@ export async function PATCH(
     if (existing.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (existing[0].userId !== session.userId) {
+    if (existing[0].userId !== auth.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -153,13 +161,11 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ threadId: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const { threadId } = await params;
 
@@ -173,7 +179,7 @@ export async function DELETE(
     if (existing.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (existing[0].userId !== session.userId) {
+    if (existing[0].userId !== auth.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

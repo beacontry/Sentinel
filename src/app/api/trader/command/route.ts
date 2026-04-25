@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { brokerConnections, traderTrades, traderDailyPnl } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -18,10 +18,8 @@ const commandSchema = z.object({
 const log = createRouteLogger("trader-command");
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {
@@ -30,7 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { allowed } = rateLimit(`trader-cmd:${session.userId}`, 10, 60);
+  const { allowed } = rateLimit(`trader-cmd:${auth.userId}`, 10, 60);
   if (!allowed) {
     return NextResponse.json({ error: "Rate limited" }, { status: 429 });
   }
@@ -48,7 +46,7 @@ export async function POST(request: NextRequest) {
         // Sell a single position or all positions directly through Alpaca
 
         const [conn] = await db.select().from(brokerConnections)
-          .where(and(eq(brokerConnections.userId, session.userId), eq(brokerConnections.isActive, true)))
+          .where(and(eq(brokerConnections.userId, auth.userId), eq(brokerConnections.isActive, true)))
           .limit(1);
 
         if (!conn) {
@@ -97,7 +95,7 @@ export async function POST(request: NextRequest) {
             // Record trade in DB
             try {
               await db.insert(traderTrades).values({
-                userId: session.userId,
+                userId: auth.userId,
                 symbol: pos.symbol,
                 action: "manual_close",
                 signal: "MANUAL",
@@ -115,14 +113,14 @@ export async function POST(request: NextRequest) {
             try {
               const today = new Date().toISOString().slice(0, 10);
               const [existing] = await db.select().from(traderDailyPnl)
-                .where(and(eq(traderDailyPnl.date, today), eq(traderDailyPnl.userId, session.userId)))
+                .where(and(eq(traderDailyPnl.date, today), eq(traderDailyPnl.userId, auth.userId)))
                 .limit(1);
               if (existing) {
                 await db.update(traderDailyPnl)
                   .set({ realizedPnl: existing.realizedPnl + realizedPnl, tradesCount: existing.tradesCount + 1 })
                   .where(eq(traderDailyPnl.id, existing.id));
               } else {
-                await db.insert(traderDailyPnl).values({ userId: session.userId, date: today, realizedPnl, unrealizedPnl: 0, tradesCount: 1, halted: false });
+                await db.insert(traderDailyPnl).values({ userId: auth.userId, date: today, realizedPnl, unrealizedPnl: 0, tradesCount: 1, halted: false });
               }
             } catch { /* best effort */ }
           } catch (err) {

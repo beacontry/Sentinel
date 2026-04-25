@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { usePolling } from "@/hooks/usePolling";
+import { POLLING_INTERVALS } from "@/lib/config";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -40,8 +42,6 @@ function relativeTime(unixTimestamp: number): string {
   });
 }
 
-const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
-
 export default function NewsPage() {
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +49,6 @@ export default function NewsPage() {
   const [totalPages, setTotalPages] = useState(0);
   const [hasWatchlist, setHasWatchlist] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchNews = useCallback(async (p: number = 1, showLoader = true) => {
     if (showLoader) setLoading(true);
@@ -68,45 +67,13 @@ export default function NewsPage() {
     }
   }, []);
 
+  // Initial load and page changes
   useEffect(() => {
     fetchNews(page);
   }, [fetchNews, page]);
 
-  // Auto-refresh every 5 minutes
-  useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      fetchNews(page, false);
-    }, REFRESH_INTERVAL);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [fetchNews, page]);
-
-  // Pause when tab hidden
-  useEffect(() => {
-    function handleVisibility() {
-      if (document.hidden) {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-        }
-      } else {
-        fetchNews(page, false);
-        intervalRef.current = setInterval(() => {
-          fetchNews(page, false);
-        }, REFRESH_INTERVAL);
-      }
-    }
-
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibility);
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [fetchNews, page]);
+  // Auto-refresh every 5 minutes (pauses when tab hidden)
+  usePolling(() => fetchNews(page, false), POLLING_INTERVALS.newsRefresh);
 
   function handlePageChange(newPage: number) {
     setPage(newPage);

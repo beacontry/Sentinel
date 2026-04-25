@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { traderStatus, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
@@ -26,8 +26,17 @@ export async function GET() {
       autoStartIfNeeded(session.userId).catch(() => {});
     }
 
-    // Status — check this user's trader service heartbeat
-    const [status] = await db.select().from(traderStatus).where(eq(traderStatus.userId, session.userId)).limit(1);
+    // Status and broker connection — wrap all initial DB reads in a timeout
+    const { status, conn } = await withTimeout(3000, async (tx) => {
+      const [s] = await tx.select().from(traderStatus).where(eq(traderStatus.userId, session.userId)).limit(1);
+      const [c] = await tx
+        .select()
+        .from(brokerConnections)
+        .where(and(eq(brokerConnections.userId, session.userId), eq(brokerConnections.isActive, true)))
+        .limit(1);
+      return { status: s ?? null, conn: c ?? null };
+    });
+
     const traderServiceAlive = status
       ? Date.now() - status.lastHeartbeat.getTime() < 5 * 60 * 1000
       : false;
@@ -43,12 +52,6 @@ export async function GET() {
     let brokerConnected = false;
     let brokerName = "";
     let brokerEnv = "";
-
-    const [conn] = await db
-      .select()
-      .from(brokerConnections)
-      .where(and(eq(brokerConnections.userId, session.userId), eq(brokerConnections.isActive, true)))
-      .limit(1);
 
     if (conn) {
       brokerName = conn.broker;
@@ -85,43 +88,48 @@ export async function GET() {
 
     const isConnected = traderServiceAlive || brokerConnected;
 
-    // Today's P&L — scoped to current user
+    // All remaining DB reads in a single timeout
     const today = new Date().toISOString().slice(0, 10);
-    const [todayPnl] = await db
-      .select()
-      .from(traderDailyPnl)
-      .where(and(eq(traderDailyPnl.date, today), eq(traderDailyPnl.userId, session.userId)))
-      .limit(1);
+    const { todayPnl, trades, signals, pnlHistory, filledTrades } = await withTimeout(3000, async (tx) => {
+      // Today's P&L — scoped to current user
+      const [tp] = await tx
+        .select()
+        .from(traderDailyPnl)
+        .where(and(eq(traderDailyPnl.date, today), eq(traderDailyPnl.userId, session.userId)))
+        .limit(1);
 
-    // Recent trades — scoped to current user
-    const trades = await db
-      .select()
-      .from(traderTrades)
-      .where(eq(traderTrades.userId, session.userId))
-      .orderBy(desc(traderTrades.createdAt))
-      .limit(20);
+      // Recent trades — scoped to current user
+      const tr = await tx
+        .select()
+        .from(traderTrades)
+        .where(eq(traderTrades.userId, session.userId))
+        .orderBy(desc(traderTrades.createdAt))
+        .limit(20);
 
-    // Recent signals — scoped to current user
-    const signals = await db
-      .select()
-      .from(traderSignals)
-      .where(eq(traderSignals.userId, session.userId))
-      .orderBy(desc(traderSignals.createdAt))
-      .limit(20);
+      // Recent signals — scoped to current user
+      const sig = await tx
+        .select()
+        .from(traderSignals)
+        .where(eq(traderSignals.userId, session.userId))
+        .orderBy(desc(traderSignals.createdAt))
+        .limit(20);
 
-    // P&L history (last 30 days) — scoped to current user
-    const pnlHistory = await db
-      .select()
-      .from(traderDailyPnl)
-      .where(eq(traderDailyPnl.userId, session.userId))
-      .orderBy(desc(traderDailyPnl.date))
-      .limit(30);
+      // P&L history (last 30 days) — scoped to current user
+      const ph = await tx
+        .select()
+        .from(traderDailyPnl)
+        .where(eq(traderDailyPnl.userId, session.userId))
+        .orderBy(desc(traderDailyPnl.date))
+        .limit(30);
 
-    // Analytics — all filled trades with P&L — scoped to current user
-    const filledTrades = await db
-      .select({ pnl: traderTrades.pnl })
-      .from(traderTrades)
-      .where(and(eq(traderTrades.status, "FILLED"), isNotNull(traderTrades.pnl), eq(traderTrades.userId, session.userId)));
+      // Analytics — all filled trades with P&L — scoped to current user
+      const ft = await tx
+        .select({ pnl: traderTrades.pnl })
+        .from(traderTrades)
+        .where(and(eq(traderTrades.status, "FILLED"), isNotNull(traderTrades.pnl), eq(traderTrades.userId, session.userId)));
+
+      return { todayPnl: tp ?? null, trades: tr, signals: sig, pnlHistory: ph, filledTrades: ft };
+    });
 
     const pnls = filledTrades.map((t) => t.pnl ?? 0);
     const wins = pnls.filter((p) => p > 0);
@@ -283,6 +291,12 @@ export async function GET() {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Trader dashboard error");
     return NextResponse.json({ error: "Failed to load trader data" }, { status: 500 });

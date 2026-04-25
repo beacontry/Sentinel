@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getSession, hashPassword } from "@/lib/auth";
+import { getSession, requireAuthWithCsrf, hashPassword } from "@/lib/auth";
 import {
   adminCreateUserSchema,
   adminUpdateUserSchema,
@@ -29,22 +29,30 @@ export async function GET() {
   }
 
   try {
-    const result = await db
-      .select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        role: users.role,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .orderBy(users.createdAt);
+    const result = await withTimeout(3000, async (tx) => {
+      return tx
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          role: users.role,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .orderBy(users.createdAt);
+    });
 
     return NextResponse.json(
       { users: result },
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     logger.error({ err: message }, "Failed to list users");
     return NextResponse.json(
@@ -57,13 +65,8 @@ export async function GET() {
 // ─── POST: Create a new user ─────────────────────────────────────
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (session.role !== "admin") {
-    return forbidden();
-  }
+  const auth = await requireAuthWithCsrf(request, ["admin"]);
+  if (auth instanceof Response) return auth;
 
   const ip = request.headers.get("x-forwarded-for") ?? "unknown";
   const { allowed } = rateLimit(`admin-create-user:${ip}`, 10, 60);
@@ -136,13 +139,8 @@ export async function POST(request: Request) {
 // ─── PATCH: Update a user ────────────────────────────────────────
 
 export async function PATCH(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (session.role !== "admin") {
-    return forbidden();
-  }
+  const auth = await requireAuthWithCsrf(request, ["admin"]);
+  if (auth instanceof Response) return auth;
 
   try {
     const body = await request.json();
@@ -224,13 +222,8 @@ export async function PATCH(request: Request) {
 // ─── DELETE: Delete a user ───────────────────────────────────────
 
 export async function DELETE(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (session.role !== "admin") {
-    return forbidden();
-  }
+  const auth = await requireAuthWithCsrf(request, ["admin"]);
+  if (auth instanceof Response) return auth;
 
   try {
     const body = await request.json();
@@ -246,7 +239,7 @@ export async function DELETE(request: Request) {
     const { id } = parsed.data;
 
     // Don't allow deleting yourself
-    if (id === session.userId) {
+    if (id === auth.userId) {
       return NextResponse.json(
         { error: "You cannot delete your own account" },
         { status: 400 }
