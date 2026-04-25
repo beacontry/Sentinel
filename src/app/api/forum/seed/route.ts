@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { forumCategories } from "@/lib/db/schema";
 import { createRouteLogger } from "@/lib/logger";
@@ -19,16 +19,9 @@ const CATEGORIES = [
   { name: "Beginner Corner", description: "New to trading? Ask questions, learn basics, and get guidance from the community.", sortOrder: 8 },
 ];
 
-export async function POST() {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // Only admins can seed
-  if (session.role !== "admin") {
-    return NextResponse.json({ error: "Admin only" }, { status: 403 });
-  }
+export async function POST(request: Request) {
+  const auth = await requireAuthWithCsrf(request, ["admin"]);
+  if (auth instanceof Response) return auth;
 
   try {
     // Check if categories already exist

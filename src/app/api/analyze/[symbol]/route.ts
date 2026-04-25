@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { analyzeHybrid } from "@/lib/hybrid";
-import { db } from "@/lib/db";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { signals, signalAccuracy } from "@/lib/db/schema";
 import { sendDiscordWebhook, signalStrengthValue } from "@/lib/discord";
 import { discordWebhooks } from "@/lib/db/schema";
@@ -65,28 +65,32 @@ export async function GET(
     if (controller.signal.aborted) throw new Error("Route timeout");
 
     // Persist the signal
-    const [saved] = await db
-      .insert(signals)
-      .values({
-        symbol: result.symbol,
-        signal: result.signal,
-        confidence: result.confidence,
-        price: result.price,
-        volume: result.volume,
-        indicators: result.indicators,
-        plainEnglish: result.plainEnglish,
-      })
-      .returning({ id: signals.id });
+    const [saved] = await withTimeout(3000, async (tx) => {
+      const [s] = await tx
+        .insert(signals)
+        .values({
+          symbol: result.symbol,
+          signal: result.signal,
+          confidence: result.confidence,
+          price: result.price,
+          volume: result.volume,
+          indicators: result.indicators,
+          plainEnglish: result.plainEnglish,
+        })
+        .returning({ id: signals.id });
 
-    // Create placeholder accuracy row for later outcome checking
-    await db
-      .insert(signalAccuracy)
-      .values({
-        signalId: saved.id,
-        entryPrice: result.price,
-        timeframe: resolution,
-      })
-      .onConflictDoNothing();
+      // Create placeholder accuracy row for later outcome checking
+      await tx
+        .insert(signalAccuracy)
+        .values({
+          signalId: s.id,
+          entryPrice: result.price,
+          timeframe: resolution,
+        })
+        .onConflictDoNothing();
+
+      return [s];
+    });
 
     // Fire-and-forget: Discord, trader push, alert rules — don't block response
     if (result.signal !== "HOLD") {
@@ -129,6 +133,12 @@ export async function GET(
       headers: { "Cache-Control": "private, max-age=60" },
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     const isTimeout = message.includes("aborted") || message === "Route timeout";
     log.error({ err: message, symbol: upperSymbol }, "Analysis error");

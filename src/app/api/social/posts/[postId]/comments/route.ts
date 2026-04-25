@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { socialComments, socialPosts, users } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { createCommentSchema } from "@/lib/validators";
@@ -20,18 +20,20 @@ export async function GET(
   const { postId } = await params;
 
   try {
-    const comments = await db
-      .select({
-        id: socialComments.id,
-        content: socialComments.content,
-        createdAt: socialComments.createdAt,
-        userId: socialComments.userId,
-        authorName: users.name,
-      })
-      .from(socialComments)
-      .innerJoin(users, eq(socialComments.userId, users.id))
-      .where(eq(socialComments.postId, postId))
-      .orderBy(asc(socialComments.createdAt));
+    const comments = await withTimeout(3000, async (tx) => {
+      return tx
+        .select({
+          id: socialComments.id,
+          content: socialComments.content,
+          createdAt: socialComments.createdAt,
+          userId: socialComments.userId,
+          authorName: users.name,
+        })
+        .from(socialComments)
+        .innerJoin(users, eq(socialComments.userId, users.id))
+        .where(eq(socialComments.postId, postId))
+        .orderBy(asc(socialComments.createdAt));
+    });
 
     return NextResponse.json({
       comments: comments.map((c) => ({
@@ -40,6 +42,12 @@ export async function GET(
       })),
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Comments list error");
     return NextResponse.json({ error: "Failed to load comments" }, { status: 500 });
@@ -50,10 +58,8 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ postId: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const { postId } = await params;
 
@@ -87,7 +93,7 @@ export async function POST(
     const [comment] = await db
       .insert(socialComments)
       .values({
-        userId: session.userId,
+        userId: auth.userId,
         postId,
         content: parsed.data.content,
       })
@@ -97,7 +103,7 @@ export async function POST(
       {
         comment: {
           ...comment,
-          authorName: session.name,
+          authorName: auth.name,
           createdAt: comment.createdAt.toISOString(),
         },
       },

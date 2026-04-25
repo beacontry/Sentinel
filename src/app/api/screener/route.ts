@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
 import { getScreenerCache, scanAllSymbols, filterResults, startScreenerScheduler } from "@/lib/screener";
 import type { ScreenerFilter } from "@/lib/screener";
 import { SCREENER_CONFIG } from "@/lib/config";
@@ -68,12 +68,10 @@ export async function POST(request: Request) {
   // Start the auto-scan scheduler on first request
   startScreenerScheduler();
 
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
-  const { allowed } = rateLimit(`screener:${session.userId}`, 3, 60);
+  const { allowed } = rateLimit(`screener:${auth.userId}`, 3, 60);
   if (!allowed) {
     return NextResponse.json({ error: "Rate limited — max 3 scans per minute" }, { status: 429 });
   }

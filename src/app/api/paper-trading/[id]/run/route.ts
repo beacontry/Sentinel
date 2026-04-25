@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { paperTradingConfigs, paperTradingRuns } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -11,13 +11,11 @@ import { getMarketDataProvider } from "@/lib/market-data";
 import { STRATEGY_PRESETS, type PresetName } from "@/lib/strategy-presets";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const { id } = await params;
 
@@ -29,7 +27,7 @@ export async function POST(
       .where(
         and(
           eq(paperTradingConfigs.id, id),
-          eq(paperTradingConfigs.userId, session.userId as string)
+          eq(paperTradingConfigs.userId, auth.userId as string)
         )
       )
       .limit(1);

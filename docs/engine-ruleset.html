@@ -973,10 +973,11 @@
     <h3>Dual-Layer Stop Protection</h3>
     <p style="margin-bottom:12px">Two layers of stop orders protect positions depending on whether the engine is running:</p>
     <ul>
-      <li><strong>While running (disaster stops):</strong> Wide 18% GTC stop orders on Alpaca for every position. Only fire if the server is down for hours &mdash; the engine manages tighter exits dynamically.</li>
+      <li><strong>While running (protective stops):</strong> Gain-aware GTC stop orders on Alpaca using <code>max(disasterStop, trailingStop, fixedStop)</code> with current broker price as peak. Positions with unrealized gains get tight trailing stops, not a flat 18% from entry. <code>syncBrokerStops()</code> ratchets stops up every scan cycle as price rises.</li>
       <li><strong>When stopped (safety stops):</strong> Tighter strategy-level GTC stops (~8.5% from optimizer) placed on Alpaca. More protective since the engine won't be managing exits.</li>
-      <li><strong>On engine start:</strong> Cancels old stops &rarr; places 18% disaster stops.</li>
-      <li><strong>On engine stop:</strong> Cancels disaster stops &rarr; places ~8.5% safety stops.</li>
+      <li><strong>On engine start:</strong> Cancels old stops &rarr; places gain-aware protective stops.</li>
+      <li><strong>While running:</strong> <code>syncBrokerStops()</code> updates stops every scan to match dynamic trailing (2% floor, exponential decay from base).</li>
+      <li><strong>On engine stop:</strong> Cancels protective stops &rarr; places ~8.5% safety stops.</li>
     </ul>
 
     <h3>Auto-Restart After Deploy</h3>

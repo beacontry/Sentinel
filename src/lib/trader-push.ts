@@ -1,4 +1,7 @@
 import { TRADER_PUSH_CONFIG } from "./config";
+import { createRouteLogger } from "./logger";
+
+const log = createRouteLogger("trader-push");
 
 /**
  * Push signals and watchlist updates to the IBKR Trading Agent.
@@ -28,11 +31,11 @@ async function pushToTrader(path: string, method: string, payload: Record<string
     });
 
     if (res.status >= 400) {
-      console.error("Trader push error:", path, res.status);
+      log.error({ path, status: res.status }, "Push error");
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("Trader push failed:", path, message);
+    log.error({ path, err: message }, "Push failed");
   } finally {
     clearTimeout(timeout);
   }

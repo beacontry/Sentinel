@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { brokerConnections } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -9,7 +9,7 @@ import {
   deleteBrokerConnectionSchema,
 } from "@/lib/validators";
 import { encrypt } from "@/lib/crypto";
-import { requireCsrf } from "@/lib/csrf";
+
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("broker-connections");
@@ -52,13 +52,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const csrfError = await requireCsrf(request);
-  if (csrfError) return csrfError;
-
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {
@@ -79,7 +74,7 @@ export async function POST(request: Request) {
     const [connection] = await db
       .insert(brokerConnections)
       .values({
-        userId: session.userId,
+        userId: auth.userId,
         broker: parsed.data.broker,
         label: parsed.data.label,
         apiKey: encrypt(parsed.data.apiKey),
@@ -120,13 +115,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const csrfError = await requireCsrf(request);
-  if (csrfError) return csrfError;
-
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {
@@ -161,7 +151,7 @@ export async function PATCH(request: Request) {
       .where(
         and(
           eq(brokerConnections.id, parsed.data.id),
-          eq(brokerConnections.userId, session.userId)
+          eq(brokerConnections.userId, auth.userId)
         )
       )
       .returning();
@@ -192,13 +182,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const csrfError = await requireCsrf(request);
-  if (csrfError) return csrfError;
-
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {
@@ -218,7 +203,7 @@ export async function DELETE(request: Request) {
       .where(
         and(
           eq(brokerConnections.id, parsed.data.id),
-          eq(brokerConnections.userId, session.userId)
+          eq(brokerConnections.userId, auth.userId)
         )
       )
       .returning();

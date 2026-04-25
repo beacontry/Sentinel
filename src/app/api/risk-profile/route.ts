@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { userRiskProfiles } from "@/lib/db/schema";
 import { updateRiskProfileSchema } from "@/lib/validators";
 import { eq } from "drizzle-orm";
@@ -11,21 +11,31 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const [existing] = await db
-    .select()
-    .from(userRiskProfiles)
-    .where(eq(userRiskProfiles.userId, session.userId))
-    .limit(1);
+  try {
+    const [existing] = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(userRiskProfiles)
+        .where(eq(userRiskProfiles.userId, session.userId))
+        .limit(1);
+    });
 
-  // Return the profile if it exists, or null (all-engine-defaults)
-  return NextResponse.json({ profile: existing ?? null });
+    // Return the profile if it exists, or null (all-engine-defaults)
+    return NextResponse.json({ profile: existing ?? null });
+  } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
+    return NextResponse.json({ error: "Failed to load risk profile" }, { status: 500 });
+  }
 }
 
 export async function PATCH(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {
@@ -43,14 +53,14 @@ export async function PATCH(request: NextRequest) {
   const [existing] = await db
     .select()
     .from(userRiskProfiles)
-    .where(eq(userRiskProfiles.userId, session.userId))
+    .where(eq(userRiskProfiles.userId, auth.userId))
     .limit(1);
 
   if (!existing) {
     // Create with the provided values (nulls are fine — means "engine decides")
     const [created] = await db
       .insert(userRiskProfiles)
-      .values({ userId: session.userId, ...parsed.data })
+      .values({ userId: auth.userId, ...parsed.data })
       .returning();
     return NextResponse.json({ profile: created });
   }
@@ -58,7 +68,7 @@ export async function PATCH(request: NextRequest) {
   const [updated] = await db
     .update(userRiskProfiles)
     .set({ ...parsed.data, updatedAt: new Date() })
-    .where(eq(userRiskProfiles.userId, session.userId))
+    .where(eq(userRiskProfiles.userId, auth.userId))
     .returning();
 
   return NextResponse.json({ profile: updated });

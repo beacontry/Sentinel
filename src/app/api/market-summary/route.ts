@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getClaudeClient } from "@/lib/claude";
 import { gatherMarketContext } from "@/lib/market-context";
-import { db } from "@/lib/db";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("market-summary");
@@ -28,11 +28,13 @@ export async function GET() {
 
   try {
     // Check DB cache first
-    const [cached] = await db
-      .select()
-      .from(marketDigests)
-      .where(eq(marketDigests.date, today))
-      .limit(1);
+    const [cached] = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(marketDigests)
+        .where(eq(marketDigests.date, today))
+        .limit(1);
+    });
 
     if (cached) {
       return NextResponse.json({
@@ -84,6 +86,12 @@ export async function GET() {
       headers: { "Cache-Control": "private, max-age=300" },
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Market summary error");
     return NextResponse.json(

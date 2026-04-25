@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { alertRules } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
@@ -26,26 +26,37 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const rules = await db
-    .select()
-    .from(alertRules)
-    .where(eq(alertRules.userId, session.userId as string))
-    .orderBy(alertRules.createdAt);
+  try {
+    const rules = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(alertRules)
+        .where(eq(alertRules.userId, session.userId as string))
+        .orderBy(alertRules.createdAt);
+    });
 
-  return NextResponse.json({
-    rules: rules.map((r) => ({
-      ...r,
-      createdAt: r.createdAt.toISOString(),
-      lastTriggered: r.lastTriggered?.toISOString() ?? null,
-    })),
-  });
+    return NextResponse.json({
+      rules: rules.map((r) => ({
+        ...r,
+        createdAt: r.createdAt.toISOString(),
+        lastTriggered: r.lastTriggered?.toISOString() ?? null,
+      })),
+    });
+  } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const parsed = createAlertSchema.safeParse(body);
@@ -56,7 +67,7 @@ export async function POST(request: Request) {
   const [rule] = await db
     .insert(alertRules)
     .values({
-      userId: session.userId as string,
+      userId: auth.userId,
       ...parsed.data,
     })
     .returning();
@@ -65,10 +76,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const parsed = updateAlertSchema.safeParse(body);
@@ -87,7 +96,7 @@ export async function PATCH(request: Request) {
     .where(
       and(
         eq(alertRules.id, parsed.data.id),
-        eq(alertRules.userId, session.userId as string)
+        eq(alertRules.userId, auth.userId)
       )
     );
 
@@ -95,10 +104,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const id = body.id;
@@ -111,7 +118,7 @@ export async function DELETE(request: Request) {
     .where(
       and(
         eq(alertRules.id, id),
-        eq(alertRules.userId, session.userId as string)
+        eq(alertRules.userId, auth.userId)
       )
     );
 

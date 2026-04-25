@@ -3,8 +3,10 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { AiProvider } from "@/components/ai/ai-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ToastProvider } from "@/components/ui/toast";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { CsrfInit } from "@/components/csrf-init";
+import { SessionGuard } from "@/components/session-guard";
 
 export default function DashboardLayout({
   children,
@@ -13,11 +15,14 @@ export default function DashboardLayout({
 }) {
   return (
     <TooltipProvider>
-      <AiProvider>
-        <AppShell>{children}</AppShell>
-        <CommandPalette />
-        <CsrfInit />
-      </AiProvider>
+      <ToastProvider>
+        <AiProvider>
+          <AppShell>{children}</AppShell>
+          <CommandPalette />
+          <CsrfInit />
+          <SessionGuard />
+        </AiProvider>
+      </ToastProvider>
     </TooltipProvider>
   );
 }

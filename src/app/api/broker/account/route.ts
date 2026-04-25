@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { brokerConnections } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createBrokerClient, BrokerError } from "@/lib/brokers";
@@ -17,16 +17,18 @@ export async function GET() {
 
   try {
     // Find the user's active broker connection
-    const [connection] = await db
-      .select()
-      .from(brokerConnections)
-      .where(
-        and(
-          eq(brokerConnections.userId, session.userId),
-          eq(brokerConnections.isActive, true)
+    const [connection] = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(brokerConnections)
+        .where(
+          and(
+            eq(brokerConnections.userId, session.userId),
+            eq(brokerConnections.isActive, true)
+          )
         )
-      )
-      .limit(1);
+        .limit(1);
+    });
 
     if (!connection) {
       return NextResponse.json(
@@ -61,7 +63,7 @@ export async function GET() {
       positionsResult.status === "fulfilled" ? positionsResult.value : [];
 
     if (positionsResult.status === "rejected") {
-      console.warn("Positions fetch failed gracefully:", positionsResult.reason?.message);
+      log.warn({ err: positionsResult.reason?.message }, "Positions fetch failed gracefully");
     }
 
     // Update lastConnectedAt
@@ -70,7 +72,7 @@ export async function GET() {
       .set({ lastConnectedAt: new Date() })
       .where(eq(brokerConnections.id, connection.id))
       .catch((err: Error) => {
-        console.warn("Failed to update lastConnectedAt:", err.message);
+        log.warn({ err: err.message }, "Failed to update lastConnectedAt");
       });
 
     return NextResponse.json({
@@ -103,6 +105,12 @@ export async function GET() {
       })),
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     if (err instanceof BrokerError) {
       return NextResponse.json(
         { error: err.userMessage },

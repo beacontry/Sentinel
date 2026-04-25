@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
 import {
   startEngine,
   stopEngine,
@@ -34,10 +34,8 @@ export async function GET() {
 // ─── POST /api/trader/engine — Start / Stop / Halt (per-user) ───────────────
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {
@@ -59,52 +57,52 @@ export async function POST(request: NextRequest) {
   try {
     switch (action) {
       case "switch": {
-        log.info({ userId: session.userId, mode }, "Engine mode switch requested");
-        const status = getEngineStatus(session.userId);
+        log.info({ userId: auth.userId, mode }, "Engine mode switch requested");
+        const status = getEngineStatus(auth.userId);
         if (status.running) {
-          await stopEngine(session.userId);
+          await stopEngine(auth.userId);
         }
-        const result = await startEngine(session.userId, mode);
+        const result = await startEngine(auth.userId, mode);
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         return NextResponse.json({
-          data: { message: `Engine switched to ${mode}`, ...getEngineStatus(session.userId) },
+          data: { message: `Engine switched to ${mode}`, ...getEngineStatus(auth.userId) },
         });
       }
 
       case "start": {
-        log.info({ userId: session.userId, mode }, "Engine start requested");
-        const result = await startEngine(session.userId, mode);
+        log.info({ userId: auth.userId, mode }, "Engine start requested");
+        const result = await startEngine(auth.userId, mode);
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         return NextResponse.json({
-          data: { message: "Trading engine started", ...getEngineStatus(session.userId) },
+          data: { message: "Trading engine started", ...getEngineStatus(auth.userId) },
         });
       }
 
       case "stop": {
-        log.info({ userId: session.userId }, "Engine stop requested");
-        const result = await stopEngine(session.userId);
+        log.info({ userId: auth.userId }, "Engine stop requested");
+        const result = await stopEngine(auth.userId);
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         return NextResponse.json({
-          data: { message: "Trading engine stopped", ...getEngineStatus(session.userId) },
+          data: { message: "Trading engine stopped", ...getEngineStatus(auth.userId) },
         });
       }
 
       case "halt": {
-        log.warn({ userId: session.userId }, "Engine emergency halt requested");
-        const result = await haltEngine(session.userId);
+        log.warn({ userId: auth.userId }, "Engine emergency halt requested");
+        const result = await haltEngine(auth.userId);
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         return NextResponse.json({
           data: {
             message: "Trading engine halted — all positions closed",
-            ...getEngineStatus(session.userId),
+            ...getEngineStatus(auth.userId),
           },
         });
       }

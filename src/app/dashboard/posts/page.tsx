@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { usePolling } from "@/hooks/usePolling";
+import { POLLING_INTERVALS } from "@/lib/config";
 import { useRouter } from "next/navigation";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
@@ -45,8 +47,6 @@ interface PaginationMeta {
   totalPages: number;
 }
 
-const REFRESH_INTERVAL = 30000; // 30 seconds
-
 export default function PostsPage() {
   const router = useRouter();
   const [posts, setPosts] = useState<Post[]>([]);
@@ -59,7 +59,6 @@ export default function PostsPage() {
   const [loading, setLoading] = useState(true);
   const [symbolFilter, setSymbolFilter] = useState("");
   const [filterInput, setFilterInput] = useState("");
-  const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadPosts = useCallback(async (page: number, symbol?: string) => {
     try {
@@ -85,35 +84,11 @@ export default function PostsPage() {
     loadPosts(1, symbolFilter || undefined);
   }, [symbolFilter, loadPosts]);
 
-  // Auto-refresh with Page Visibility API
-  useEffect(() => {
-    function startPolling() {
-      if (refreshTimer.current) clearInterval(refreshTimer.current);
-      refreshTimer.current = setInterval(() => {
-        loadPosts(pagination.page, symbolFilter || undefined);
-      }, REFRESH_INTERVAL);
-    }
-
-    function handleVisibility() {
-      if (document.hidden) {
-        if (refreshTimer.current) {
-          clearInterval(refreshTimer.current);
-          refreshTimer.current = null;
-        }
-      } else {
-        loadPosts(pagination.page, symbolFilter || undefined);
-        startPolling();
-      }
-    }
-
-    startPolling();
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    return () => {
-      if (refreshTimer.current) clearInterval(refreshTimer.current);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [pagination.page, symbolFilter, loadPosts]);
+  // Auto-refresh every 30s (pauses when tab hidden)
+  usePolling(
+    () => loadPosts(pagination.page, symbolFilter || undefined),
+    POLLING_INTERVALS.postsRefresh,
+  );
 
   function handleNewPost(post: Post) {
     setPosts((prev) => [post, ...prev]);

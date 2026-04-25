@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
 import { createPortfolio, getUserPortfolios, getPortfolioValue } from "@/lib/portfolio-sim";
 import { db } from "@/lib/db";
 import { portfolios } from "@/lib/db/schema";
@@ -48,10 +48,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const parsed = createSchema.safeParse(body);
@@ -61,7 +59,7 @@ export async function POST(request: Request) {
 
   try {
     const portfolio = await createPortfolio(
-      session.userId as string,
+      auth.userId as string,
       parsed.data.name,
       parsed.data.initialCash
     );
@@ -74,10 +72,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const id = body.id;
@@ -91,7 +87,7 @@ export async function DELETE(request: Request) {
       .where(
         and(
           eq(portfolios.id, id),
-          eq(portfolios.userId, session.userId as string)
+          eq(portfolios.userId, auth.userId as string)
         )
       );
     return NextResponse.json({ success: true });

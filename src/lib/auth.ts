@@ -2,6 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { hash, compare } from "bcryptjs";
 import { cookies } from "next/headers";
 import { AUTH_CONFIG } from "./config";
+import { requireCsrf } from "./csrf";
 
 const secret = new TextEncoder().encode(AUTH_CONFIG.jwtSecret);
 
@@ -99,4 +100,32 @@ export function clearSessionCookie(): {
       path: "/",
     },
   };
+}
+
+/**
+ * Combined CSRF + auth + optional role check for mutating endpoints.
+ * Returns JWTPayload on success, or a Response (403/401) on failure.
+ *
+ * Usage:
+ *   const auth = await requireAuthWithCsrf(request);
+ *   if (auth instanceof Response) return auth;
+ *   // auth is JWTPayload
+ */
+export async function requireAuthWithCsrf(
+  request: Request,
+  roles?: UserRole[]
+): Promise<JWTPayload | Response> {
+  const csrfError = await requireCsrf(request);
+  if (csrfError) return csrfError;
+
+  const session = await getSession();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (roles && !roles.includes(session.role)) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  return session;
 }

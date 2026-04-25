@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -12,10 +12,8 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ threadId: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const { threadId } = await params;
 
@@ -65,7 +63,7 @@ export async function POST(
     const [reply] = await db
       .insert(forumReplies)
       .values({
-        userId: session.userId,
+        userId: auth.userId,
         threadId,
         body: parsed.data.body,
         parentReplyId: parsed.data.parentReplyId ?? null,
@@ -82,7 +80,7 @@ export async function POST(
       {
         reply: {
           ...reply,
-          authorName: session.name,
+          authorName: auth.name,
           createdAt: reply.createdAt.toISOString(),
         },
       },

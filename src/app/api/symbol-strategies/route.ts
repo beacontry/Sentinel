@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { symbolStrategies } from "@/lib/db/schema";
 import { createSymbolStrategySchema, deleteSymbolStrategySchema } from "@/lib/validators";
 import { eq, and } from "drizzle-orm";
@@ -11,20 +11,30 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const rows = await db
-    .select()
-    .from(symbolStrategies)
-    .where(eq(symbolStrategies.userId, session.userId))
-    .orderBy(symbolStrategies.symbol);
+  try {
+    const rows = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(symbolStrategies)
+        .where(eq(symbolStrategies.userId, session.userId))
+        .orderBy(symbolStrategies.symbol);
+    });
 
-  return NextResponse.json({ strategies: rows });
+    return NextResponse.json({ strategies: rows });
+  } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
+    return NextResponse.json({ error: "Failed to load strategies" }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const parsed = createSymbolStrategySchema.safeParse(body);
@@ -40,7 +50,7 @@ export async function POST(request: NextRequest) {
     .from(symbolStrategies)
     .where(
       and(
-        eq(symbolStrategies.userId, session.userId),
+        eq(symbolStrategies.userId, auth.userId),
         eq(symbolStrategies.symbol, data.symbol)
       )
     )
@@ -69,7 +79,7 @@ export async function POST(request: NextRequest) {
   const [created] = await db
     .insert(symbolStrategies)
     .values({
-      userId: session.userId,
+      userId: auth.userId,
       symbol: data.symbol,
       presetName: data.presetName ?? null,
       stopLossPct: data.stopLossPct,
@@ -86,10 +96,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const parsed = deleteSymbolStrategySchema.safeParse(body);
@@ -103,7 +111,7 @@ export async function DELETE(request: NextRequest) {
     .where(
       and(
         eq(symbolStrategies.id, parsed.data.id),
-        eq(symbolStrategies.userId, session.userId)
+        eq(symbolStrategies.userId, auth.userId)
       )
     )
     .limit(1);

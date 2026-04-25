@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePolling } from "@/hooks/usePolling";
+import { POLLING_INTERVALS } from "@/lib/config";
 import {
   Play,
   Loader2,
@@ -127,21 +129,16 @@ export default function OptimizerPage() {
   }, [fetchRuns]);
 
   // Poll active runs
-  useEffect(() => {
-    const hasActive = runs.some((r) =>
-      ["pending", "fetching_data", "optimizing"].includes(r.status)
-    );
-    if (!hasActive) return;
+  const hasActiveRuns = runs.some((r) =>
+    ["pending", "fetching_data", "optimizing"].includes(r.status)
+  );
 
-    const interval = setInterval(() => {
-      fetchRuns();
-      if (selectedRun && ["pending", "fetching_data", "optimizing"].includes(selectedRun.run.status)) {
-        fetchRunDetail(selectedRun.run.id);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [runs, selectedRun, fetchRuns, fetchRunDetail]);
+  usePolling(() => {
+    fetchRuns();
+    if (selectedRun && ["pending", "fetching_data", "optimizing"].includes(selectedRun.run.status)) {
+      fetchRunDetail(selectedRun.run.id);
+    }
+  }, POLLING_INTERVALS.optimizerActiveRuns, { enabled: hasActiveRuns });
 
   // Check user role
   useEffect(() => {

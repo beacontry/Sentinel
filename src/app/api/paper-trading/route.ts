@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { paperTradingConfigs } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -34,17 +34,25 @@ export async function GET() {
   }
 
   try {
-    const configs = await db
-      .select()
-      .from(paperTradingConfigs)
-      .where(eq(paperTradingConfigs.userId, session.userId as string))
-      .orderBy(sql`${paperTradingConfigs.createdAt} DESC`);
+    const configs = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(paperTradingConfigs)
+        .where(eq(paperTradingConfigs.userId, session.userId as string))
+        .orderBy(sql`${paperTradingConfigs.createdAt} DESC`);
+    });
 
     return NextResponse.json(
       { configs },
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Paper trading list error");
     return NextResponse.json(
@@ -55,10 +63,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {
@@ -79,7 +85,7 @@ export async function POST(request: Request) {
     const [config] = await db
       .insert(paperTradingConfigs)
       .values({
-        userId: session.userId as string,
+        userId: auth.userId as string,
         name: parsed.data.name,
         strategyConfig: parsed.data.strategyConfig,
         riskConfig: parsed.data.riskConfig,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { testBrokerConnectionSchema } from "@/lib/validators";
 import { createBrokerClient, BrokerError } from "@/lib/brokers";
 import { createRouteLogger } from "@/lib/logger";
@@ -7,10 +7,8 @@ import { createRouteLogger } from "@/lib/logger";
 const log = createRouteLogger("broker-test");
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {

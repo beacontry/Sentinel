@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { dashboardLayouts } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { updateDashboardLayoutSchema } from "@/lib/validators";
@@ -16,16 +16,18 @@ export async function GET() {
   }
 
   try {
-    const [layout] = await db
-      .select()
-      .from(dashboardLayouts)
-      .where(
-        and(
-          eq(dashboardLayouts.userId, session.userId),
-          eq(dashboardLayouts.isDefault, true)
+    const [layout] = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(dashboardLayouts)
+        .where(
+          and(
+            eq(dashboardLayouts.userId, session.userId),
+            eq(dashboardLayouts.isDefault, true)
+          )
         )
-      )
-      .limit(1);
+        .limit(1);
+    });
 
     if (layout) {
       let widgets: string[] = [];
@@ -47,6 +49,12 @@ export async function GET() {
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Dashboard layout load error");
     return NextResponse.json(
@@ -57,10 +65,8 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {
@@ -96,7 +102,7 @@ export async function PUT(request: Request) {
       .from(dashboardLayouts)
       .where(
         and(
-          eq(dashboardLayouts.userId, session.userId),
+          eq(dashboardLayouts.userId, auth.userId),
           eq(dashboardLayouts.isDefault, true)
         )
       )
@@ -109,7 +115,7 @@ export async function PUT(request: Request) {
         .where(eq(dashboardLayouts.id, existing.id));
     } else {
       await db.insert(dashboardLayouts).values({
-        userId: session.userId,
+        userId: auth.userId,
         name: "Default",
         layoutData: { widgets: uniqueWidgets },
         isDefault: true,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { optimizationRuns } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -14,10 +14,8 @@ const log = createRouteLogger("save-preset");
  * The engine and compare route read the active run first.
  */
 export async function POST(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request, ["admin"]);
+  if (auth instanceof Response) return auth;
 
   let body: Record<string, unknown>;
   try {
@@ -50,7 +48,7 @@ export async function POST(request: NextRequest) {
     await db
       .update(optimizationRuns)
       .set({ isActive: false })
-      .where(eq(optimizationRuns.userId, session.userId));
+      .where(eq(optimizationRuns.userId, auth.userId));
 
     await db
       .update(optimizationRuns)

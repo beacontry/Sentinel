@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import {
   forumThreads,
   forumCategories,
@@ -32,43 +32,47 @@ export async function GET(request: Request) {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Get total count
-    const [{ total }] = await db
-      .select({ total: count() })
-      .from(forumThreads)
-      .where(whereClause);
+    const { threads, total } = await withTimeout(3000, async (tx) => {
+      // Get total count
+      const [{ total }] = await tx
+        .select({ total: count() })
+        .from(forumThreads)
+        .where(whereClause);
 
-    // Get threads with author + category + reply count + last reply time
-    const threads = await db
-      .select({
-        id: forumThreads.id,
-        title: forumThreads.title,
-        body: forumThreads.body,
-        pinned: forumThreads.pinned,
-        locked: forumThreads.locked,
-        viewCount: forumThreads.viewCount,
-        createdAt: forumThreads.createdAt,
-        updatedAt: forumThreads.updatedAt,
-        userId: forumThreads.userId,
-        categoryId: forumThreads.categoryId,
-        authorName: users.name,
-        categoryName: forumCategories.name,
-        replyCount: sql<number>`(
-          SELECT count(*)::int FROM forum_replies
-          WHERE forum_replies.thread_id = ${forumThreads.id}
-        )`,
-        lastReplyAt: sql<string | null>`(
-          SELECT max(forum_replies.created_at)::text FROM forum_replies
-          WHERE forum_replies.thread_id = ${forumThreads.id}
-        )`,
-      })
-      .from(forumThreads)
-      .innerJoin(users, eq(forumThreads.userId, users.id))
-      .innerJoin(forumCategories, eq(forumThreads.categoryId, forumCategories.id))
-      .where(whereClause)
-      .orderBy(desc(forumThreads.pinned), desc(forumThreads.createdAt))
-      .limit(limit)
-      .offset(offset);
+      // Get threads with author + category + reply count + last reply time
+      const threads = await tx
+        .select({
+          id: forumThreads.id,
+          title: forumThreads.title,
+          body: forumThreads.body,
+          pinned: forumThreads.pinned,
+          locked: forumThreads.locked,
+          viewCount: forumThreads.viewCount,
+          createdAt: forumThreads.createdAt,
+          updatedAt: forumThreads.updatedAt,
+          userId: forumThreads.userId,
+          categoryId: forumThreads.categoryId,
+          authorName: users.name,
+          categoryName: forumCategories.name,
+          replyCount: sql<number>`(
+            SELECT count(*)::int FROM forum_replies
+            WHERE forum_replies.thread_id = ${forumThreads.id}
+          )`,
+          lastReplyAt: sql<string | null>`(
+            SELECT max(forum_replies.created_at)::text FROM forum_replies
+            WHERE forum_replies.thread_id = ${forumThreads.id}
+          )`,
+        })
+        .from(forumThreads)
+        .innerJoin(users, eq(forumThreads.userId, users.id))
+        .innerJoin(forumCategories, eq(forumThreads.categoryId, forumCategories.id))
+        .where(whereClause)
+        .orderBy(desc(forumThreads.pinned), desc(forumThreads.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      return { threads, total };
+    });
 
     return NextResponse.json({
       threads: threads.map((t) => ({
@@ -84,6 +88,12 @@ export async function GET(request: Request) {
       },
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Forum list error");
     return NextResponse.json({ error: "Failed to load threads" }, { status: 500 });
@@ -91,10 +101,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body;
   try {
@@ -126,7 +134,7 @@ export async function POST(request: Request) {
     const [thread] = await db
       .insert(forumThreads)
       .values({
-        userId: session.userId,
+        userId: auth.userId,
         categoryId: parsed.data.categoryId,
         title: parsed.data.title,
         body: parsed.data.body,
@@ -137,7 +145,7 @@ export async function POST(request: Request) {
       {
         thread: {
           ...thread,
-          authorName: session.name,
+          authorName: auth.name,
           createdAt: thread.createdAt.toISOString(),
           updatedAt: thread.updatedAt.toISOString(),
         },

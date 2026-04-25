@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import {
   socialPosts,
   socialComments,
@@ -23,53 +23,61 @@ export async function GET(
   const { postId } = await params;
 
   try {
-    const postRows = await db
-      .select({
-        id: socialPosts.id,
-        content: socialPosts.content,
-        symbol: socialPosts.symbol,
-        sharedTrade: socialPosts.sharedTrade,
-        createdAt: socialPosts.createdAt,
-        userId: socialPosts.userId,
-        authorName: users.name,
-        likeCount: sql<number>`(
-          SELECT count(*)::int FROM social_likes
-          WHERE social_likes.post_id = ${socialPosts.id}
-        )`,
-        commentCount: sql<number>`(
-          SELECT count(*)::int FROM social_comments
-          WHERE social_comments.post_id = ${socialPosts.id}
-        )`,
-        liked: sql<boolean>`EXISTS(
-          SELECT 1 FROM social_likes
-          WHERE social_likes.post_id = ${socialPosts.id}
-          AND social_likes.user_id = ${session.userId}
-        )`,
-      })
-      .from(socialPosts)
-      .innerJoin(users, eq(socialPosts.userId, users.id))
-      .where(eq(socialPosts.id, postId))
-      .limit(1);
+    const { postRows, comments } = await withTimeout(3000, async (tx) => {
+      const pr = await tx
+        .select({
+          id: socialPosts.id,
+          content: socialPosts.content,
+          symbol: socialPosts.symbol,
+          sharedTrade: socialPosts.sharedTrade,
+          createdAt: socialPosts.createdAt,
+          userId: socialPosts.userId,
+          authorName: users.name,
+          likeCount: sql<number>`(
+            SELECT count(*)::int FROM social_likes
+            WHERE social_likes.post_id = ${socialPosts.id}
+          )`,
+          commentCount: sql<number>`(
+            SELECT count(*)::int FROM social_comments
+            WHERE social_comments.post_id = ${socialPosts.id}
+          )`,
+          liked: sql<boolean>`EXISTS(
+            SELECT 1 FROM social_likes
+            WHERE social_likes.post_id = ${socialPosts.id}
+            AND social_likes.user_id = ${session.userId}
+          )`,
+        })
+        .from(socialPosts)
+        .innerJoin(users, eq(socialPosts.userId, users.id))
+        .where(eq(socialPosts.id, postId))
+        .limit(1);
+
+      if (pr.length === 0) {
+        return { postRows: pr, comments: [] };
+      }
+
+      // Get comments
+      const c = await tx
+        .select({
+          id: socialComments.id,
+          content: socialComments.content,
+          createdAt: socialComments.createdAt,
+          userId: socialComments.userId,
+          authorName: users.name,
+        })
+        .from(socialComments)
+        .innerJoin(users, eq(socialComments.userId, users.id))
+        .where(eq(socialComments.postId, postId))
+        .orderBy(socialComments.createdAt);
+
+      return { postRows: pr, comments: c };
+    });
 
     if (postRows.length === 0) {
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
 
     const post = postRows[0];
-
-    // Get comments
-    const comments = await db
-      .select({
-        id: socialComments.id,
-        content: socialComments.content,
-        createdAt: socialComments.createdAt,
-        userId: socialComments.userId,
-        authorName: users.name,
-      })
-      .from(socialComments)
-      .innerJoin(users, eq(socialComments.userId, users.id))
-      .where(eq(socialComments.postId, postId))
-      .orderBy(socialComments.createdAt);
 
     return NextResponse.json({
       post: {
@@ -82,6 +90,12 @@ export async function GET(
       })),
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Social post detail error");
     return NextResponse.json({ error: "Failed to load post" }, { status: 500 });
@@ -89,13 +103,11 @@ export async function GET(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ postId: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const { postId } = await params;
 
@@ -109,7 +121,7 @@ export async function DELETE(
     if (existing.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    if (existing[0].userId !== session.userId) {
+    if (existing[0].userId !== auth.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

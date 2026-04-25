@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { feedPosts, signals, signalAccuracy, users } from "@/lib/db/schema";
 import { eq, sql, gte } from "drizzle-orm";
 import type { LeaderboardEntry } from "@/types";
@@ -23,29 +23,31 @@ export async function GET(request: NextRequest) {
 
     // Join feedPosts -> signals -> signalAccuracy -> users
     // Aggregate per user: total shared, measured, correct, accuracy, avgReturn
-    const rows = await db
-      .select({
-        userId: feedPosts.userId,
-        userName: users.name,
-        totalShared: sql<number>`count(DISTINCT ${feedPosts.id})`,
-        measuredSignals: sql<number>`count(*) filter (where ${signalAccuracy.exitPrice} is not null)`,
-        correctSignals: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
-        avgReturn: sql<number>`avg(${signalAccuracy.actualReturn}) filter (where ${signalAccuracy.exitPrice} is not null)`,
-      })
-      .from(feedPosts)
-      .innerJoin(users, eq(feedPosts.userId, users.id))
-      .innerJoin(signals, eq(feedPosts.signalId, signals.id))
-      .leftJoin(signalAccuracy, eq(signals.id, signalAccuracy.signalId))
-      .where(gte(feedPosts.createdAt, cutoff))
-      .groupBy(feedPosts.userId, users.name)
-      .having(sql`count(*) filter (where ${signalAccuracy.exitPrice} is not null) >= 3`)
-      .orderBy(
-        sql`CASE WHEN count(*) filter (where ${signalAccuracy.exitPrice} is not null) > 0
-            THEN count(*) filter (where ${signalAccuracy.wasCorrect} = true)::float / count(*) filter (where ${signalAccuracy.exitPrice} is not null)
-            ELSE 0 END DESC`,
-        sql`count(DISTINCT ${feedPosts.id}) DESC`
-      )
-      .limit(10);
+    const rows = await withTimeout(3000, async (tx) => {
+      return tx
+        .select({
+          userId: feedPosts.userId,
+          userName: users.name,
+          totalShared: sql<number>`count(DISTINCT ${feedPosts.id})`,
+          measuredSignals: sql<number>`count(*) filter (where ${signalAccuracy.exitPrice} is not null)`,
+          correctSignals: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
+          avgReturn: sql<number>`avg(${signalAccuracy.actualReturn}) filter (where ${signalAccuracy.exitPrice} is not null)`,
+        })
+        .from(feedPosts)
+        .innerJoin(users, eq(feedPosts.userId, users.id))
+        .innerJoin(signals, eq(feedPosts.signalId, signals.id))
+        .leftJoin(signalAccuracy, eq(signals.id, signalAccuracy.signalId))
+        .where(gte(feedPosts.createdAt, cutoff))
+        .groupBy(feedPosts.userId, users.name)
+        .having(sql`count(*) filter (where ${signalAccuracy.exitPrice} is not null) >= 3`)
+        .orderBy(
+          sql`CASE WHEN count(*) filter (where ${signalAccuracy.exitPrice} is not null) > 0
+              THEN count(*) filter (where ${signalAccuracy.wasCorrect} = true)::float / count(*) filter (where ${signalAccuracy.exitPrice} is not null)
+              ELSE 0 END DESC`,
+          sql`count(DISTINCT ${feedPosts.id}) DESC`
+        )
+        .limit(10);
+    });
 
     const entries: LeaderboardEntry[] = rows.map((row, idx) => {
       const measured = Number(row.measuredSignals);
@@ -78,6 +80,12 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "private, max-age=300" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Leaderboard error");
     return NextResponse.json({ error: "Failed to load leaderboard" }, { status: 500 });

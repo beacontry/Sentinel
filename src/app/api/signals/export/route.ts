@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { signals, signalAccuracy } from "@/lib/db/schema";
-import { eq, gte, lte, and, desc, inArray } from "drizzle-orm";
+import { eq, gte, lte, and, desc, inArray, type SQL } from "drizzle-orm";
 import { toCSV } from "@/lib/csv";
 import { createRouteLogger } from "@/lib/logger";
 
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const from = params.get("from");
   const to = params.get("to");
 
-  const conditions = [];
+  const conditions: SQL[] = [];
 
   if (symbolsParam) {
     const syms = symbolsParam.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
@@ -35,24 +35,26 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const rows = await db
-      .select({
-        symbol: signals.symbol,
-        signalType: signals.signal,
-        confidence: signals.confidence,
-        price: signals.price,
-        volume: signals.volume,
-        plainEnglish: signals.plainEnglish,
-        createdAt: signals.createdAt,
-        exitPrice: signalAccuracy.exitPrice,
-        actualReturn: signalAccuracy.actualReturn,
-        wasCorrect: signalAccuracy.wasCorrect,
-      })
-      .from(signals)
-      .leftJoin(signalAccuracy, eq(signalAccuracy.signalId, signals.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(signals.createdAt))
-      .limit(5000);
+    const rows = await withTimeout(5000, async (tx) => {
+      return tx
+        .select({
+          symbol: signals.symbol,
+          signalType: signals.signal,
+          confidence: signals.confidence,
+          price: signals.price,
+          volume: signals.volume,
+          plainEnglish: signals.plainEnglish,
+          createdAt: signals.createdAt,
+          exitPrice: signalAccuracy.exitPrice,
+          actualReturn: signalAccuracy.actualReturn,
+          wasCorrect: signalAccuracy.wasCorrect,
+        })
+        .from(signals)
+        .leftJoin(signalAccuracy, eq(signalAccuracy.signalId, signals.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(signals.createdAt))
+        .limit(5000);
+    });
 
     const headers = [
       "Date", "Symbol", "Signal", "Confidence", "Price", "Volume",
@@ -83,6 +85,12 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Export error");
     return NextResponse.json({ error: "Export failed" }, { status: 500 });

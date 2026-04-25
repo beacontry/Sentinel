@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { signals, signalAccuracy } from "@/lib/db/schema";
 import { eq, isNotNull, sql, desc } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
@@ -14,56 +14,60 @@ export async function GET() {
   }
 
   try {
-    // Overall stats
-    const [overall] = await db
-      .select({
-        totalSignals: sql<number>`count(*)`,
-        correctSignals: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
-        avgReturn: sql<number>`avg(${signalAccuracy.actualReturn})`,
-      })
-      .from(signalAccuracy)
-      .where(isNotNull(signalAccuracy.exitPrice));
+    const { overall, byType, bySymbol, weekly } = await withTimeout(3000, async (tx) => {
+      // Overall stats
+      const [ov] = await tx
+        .select({
+          totalSignals: sql<number>`count(*)`,
+          correctSignals: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
+          avgReturn: sql<number>`avg(${signalAccuracy.actualReturn})`,
+        })
+        .from(signalAccuracy)
+        .where(isNotNull(signalAccuracy.exitPrice));
 
-    // By signal type
-    const byType = await db
-      .select({
-        signalType: signals.signal,
-        count: sql<number>`count(*)`,
-        correct: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
-        avgReturn: sql<number>`avg(${signalAccuracy.actualReturn})`,
-      })
-      .from(signalAccuracy)
-      .innerJoin(signals, eq(signalAccuracy.signalId, signals.id))
-      .where(isNotNull(signalAccuracy.exitPrice))
-      .groupBy(signals.signal);
+      // By signal type
+      const bt = await tx
+        .select({
+          signalType: signals.signal,
+          count: sql<number>`count(*)`,
+          correct: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
+          avgReturn: sql<number>`avg(${signalAccuracy.actualReturn})`,
+        })
+        .from(signalAccuracy)
+        .innerJoin(signals, eq(signalAccuracy.signalId, signals.id))
+        .where(isNotNull(signalAccuracy.exitPrice))
+        .groupBy(signals.signal);
 
-    // By symbol (top performers)
-    const bySymbol = await db
-      .select({
-        symbol: signals.symbol,
-        count: sql<number>`count(*)`,
-        correct: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
-        avgReturn: sql<number>`avg(${signalAccuracy.actualReturn})`,
-      })
-      .from(signalAccuracy)
-      .innerJoin(signals, eq(signalAccuracy.signalId, signals.id))
-      .where(isNotNull(signalAccuracy.exitPrice))
-      .groupBy(signals.symbol)
-      .orderBy(desc(sql`avg(${signalAccuracy.actualReturn})`))
-      .limit(10);
+      // By symbol (top performers)
+      const bs = await tx
+        .select({
+          symbol: signals.symbol,
+          count: sql<number>`count(*)`,
+          correct: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
+          avgReturn: sql<number>`avg(${signalAccuracy.actualReturn})`,
+        })
+        .from(signalAccuracy)
+        .innerJoin(signals, eq(signalAccuracy.signalId, signals.id))
+        .where(isNotNull(signalAccuracy.exitPrice))
+        .groupBy(signals.symbol)
+        .orderBy(desc(sql`avg(${signalAccuracy.actualReturn})`))
+        .limit(10);
 
-    // Recent signal accuracy over time (weekly buckets)
-    const weekly = await db
-      .select({
-        week: sql<string>`to_char(date_trunc('week', ${signals.createdAt}), 'YYYY-MM-DD')`.as("week"),
-        count: sql<number>`count(*)`,
-        correct: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
-      })
-      .from(signalAccuracy)
-      .innerJoin(signals, eq(signalAccuracy.signalId, signals.id))
-      .where(isNotNull(signalAccuracy.exitPrice))
-      .groupBy(sql`date_trunc('week', ${signals.createdAt})`)
-      .orderBy(sql`date_trunc('week', ${signals.createdAt})`);
+      // Recent signal accuracy over time (weekly buckets)
+      const wk = await tx
+        .select({
+          week: sql<string>`to_char(date_trunc('week', ${signals.createdAt}), 'YYYY-MM-DD')`.as("week"),
+          count: sql<number>`count(*)`,
+          correct: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
+        })
+        .from(signalAccuracy)
+        .innerJoin(signals, eq(signalAccuracy.signalId, signals.id))
+        .where(isNotNull(signalAccuracy.exitPrice))
+        .groupBy(sql`date_trunc('week', ${signals.createdAt})`)
+        .orderBy(sql`date_trunc('week', ${signals.createdAt})`);
+
+      return { overall: ov, byType: bt, bySymbol: bs, weekly: wk };
+    });
 
     const totalSignals = Number(overall?.totalSignals ?? 0);
     const correctSignals = Number(overall?.correctSignals ?? 0);
@@ -99,6 +103,12 @@ export async function GET() {
       headers: { "Cache-Control": "private, max-age=60" },
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Performance error");
     return NextResponse.json({ error: "Failed to load performance" }, { status: 500 });

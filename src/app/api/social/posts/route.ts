@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import {
   socialPosts,
   users,
@@ -31,42 +31,46 @@ export async function GET(request: Request) {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Total count
-    const [{ total }] = await db
-      .select({ total: count() })
-      .from(socialPosts)
-      .where(whereClause);
+    const { total, posts } = await withTimeout(3000, async (tx) => {
+      // Total count
+      const [{ total: t }] = await tx
+        .select({ total: count() })
+        .from(socialPosts)
+        .where(whereClause);
 
-    // Posts with author, like count, comment count, and whether current user liked
-    const posts = await db
-      .select({
-        id: socialPosts.id,
-        content: socialPosts.content,
-        symbol: socialPosts.symbol,
-        sharedTrade: socialPosts.sharedTrade,
-        createdAt: socialPosts.createdAt,
-        userId: socialPosts.userId,
-        authorName: users.name,
-        likeCount: sql<number>`(
-          SELECT count(*)::int FROM social_likes
-          WHERE social_likes.post_id = ${socialPosts.id}
-        )`,
-        commentCount: sql<number>`(
-          SELECT count(*)::int FROM social_comments
-          WHERE social_comments.post_id = ${socialPosts.id}
-        )`,
-        liked: sql<boolean>`EXISTS(
-          SELECT 1 FROM social_likes
-          WHERE social_likes.post_id = ${socialPosts.id}
-          AND social_likes.user_id = ${session.userId}
-        )`,
-      })
-      .from(socialPosts)
-      .innerJoin(users, eq(socialPosts.userId, users.id))
-      .where(whereClause)
-      .orderBy(desc(socialPosts.createdAt))
-      .limit(limit)
-      .offset(offset);
+      // Posts with author, like count, comment count, and whether current user liked
+      const p = await tx
+        .select({
+          id: socialPosts.id,
+          content: socialPosts.content,
+          symbol: socialPosts.symbol,
+          sharedTrade: socialPosts.sharedTrade,
+          createdAt: socialPosts.createdAt,
+          userId: socialPosts.userId,
+          authorName: users.name,
+          likeCount: sql<number>`(
+            SELECT count(*)::int FROM social_likes
+            WHERE social_likes.post_id = ${socialPosts.id}
+          )`,
+          commentCount: sql<number>`(
+            SELECT count(*)::int FROM social_comments
+            WHERE social_comments.post_id = ${socialPosts.id}
+          )`,
+          liked: sql<boolean>`EXISTS(
+            SELECT 1 FROM social_likes
+            WHERE social_likes.post_id = ${socialPosts.id}
+            AND social_likes.user_id = ${session.userId}
+          )`,
+        })
+        .from(socialPosts)
+        .innerJoin(users, eq(socialPosts.userId, users.id))
+        .where(whereClause)
+        .orderBy(desc(socialPosts.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      return { total: t, posts: p };
+    });
 
     return NextResponse.json({
       posts: posts.map((p) => ({
@@ -81,6 +85,12 @@ export async function GET(request: Request) {
       },
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Social posts list error");
     return NextResponse.json({ error: "Failed to load posts" }, { status: 500 });
@@ -88,10 +98,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body;
   try {
@@ -114,7 +122,7 @@ export async function POST(request: Request) {
     const [post] = await db
       .insert(socialPosts)
       .values({
-        userId: session.userId,
+        userId: auth.userId,
         content: parsed.data.content,
         symbol: parsed.data.symbol?.toUpperCase() || null,
         sharedTrade,
@@ -125,7 +133,7 @@ export async function POST(request: Request) {
       {
         post: {
           ...post,
-          authorName: session.name,
+          authorName: auth.name,
           likeCount: 0,
           commentCount: 0,
           liked: false,

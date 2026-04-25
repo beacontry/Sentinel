@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { watchlistItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getFinnhubClient, type FinnhubNewsArticle } from "@/lib/finnhub";
@@ -20,10 +20,12 @@ export async function GET(request: NextRequest) {
 
   try {
     // Get user's watchlist symbols
-    const watchlist = await db
-      .select({ symbol: watchlistItems.symbol })
-      .from(watchlistItems)
-      .where(eq(watchlistItems.userId, session.userId as string));
+    const watchlist = await withTimeout(3000, async (tx) => {
+      return tx
+        .select({ symbol: watchlistItems.symbol })
+        .from(watchlistItems)
+        .where(eq(watchlistItems.userId, session.userId as string));
+    });
 
     if (watchlist.length === 0) {
       return NextResponse.json(
@@ -85,6 +87,12 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "private, max-age=60" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "News feed error");
     return NextResponse.json(

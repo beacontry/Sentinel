@@ -37,13 +37,11 @@ const g2 = globalThis as typeof globalThis & {
   __rateLimitCleanup?: ReturnType<typeof setInterval>;
 };
 
-if (!g2.__rateLimitCleanup) {
-  g2.__rateLimitCleanup = setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of store.entries()) {
-      if (now >= entry.resetAt) {
-        store.delete(key);
-      }
+g2.__rateLimitCleanup ??= setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of store.entries()) {
+    if (now >= entry.resetAt) {
+      store.delete(key);
     }
-  }, CLEANUP_INTERVAL);
-}
+  }
+}, CLEANUP_INTERVAL);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { discordWebhooks } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -7,10 +7,8 @@ import { sendDiscordWebhook } from "@/lib/discord";
 import type { AnalysisResult, SignalType } from "@/types";
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const id = body.id;
@@ -25,7 +23,7 @@ export async function POST(request: Request) {
     .where(
       and(
         eq(discordWebhooks.id, id),
-        eq(discordWebhooks.userId, session.userId)
+        eq(discordWebhooks.userId, auth.userId)
       )
     )
     .limit(1);

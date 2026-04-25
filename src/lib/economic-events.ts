@@ -1,5 +1,8 @@
 import { getFinnhubClient, type FinnhubEarning } from "./finnhub";
+import { createRouteLogger } from "./logger";
 import type { EconomicEvent } from "@/types";
+
+const log = createRouteLogger("economic-events");
 
 // --- Hardcoded Recurring US Events ---
 
@@ -203,7 +206,7 @@ export async function getEconomicCalendar(from: string, to: string): Promise<Eco
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      console.error("Economic calendar: earnings fetch failed:", message);
+      log.error({ err: message }, "Earnings fetch failed");
       // Continue with just recurring events
     }
   }

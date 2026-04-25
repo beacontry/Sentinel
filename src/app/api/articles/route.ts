@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { articles, users } from "@/lib/db/schema";
 import { eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -32,31 +32,34 @@ export async function GET(request: NextRequest) {
   const offset = (page - 1) * limit;
 
   try {
-    const articleList = await db
-      .select({
-        id: articles.id,
-        title: articles.title,
-        slug: articles.slug,
-        category: articles.category,
-        price: articles.price,
-        publishedAt: articles.publishedAt,
-        authorId: articles.authorId,
-        authorName: users.name,
-      })
-      .from(articles)
-      .leftJoin(users, eq(articles.authorId, users.id))
-      .where(isNotNull(articles.publishedAt))
-      .orderBy(sql`${articles.publishedAt} DESC`)
-      .limit(limit)
-      .offset(offset);
+    const { articleList, total } = await withTimeout(3000, async (tx) => {
+      const articleList = await tx
+        .select({
+          id: articles.id,
+          title: articles.title,
+          slug: articles.slug,
+          category: articles.category,
+          price: articles.price,
+          publishedAt: articles.publishedAt,
+          authorId: articles.authorId,
+          authorName: users.name,
+        })
+        .from(articles)
+        .leftJoin(users, eq(articles.authorId, users.id))
+        .where(isNotNull(articles.publishedAt))
+        .orderBy(sql`${articles.publishedAt} DESC`)
+        .limit(limit)
+        .offset(offset);
 
-    // Get total count
-    const [countResult] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(articles)
-      .where(isNotNull(articles.publishedAt));
+      // Get total count
+      const [countResult] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(articles)
+        .where(isNotNull(articles.publishedAt));
 
-    const total = countResult?.count ?? 0;
+      return { articleList, total: countResult?.count ?? 0 };
+    });
+
     const totalPages = Math.ceil(total / limit);
 
     return NextResponse.json(
@@ -71,6 +74,12 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "private, max-age=60" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Articles list error");
     return NextResponse.json(
@@ -81,15 +90,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // Admin only
-  if (session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const auth = await requireAuthWithCsrf(request, ["admin"]);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {
@@ -110,7 +112,7 @@ export async function POST(request: Request) {
     const [article] = await db
       .insert(articles)
       .values({
-        authorId: session.userId as string,
+        authorId: auth.userId,
         title: parsed.data.title,
         slug: parsed.data.slug,
         body: parsed.data.body,

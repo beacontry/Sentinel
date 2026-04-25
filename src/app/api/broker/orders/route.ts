@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { brokerConnections } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { placeBrokerOrderSchema } from "@/lib/validators";
@@ -31,7 +31,19 @@ export async function GET() {
   }
 
   try {
-    const connection = await getActiveConnection(session.userId);
+    const [connection] = await withTimeout(3000, async (tx) => {
+      return tx
+        .select()
+        .from(brokerConnections)
+        .where(
+          and(
+            eq(brokerConnections.userId, session.userId),
+            eq(brokerConnections.isActive, true)
+          )
+        )
+        .limit(1);
+    });
+
     if (!connection) {
       return NextResponse.json(
         { error: "No active broker connection found" },
@@ -67,6 +79,12 @@ export async function GET() {
       })),
     });
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     if (err instanceof BrokerError) {
       return NextResponse.json(
         { error: err.userMessage },
@@ -80,10 +98,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   let body: unknown;
   try {
@@ -101,7 +117,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const connection = await getActiveConnection(session.userId);
+    const connection = await getActiveConnection(auth.userId);
     if (!connection) {
       return NextResponse.json(
         { error: "No active broker connection found" },
