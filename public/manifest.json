@@ -4,8 +4,8 @@
   "description": "Trading intelligence platform — signals, analysis, and automated execution",
   "start_url": "/dashboard/trader",
   "display": "standalone",
-  "background_color": "#0a0f0d",
-  "theme_color": "#0a0f0d",
+  "background_color": "#0d1511",
+  "theme_color": "#0d1511",
   "orientation": "any",
   "icons": [
     {

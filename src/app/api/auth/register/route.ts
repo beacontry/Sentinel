@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { users, invites } from "@/lib/db/schema";
 import { registerSchema } from "@/lib/validators";
 import { hashPassword, createToken, setSessionCookie } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
 import { createRouteLogger } from "@/lib/logger";
-import { eq } from "drizzle-orm";
+import { eq, and, gt } from "drizzle-orm";
 
 const logger = createRouteLogger("auth/register");
 
@@ -21,6 +21,36 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+
+    // Require invite token
+    const token = body.token;
+    if (!token || typeof token !== "string") {
+      return NextResponse.json(
+        { error: "Registration is invite-only. Please use a valid invite link." },
+        { status: 403 }
+      );
+    }
+
+    // Validate invite token
+    const [invite] = await db
+      .select()
+      .from(invites)
+      .where(
+        and(
+          eq(invites.token, token),
+          eq(invites.used, false),
+          gt(invites.expiresAt, new Date())
+        )
+      )
+      .limit(1);
+
+    if (!invite) {
+      return NextResponse.json(
+        { error: "Invalid or expired invite. Please request a new invitation." },
+        { status: 403 }
+      );
+    }
+
     const parsed = registerSchema.safeParse(body);
 
     if (!parsed.success) {
@@ -36,6 +66,14 @@ export async function POST(request: Request) {
     }
 
     const { name, email, password } = parsed.data;
+
+    // Email must match the invite
+    if (email.toLowerCase() !== invite.email.toLowerCase()) {
+      return NextResponse.json(
+        { error: "Email does not match the invitation. Please use the email the invite was sent to." },
+        { status: 403 }
+      );
+    }
 
     const existing = await db
       .select({ id: users.id })
@@ -61,14 +99,20 @@ export async function POST(request: Request) {
       })
       .returning({ id: users.id, name: users.name, email: users.email, role: users.role });
 
-    const token = await createToken({
+    // Mark invite as used
+    await db
+      .update(invites)
+      .set({ used: true, usedAt: new Date() })
+      .where(eq(invites.id, invite.id));
+
+    const jwtToken = await createToken({
       userId: user.id,
       email: user.email,
       name: user.name,
       role: user.role as "admin" | "user",
     });
 
-    const cookie = setSessionCookie(token);
+    const cookie = setSessionCookie(jwtToken);
     const response = NextResponse.json(
       { user: { id: user.id, name: user.name, email: user.email, role: user.role } },
       { status: 201 }
@@ -79,6 +123,8 @@ export async function POST(request: Request) {
       cookie.value,
       cookie.options as Parameters<typeof response.cookies.set>[2]
     );
+
+    logger.info({ email, inviteId: invite.id }, "User registered via invite");
 
     return response;
   } catch (err) {

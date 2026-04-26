@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,9 @@ import { Shield } from "lucide-react";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token");
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16,6 +19,29 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [validating, setValidating] = useState(!!token);
+  const [inviteValid, setInviteValid] = useState(false);
+
+  // Validate the invite token on mount
+  useEffect(() => {
+    if (!token) {
+      setValidating(false);
+      return;
+    }
+
+    fetch(`/api/auth/validate-invite?token=${encodeURIComponent(token)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.valid) {
+          setInviteValid(true);
+          if (data.email) setEmail(data.email);
+        } else {
+          setError(data.error ?? "Invalid or expired invite.");
+        }
+      })
+      .catch(() => setError("Failed to validate invite."))
+      .finally(() => setValidating(false));
+  }, [token]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,7 +58,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name, email, password, token }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -46,6 +72,73 @@ export default function RegisterPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // No token provided
+  if (!token) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
+        <div className="w-full max-w-sm text-center">
+          <div className="mb-8">
+            <Link href="/" className="inline-flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
+                <Shield className="h-4 w-4" />
+              </div>
+              <span className="text-xl font-semibold text-text-primary">Sentinel</span>
+            </Link>
+          </div>
+          <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
+            <h1 className="text-xl font-semibold text-text-primary">Invite Required</h1>
+            <p className="mt-2 text-sm text-text-secondary">
+              Sentinel is invite-only. If you have an invite link, please use it to register.
+            </p>
+            <p className="mt-4 text-center text-sm text-text-muted">
+              Already have an account?{" "}
+              <Link href="/login" className="font-medium text-accent hover:text-accent-hover">
+                Sign in
+              </Link>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Validating token
+  if (validating) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
+        <div className="text-center text-text-secondary">Validating invite...</div>
+      </div>
+    );
+  }
+
+  // Invalid token
+  if (!inviteValid && error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
+        <div className="w-full max-w-sm text-center">
+          <div className="mb-8">
+            <Link href="/" className="inline-flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
+                <Shield className="h-4 w-4" />
+              </div>
+              <span className="text-xl font-semibold text-text-primary">Sentinel</span>
+            </Link>
+          </div>
+          <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
+            <h1 className="text-xl font-semibold text-text-primary">Invalid Invite</h1>
+            <p className="mt-2 text-sm text-bearish">{error}</p>
+            <p className="mt-4 text-center text-sm text-text-muted">
+              Already have an account?{" "}
+              <Link href="/login" className="font-medium text-accent hover:text-accent-hover">
+                Sign in
+              </Link>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -89,6 +182,7 @@ export default function RegisterPage() {
               error={fieldErrors.email}
               required
               autoComplete="email"
+              disabled
             />
             <Input
               label="Password"
