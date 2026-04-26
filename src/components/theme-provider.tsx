@@ -26,7 +26,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setMounted(true);
   }, []);
 
-  // Sync class to <html> and persist
+  // Sync class to <html>, update PWA theme-color, and persist
   useEffect(() => {
     if (!mounted) return;
     const root = document.documentElement;
@@ -36,6 +36,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       root.classList.remove("dark");
     }
     localStorage.setItem(STORAGE_KEY, theme);
+
+    // Update PWA theme-color meta tag for browser chrome
+    const themeColor = theme === "dark" ? "#0d1511" : "#f1f5f9";
+    let meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
+    if (meta) {
+      meta.content = themeColor;
+    } else {
+      meta = document.createElement("meta");
+      meta.name = "theme-color";
+      meta.content = themeColor;
+      document.head.appendChild(meta);
+    }
   }, [theme, mounted]);
 
   const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
