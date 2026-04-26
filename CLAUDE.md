@@ -50,8 +50,14 @@ Each user has their own broker connection (`brokerConnections` table, scoped by 
 
 ## Design System
 
-### Theme: Dark-first, emerald-tinted neutrals (OKLCH)
-All tokens defined in `src/app/globals.css` `@theme` block using OKLCH color space. Neutrals are tinted toward brand hue (165 = emerald). Use Tailwind utility classes — never raw hex/oklch values.
+### Theme: Dark/Light mode with emerald-tinted neutrals
+All tokens defined in `src/app/globals.css` `@theme` block. Light mode is the default. Dark mode activates via `html.dark` class which overrides all color variables in `@layer base`.
+
+**ThemeProvider** (`src/components/theme-provider.tsx`): wraps root layout, persists preference to `localStorage("sentinel-theme")`, toggles `dark` class on `<html>`, updates PWA `theme-color` meta tag. Use `useTheme()` hook for `{ theme, toggleTheme }`.
+
+**Toggle locations:** Landing page navbar (Sun/Moon icon), dashboard sidebar footer ("Light Mode"/"Dark Mode" button).
+
+**Landing page** uses separate `ld-*` tokens (`bg-ld-deep`, `text-ld-accent`, etc.) for its distinct aesthetic. These also switch with the theme via `html.dark` overrides.
 
 **Backgrounds (dark hierarchy — higher elevation = lighter):**
 `bg-bg-primary` (10% L) > `bg-bg-secondary` (13% L) > `bg-bg-surface` (16% L) > `bg-bg-elevated` (20% L) > `bg-bg-hover` (24% L)
@@ -109,6 +115,21 @@ Always use existing components — never recreate them:
 - **Dropdown** — solid `bg-bg-elevated` (no gradients), `rounded-lg`
 - **Tooltip** — solid `bg-bg-elevated` (no gradients), `rounded-lg`
 - **Avatar, SearchInput, CommandPalette, DataTable**
+
+## Registration & Invites
+
+Registration is **invite-only**. No public signup.
+
+**Flow:** Admin sends invite from dashboard (`/dashboard/admin`) → user receives email with signup link (`/register?token=...`) → register page validates token, pre-fills email → account created, invite marked used.
+
+**Key files:**
+- `src/lib/db/schema/invites.ts` — `invites` table (token, email, expiry, used)
+- `src/app/api/admin/invites/route.ts` — GET (list), POST (create + send email)
+- `src/app/api/auth/validate-invite/route.ts` — GET (check token validity)
+- `src/app/api/auth/register/route.ts` — requires valid invite token, email must match
+- `src/app/register/page.tsx` — shows "Invite Required" without token, validates token on mount
+
+**Admin UI:** Invitations section on admin page — email input to send invites, table of sent invites with status (Pending/Registered/Expired), copy link button.
 
 ## Security & Route Patterns
 
