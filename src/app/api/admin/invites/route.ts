@@ -27,6 +27,7 @@ export async function GET() {
         .select({
           id: invites.id,
           email: invites.email,
+          token: invites.token,
           used: invites.used,
           expiresAt: invites.expiresAt,
           createdAt: invites.createdAt,

@@ -15,7 +15,7 @@ import {
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { Users, Plus, Pencil, Trash2, Shield } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy } from "lucide-react";
 
 interface User {
   id: string;
@@ -23,6 +23,16 @@ interface User {
   email: string;
   role: string;
   createdAt: string;
+}
+
+interface Invite {
+  id: string;
+  email: string;
+  token: string;
+  used: boolean;
+  expiresAt: string;
+  createdAt: string;
+  usedAt: string | null;
 }
 
 const ROLE_OPTIONS = [
@@ -52,6 +62,14 @@ export default function AdminPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Invite state
+  const [inviteList, setInviteList] = useState<Invite[]>([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteError, setInviteError] = useState("");
+  const [inviteSuccess, setInviteSuccess] = useState("");
+  const [copiedUrl, setCopiedUrl] = useState("");
+
   const loadUsers = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/users");
@@ -72,9 +90,57 @@ export default function AdminPage() {
     }
   }, []);
 
+  const loadInvites = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/invites");
+      if (res.ok) {
+        const data = await res.json();
+        setInviteList(data.invites ?? []);
+      }
+    } catch { /* ignore — invites are secondary */ }
+  }, []);
+
   useEffect(() => {
     loadUsers();
-  }, [loadUsers]);
+    loadInvites();
+  }, [loadUsers, loadInvites]);
+
+  async function handleSendInvite(e: React.FormEvent) {
+    e.preventDefault();
+    setInviteSending(true);
+    setInviteError("");
+    setInviteSuccess("");
+
+    try {
+      const res = await fetch("/api/admin/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: inviteEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setInviteError(data.error ?? "Failed to send invite");
+        return;
+      }
+
+      setInviteSuccess(data.emailSent ? `Invite sent to ${inviteEmail}` : `Invite created — email not configured. Link: ${data.signupUrl}`);
+      setInviteEmail("");
+      loadInvites();
+      setTimeout(() => setInviteSuccess(""), 8000);
+    } catch {
+      setInviteError("Failed to send invite");
+    } finally {
+      setInviteSending(false);
+    }
+  }
+
+  function copySignupUrl(invite: Invite) {
+    const appUrl = window.location.origin;
+    const url = `${appUrl}/register?token=${invite.token}`;
+    navigator.clipboard.writeText(url);
+    setCopiedUrl(invite.id);
+    setTimeout(() => setCopiedUrl(""), 2000);
+  }
 
   function openAddModal() {
     setEditingUser(null);
@@ -321,6 +387,101 @@ export default function AdminPage() {
           </div>
         )}
       </Card>
+
+      {/* ── Invites Section ── */}
+      <div className="pt-4">
+        <h2 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+          <Mail className="w-5 h-5 text-accent" />
+          Invitations
+        </h2>
+
+        {/* Send invite form */}
+        <Card>
+          <form onSubmit={handleSendInvite} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <Input
+                label="Invite by email"
+                type="email"
+                placeholder="user@example.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                required
+              />
+            </div>
+            <Button type="submit" loading={inviteSending} className="min-h-[44px]">
+              <Send className="w-4 h-4" />
+              Send Invite
+            </Button>
+          </form>
+
+          {inviteError && (
+            <p className="mt-3 text-sm text-bearish">{inviteError}</p>
+          )}
+          {inviteSuccess && (
+            <p className="mt-3 text-sm text-bullish">{inviteSuccess}</p>
+          )}
+        </Card>
+      </div>
+
+      {/* Invite list */}
+      {inviteList.length > 0 && (
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-text-muted text-left">
+                  <th className="pb-3 pr-4 font-medium">Email</th>
+                  <th className="pb-3 pr-4 font-medium">Status</th>
+                  <th className="pb-3 pr-4 font-medium">Sent</th>
+                  <th className="pb-3 pr-4 font-medium">Expires</th>
+                  <th className="pb-3 font-medium text-right">Link</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inviteList.map((inv) => {
+                  const expired = !inv.used && new Date(inv.expiresAt) < new Date();
+                  return (
+                    <tr key={inv.id} className="border-b border-border/50 hover:bg-bg-elevated/50 transition-colors">
+                      <td className="py-3 pr-4 text-text-primary">{inv.email}</td>
+                      <td className="py-3 pr-4">
+                        {inv.used ? (
+                          <Badge variant="bullish"><Check className="w-3 h-3 mr-1" />Registered</Badge>
+                        ) : expired ? (
+                          <Badge variant="warning"><Clock className="w-3 h-3 mr-1" />Expired</Badge>
+                        ) : (
+                          <Badge variant="neutral"><Clock className="w-3 h-3 mr-1" />Pending</Badge>
+                        )}
+                      </td>
+                      <td className="py-3 pr-4 font-mono text-text-secondary text-xs">
+                        {new Date(inv.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </td>
+                      <td className="py-3 pr-4 font-mono text-text-secondary text-xs">
+                        {new Date(inv.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </td>
+                      <td className="py-3 text-right">
+                        {!inv.used && !expired && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copySignupUrl(inv)}
+                            aria-label="Copy invite link"
+                          >
+                            {copiedUrl === inv.id ? (
+                              <><Check className="w-3.5 h-3.5 text-bullish" /> <span className="text-xs text-bullish">Copied</span></>
+                            ) : (
+                              <><Copy className="w-3.5 h-3.5" /> <span className="text-xs">Copy</span></>
+                            )}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* Add / Edit User Modal */}
       <Modal open={modalOpen} onClose={closeModal}>
