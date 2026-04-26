@@ -236,6 +236,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div style={{ padding: "4px 10px 12px" }}>
               <button
                 type="button"
+                onClick={toggleTheme}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "7px 10px",
+                  borderRadius: 6, fontSize: 13, width: "100%", border: "none", cursor: "pointer",
+                  color: "var(--color-text-secondary)", backgroundColor: "transparent", marginBottom: 1,
+                }}
+              >
+                {theme === "dark" ? <Sun style={{ width: 16, height: 16 }} /> : <Moon style={{ width: 16, height: 16 }} />}
+                {theme === "dark" ? "Light Mode" : "Dark Mode"}
+              </button>
+              <button
+                type="button"
                 onClick={() => { toggleChat(); setMobileOpen(false); }}
                 style={{
                   display: "flex", alignItems: "center", gap: 10, padding: "7px 10px",
