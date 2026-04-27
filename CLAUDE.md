@@ -131,6 +131,23 @@ Registration is **invite-only**. No public signup.
 
 **Admin UI:** Invitations section on admin page — email input to send invites, table of sent invites with status (Pending/Registered/Expired), copy link button.
 
+## Risk Profile (Single Source of Truth)
+
+Risk settings live on the **Trader page** only (not Settings). Stored in `user_risk_profiles` table, loaded by the engine via `loadRiskLimits()` in `trading-engine.ts`.
+
+| Field | Engine Effect |
+|-------|---------------|
+| `accountSize` | Base for position sizing and exposure calculations |
+| `maxDailyLossPct` | Engine auto-halts when daily losses exceed this % |
+| `maxPositionPct` | Position size as % of equity; also determines max position count (100/pct) |
+| `maxPositionSize` | Hard cap on shares per order |
+| `maxExposureMultiplier` | Total portfolio exposure as multiple of equity (default 1.5×) |
+| `maxDrawdownPct` | Used with accountSize for legacy exposure calc when multiplier isn't set |
+| `riskTolerance` | Presets only — pre-fills other fields |
+| `maxSingleTradeLoss` | Informational — not enforced by engine |
+
+**Engine boot:** Engines auto-restart on server startup via `instrumentation.ts` → `bootEngines()`. Checks all users with active broker connections, restores last-used mode.
+
 ## Security & Route Patterns
 
 ### Auth on Mutating Routes

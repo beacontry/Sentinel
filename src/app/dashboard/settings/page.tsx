@@ -117,21 +117,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, "success" | "error" | "loading">>({});
 
-  // Risk profile state
-  const [, setRiskProfile] = useState<UserRiskProfile | null>(null);
-  const [riskForm, setRiskForm] = useState({
-    accountSize: 10000,
-    riskTolerance: "moderate" as RiskTolerance,
-    maxDailyLossPct: 2,
-    maxDrawdownPct: 10,
-    maxPositionPct: 5,
-    maxPositionSize: 100,
-    maxSingleTradeLoss: 100,
-    maxExposureMultiplier: 1.5,
-  });
-  const [riskSaving, setRiskSaving] = useState(false);
-  const [riskSaved, setRiskSaved] = useState(false);
-  const [riskError, setRiskError] = useState("");
+  // Risk profile moved to Trader page — single source of truth
 
   // Broker connection state
   const [brokerConnections, setBrokerConnections] = useState<BrokerConnection[]>([]);
@@ -158,30 +144,13 @@ export default function SettingsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [webhookRes, riskRes, brokerRes] = await Promise.allSettled([
+        const [webhookRes, brokerRes] = await Promise.allSettled([
           fetch("/api/webhooks/discord"),
-          fetch("/api/risk-profile"),
           fetch("/api/broker/connections"),
         ]);
         if (webhookRes.status === "fulfilled" && webhookRes.value.ok) {
           const data = await webhookRes.value.json();
           setWebhooks(data.webhooks ?? []);
-        }
-        if (riskRes.status === "fulfilled" && riskRes.value.ok) {
-          const data = await riskRes.value.json();
-          if (data.profile) {
-            setRiskProfile(data.profile);
-            setRiskForm({
-              accountSize: data.profile.accountSize ?? 10000,
-              riskTolerance: data.profile.riskTolerance ?? "moderate",
-              maxDailyLossPct: data.profile.maxDailyLossPct ?? 2,
-              maxDrawdownPct: data.profile.maxDrawdownPct ?? 10,
-              maxPositionPct: data.profile.maxPositionPct ?? 5,
-              maxPositionSize: data.profile.maxPositionSize ?? 100,
-              maxSingleTradeLoss: data.profile.maxSingleTradeLoss ?? 100,
-              maxExposureMultiplier: data.profile.maxExposureMultiplier ?? 1.5,
-            });
-          }
         }
         if (brokerRes.status === "fulfilled" && brokerRes.value.ok) {
           const data = await brokerRes.value.json();
@@ -193,34 +162,6 @@ export default function SettingsPage() {
     }
     load();
   }, []);
-
-  // ─── Risk profile handlers ─────────────────────────────────────
-
-  async function handleSaveRiskProfile() {
-    setRiskSaving(true);
-    setRiskError("");
-    setRiskSaved(false);
-    try {
-      const res = await fetch("/api/risk-profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(riskForm),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setRiskError(data.error ?? "Save failed");
-        return;
-      }
-      const data = await res.json();
-      setRiskProfile(data.profile);
-      setRiskSaved(true);
-      setTimeout(() => setRiskSaved(false), 3000);
-    } catch {
-      setRiskError("Save failed");
-    } finally {
-      setRiskSaving(false);
-    }
-  }
 
   // ─── Webhook handlers ──────────────────────────────────────────
 
@@ -495,122 +436,8 @@ export default function SettingsPage() {
         stats={[
           { label: "Webhooks", value: webhooks.length },
           { label: "Brokers", value: activeBrokerCount, tone: activeBrokerCount > 0 ? "bullish" : "neutral" },
-          { label: "Risk Tier", value: riskForm.riskTolerance, tone: "brand" },
-          { label: "Account Size", value: `$${riskForm.accountSize.toLocaleString()}` },
         ]}
       />
-
-      {/* Risk Profile */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Shield className="w-5 h-5 text-accent" />
-            <CardTitle>Risk Profile</CardTitle>
-          </div>
-          <p className="text-xs text-text-muted">
-            Your risk profile determines default strategy parameters when no explicit assignment exists
-          </p>
-        </CardHeader>
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input
-              label="Account Size ($)"
-              type="number"
-              value={riskForm.accountSize}
-              onChange={(e) => setRiskForm((f) => ({ ...f, accountSize: Number(e.target.value) }))}
-              min={100}
-            />
-            <Select
-              label="Risk Tolerance"
-              options={RISK_TOLERANCE_OPTIONS}
-              value={riskForm.riskTolerance}
-              onChange={(value) => {
-                const tolerance = value as RiskTolerance;
-                const preset = RISK_PRESETS[tolerance];
-                setRiskForm((f) => ({
-                  ...f,
-                  riskTolerance: tolerance,
-                  maxDailyLossPct: preset.maxDailyLossPct,
-                  maxDrawdownPct: preset.maxDrawdownPct,
-                  maxPositionPct: preset.maxPositionPct,
-                  maxPositionSize: Math.round(f.accountSize * preset.maxPositionSizePct / 100),
-                  maxSingleTradeLoss: Math.round(f.accountSize * preset.maxSingleTradeLossPct / 100),
-                }));
-              }}
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Input
-              label="Max Daily Loss %"
-              type="number"
-              value={riskForm.maxDailyLossPct}
-              onChange={(e) => setRiskForm((f) => ({ ...f, maxDailyLossPct: Number(e.target.value) }))}
-              step={0.5}
-              min={0.1}
-            />
-            <Input
-              label="Max Drawdown %"
-              type="number"
-              value={riskForm.maxDrawdownPct}
-              onChange={(e) => setRiskForm((f) => ({ ...f, maxDrawdownPct: Number(e.target.value) }))}
-              step={1}
-              min={1}
-            />
-            <Input
-              label="Max Position %"
-              type="number"
-              value={riskForm.maxPositionPct}
-              onChange={(e) => setRiskForm((f) => ({ ...f, maxPositionPct: Number(e.target.value) }))}
-              step={0.5}
-              min={0.5}
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Input
-              label="Max Position Size (shares)"
-              type="number"
-              value={riskForm.maxPositionSize}
-              onChange={(e) => setRiskForm((f) => ({ ...f, maxPositionSize: Number(e.target.value) }))}
-              min={1}
-            />
-            <Input
-              label="Max Single Trade Loss ($)"
-              type="number"
-              value={riskForm.maxSingleTradeLoss}
-              onChange={(e) => setRiskForm((f) => ({ ...f, maxSingleTradeLoss: Number(e.target.value) }))}
-              min={1}
-            />
-          </div>
-          <div>
-            <Input
-              label="Max Exposure Multiplier (× equity)"
-              type="number"
-              value={riskForm.maxExposureMultiplier}
-              onChange={(e) => setRiskForm((f) => ({ ...f, maxExposureMultiplier: Number(e.target.value) }))}
-              step={0.1}
-              min={1}
-              max={5}
-            />
-            <p className="mt-1 text-xs text-text-muted">
-              Controls total portfolio exposure. 1.5× = $37,500 on $25,000 equity. Currently: {riskForm.maxExposureMultiplier}× equity.
-            </p>
-          </div>
-
-          {riskError && <p className="text-sm text-bearish">{riskError}</p>}
-
-          <div className="flex items-center gap-3">
-            <Button onClick={handleSaveRiskProfile} loading={riskSaving}>
-              Save Risk Profile
-            </Button>
-            {riskSaved && (
-              <span className="text-sm text-bullish flex items-center gap-1">
-                <Check className="w-4 h-4" /> Saved
-              </span>
-            )}
-          </div>
-        </div>
-      </Card>
 
       {/* Broker Connections */}
       <Card>
