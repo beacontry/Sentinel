@@ -1889,17 +1889,30 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
       const isStrongSignal = signal === SignalType.STRONG_BUY;
       const hardCap = Math.floor(riskLimits.maxPositions * 1.5);
       const positionCap = isStrongSignal ? hardCap : riskLimits.maxPositions;
+
+      // Log why Strong Buy signals are skipped (visible in production logs)
+      if (isStrongSignal && !shouldBuy) {
+        log.info({ symbol, signal, marketHealthy, confidence: confidence.toFixed(3) }, "STRONG_BUY skipped — market unhealthy or signal not confirmed");
+        continue;
+      }
+      if (isStrongSignal && positionMap.size >= positionCap) {
+        log.info({ symbol, positions: positionMap.size, cap: positionCap, maxPositions: riskLimits.maxPositions }, "STRONG_BUY skipped — position cap reached");
+        continue;
+      }
+
       if (shouldBuy && positionMap.size < positionCap) {
         // Skip if there's already a pending buy order for this symbol
         if (pendingBuySymbols.has(symbol)) {
-          log.debug({ symbol }, "Skipping — pending buy order already exists on broker");
+          if (isStrongSignal) log.info({ symbol }, "STRONG_BUY skipped — pending buy order already exists");
+          else log.debug({ symbol }, "Skipping — pending buy order already exists on broker");
           continue;
         }
 
         // Smart filters: earnings blackout, relative strength, sentiment
         const filterResult = await passesSmartFilters(symbol, bars);
         if (!filterResult.allowed) {
-          log.debug({ symbol, reason: filterResult.reason }, "Blocked by smart filter");
+          if (isStrongSignal) log.info({ symbol, reason: filterResult.reason }, "STRONG_BUY blocked by smart filter");
+          else log.debug({ symbol, reason: filterResult.reason }, "Blocked by smart filter");
           continue;
         }
 
@@ -1913,7 +1926,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         );
 
         if (qty <= 0) {
-          log.debug({ symbol, equity, positionValue, currentPrice }, "Computed qty is 0, skipping");
+          if (isStrongSignal) log.info({ symbol, equity, positionValue, currentPrice }, "STRONG_BUY skipped — computed qty is 0");
+          else log.debug({ symbol, equity, positionValue, currentPrice }, "Computed qty is 0, skipping");
           continue;
         }
 
@@ -1921,7 +1935,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         // Use buyingPower (not cash) — margin accounts can have negative cash but positive buying power
         const orderCost = qty * currentPrice;
         if (orderCost > account.buyingPower) {
-          log.debug({ symbol, qty, required: orderCost, buyingPower: account.buyingPower }, "Insufficient buying power, skipping");
+          if (isStrongSignal) log.info({ symbol, qty, required: orderCost.toFixed(2), buyingPower: account.buyingPower.toFixed(2) }, "STRONG_BUY skipped — insufficient buying power");
+          else log.debug({ symbol, qty, required: orderCost, buyingPower: account.buyingPower }, "Insufficient buying power, skipping");
           continue;
         }
 
@@ -1930,7 +1945,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         const currentExposure = Array.from(positionMap.values())
           .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
         if (currentExposure + (currentPrice * qty) > effectiveMaxExposure) {
-          log.info({ symbol, currentExposure, maxExposure: effectiveMaxExposure }, "Max exposure reached, skipping");
+          if (isStrongSignal) log.info({ symbol, currentExposure: currentExposure.toFixed(2), maxExposure: effectiveMaxExposure.toFixed(2), orderCost: (currentPrice * qty).toFixed(2) }, "STRONG_BUY skipped — max exposure reached");
+          else log.info({ symbol, currentExposure, maxExposure: effectiveMaxExposure }, "Max exposure reached, skipping");
           continue;
         }
 
@@ -1938,6 +1954,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         const cooldownKey = `cooldown:${symbol}`;
         const lastBuy = engine.externalSignals.find(s => s.symbol === cooldownKey);
         if (lastBuy && Date.now() - lastBuy.receivedAt < 150 * 60 * 1000) {
+          if (isStrongSignal) log.info({ symbol }, "STRONG_BUY skipped — signal cooldown active");
           continue; // ~2.5 hours cooldown
         }
 
