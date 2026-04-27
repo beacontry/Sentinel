@@ -15,6 +15,7 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   bio: text("bio"),
   role: text("role").notNull().default("user"),
+  pinHash: text("pin_hash"),
   emailNotifications: boolean("email_notifications").default(false),
   notificationEmail: text("notification_email"),
   timezone: text("timezone"),

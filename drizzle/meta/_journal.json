@@ -64,6 +64,13 @@
       "when": 1777162403250,
       "tag": "0008_purple_turbo",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777303162297,
+      "tag": "0009_new_hex",
+      "breakpoints": true
     }
   ]
 }
