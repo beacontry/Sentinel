@@ -399,11 +399,14 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
       const dailyLossPct = profile.maxDailyLossPct != null ? profile.maxDailyLossPct / 100 : defaults.dailyLossPct;
       const maxPositionSize = profile.maxPositionSize ?? defaults.maxPositionSize;
 
-      // maxExposure only overridden when BOTH accountSize and maxDrawdownPct are set
-      const maxExposure =
-        profile.accountSize != null && profile.maxDrawdownPct != null
-          ? (profile.accountSize * profile.maxDrawdownPct) / 100
-          : defaults.maxExposure;
+      // maxExposure: use multiplier if set, else fallback to accountSize × drawdown, else 0 (engine uses 1.5× equity default)
+      let maxExposure = defaults.maxExposure;
+      if (profile.maxExposureMultiplier != null && profile.maxExposureMultiplier > 0) {
+        // Multiplier is applied at runtime against live equity (stored as multiplier, e.g. 2.0 = 2× equity)
+        maxExposure = -profile.maxExposureMultiplier; // Negative signals "use multiplier" to the engine
+      } else if (profile.accountSize != null && profile.maxDrawdownPct != null) {
+        maxExposure = (profile.accountSize * profile.maxDrawdownPct) / 100;
+      }
 
       return { maxPositions, positionPct, dailyLossPct, maxPositionSize, maxExposure };
     }
@@ -1495,7 +1498,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       if (qty <= 0 || qty * cand.price > account.buyingPower) continue;
 
       // Check exposure (use equity as cap when not configured)
-      const effectiveMaxExposure = riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
+      const effectiveMaxExposure = riskLimits.maxExposure < 0 ? equity * Math.abs(riskLimits.maxExposure) : riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
       const currentExposure = Array.from(positionMap.values())
         .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
       if (currentExposure + cand.price * qty > effectiveMaxExposure) break;
@@ -1941,7 +1944,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         }
 
         // Check max portfolio exposure (use equity as cap when not configured)
-        const effectiveMaxExposure = riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
+        const effectiveMaxExposure = riskLimits.maxExposure < 0 ? equity * Math.abs(riskLimits.maxExposure) : riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
         const currentExposure = Array.from(positionMap.values())
           .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
         if (currentExposure + (currentPrice * qty) > effectiveMaxExposure) {

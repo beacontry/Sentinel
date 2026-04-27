@@ -127,6 +127,7 @@ export default function SettingsPage() {
     maxPositionPct: 5,
     maxPositionSize: 100,
     maxSingleTradeLoss: 100,
+    maxExposureMultiplier: 1.5,
   });
   const [riskSaving, setRiskSaving] = useState(false);
   const [riskSaved, setRiskSaved] = useState(false);
@@ -178,6 +179,7 @@ export default function SettingsPage() {
               maxPositionPct: data.profile.maxPositionPct ?? 5,
               maxPositionSize: data.profile.maxPositionSize ?? 100,
               maxSingleTradeLoss: data.profile.maxSingleTradeLoss ?? 100,
+              maxExposureMultiplier: data.profile.maxExposureMultiplier ?? 1.5,
             });
           }
         }
@@ -579,6 +581,20 @@ export default function SettingsPage() {
               onChange={(e) => setRiskForm((f) => ({ ...f, maxSingleTradeLoss: Number(e.target.value) }))}
               min={1}
             />
+          </div>
+          <div>
+            <Input
+              label="Max Exposure Multiplier (× equity)"
+              type="number"
+              value={riskForm.maxExposureMultiplier}
+              onChange={(e) => setRiskForm((f) => ({ ...f, maxExposureMultiplier: Number(e.target.value) }))}
+              step={0.1}
+              min={1}
+              max={5}
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              Controls total portfolio exposure. 1.5× = $37,500 on $25,000 equity. Currently: {riskForm.maxExposureMultiplier}× equity.
+            </p>
           </div>
 
           {riskError && <p className="text-sm text-bearish">{riskError}</p>}

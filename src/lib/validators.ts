@@ -164,6 +164,7 @@ export const updateRiskProfileSchema = z.object({
   maxPositionPct: z.number().min(0.5).max(100).nullable().optional(),
   maxPositionSize: z.number().int().min(1).max(10000).nullable().optional(),
   maxSingleTradeLoss: z.number().min(1).max(100000).nullable().optional(),
+  maxExposureMultiplier: z.number().min(1).max(5).nullable().optional(),
 });
 
 // ─── Forum ────────────────────────────────────────────────────────
