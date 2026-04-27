@@ -54,6 +54,7 @@ export const userRiskProfiles = pgTable("user_risk_profiles", {
   maxPositionPct: real("max_position_pct"),
   maxPositionSize: integer("max_position_size"),
   maxSingleTradeLoss: real("max_single_trade_loss"),
+  maxExposureMultiplier: real("max_exposure_multiplier"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
