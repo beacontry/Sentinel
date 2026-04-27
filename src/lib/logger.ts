@@ -6,7 +6,7 @@ export const logger = pino({
     paths: ["password", "passwordHash", "token", "secret", "clientSecret"],
     censor: "[REDACTED]",
   },
-});
+}, pino.destination({ dest: 1, sync: true }));
 
 export function createRouteLogger(routeName: string) {
   return logger.child({ route: routeName });
