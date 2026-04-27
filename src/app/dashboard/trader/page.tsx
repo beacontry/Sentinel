@@ -171,6 +171,7 @@ export default function TraderPage() {
     maxPositionPct: "",
     maxPositionSize: "",
     maxSingleTradeLoss: "",
+    maxExposureMultiplier: "",
   });
   const [riskSaving, setRiskSaving] = useState(false);
   const [riskSaved, setRiskSaved] = useState(false);
@@ -217,6 +218,7 @@ export default function TraderPage() {
             maxPositionPct: profile.maxPositionPct != null ? String(profile.maxPositionPct) : "",
             maxPositionSize: profile.maxPositionSize != null ? String(profile.maxPositionSize) : "",
             maxSingleTradeLoss: profile.maxSingleTradeLoss != null ? String(profile.maxSingleTradeLoss) : "",
+            maxExposureMultiplier: profile.maxExposureMultiplier != null ? String(profile.maxExposureMultiplier) : "",
           });
         }
       } catch {
@@ -750,6 +752,7 @@ export default function TraderPage() {
                 { key: "maxPositionPct", label: "Max Position (%)", placeholder: "Engine default: 15%", step: "0.5" },
                 { key: "maxPositionSize", label: "Max Position Size (shares)", placeholder: "Engine default: 100", step: "1" },
                 { key: "maxSingleTradeLoss", label: "Max Single Trade Loss ($)", placeholder: "Engine default: 100", step: "10" },
+                { key: "maxExposureMultiplier", label: "Max Exposure (× equity)", placeholder: "Engine default: 1.5×", step: "0.1" },
               ] as const).map(({ key, label, placeholder, step }) => (
                 <div key={key}>
                   <Input
