@@ -7,6 +7,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { CsrfInit } from "@/components/csrf-init";
 import { SessionGuard } from "@/components/session-guard";
+import { PinSetupBanner } from "@/components/pin-setup-banner";
 
 export default function DashboardLayout({
   children,
@@ -17,7 +18,10 @@ export default function DashboardLayout({
     <TooltipProvider>
       <ToastProvider>
         <AiProvider>
-          <AppShell>{children}</AppShell>
+          <AppShell>
+            <PinSetupBanner />
+            {children}
+          </AppShell>
           <CommandPalette />
           <CsrfInit />
           <SessionGuard />
