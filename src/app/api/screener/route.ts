@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession, requireAuthWithCsrf } from "@/lib/auth";
-import { getScreenerCache, scanAllSymbols, filterResults, startScreenerScheduler } from "@/lib/screener";
+import { getScreenerCache, scanAllSymbols, filterResults } from "@/lib/screener";
 import type { ScreenerFilter } from "@/lib/screener";
 import { SCREENER_CONFIG } from "@/lib/config";
 import { createRouteLogger } from "@/lib/logger";
@@ -26,9 +26,6 @@ const screenerPostSchema = z.object({
 });
 
 export async function GET() {
-  // Start the auto-scan scheduler on first request
-  startScreenerScheduler();
-
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -65,9 +62,6 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  // Start the auto-scan scheduler on first request
-  startScreenerScheduler();
-
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
 
