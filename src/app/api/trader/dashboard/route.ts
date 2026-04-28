@@ -5,7 +5,7 @@ import { traderStatus, traderTrades, traderDailyPnl, traderSignals, brokerConnec
 import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
-import { autoStartIfNeeded, getBrokerPositionCache, getTrackedPositionData } from "@/lib/trading-engine";
+import { getBrokerPositionCache, getTrackedPositionData } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("trader-dashboard");
@@ -17,15 +17,6 @@ export async function GET() {
   }
 
   try {
-    // Auto-start engine if there are open positions after a restart
-    // Track per-user so every user's engine gets a chance to auto-start
-    const gAuto = globalThis as typeof globalThis & { __autoStartDone?: Set<string> };
-    gAuto.__autoStartDone ??= new Set();
-    if (!gAuto.__autoStartDone.has(session.userId)) {
-      gAuto.__autoStartDone.add(session.userId);
-      autoStartIfNeeded(session.userId).catch(() => {});
-    }
-
     // Status and broker connection — wrap all initial DB reads in a timeout
     const { status, conn } = await withTimeout(3000, async (tx) => {
       const [s] = await tx.select().from(traderStatus).where(eq(traderStatus.userId, session.userId)).limit(1);
