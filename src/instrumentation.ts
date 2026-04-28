@@ -9,6 +9,13 @@ export async function register() {
       } catch (err) {
         console.error("Engine boot failed:", err);
       }
+
+      try {
+        const { startScreenerScheduler } = await import("./lib/screener");
+        startScreenerScheduler();
+      } catch (err) {
+        console.error("Screener scheduler start failed:", err);
+      }
     }, 5000);
   }
 }
