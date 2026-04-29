@@ -10,7 +10,7 @@
 
 import type { Bar } from "@/types";
 import { createBrokerClient } from "./brokers";
-import type { BrokerClient, BrokerAccount } from "./brokers";
+import type { BrokerClient, BrokerAccount, BrokerPosition } from "./brokers";
 import { decrypt } from "./crypto";
 import { getMarketDataProvider } from "./market-data";
 import { analyzeHybrid } from "./hybrid/pipeline";
@@ -35,7 +35,7 @@ import {
   traderDailyPnl,
   optimizationRuns,
 } from "./db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, gt } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
 
 const log = createRouteLogger("trading-engine");
@@ -1160,7 +1160,15 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   }
   const confirmedBelow = belowCount >= TACTICAL_CONFIG.confirmBars;
 
-  const currentPositions = await client.getPositions().catch(() => []);
+  let currentPositions: BrokerPosition[];
+  try {
+    currentPositions = await client.getPositions();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "unknown";
+    log.error({ err: msg, userId: engine.userId }, "Tactical scan aborted — getPositions failed");
+    pushError(engine, `Broker getPositions failed: ${msg}`);
+    return;
+  }
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!);
   engine.positionCount = positionMap.size;
 
@@ -1287,7 +1295,15 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   }
   const confirmedBelow = belowCount >= 3;
 
-  const currentPositions = await client.getPositions().catch(() => []);
+  let currentPositions: BrokerPosition[];
+  try {
+    currentPositions = await client.getPositions();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "unknown";
+    log.error({ err: msg, userId: engine.userId }, "Tactical-smart scan aborted — getPositions failed");
+    pushError(engine, `Broker getPositions failed: ${msg}`);
+    return;
+  }
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!);
   engine.positionCount = positionMap.size;
   const isInvested = currentPositions.length > 0;
@@ -2163,7 +2179,51 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
 
   // Clear halted flag in database so UI stops showing "Trading Halted"
   const today = getETDateString();
-  upsertDailyPnl(today, 0, 0, 0, false, undefined, userId).catch(() => {});
+  try {
+    await upsertDailyPnl(today, 0, 0, 0, false, undefined, userId);
+  } catch (err) {
+    log.error(
+      { err: err instanceof Error ? err.message : "unknown", userId, today },
+      "Failed to clear halted flag on engine start"
+    );
+  }
+
+  // Restart-safe cooldown hydration: re-populate cooldown markers from recent BUY
+  // trades in the database so an engine restart doesn't bypass the post-buy cooldown
+  // and re-trigger a duplicate entry on the same symbol within the cooldown window.
+  try {
+    const cooldownWindowMs = 150 * 60 * 1000; // matches the in-loop cooldown check
+    const sinceMs = Date.now() - cooldownWindowMs;
+    const recentBuys = await db
+      .select({ symbol: traderTrades.symbol, createdAt: traderTrades.createdAt })
+      .from(traderTrades)
+      .where(
+        and(
+          eq(traderTrades.userId, userId),
+          eq(traderTrades.action, "buy"),
+          gt(traderTrades.createdAt, new Date(sinceMs))
+        )
+      );
+    for (const row of recentBuys) {
+      const receivedAt = row.createdAt instanceof Date ? row.createdAt.getTime() : Date.now();
+      engine.externalSignals.push({
+        symbol: `cooldown:${row.symbol}`,
+        signal: "COOLDOWN",
+        confidence: 0,
+        price: 0,
+        source: "engine",
+        receivedAt,
+      });
+    }
+    if (recentBuys.length > 0) {
+      log.info({ userId, hydrated: recentBuys.length }, "Hydrated cooldown markers from recent buys");
+    }
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown", userId },
+      "Cooldown hydration skipped"
+    );
+  }
 
   const intraday = isIntradayMode(mode);
   const scanIntervalMs = intraday ? INTRADAY_SCAN_MS : SWING_SCAN_MS;
