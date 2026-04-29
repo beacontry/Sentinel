@@ -16,6 +16,48 @@ export async function GET() {
     const provider = getMarketDataProvider();
     const sectorSymbols = getPopularSymbolsBySector();
 
+    type SymPerf = { sector: string; symbol: string; perf1w: number; perf1m: number; perf3m: number };
+
+    // Flatten the (sector × symbol) plan into one parallel batch instead of
+    // serializing per-sector. Each sector's symbols still resolve together,
+    // but all sectors fetch concurrently.
+    const plan: { sector: string; symbol: string }[] = [];
+    for (const [sector, syms] of Object.entries(sectorSymbols)) {
+      if (sector === "ETF" || sector === "Other") continue;
+      for (const sym of syms.slice(0, 5)) plan.push({ sector, symbol: sym });
+    }
+
+    const settled = await Promise.allSettled(
+      plan.map(async ({ sector, symbol }): Promise<SymPerf | null> => {
+        const bars = await provider.fetchBars(symbol, 100, "1d");
+        if (bars.length < 10) return null;
+        const closes = bars.map((b) => b.close);
+        const last = closes[closes.length - 1];
+
+        const perf = (idx: number) => {
+          if (closes.length < idx + 1) return 0;
+          const past = closes[closes.length - 1 - idx];
+          return ((last - past) / past) * 100;
+        };
+
+        return {
+          sector,
+          symbol,
+          perf1w: perf(5),
+          perf1m: perf(21),
+          perf3m: perf(Math.min(63, closes.length - 1)),
+        };
+      })
+    );
+
+    const bySector = new Map<string, SymPerf[]>();
+    for (const r of settled) {
+      if (r.status !== "fulfilled" || r.value === null) continue;
+      const existing = bySector.get(r.value.sector) ?? [];
+      existing.push(r.value);
+      bySector.set(r.value.sector, existing);
+    }
+
     const sectorResults: {
       name: string;
       perf1w: number;
@@ -27,39 +69,7 @@ export async function GET() {
       topSymbolPerf: number;
     }[] = [];
 
-    for (const [sector, syms] of Object.entries(sectorSymbols)) {
-      if (sector === "ETF" || sector === "Other") continue;
-      const picks = syms.slice(0, 5);
-
-      const results = await Promise.allSettled(
-        picks.map(async (sym) => {
-          const bars = await provider.fetchBars(sym, 100, "1d");
-          if (bars.length < 10) return null;
-          const closes = bars.map((b) => b.close);
-          const last = closes[closes.length - 1];
-
-          const perf = (idx: number) => {
-            if (closes.length < idx + 1) return 0;
-            const past = closes[closes.length - 1 - idx];
-            return ((last - past) / past) * 100;
-          };
-
-          return {
-            symbol: sym,
-            perf1w: perf(5),
-            perf1m: perf(21),
-            perf3m: perf(Math.min(63, closes.length - 1)),
-          };
-        })
-      );
-
-      const valid: { symbol: string; perf1w: number; perf1m: number; perf3m: number }[] = [];
-      for (const r of results) {
-        if (r.status === "fulfilled" && r.value !== null) {
-          valid.push(r.value as { symbol: string; perf1w: number; perf1m: number; perf3m: number });
-        }
-      }
-
+    for (const [sector, valid] of bySector) {
       if (valid.length === 0) continue;
 
       const avg = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -84,6 +94,7 @@ export async function GET() {
       });
     }
 
+    // Restore deterministic ordering — bySector iteration order tracks insertion.
     sectorResults.sort((a, b) => b.perf1m - a.perf1m);
 
     return NextResponse.json({
