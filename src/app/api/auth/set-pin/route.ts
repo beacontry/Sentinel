@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getSession, hashPassword } from "@/lib/auth";
+import { requireAuthWithCsrf, hashPassword } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -10,10 +10,8 @@ const pinSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const auth = await getSession();
-  if (!auth) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
 
   const body = await request.json();
   const parsed = pinSchema.safeParse(body);
