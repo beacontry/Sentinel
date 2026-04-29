@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { portfolios, portfolioTrades, traderDailyPnl } from "@/lib/db/schema";
-import { eq, sql, gte, and, desc } from "drizzle-orm";
+import { eq, sql, gte, and, desc, inArray } from "drizzle-orm";
 import type { PnlCalendarDay } from "@/types";
 import { createRouteLogger } from "@/lib/logger";
 
@@ -26,68 +26,68 @@ export async function GET(request: NextRequest) {
 
     const dayMap = new Map<string, { pnl: number; tradesCount: number; sources: Set<string> }>();
 
-    // Portfolio P&L: aggregate net trade value per day
+    // Portfolio P&L: aggregate net trade value per day. Single query across
+    // all of the user's portfolios using inArray — replaces the prior
+    // per-portfolio loop which was N+1 against portfolioTrades.
     if (source === "portfolio" || source === "both") {
-      // Find user's portfolio(s)
-      const userPortfolios = await db
-        .select({ id: portfolios.id })
-        .from(portfolios)
-        .where(eq(portfolios.userId, session.userId as string));
+      await withTimeout(3000, async (tx) => {
+        const userPortfolios = await tx
+          .select({ id: portfolios.id })
+          .from(portfolios)
+          .where(eq(portfolios.userId, session.userId as string));
 
-      const portfolioIds = portfolioId
-        ? userPortfolios.filter((p) => p.id === portfolioId).map((p) => p.id)
-        : userPortfolios.map((p) => p.id);
+        const portfolioIds = portfolioId
+          ? userPortfolios.filter((p) => p.id === portfolioId).map((p) => p.id)
+          : userPortfolios.map((p) => p.id);
 
-      if (portfolioIds.length > 0) {
-        // For each portfolio, aggregate daily P&L from trades
-        // SELL trades contribute positive P&L, BUY trades contribute negative (cost)
-        // Net per day: SUM(CASE WHEN side='SELL' THEN price*shares ELSE -price*shares END)
-        for (const pId of portfolioIds) {
-          const dailyTrades = await db
-            .select({
-              date: sql<string>`to_char(${portfolioTrades.executedAt}::date, 'YYYY-MM-DD')`.as("date"),
-              pnl: sql<number>`sum(CASE WHEN ${portfolioTrades.action} = 'SELL' THEN ${portfolioTrades.price} * ${portfolioTrades.quantity} ELSE -${portfolioTrades.price} * ${portfolioTrades.quantity} END)`,
-              tradesCount: sql<number>`count(*)`,
-            })
-            .from(portfolioTrades)
-            .where(
-              and(
-                eq(portfolioTrades.portfolioId, pId),
-                gte(portfolioTrades.executedAt, cutoff)
-              )
+        if (portfolioIds.length === 0) return;
+
+        const dailyTrades = await tx
+          .select({
+            date: sql<string>`to_char(${portfolioTrades.executedAt}::date, 'YYYY-MM-DD')`.as("date"),
+            pnl: sql<number>`sum(CASE WHEN ${portfolioTrades.action} = 'SELL' THEN ${portfolioTrades.price} * ${portfolioTrades.quantity} ELSE -${portfolioTrades.price} * ${portfolioTrades.quantity} END)`,
+            tradesCount: sql<number>`count(*)`,
+          })
+          .from(portfolioTrades)
+          .where(
+            and(
+              inArray(portfolioTrades.portfolioId, portfolioIds),
+              gte(portfolioTrades.executedAt, cutoff)
             )
-            .groupBy(sql`${portfolioTrades.executedAt}::date`)
-            .orderBy(sql`${portfolioTrades.executedAt}::date`);
+          )
+          .groupBy(sql`${portfolioTrades.executedAt}::date`)
+          .orderBy(sql`${portfolioTrades.executedAt}::date`);
 
-          for (const row of dailyTrades) {
-            const existing = dayMap.get(row.date);
-            if (existing) {
-              existing.pnl += Number(row.pnl ?? 0);
-              existing.tradesCount += Number(row.tradesCount);
-              existing.sources.add("portfolio");
-            } else {
-              dayMap.set(row.date, {
-                pnl: Number(row.pnl ?? 0),
-                tradesCount: Number(row.tradesCount),
-                sources: new Set(["portfolio"]),
-              });
-            }
+        for (const row of dailyTrades) {
+          const existing = dayMap.get(row.date);
+          if (existing) {
+            existing.pnl += Number(row.pnl ?? 0);
+            existing.tradesCount += Number(row.tradesCount);
+            existing.sources.add("portfolio");
+          } else {
+            dayMap.set(row.date, {
+              pnl: Number(row.pnl ?? 0),
+              tradesCount: Number(row.tradesCount),
+              sources: new Set(["portfolio"]),
+            });
           }
         }
-      }
+      });
     }
 
     // Trader P&L: read from traderDailyPnl table
     if (source === "trader" || source === "both") {
-      const traderRows = await db
-        .select({
-          date: traderDailyPnl.date,
-          realizedPnl: traderDailyPnl.realizedPnl,
-          tradesCount: traderDailyPnl.tradesCount,
-        })
-        .from(traderDailyPnl)
-        .where(and(gte(traderDailyPnl.date, cutoffStr), eq(traderDailyPnl.userId, session.userId)))
-        .orderBy(desc(traderDailyPnl.date));
+      const traderRows = await withTimeout(3000, async (tx) =>
+        tx
+          .select({
+            date: traderDailyPnl.date,
+            realizedPnl: traderDailyPnl.realizedPnl,
+            tradesCount: traderDailyPnl.tradesCount,
+          })
+          .from(traderDailyPnl)
+          .where(and(gte(traderDailyPnl.date, cutoffStr), eq(traderDailyPnl.userId, session.userId)))
+          .orderBy(desc(traderDailyPnl.date))
+      );
 
       for (const row of traderRows) {
         const existing = dayMap.get(row.date);
@@ -147,6 +147,12 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "private, max-age=120" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "P&L calendar error");
     return NextResponse.json({ error: "Failed to load P&L calendar" }, { status: 500 });
