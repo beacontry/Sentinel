@@ -2637,11 +2637,14 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
       try {
         const [status] = await db.select().from(traderStatus).where(eq(traderStatus.userId, userId)).limit(1);
         if (status?.mode?.startsWith("paper:")) {
-          const savedMode = status.mode.split(":")[1] as EngineMode;
+          const parts = status.mode.split(":");
+          const savedMode = parts.length > 1 ? (parts[1] as EngineMode) : null;
           const validModes: EngineMode[] = ["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical", "tactical-smart"];
-          if (validModes.includes(savedMode)) lastMode = savedMode;
+          if (savedMode && validModes.includes(savedMode)) lastMode = savedMode;
         }
-      } catch { /* use default */ }
+      } catch (err) {
+        log.warn({ err: err instanceof Error ? err.message : "unknown", userId }, "Failed to recover last engine mode");
+      }
 
       log.info({ positions: positions.length, userId, mode: lastMode }, "Open positions detected — auto-starting engine with last mode");
 

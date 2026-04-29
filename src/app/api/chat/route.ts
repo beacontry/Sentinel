@@ -8,12 +8,22 @@ import { eq, and } from "drizzle-orm";
 import { chatMessageSchema } from "@/lib/validators";
 import { CLAUDE_CONFIG } from "@/lib/config";
 import { createRouteLogger } from "@/lib/logger";
+import { rateLimit } from "@/lib/rate-limiter";
 
 const log = createRouteLogger("chat");
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+
+  // Cap Anthropic spend per user — 30 chat completions per hour.
+  const limit = rateLimit(`chat:${auth.userId}`, 30, 3600);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded — try again in an hour" },
+      { status: 429 }
+    );
+  }
 
   const claude = getClaudeClient();
   if (!claude.isConfigured) {

@@ -43,7 +43,7 @@ function saveWorkspaces(ws: Workspace[]) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ws)); } catch { /* quota */ }
 }
 
-function uid() { return Math.random().toString(36).slice(2, 10); }
+function uid() { return crypto.randomUUID(); }
 
 export default function WatchlistsPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);

@@ -36,7 +36,7 @@ const INDICATORS: Record<string, { label: string; conditions: { value: string; l
 };
 
 function uid() {
-  return Math.random().toString(36).slice(2, 10);
+  return crypto.randomUUID();
 }
 
 export default function StrategyBuilderPage() {
