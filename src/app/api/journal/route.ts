@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession, requireAuthWithCsrf } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
-import { tradeJournal } from "@/lib/db/schema";
+import { tradeJournal, portfolioTrades, portfolios, traderTrades } from "@/lib/db/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import {
   createJournalSchema,
@@ -82,6 +82,30 @@ export async function POST(request: Request) {
       { error: "Invalid request", details: parsed.error.flatten() },
       { status: 400 }
     );
+  }
+
+  // Verify the user owns any referenced trades — otherwise a journal entry
+  // could be linked to another user's trade as a way to enumerate them.
+  if (parsed.data.portfolioTradeId) {
+    const [trade] = await db
+      .select({ ownerId: portfolios.userId })
+      .from(portfolioTrades)
+      .innerJoin(portfolios, eq(portfolios.id, portfolioTrades.portfolioId))
+      .where(eq(portfolioTrades.id, parsed.data.portfolioTradeId))
+      .limit(1);
+    if (!trade || trade.ownerId !== auth.userId) {
+      return NextResponse.json({ error: "Invalid portfolio trade" }, { status: 403 });
+    }
+  }
+  if (parsed.data.traderTradeId) {
+    const [trade] = await db
+      .select({ userId: traderTrades.userId })
+      .from(traderTrades)
+      .where(eq(traderTrades.id, parsed.data.traderTradeId))
+      .limit(1);
+    if (!trade || trade.userId !== auth.userId) {
+      return NextResponse.json({ error: "Invalid trader trade" }, { status: 403 });
+    }
   }
 
   try {

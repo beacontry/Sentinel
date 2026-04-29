@@ -7,6 +7,7 @@ import { createBrokerClient } from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
 import { getBrokerPositionCache, getTrackedPositionData } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
+import { rateLimit } from "@/lib/rate-limiter";
 
 const log = createRouteLogger("trader-dashboard");
 
@@ -14,6 +15,15 @@ export async function GET() {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Heavy aggregate query: cap to 30/min/user (above polling rate of one per ~10s).
+  const limit = rateLimit(`trader-dashboard:${session.userId}`, 30, 60);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded" },
+      { status: 429 }
+    );
   }
 
   try {
