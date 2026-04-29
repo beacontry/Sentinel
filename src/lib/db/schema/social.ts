@@ -81,6 +81,9 @@ export const socialLikes = pgTable("social_likes", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("social_likes_user_idx").on(t.userId),
+  index("social_likes_post_idx").on(t.postId),
+  index("social_likes_comment_idx").on(t.commentId),
+  index("social_likes_thread_idx").on(t.threadId),
   uniqueIndex("social_likes_user_post_idx").on(t.userId, t.postId),
   uniqueIndex("social_likes_user_comment_idx").on(t.userId, t.commentId),
   uniqueIndex("social_likes_user_thread_idx").on(t.userId, t.threadId),

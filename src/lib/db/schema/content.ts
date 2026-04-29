@@ -58,4 +58,5 @@ export const userFeedConfigs = pgTable("user_feed_configs", {
 }, (t) => [
   index("user_feed_configs_user_idx").on(t.userId),
   index("user_feed_configs_feed_idx").on(t.feedId),
+  uniqueIndex("user_feed_configs_user_feed_idx").on(t.userId, t.feedId),
 ]);

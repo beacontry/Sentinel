@@ -6,6 +6,7 @@ import {
   real,
   boolean,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
@@ -44,4 +45,5 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("push_sub_user_idx").on(t.userId),
+  uniqueIndex("push_sub_endpoint_idx").on(t.endpoint),
 ]);

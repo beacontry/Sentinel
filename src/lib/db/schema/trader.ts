@@ -26,6 +26,7 @@ export const traderSignals = pgTable("trader_signals", {
   index("trader_signals_symbol_idx").on(t.symbol),
   index("trader_signals_created_idx").on(t.createdAt),
   index("trader_signals_user_idx").on(t.userId),
+  index("trader_signals_user_created_idx").on(t.userId, t.createdAt),
 ]);
 
 export const traderTrades = pgTable("trader_trades", {
@@ -54,6 +55,8 @@ export const traderTrades = pgTable("trader_trades", {
   index("trader_trades_created_idx").on(t.createdAt),
   index("trader_trades_user_idx").on(t.userId),
   index("trader_trades_broker_order_idx").on(t.brokerOrderId),
+  index("trader_trades_user_created_idx").on(t.userId, t.createdAt),
+  uniqueIndex("trader_trades_user_broker_order_idx").on(t.userId, t.brokerOrderId),
 ]);
 
 export const traderDailyPnl = pgTable("trader_daily_pnl", {
