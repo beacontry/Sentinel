@@ -489,7 +489,7 @@ function getETDateString(): string {
   return `${y}-${m}-${day}`;
 }
 
-function isMarketOpen(): boolean {
+export function isMarketOpen(): boolean {
   const now = getETDate();
   const day = now.getDay(); // 0=Sun, 6=Sat
   if (day === 0 || day === 6) return false;
@@ -2592,10 +2592,19 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
           }
         }
 
+        // Source positions from the broker, not the in-memory positionMap.
+        // The map only contains long positions the engine is tracking; manual
+        // buys outside the engine could be missed otherwise. Shorts (qty <= 0)
+        // are skipped — engine is long-only and the user is responsible for
+        // managing those positions on the broker directly.
+        const brokerPositions = await resolved.client.getPositions();
         const positionMap = getPositionMap(engine.userId);
-        const positions = Array.from(positionMap.values());
 
-        for (const pos of positions) {
+        for (const pos of brokerPositions) {
+          if (pos.qty <= 0) {
+            log.info({ symbol: pos.symbol, qty: pos.qty }, "Halt skipped short position (engine is long-only)");
+            continue;
+          }
           try {
             const haltOrder = await resolved.client.placeOrder({
               symbol: pos.symbol,
@@ -2606,8 +2615,8 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
             });
 
             const quote = await getMarketDataProvider().fetchQuote(pos.symbol);
-            const closePrice = quote?.price ?? pos.entryPrice;
-            const pnl = (closePrice - pos.entryPrice) * pos.qty;
+            const closePrice = quote?.price ?? pos.currentPrice ?? pos.avgEntryPrice;
+            const pnl = (closePrice - pos.avgEntryPrice) * pos.qty;
 
             await logTrade(
               pos.symbol,
@@ -2622,7 +2631,6 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
               null,
               engine.userId
             );
-
 
             positionMap.delete(pos.symbol);
 
@@ -2752,6 +2760,42 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
     { userId, attempts: maxAttempts, err: lastErr instanceof Error ? lastErr.message : "unknown" },
     "Auto-start failed after all retries — engine will not resume until manually started"
   );
+}
+
+/**
+ * Snapshot of every engine on this process — used by the watchdog and the
+ * /api/health/engine endpoint. Returns plain values, not the live engine object,
+ * so callers can't mutate state.
+ */
+export function getAllEngineSnapshots(): Array<{
+  userId: string;
+  running: boolean;
+  halted: boolean;
+  mode: EngineMode;
+  lastScanAt: Date | null;
+  brokerConnected: boolean;
+  consecutiveBrokerFailures: number;
+  dailyLoss: number;
+  dailyLossLimit: number;
+  recentErrors: string[];
+}> {
+  if (!g.__tradingEngines) return [];
+  const snapshots = [];
+  for (const [userId, engine] of g.__tradingEngines) {
+    snapshots.push({
+      userId,
+      running: engine.running,
+      halted: engine.halted,
+      mode: engine.mode,
+      lastScanAt: engine.lastScanAt,
+      brokerConnected: engine.brokerConnected,
+      consecutiveBrokerFailures: engine.consecutiveBrokerFailures,
+      dailyLoss: engine.dailyLoss,
+      dailyLossLimit: engine.dailyLossLimit,
+      recentErrors: engine.errors.slice(-5),
+    });
+  }
+  return snapshots;
 }
 
 /**

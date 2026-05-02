@@ -30,6 +30,13 @@ export async function register() {
       } catch (err) {
         console.error("Screener scheduler start failed:", err);
       }
+
+      try {
+        const { startWatchdog } = await import("./lib/engine-watchdog");
+        startWatchdog();
+      } catch (err) {
+        console.error("Engine watchdog start failed:", err);
+      }
     }, 5000);
 
     // Graceful shutdown: when podman/Docker sends SIGTERM, stop every running
