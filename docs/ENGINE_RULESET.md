@@ -89,6 +89,8 @@ Positions are closed when ANY of these trigger:
 4. **Sell signal** — technical analysis generates SELL/STRONG_SELL
 5. **Hold period expired** — held longer than holdPeriod bars
 
+**Dual cadence:** Exits run twice — every 15 min in the main scan (uses last-bar close), and every 1 min in `runExitCheck()` using a live quote. The 1-min loop runs in **every mode**, not just intraday — this is what keeps trailing stops tracking the live peak instead of yesterday's close. A `pendingExits: Set<symbol>` on engine state guards against the two intervals double-selling the same position.
+
 ### Dynamic Trailing Stop (Exponential Decay)
 
 ```
@@ -202,6 +204,7 @@ Every buy signal passes through ten sequential gates before an order is placed:
 ### 6. Signal Cooldown
 - **Rule:** Don't re-buy same symbol within 2.5 hours
 - **Action:** Skip if same symbol had a buy signal within 150 minutes
+- **Implementation:** Stored in a dedicated `cooldowns: Map<symbol, timestamp>` on engine state with a 150-min cleanup pass. The previous design piggybacked on the `externalSignals` queue, which gets filtered every scan to drop entries older than 30 min — silently truncating the intended 150-min window.
 
 ### 7. Max Positions
 - **Rule:** Don't exceed maxPositions from risk settings
@@ -228,9 +231,9 @@ Every buy signal passes through ten sequential gates before an order is placed:
 ## Order Execution
 
 ### Entry Orders
-- **Type:** Limit order (0.1% above current price)
+- **Type:** Limit order (0.1% above current price). Plain order — **not** a bracket. Stops/TPs are managed by the engine, not by Alpaca-side OCO legs.
 - **Time in force:** Day (expires at market close)
-- **Stop price:** Included as bracket order on Alpaca
+- **Broker-side stop:** Placed separately via `syncBrokerStops()` on the next scan after the buy fills. Acts as a crash-safe fallback if the engine goes offline.
 
 ### Position Sizing
 - **Method:** Risk-based from user risk profile
@@ -270,11 +273,29 @@ Every buy signal passes through ten sequential gates before an order is placed:
 - **On engine stop:** Cancels protective stops → places ~8.5% safety stops
 
 ### Auto-Restart After Deploy
-- On first dashboard page load after container restart:
-  - Checks Alpaca for open positions
-  - If positions exist → auto-starts engine in last used mode (from DB)
-  - Syncs broker positions into in-memory map so the engine immediately resumes dynamic management (trailing stops, exits, etc.)
-  - Fires once per container lifecycle
+- On container start, `instrumentation.ts` waits 5s for the DB pool, then runs `bootEngines()` which iterates every user with an active broker connection and calls `autoStartIfNeeded()` — engine resumes without waiting for a user to open the dashboard
+- Transient broker/DB errors retry up to 3 times with 2s/4s backoff before giving up at error level
+- If positions exist → auto-starts in the last used mode (from `traderStatus.mode` in DB)
+- Syncs broker positions into in-memory map so the engine immediately resumes dynamic management (trailing stops, exits, etc.)
+
+### Graceful Shutdown
+- SIGTERM and SIGINT handlers in `instrumentation.ts` call `shutdownAllEngines()` — for each running engine: clear scan/exit-check intervals, then run `placeSafetyStops()` so every position has a tighter GTC stop on Alpaca before the process exits
+- Hard 8s budget (under podman's 10s grace period) — if the broker is slow, force-exit rather than block the rebuild
+
+### Daily-Loss Halt & Auto-Recovery
+- When daily realized losses exceed `dailyLossPct` of equity, the engine sets `halted=true` and stops opening new positions
+- On the next trading day's first scan, the date-rollover block clears the halt automatically and prunes the daily-loss error from `engine.errors` — no manual restart needed
+- Applies to all three scan functions: `runScan`, `runTacticalScan`, `runTacticalSmartScan`
+
+### Long-Only Enforcement
+- Engine never opens shorts — entry logic only fires on BUY/STRONG_BUY
+- If a short shows up on the broker (manual order, external tool), `syncPositionMapFromBroker()` filters it out so long-only stop math doesn't get applied wrong-direction to it
+- Screener no longer pushes SELL/STRONG_SELL into the engine queue
+
+### Exit Race Protection
+- The 1-min live-quote exit check and the 15-min main scan both call `placeOrder({side:"sell"})` — without coordination, both could fire on the same position during the window between `placeOrder()` and `positionMap.delete()`
+- `pendingExits: Set<symbol>` on engine state gates both code paths — `add()` before placing the sell, `delete()` in `finally`
+- Prevents the double-sell that previously surfaced as Alpaca rejecting a second order with "insufficient qty"
 
 ### Mode Persistence
 - Current engine mode saved to `traderStatus.mode` on every heartbeat
@@ -388,6 +409,8 @@ The screener (`src/lib/screener.ts`) is a shared, user-independent market scanne
 
 ### Key Properties
 
+- **Long-only:** only BUY and STRONG_BUY are pushed to engines. SELL/STRONG_SELL are dropped at the screener boundary — the engine ignores them anyway, so they were just noise.
+- **Confidence floor:** 0.6 minimum — weaker signals are filtered out before reaching the engine
 - Screener always uses **default** signal params (EMA 9/21, RSI 30/70) — not optimizer-tuned
 - Screener signals are **in-memory only** (not persisted to DB) — lost on container restart
 - Screener is **shared across all users** — not per-tenant
