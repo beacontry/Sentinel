@@ -31,5 +31,36 @@ export async function register() {
         console.error("Screener scheduler start failed:", err);
       }
     }, 5000);
+
+    // Graceful shutdown: when podman/Docker sends SIGTERM, stop every running
+    // engine so placeSafetyStops() runs before the process dies. Without this,
+    // a container rebuild leaves positions with whatever stop was last replaced —
+    // the bug that left INTC unprotected for 2 days during the Apr 28–30 outage.
+    const g = globalThis as typeof globalThis & { __shutdownRegistered?: boolean };
+    if (!g.__shutdownRegistered) {
+      g.__shutdownRegistered = true;
+
+      const handleShutdown = async (sig: string) => {
+        console.log(`[shutdown] ${sig} received — stopping engines`);
+        const forceExit = setTimeout(() => {
+          console.error("[shutdown] timeout exceeded, forcing exit");
+          process.exit(1);
+        }, 8000); // under podman's default 10s grace period
+
+        try {
+          const { shutdownAllEngines } = await import("./lib/trading-engine");
+          await shutdownAllEngines();
+          console.log("[shutdown] engines stopped, safety stops placed");
+        } catch (err) {
+          console.error("[shutdown] error during shutdown:", err);
+        } finally {
+          clearTimeout(forceExit);
+          process.exit(0);
+        }
+      };
+
+      process.on("SIGTERM", () => void handleShutdown("SIGTERM"));
+      process.on("SIGINT", () => void handleShutdown("SIGINT"));
+    }
   }
 }
