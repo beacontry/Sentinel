@@ -1044,9 +1044,19 @@ async function syncPositionMapFromBroker(
   positionMap: Map<string, TrackedPosition>,
   userId: string
 ): Promise<void> {
-  const brokerSymbols = new Set(brokerPositions.map(p => p.symbol));
+  // Engine is long-only. If a short shows up on the broker (manual order, external tool),
+  // ignore it entirely — long-only stop/exit logic is wrong-direction for shorts.
+  const longBrokerPositions = brokerPositions.filter(bp => {
+    if (bp.qty <= 0) {
+      log.debug({ symbol: bp.symbol, qty: bp.qty, userId }, "Short/zero broker position ignored (engine is long-only)");
+      return false;
+    }
+    return true;
+  });
 
-  // Remove positions that no longer exist on broker
+  const brokerSymbols = new Set(longBrokerPositions.map(p => p.symbol));
+
+  // Remove positions that no longer exist on broker (or flipped to short)
   for (const [symbol] of positionMap) {
     if (!brokerSymbols.has(symbol)) {
       log.info({ symbol, userId }, "Position no longer on broker — removing");
@@ -1056,7 +1066,7 @@ async function syncPositionMapFromBroker(
   }
 
   // Add/update positions from broker
-  for (const bp of brokerPositions) {
+  for (const bp of longBrokerPositions) {
     const existing = positionMap.get(bp.symbol);
     if (existing) {
       // Update qty and currentPrice if broker differs
@@ -2266,15 +2276,17 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     });
   }, scanIntervalMs);
 
-  // Intraday mode: also run 1-minute exit checks using live quotes
-  if (mode === "intraday") {
-    engine.exitCheckId = setInterval(() => {
-      if (!engine.running || engine.halted) return;
-      runExitCheck(userId).catch((err) => {
-        log.error({ err: err instanceof Error ? err.message : "unknown" }, "Exit check failed");
-      });
-    }, EXIT_CHECK_MS);
-  }
+  // 1-minute exit checks run in EVERY mode — uses live fetchQuote() to update
+  // peakPrice and trigger trail/stop exits. The 15-min main scan is too slow
+  // to track intraday peaks in swing modes (analysis.price = yesterday's close
+  // on 1d bars), which is why trailing stops only moved on engine restart before
+  // this fix.
+  engine.exitCheckId = setInterval(() => {
+    if (!engine.running || engine.halted) return;
+    runExitCheck(userId).catch((err) => {
+      log.error({ err: err instanceof Error ? err.message : "unknown" }, "Exit check failed");
+    });
+  }, EXIT_CHECK_MS);
 
   return { ok: true };
 }
@@ -2347,7 +2359,6 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
 
     for (const [symbol, pos] of positionMap) {
       const existing = stopOrders.get(symbol);
-      if (!existing) continue; // no stop order on broker — skip
 
       // Compute dynamic trailing stop
       const strategy = await resolveStrategy(userId, symbol);
@@ -2355,6 +2366,28 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
       const trailStop = pos.peakPrice * (1 - dynTrailPct);
       const fixedStop = pos.entryPrice * (1 - strategy.stopLossPct);
       const targetStop = Math.max(fixedStop, trailStop);
+
+      // No stop on broker yet (e.g., position opened mid-run, before any stop/start cycle).
+      // Place one now so the position has protection if the server crashes.
+      if (!existing) {
+        try {
+          await client.placeOrder({
+            symbol, side: "sell", qty: String(pos.qty),
+            type: "stop", timeInForce: "gtc", stopPrice: targetStop.toFixed(2),
+          });
+          updated++;
+          log.info(
+            { symbol, stopPrice: targetStop.toFixed(2), peakPrice: pos.peakPrice.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
+            "Initial broker stop placed for new position"
+          );
+        } catch (err) {
+          log.warn(
+            { symbol, err: err instanceof Error ? err.message : "unknown" },
+            "Failed to place initial broker stop"
+          );
+        }
+        continue;
+      }
 
       // Only ratchet UP — never lower the stop
       if (targetStop <= existing.stopPrice) {
@@ -2620,19 +2653,25 @@ export function broadcastExternalSignal(signal: ExternalSignal): number {
 
 /**
  * Auto-start engine if there are open positions on the broker.
- * Called on first dashboard API hit after a deploy/restart.
+ * Called on boot via instrumentation.ts and on first dashboard API hit after a deploy/restart.
+ * Retries with exponential backoff so transient broker/DB errors don't leave the engine
+ * permanently down — the trade-stale-stop scenario from Apr 28–30, 2026.
  */
 export async function autoStartIfNeeded(userId: string): Promise<void> {
   const engine = getEngine(userId);
   if (engine.running) return;
 
-  const resolved = await resolveBrokerClient(userId);
-  if (!resolved) return;
+  const maxAttempts = 3;
+  let lastErr: unknown = null;
 
-  try {
-    const positions = await resolved.client.getPositions();
-    if (positions.length > 0) {
-      // Recover last engine mode from DB
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const resolved = await resolveBrokerClient(userId);
+      if (!resolved) return; // no broker connection — not transient, nothing to retry
+
+      const positions = await resolved.client.getPositions();
+      if (positions.length === 0) return;
+
       let lastMode: EngineMode = "optimized";
       try {
         const [status] = await db.select().from(traderStatus).where(eq(traderStatus.userId, userId)).limit(1);
@@ -2646,18 +2685,41 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
         log.warn({ err: err instanceof Error ? err.message : "unknown", userId }, "Failed to recover last engine mode");
       }
 
-      log.info({ positions: positions.length, userId, mode: lastMode }, "Open positions detected — auto-starting engine with last mode");
+      log.info({ positions: positions.length, userId, mode: lastMode, attempt }, "Open positions detected — auto-starting engine with last mode");
 
-      // Sync broker positions into in-memory map so engine manages them immediately
       const positionMap = getPositionMap(userId);
       await syncPositionMapFromBroker(positions, positionMap, userId);
       log.info({ synced: positionMap.size }, "Synced broker positions into engine");
 
       await startEngine(userId, lastMode);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts) {
+        const backoffMs = 2000 * Math.pow(2, attempt - 1); // 2s, 4s
+        log.warn({ userId, attempt, backoffMs, err: err instanceof Error ? err.message : "unknown" }, "Auto-start attempt failed, retrying");
+        await new Promise(r => setTimeout(r, backoffMs));
+      }
     }
-  } catch (err) {
-    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Auto-start check failed");
   }
+
+  log.error(
+    { userId, attempts: maxAttempts, err: lastErr instanceof Error ? lastErr.message : "unknown" },
+    "Auto-start failed after all retries — engine will not resume until manually started"
+  );
+}
+
+/**
+ * Stop every running engine on this process. Called from the SIGTERM/SIGINT handler
+ * in instrumentation.ts so safety stops are placed on Alpaca before the container exits.
+ */
+export async function shutdownAllEngines(): Promise<void> {
+  if (!g.__tradingEngines) return;
+  const userIds = Array.from(g.__tradingEngines.keys());
+  if (userIds.length === 0) return;
+
+  log.info({ engines: userIds.length }, "Graceful shutdown — stopping all engines");
+  await Promise.allSettled(userIds.map(uid => stopEngine(uid)));
 }
 
 export function getEngineStatus(userId?: string): {

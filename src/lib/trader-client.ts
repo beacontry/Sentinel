@@ -10,7 +10,8 @@ export interface TraderPushResult {
   tradeId?: number;
 }
 
-const ACTIONABLE_SIGNALS = new Set(["STRONG_BUY", "BUY", "SELL", "STRONG_SELL"]);
+// Engine is long-only — SELL/STRONG_SELL would just sit unused in the queue.
+const ACTIONABLE_SIGNALS = new Set(["STRONG_BUY", "BUY"]);
 const MIN_CONFIDENCE = 0.6;
 
 // Cooldown tracking
