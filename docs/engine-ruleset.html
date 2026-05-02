@@ -690,6 +690,11 @@
     </div>
     <p>Positions close the moment <strong>any single</strong> exit condition fires. First trigger wins.</p>
 
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span><strong>Dual cadence.</strong> Exits are checked twice: every 15 min in the main scan (uses last-bar close), and every 1 min in <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runExitCheck()</code> using a live quote. The 1-min loop now runs in every mode &mdash; not just intraday &mdash; so trailing stops track the live peak instead of yesterday's close. A double-sell guard (<code>pendingExits</code> set on engine state) prevents the two intervals from racing on the same symbol.</span>
+    </div>
+
     <div class="exit-list">
       <div class="exit-item">
         <span class="exit-icon" style="color:var(--bearish)">&#9724;</span>
@@ -865,7 +870,7 @@
         <div class="gate-num">6</div>
         <div class="gate-body">
           <div class="gate-name">Signal Cooldown</div>
-          <div class="gate-rule">Don't re-buy the same symbol within 2.5 hours. Prevents chasing the same signal.</div>
+          <div class="gate-rule">Don't re-buy the same symbol within 2.5 hours. Prevents chasing the same signal. Stored in a dedicated <code style="font-family:'JetBrains Mono',monospace;font-size:0.78rem">cooldowns</code> map on engine state so the 150-min window is actually enforced (the previous implementation piggybacked on a queue that flushed entries at 30 min, silently collapsing the cooldown).</div>
           <div class="gate-action">Skip if same symbol had a buy signal within 150 min</div>
         </div>
       </div>
@@ -921,7 +926,7 @@
       <div class="flow-step">
         <span class="flow-step-icon">&#9888;</span>
         <div class="flow-step-title">Filter</div>
-        <div class="flow-step-desc">9 safety gates must pass</div>
+        <div class="flow-step-desc">10 safety gates must pass</div>
       </div>
       <div class="flow-arrow">&#10132;</div>
       <div class="flow-step">
@@ -939,9 +944,9 @@
 
     <h3>Entry Orders</h3>
     <ul>
-      <li><strong>Type:</strong> Limit order, 0.1% above current price</li>
+      <li><strong>Type:</strong> Limit order, 0.1% above current price. Plain order &mdash; <strong>not</strong> a bracket. Stops and take-profits are managed by the engine, not by Alpaca-side OCO legs.</li>
       <li><strong>Time in force:</strong> Day (expires at market close)</li>
-      <li><strong>Bracket:</strong> Stop price included via Alpaca bracket order</li>
+      <li><strong>Broker-side stop:</strong> Placed separately via <code style="font-family:'JetBrains Mono',monospace;font-size:0.78rem">syncBrokerStops()</code> on the next scan after the buy fills. Acts as a crash-safe fallback if the engine goes offline.</li>
     </ul>
 
     <h3>Position Sizing</h3>
@@ -981,10 +986,22 @@
     </ul>
 
     <h3>Auto-Restart After Deploy</h3>
-    <p>When the container restarts (deploy, crash recovery), the first dashboard page load checks Alpaca for open positions. If positions exist, the engine auto-starts in the last used mode (persisted in the database). It syncs broker positions into the in-memory map so the engine immediately resumes dynamic management (trailing stops, exits, etc.).</p>
+    <p>On container start, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">instrumentation.ts</code> waits 5s for the DB pool, then runs <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">bootEngines()</code> which iterates every user with an active broker connection and calls <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">autoStartIfNeeded()</code>. The engine resumes without waiting for a user to open the dashboard. Transient broker/DB errors retry up to 3 times with 2s/4s backoff before giving up at error level.</p>
+
+    <h3>Graceful Shutdown</h3>
+    <p>SIGTERM and SIGINT handlers call <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">shutdownAllEngines()</code> &mdash; for each running engine, it clears the scan/exit-check intervals and runs <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">placeSafetyStops()</code> so every position has a tighter GTC stop on Alpaca before the process exits. Hard 8s budget, well under podman's 10s grace period &mdash; if the broker is slow, the handler force-exits rather than block the rebuild.</p>
 
     <h3>Mode Persistence</h3>
     <p>The current mode is saved on every heartbeat as <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">paper:optimized</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">paper:tactical</code>, etc. Auto-restart reads this to resume the correct mode. Valid modes: conservative, moderate, optimized, aggressive, intraday, tactical, tactical-smart.</p>
+
+    <h3>Daily-Loss Halt &amp; Auto-Recovery</h3>
+    <p>When daily realized losses exceed <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">dailyLossPct</code> of equity, the engine sets <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">halted=true</code> and stops opening new positions. On the next trading day's first scan, the date-rollover block clears the halt automatically and prunes the daily-loss error from <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">engine.errors</code> &mdash; no manual restart needed. Applies to all three scan functions (<code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runScan</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runTacticalScan</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runTacticalSmartScan</code>).</p>
+
+    <h3>Long-Only Enforcement</h3>
+    <p>The engine never opens shorts &mdash; entry logic only fires on BUY/STRONG_BUY. If a short shows up on the broker (manual order, external tool), <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">syncPositionMapFromBroker()</code> filters it out so long-only stop math doesn't get applied wrong-direction to it. The screener also no longer pushes SELL/STRONG_SELL into the engine queue.</p>
+
+    <h3>Exit Race Protection</h3>
+    <p>The 1-min live-quote exit check and the 15-min main scan both call <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">placeOrder({side:"sell"})</code>. A <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pendingExits: Set&lt;symbol&gt;</code> on engine state gates both code paths &mdash; <code>add()</code> before placing the sell, <code>delete()</code> in <code>finally</code>. Prevents the double-sell that previously surfaced as Alpaca rejecting a second order with "insufficient qty".</p>
   </section>
 
   <!-- ===== 9 · TACTICAL MODES ===== -->
@@ -1073,6 +1090,11 @@
     <div class="callout warn">
       <span class="callout-icon">&#9888;</span>
       <span><strong>Hard close at 3:00 PM ET.</strong> All positions are flattened at market. No new positions are opened after this time.</span>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span>The 1-min exit check is no longer intraday-exclusive &mdash; it runs in <strong>every mode</strong>. What's specific to Intraday is the 5-min signal scan and the 3:00 PM flatten. Other modes use the 1-min loop only for live-quote stop/trail/TP enforcement.</span>
     </div>
   </section>
 
@@ -1216,6 +1238,8 @@
     </div>
 
     <ul>
+      <li><strong>Long-only:</strong> Only BUY and STRONG_BUY are pushed to engines. SELL/STRONG_SELL are dropped at the screener boundary &mdash; the engine ignores them anyway, so they were just noise.</li>
+      <li><strong>Confidence floor:</strong> 0.6 minimum &mdash; weaker signals are filtered out before reaching the engine</li>
       <li><strong>Dedup:</strong> Same symbol+signal ignored within 30 minutes</li>
       <li><strong>Expiry:</strong> External signals auto-expire after 30 minutes</li>
       <li><strong>In-memory only:</strong> Signals are not persisted &mdash; lost on container restart</li>
