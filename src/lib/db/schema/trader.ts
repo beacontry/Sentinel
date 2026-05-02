@@ -96,3 +96,20 @@ export const traderStatus = pgTable("trader_status", {
   lastHeartbeat: timestamp("last_heartbeat", { withTimezone: true }).defaultNow().notNull(),
   watchlist: jsonb("watchlist").notNull().default([]),
 });
+
+// Engine watchdog alerts: stalls, broker disconnects, daily-loss approaches, exit-order failures.
+// Written by src/lib/engine-watchdog.ts every 60s when conditions hit. Severity 'error' triggers
+// a push notification via sendPushToUser().
+export const engineAlerts = pgTable("engine_alerts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  kind: text("kind").notNull(), // 'stall' | 'broker_disconnect' | 'daily_loss_warn' | 'exit_order_failed'
+  severity: text("severity").notNull(), // 'warn' | 'error'
+  message: text("message").notNull(),
+  context: jsonb("context"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+}, (t) => [
+  index("engine_alerts_user_created_idx").on(t.userId, t.createdAt),
+  index("engine_alerts_user_kind_created_idx").on(t.userId, t.kind, t.createdAt),
+]);
