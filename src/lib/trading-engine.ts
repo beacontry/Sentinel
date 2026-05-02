@@ -77,6 +77,14 @@ export interface EngineState {
   brokerConnected: boolean;
   lastBrokerContact: Date | null;
   consecutiveBrokerFailures: number;
+  // Symbols with an exit order in flight — prevents the 1-min exit check and
+  // 15-min main scan from both placing sells on the same position during the
+  // window between placeOrder() and positionMap.delete().
+  pendingExits: Set<string>;
+  // Buy cooldowns keyed by symbol → timestamp. Replaces the previous hack
+  // that piggybacked on externalSignals (which got cleaned up at 30 min,
+  // breaking the intended 150-min window).
+  cooldowns: Map<string, number>;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -103,6 +111,8 @@ function createDefaultEngine(): EngineState {
     brokerConnected: false,
     lastBrokerContact: null,
     consecutiveBrokerFailures: 0,
+    pendingExits: new Set(),
+    cooldowns: new Map(),
   };
 }
 
@@ -741,6 +751,9 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
 
   for (const [symbol, pos] of positionMap) {
     try {
+      // Skip if the main scan has an exit in flight for this symbol — prevents double-sell.
+      if (engine.pendingExits.has(symbol)) continue;
+
       const quote = await provider.fetchQuote(symbol);
       if (!quote) continue;
 
@@ -770,6 +783,7 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
 
       if (exitReason) {
         log.info({ symbol, exitReason, currentPrice, entryPrice: pos.entryPrice }, "Exit triggered by 1-min check");
+        engine.pendingExits.add(symbol);
         try {
           await cancelPendingOrdersForSymbol(client, symbol);
           const exitOrder = await client.placeOrder({ symbol, qty: String(pos.qty), side: "sell", type: "market", timeInForce: "day" });
@@ -781,6 +795,8 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
           engine.positionCount = positionMap.size;
         } catch (err) {
           log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit order failed");
+        } finally {
+          engine.pendingExits.delete(symbol);
         }
       }
 
@@ -1109,6 +1125,11 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   if (engine.dailyLossDate !== today) {
     engine.dailyLoss = 0;
     engine.dailyLossDate = today;
+    if (engine.halted) {
+      log.info({ userId: engine.userId }, "New trading day — clearing daily-loss halt");
+      engine.halted = false;
+      engine.errors = engine.errors.filter(e => !e.startsWith("Daily loss limit hit"));
+    }
   }
 
   let client: BrokerClient;
@@ -1263,7 +1284,15 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   if (!isMarketOpen()) return;
 
   const today = getETDateString();
-  if (engine.dailyLossDate !== today) { engine.dailyLoss = 0; engine.dailyLossDate = today; }
+  if (engine.dailyLossDate !== today) {
+    engine.dailyLoss = 0;
+    engine.dailyLossDate = today;
+    if (engine.halted) {
+      log.info({ userId: engine.userId }, "New trading day — clearing daily-loss halt");
+      engine.halted = false;
+      engine.errors = engine.errors.filter(e => !e.startsWith("Daily loss limit hit"));
+    }
+  }
 
   let client: BrokerClient;
   let account: BrokerAccount;
@@ -1615,11 +1644,18 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     }
   }
 
-  // Reset daily loss tracking if date changed
+  // Reset daily loss tracking if date changed — and clear any halt that came
+  // from yesterday's daily-loss limit, so a halted engine resumes on the next
+  // trading day without needing a manual restart.
   const today = getETDateString();
   if (engine.dailyLossDate !== today) {
     engine.dailyLoss = 0;
     engine.dailyLossDate = today;
+    if (engine.halted) {
+      log.info({ userId: engine.userId }, "New trading day — clearing daily-loss halt");
+      engine.halted = false;
+      engine.errors = engine.errors.filter(e => !e.startsWith("Daily loss limit hit"));
+    }
   }
 
   log.info({ scan: engine.scanCount + 1 }, "Starting scan cycle");
@@ -1780,6 +1816,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
       const heldPosition = positionMap.get(symbol);
       const brokerPos = brokerPositions.find((p) => p.symbol === symbol);
 
+      // Skip if the 1-min exit check has a sell already in flight for this symbol —
+      // prevents double-sell race between the two intervals.
+      if (heldPosition && engine.pendingExits.has(symbol)) continue;
+
       // ── EXIT LOGIC (if we hold this symbol) ──────────────────────
       if (heldPosition) {
         // Update peak price for trailing stop
@@ -1827,6 +1867,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
         if (shouldExit) {
           log.info({ symbol, reason: exitReason }, "Exiting position");
+          engine.pendingExits.add(symbol);
 
           try {
             // Cancel any pending orders for this symbol (stops, limits) before market sell
@@ -1876,7 +1917,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
               engine.userId
             );
 
-      
+
             positionMap.delete(symbol);
 
             log.info(
@@ -1901,6 +1942,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
               null,
               engine.userId
             );
+          } finally {
+            engine.pendingExits.delete(symbol);
           }
         }
 
@@ -1979,12 +2022,13 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           continue;
         }
 
-        // Signal cooldown: skip if same symbol bought within last 10 scans
-        const cooldownKey = `cooldown:${symbol}`;
-        const lastBuy = engine.externalSignals.find(s => s.symbol === cooldownKey);
-        if (lastBuy && Date.now() - lastBuy.receivedAt < 150 * 60 * 1000) {
+        // Signal cooldown: 150 min lookout. Stored in a dedicated map (not the
+        // external-signal queue, which gets cleaned up at 30 min and silently
+        // collapsed this window).
+        const lastBuyAt = engine.cooldowns.get(symbol);
+        if (lastBuyAt && Date.now() - lastBuyAt < 150 * 60 * 1000) {
           if (isStrongSignal) log.info({ symbol }, "STRONG_BUY skipped — signal cooldown active");
-          continue; // ~2.5 hours cooldown
+          continue;
         }
 
         // Calculate bracket levels
@@ -2020,11 +2064,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
           tradesThisScan++;
 
-          // Set cooldown to prevent re-buying same symbol too quickly
-          engine.externalSignals.push({
-            symbol: `cooldown:${symbol}`, signal: "COOLDOWN",
-            confidence: 0, price: 0, source: "engine", receivedAt: Date.now(),
-          });
+          // Set cooldown to prevent re-buying same symbol too quickly (~2.5h)
+          engine.cooldowns.set(symbol, Date.now());
 
           // Track position in memory
           const tracked: TrackedPosition = {
@@ -2097,6 +2138,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   engine.externalSignals = engine.externalSignals.filter(
     (s) => now - s.receivedAt < 30 * 60 * 1000
   );
+  // Drop expired cooldowns so the map doesn't grow unbounded
+  for (const [sym, ts] of engine.cooldowns) {
+    if (now - ts > 150 * 60 * 1000) engine.cooldowns.delete(sym);
+  }
 
   // 7. Update engine state
   engine.lastScanAt = new Date();
