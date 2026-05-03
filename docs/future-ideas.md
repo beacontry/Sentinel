@@ -14,26 +14,27 @@ Stocks with stronger 60-day momentum get larger allocations. This matches how ta
 
 **Impact:** Medium. Improves backtest realism and may find strategies that pair better with concentration in high-momentum names.
 
-### Optimize Tactical-Smart Mode Directly
-The mode comparison showed tactical-smart (+65.8%) outperforming pure optimized (+60.2%) with default params. Instead of optimizing the "optimized" mode (individual stock signals), build a backtester that simulates tactical-smart logic:
+---
 
-- SPY-based entry/exit (above 50 SMA = buy, below 20 SMA for 3 days = sell all)
-- Scored stock selection: momentum × 300 + signal score + confidence × 2
-- Inverse volatility weighted position sizing
-- Active rotation: swap weak positions for strong ones during holds
-- GA tunes the same 8 params but they're applied within the tactical-smart framework
+## Path to Live Trading
 
-The current optimizer backtester simulates a simple signal → buy/sell loop. A tactical-smart backtester would simulate the full SPY timing + scoring + rotation loop, finding params that work best for that specific mode.
+A practical checklist before flipping the engine off Paper Mode. Order matters — don't skip ahead.
 
-**Impact:** High. The GA would optimize what you'd actually run live. Tactical-smart with tuned params could significantly outperform both current optimized mode and tactical-smart with defaults.
+### Today
 
-### Adaptive Take Profit — Option B (Volatility-Scaled)
-Instead of ATR × multiplier (current approach), scale take profit based on both ATR and momentum:
+- **Verify the deploy.** Run `podman logs --tail 30 sentinel-app` and confirm both `"Trading engine started"` and `"Engine watchdog started"`. If only the first, CI hasn't shipped `565fd76` yet — wait for the next deploy.
+- **Subscribe to PWA push notifications on phone.** Otherwise the watchdog's `error` severity alerts have nowhere to go and you're back to "find out by checking the dashboard."
+- **Hook the health endpoint into something external.** Better Uptime / UptimeRobot free tier, point it at `https://<domain>/api/health/engine`. This is the only thing that catches "container is dead entirely" — the in-process watchdog can't.
 
-```
-takeProfit = entry + ATR × baseMult × (1 + momentumBoost)
-```
+### This Week
 
-Stocks with strong momentum get even wider targets. Stocks with weak momentum take profits tighter. Adds one more param for the GA to tune (`momentumBoostFactor`), but could better separate breakout trades from mean-reversion trades.
+- **Decide on the APA short.** Engine ignores it (long-only). Halt won't touch it. Either close it manually on Alpaca or accept that it sits outside the engine's accounting.
+- **Open the optimizer dashboard once** to confirm cancelled runs clear from the UI. If they don't, there's a UI bug worth filing.
 
-**Impact:** Low-medium. Current ATR × mult already adapts to volatility. Adding momentum scaling adds complexity the GA may not reliably exploit.
+### Before Live (the actual gate)
+
+- **60 trading days of clean paper** post-`b2a8d06`. No manual restarts. No `engine_alerts` rows for `stall` or `broker_disconnect`. No daily-loss halts that didn't auto-recover. If something does fire, fix it and reset the clock.
+- **Refuse to trade when `brokerConnected=false`** (P1 from audit). Currently the engine keeps going on stale prices when Alpaca is unreachable. Not urgent for paper; matters for live.
+- **Backoff on Alpaca rate limits** (P1 from audit). With 500-symbol scans + per-position `replaceOrder` calls, bursts can hit the 200 req/min cap. Add a token-bucket wrapper around the broker client.
+- **Position-size ramp.** Start live at `positionPct` = 1/5 of paper (e.g. 3% if paper is 15%) for the first 30 days. Ratchet up if nothing breaks.
+- **Tested DB backup restore.** Untested backups aren't backups. Run a dry-run restore to a scratch instance once before going live.
