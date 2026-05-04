@@ -2213,11 +2213,9 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     return { ok: false, error: `Broker connection test failed: ${msg}` };
   }
 
-  // Replace old safety stops with wide disaster stops (engine manages tighter exits dynamically)
+  // Replace old safety stops with wide disaster stops (engine manages tighter exits dynamically).
+  // placeDisasterStops cancels existing orders and waits for shares to release before placing.
   try {
-    if (resolved.client.cancelAllOrders) {
-      await resolved.client.cancelAllOrders();
-    }
     await placeDisasterStops(userId);
     log.info("Placed disaster stops — engine taking over dynamic management");
   } catch (err) {
@@ -2477,6 +2475,28 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
 }
 
 /**
+ * Cancel all open orders, then poll until the broker reports no pending orders.
+ * Alpaca's DELETE /v2/orders ack is async — the response returns before shares
+ * actually release from `held_for_orders`. Without this wait, immediately placing
+ * a new sell stop fails with 403 "insufficient qty available".
+ */
+async function cancelAllAndWait(client: BrokerClient, maxMs = 5000): Promise<void> {
+  if (!client.cancelAllOrders) return;
+  await client.cancelAllOrders();
+  const deadline = Date.now() + maxMs;
+  const PENDING = new Set(["new", "accepted", "pending_new", "partially_filled", "held", "pending_cancel"]);
+  while (Date.now() < deadline) {
+    try {
+      const orders = await client.getOrders(100);
+      if (!orders.some((o) => PENDING.has(o.status))) return;
+    } catch {
+      // Transient broker error — keep polling until deadline
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
+/**
  * Place protective stops on Alpaca for all positions.
  * Uses the tighter of: disaster stop (18% below entry) or dynamic trailing
  * stop based on current price. This ensures crash protection reflects
@@ -2489,6 +2509,7 @@ async function placeDisasterStops(userId: string | null): Promise<void> {
   if (!resolved) return;
 
   try {
+    await cancelAllAndWait(resolved.client);
     const positions = await resolved.client.getPositions();
     for (const pos of positions) {
       if (pos.qty <= 0) continue;
@@ -2538,6 +2559,8 @@ async function placeSafetyStops(userId: string | null): Promise<void> {
   try {
     const positions = await client.getPositions();
     if (positions.length === 0) return;
+
+    await cancelAllAndWait(client);
 
     for (const pos of positions) {
       if (pos.qty <= 0) continue;
