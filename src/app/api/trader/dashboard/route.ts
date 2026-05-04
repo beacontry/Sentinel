@@ -141,6 +141,7 @@ export async function GET() {
     const avgWin = wins.length > 0 ? grossProfit / wins.length : 0;
     const avgLoss = losses.length > 0 ? grossLoss / losses.length : 0;
     const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : 0;
+    const lifetimeRealized = pnls.reduce((a, b) => a + b, 0);
 
     // Max drawdown from daily P&L
     const sortedPnl = [...pnlHistory].reverse();
@@ -263,6 +264,18 @@ export async function GET() {
           };
         }
         return null;
+      })(),
+      lifetimePnl: (() => {
+        const unrealized = brokerConnected
+          ? brokerPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0)
+          : 0;
+        const realizedToday = todayPnl?.realizedPnl ?? 0;
+        return {
+          realizedPnl: Math.round(lifetimeRealized * 100) / 100,
+          realizedPnlToday: Math.round(realizedToday * 100) / 100,
+          unrealizedPnl: Math.round(unrealized * 100) / 100,
+          totalPnl: Math.round((lifetimeRealized + unrealized) * 100) / 100,
+        };
       })(),
       positions: finalPositions,
       positionsStale,
