@@ -205,6 +205,7 @@ Every buy signal passes through ten sequential gates before an order is placed:
 - **Rule:** Don't re-buy same symbol within 2.5 hours
 - **Action:** Skip if same symbol had a buy signal within 150 minutes
 - **Implementation:** Stored in a dedicated `cooldowns: Map<symbol, timestamp>` on engine state with a 150-min cleanup pass. The previous design piggybacked on the `externalSignals` queue, which gets filtered every scan to drop entries older than 30 min — silently truncating the intended 150-min window.
+- **Mode coverage:** Applied in `runScan` (signal-based modes). Tactical Smart's active-management branch uses a different deduplication path — see "Held-symbol detection" in Tactical Smart Mode Rules.
 
 ### 7. Max Positions
 - **Rule:** Don't exceed maxPositions from risk settings
@@ -225,6 +226,7 @@ Every buy signal passes through ten sequential gates before an order is placed:
 - **Rule:** Don't buy a symbol that already has a pending buy order on the broker
 - **Action:** Engine fetches open orders from Alpaca at each scan cycle; skips any symbol with an existing pending buy order (status: new, accepted, partially_filled, held)
 - **Benefit:** Prevents duplicate buy orders after engine restarts, avoids tying up buying power with conflicting orders
+- **Mode coverage:** Both `runScan` (signal-based modes) and `runTacticalSmartScan` fetch open orders and union pending-buy symbols into the held-symbols check. Without this, a limit order from the previous scan that hasn't filled yet would re-trigger because `getPositions()` only returns filled positions.
 
 ---
 
@@ -268,9 +270,11 @@ Every buy signal passes through ten sequential gates before an order is placed:
 - Placed automatically when engine is stopped or halted
 
 **Transition:**
-- **On engine start:** Cancels old stops → places gain-aware protective stops
+- **On engine start:** `placeDisasterStops()` cancels old stops → waits for shares to release → places gain-aware protective stops
 - **While running:** `syncBrokerStops()` updates stops every scan to match dynamic trailing
-- **On engine stop:** Cancels protective stops → places ~8.5% safety stops
+- **On engine stop:** `placeSafetyStops()` cancels protective stops → waits for shares to release → places ~8.5% safety stops
+
+**Cancel-and-wait (`cancelAllAndWait`):** Both stop-placement paths cancel existing orders, then poll `getOrders()` every 250ms (5s deadline) until no orders remain in `new / accepted / pending_new / partially_filled / held / pending_cancel`. Alpaca's `DELETE /v2/orders` ack is asynchronous — the response returns before shares actually release from `held_for_orders`. Without this wait, immediately placing a fresh sell stop fails with `403 code 40310000 "insufficient qty available"` because every share is still locked under the prior stop.
 
 ### Auto-Restart After Deploy
 - On container start, `instrumentation.ts` waits 5s for the DB pool, then runs `bootEngines()` which iterates every user with an active broker connection and calls `autoStartIfNeeded()` — engine resumes without waiting for a user to open the dashboard
@@ -328,7 +332,9 @@ Every buy signal passes through ten sequential gates before an order is placed:
 - **RSI filter:** Can also re-enter if SPY > 20 SMA and RSI(14) < 40
 
 ### Daily P&L Tracking
-- Both Tactical and Tactical Smart modes call `upsertDailyPnl` on each scan cycle
+- Every scan cycle (`runScan`, `runTacticalScan`, `runTacticalSmartScan`) calls `upsertDailyPnl` with realized P&L deltas, trade-count deltas, and the latest unrealized snapshot
+- The 1-min `runExitCheck` loop also records `(realizedPnl, +1 trade)` after every successful exit so stop-loss / trailing-stop hits between main scans don't disappear from the dashboard
+- `upsertDailyPnl(unrealizedPnl)` accepts `null` to mean "preserve existing" — used by per-trade callers that don't have a fresh broker snapshot
 - Daily P&L is recorded for the P&L Calendar and performance tracking
 
 ---
@@ -348,17 +354,29 @@ Every buy signal passes through ten sequential gates before an order is placed:
 ### Active Management (while holding)
 When invested and SPY is healthy, the engine actively manages the portfolio every 15 minutes:
 
+**Held-symbol detection:**
+The "candidate not already held" check unions three sources:
+- broker `getPositions()` — confirmed holdings
+- in-memory `positionMap` keys — limit orders just placed by the same scan
+- pending buy orders from `getOrders()` — limit orders from prior scans not yet filled
+
+Without all three, a limit buy placed at scan T can be missing from `getPositions()` at scan T+15min while still being a real intent — the symbol would re-qualify as a candidate and get bought again. (See incident notes for the duplicate CIEN buy that motivated this.)
+
 **Swaps (sell weak → buy strong):**
 - Scans all held positions for SELL/STRONG_SELL signals
 - Scans universe + external screener for STRONG_BUY candidates not already held
 - Sells weak positions at market, buys replacement at limit (0.1% above current)
 - Logged as `tactical_smart_swap_sell` / `tactical_smart_swap_buy`
+- Each sell increments `realizedPnlThisScan`; both legs increment `tradesThisScan`
 
 **Additions (deploy unused cash):**
 - Remaining STRONG_BUY candidates can be added if cash is available
 - Respects 1.5× maxPositions hard cap (same as STRONG_BUY overflow)
 - Respects max exposure limit
-- Logged as `tactical_smart_add`
+- Logged as `tactical_smart_add`, increments `tradesThisScan`
+
+**Tactical exit (full liquidation on SPY weakness):**
+- Each `tactical_exit` sell adds `pos.unrealizedPnl` to `realizedPnlThisScan` and increments `tradesThisScan`
 
 **Signal logging:**
 - Top 5 STRONG_BUY candidates are logged to signals table for visibility even if not acted on
@@ -389,11 +407,12 @@ The screener (`src/lib/screener.ts`) is a shared, user-independent market scanne
 
 ### How It Works
 
-1. **Daily scan** at market open: fetches 90-day bars for 500+ popular stocks, runs `analyzeHybrid()` with default signal params
+1. **Daily scan** at market open: fetches 90-day bars for the symbols mapped in `src/lib/sectors.ts` (~150 across all sectors as of May 2026), runs `analyzeHybrid()` with default signal params
 2. **Intraday scan** every 5 minutes: fetches 5-min bars (2 days), same pipeline
-3. **Push to engine:** actionable signals (BUY/STRONG_BUY with confidence ≥ 0.6) auto-pushed via `pushExternalSignal()`
+3. **Push to engine:** actionable signals (BUY/STRONG_BUY with confidence ≥ 0.6) auto-pushed via `pushExternalSignal()` (per-user) or `broadcastExternalSignal()` (across all running engines)
 4. **Dedup:** same symbol+signal ignored within 30 minutes
 5. **Expiry:** external signals expire after 30 minutes
+6. **Universe:** review on quarterly S&P 500 rebalance (Mar/Jun/Sep/Dec) — `sectors.ts` is hand-maintained, not auto-synced from Wikipedia
 
 ### How Each Mode Consumes Screener Signals
 
