@@ -59,6 +59,12 @@ interface TraderData {
     tradesCount: number;
     halted: boolean;
   } | null;
+  lifetimePnl: {
+    realizedPnl: number;
+    realizedPnlToday: number;
+    unrealizedPnl: number;
+    totalPnl: number;
+  } | null;
   positions: Array<{
     symbol: string;
     quantity: number;
@@ -282,7 +288,7 @@ export default function TraderPage() {
     );
   }
 
-  const { status, todayPnl, positions, openOrders = [], trades, signals, pnlHistory, analytics } = data;
+  const { status, todayPnl, lifetimePnl, positions, openOrders = [], trades, signals, pnlHistory, analytics } = data;
 
   async function handleCommand(cmd: string, payload: Record<string, unknown> = {}) {
     setCmdLoading(cmd);
@@ -453,34 +459,44 @@ export default function TraderPage() {
         </div>
       )}
 
-      {/* Today's P&L */}
-      {todayPnl && (
+      {/* P&L (lifetime realized + current unrealized) */}
+      {(lifetimePnl || todayPnl) && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card>
             <div className="flex items-center gap-2 mb-1">
               <DollarSign className="w-4 h-4 text-accent" />
               <span className="text-xs text-text-muted">Total P&L</span>
             </div>
-            <p className={`text-xl font-display font-bold ${(todayPnl.totalPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {(todayPnl.totalPnl ?? 0) >= 0 ? "+" : ""}${(todayPnl.totalPnl ?? 0).toFixed(2)}
+            <p className={`text-xl font-display font-bold ${(lifetimePnl?.totalPnl ?? todayPnl?.totalPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+              {(lifetimePnl?.totalPnl ?? todayPnl?.totalPnl ?? 0) >= 0 ? "+" : ""}${(lifetimePnl?.totalPnl ?? todayPnl?.totalPnl ?? 0).toFixed(2)}
             </p>
+            {lifetimePnl && todayPnl && (
+              <p className="mt-0.5 text-[11px] text-text-muted font-mono">
+                Today: {(todayPnl.totalPnl ?? 0) >= 0 ? "+" : ""}${(todayPnl.totalPnl ?? 0).toFixed(2)}
+              </p>
+            )}
           </Card>
           <Card>
             <div className="flex items-center gap-2 mb-1">
               <TrendingUp className="w-4 h-4 text-bullish" />
               <span className="text-xs text-text-muted">Realized</span>
             </div>
-            <p className={`text-xl font-display font-bold ${(todayPnl.realizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {(todayPnl.realizedPnl ?? 0) >= 0 ? "+" : ""}${(todayPnl.realizedPnl ?? 0).toFixed(2)}
+            <p className={`text-xl font-display font-bold ${(lifetimePnl?.realizedPnl ?? todayPnl?.realizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+              {(lifetimePnl?.realizedPnl ?? todayPnl?.realizedPnl ?? 0) >= 0 ? "+" : ""}${(lifetimePnl?.realizedPnl ?? todayPnl?.realizedPnl ?? 0).toFixed(2)}
             </p>
+            {lifetimePnl && (
+              <p className="mt-0.5 text-[11px] text-text-muted font-mono">
+                Today: {lifetimePnl.realizedPnlToday >= 0 ? "+" : ""}${lifetimePnl.realizedPnlToday.toFixed(2)}
+              </p>
+            )}
           </Card>
           <Card>
             <div className="flex items-center gap-2 mb-1">
               <TrendingDown className="w-4 h-4 text-warning" />
               <span className="text-xs text-text-muted">Unrealized</span>
             </div>
-            <p className={`text-xl font-display font-bold ${(todayPnl.unrealizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {(todayPnl.unrealizedPnl ?? 0) >= 0 ? "+" : ""}${(todayPnl.unrealizedPnl ?? 0).toFixed(2)}
+            <p className={`text-xl font-display font-bold ${(lifetimePnl?.unrealizedPnl ?? todayPnl?.unrealizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+              {(lifetimePnl?.unrealizedPnl ?? todayPnl?.unrealizedPnl ?? 0) >= 0 ? "+" : ""}${(lifetimePnl?.unrealizedPnl ?? todayPnl?.unrealizedPnl ?? 0).toFixed(2)}
             </p>
           </Card>
           <Card>
@@ -488,7 +504,7 @@ export default function TraderPage() {
               <BarChart3 className="w-4 h-4 text-accent" />
               <span className="text-xs text-text-muted">Trades Today</span>
             </div>
-            <p className="text-xl font-display font-bold">{todayPnl.tradesCount}</p>
+            <p className="text-xl font-display font-bold">{todayPnl?.tradesCount ?? 0}</p>
           </Card>
         </div>
       )}
