@@ -793,6 +793,11 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
           await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "FILLED", pnl, exitReason, exitOrder.id, null, engine.userId);
           positionMap.delete(symbol);
           engine.positionCount = positionMap.size;
+
+          // Record in daily PnL — main scan only runs every 15 min, so without this
+          // a stop_loss / trailing_stop hit before the next scan would never appear
+          // in the Trades Today / Realized Today counters.
+          await upsertDailyPnl(getETDateString(), pnl, null, 1, engine.halted, undefined, engine.userId);
         } catch (err) {
           log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit order failed");
         } finally {
@@ -948,7 +953,7 @@ async function updateHeartbeat(watchlist: string[], userId?: string | null): Pro
 async function upsertDailyPnl(
   date: string,
   realizedDelta: number,
-  unrealizedPnl: number,
+  unrealizedPnl: number | null,
   tradesCountDelta: number,
   halted: boolean,
   haltReason?: string,
@@ -971,7 +976,8 @@ async function upsertDailyPnl(
         .update(traderDailyPnl)
         .set({
           realizedPnl: (row.realizedPnl ?? 0) + realizedDelta,
-          unrealizedPnl,
+          // null = preserve existing (used by per-trade updates that don't have fresh unrealized snapshot)
+          ...(unrealizedPnl !== null ? { unrealizedPnl } : {}),
           tradesCount: (row.tradesCount ?? 0) + tradesCountDelta,
           halted,
           ...(haltReason ? { haltReason } : {}),
@@ -983,7 +989,7 @@ async function upsertDailyPnl(
         userId: effectiveUserId,
         date,
         realizedPnl: realizedDelta,
-        unrealizedPnl,
+        unrealizedPnl: unrealizedPnl ?? 0,
         tradesCount: tradesCountDelta,
         halted,
         haltReason: haltReason ?? null,
@@ -1347,7 +1353,27 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   engine.positionCount = positionMap.size;
   const isInvested = currentPositions.length > 0;
 
-  log.info({ spyPrice: spyPrice.toFixed(2), sma20: sma20.toFixed(2), sma50: sma50.toFixed(2), confirmedBelow, isInvested, positions: positionMap.size }, "Tactical Smart scan");
+  // Track for daily PnL: limit-order buys may not show in getPositions() yet
+  // when the next scan runs, so without these counters the dashboard sees zero.
+  let realizedPnlThisScan = 0;
+  let tradesThisScan = 0;
+
+  // Pending buy orders — symbols with an open buy that hasn't filled yet must
+  // be treated as "already held" so the next scan doesn't re-buy them. This
+  // is the bug that caused two CIEN buys 18 minutes apart.
+  const pendingBuySymbols = new Set<string>();
+  try {
+    const openOrders = await client.getOrders(100);
+    for (const o of openOrders) {
+      if (o.side === "buy" && ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)) {
+        pendingBuySymbols.add(o.symbol);
+      }
+    }
+  } catch {
+    // If order fetch fails, fall back to held-only check (best effort)
+  }
+
+  log.info({ spyPrice: spyPrice.toFixed(2), sma20: sma20.toFixed(2), sma50: sma50.toFixed(2), confirmedBelow, isInvested, positions: positionMap.size, pendingBuys: pendingBuySymbols.size }, "Tactical Smart scan");
 
   if (isInvested && confirmedBelow && spyPrice < sma20) {
     // ── EXIT: same as regular tactical ──
@@ -1357,6 +1383,8 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const tsExitOrder = await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
         await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical Smart exit", tsExitOrder.id, null, engine.userId);
+        realizedPnlThisScan += pos.unrealizedPnl;
+        tradesThisScan++;
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -1434,6 +1462,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         const limitPrice = (price * 1.001).toFixed(2);
         const tsEntryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Smart: momentum + signal + invVol weighted", tsEntryOrder.id, null, engine.userId);
+        tradesThisScan++;
         positionMap.set(symbol, {
           symbol, qty, entryPrice: price, peakPrice: price,
           stopLoss: price * 0.88, takeProfit: price * 1.5,
@@ -1450,7 +1479,14 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   } else if (isInvested && !confirmedBelow) {
     // ── ACTIVE MANAGEMENT: scan for swaps and additions while holding ──
     const riskLimits = await loadRiskLimits(engine.userId);
-    const heldSymbols = new Set(currentPositions.map(p => p.symbol));
+    // Treat broker positions, in-memory positionMap, AND symbols with pending
+    // buy orders as "held" — limit orders may take minutes to fill, and the
+    // broker's getPositions() doesn't include them while pending.
+    const heldSymbols = new Set<string>([
+      ...currentPositions.map(p => p.symbol),
+      ...positionMap.keys(),
+      ...pendingBuySymbols,
+    ]);
 
     // Score all stocks (same logic as entry)
     const extSymbols = engine.externalSignals
@@ -1512,6 +1548,8 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const swapSellOrder = await client.placeOrder({ symbol: weak.symbol, side: "sell", qty: String(bp.qty), type: "market", timeInForce: "day" });
         await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "FILLED", bp.unrealizedPnl, `Swap out: ${weak.signal}`, swapSellOrder.id, null, engine.userId);
+        realizedPnlThisScan += bp.unrealizedPnl;
+        tradesThisScan++;
         positionMap.delete(weak.symbol);
         heldSymbols.delete(weak.symbol);
       } catch (err) {
@@ -1529,6 +1567,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         const limitPrice = (replacement.price * 1.001).toFixed(2);
         const swapBuyOrder = await client.placeOrder({ symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "FILLED", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`, swapBuyOrder.id, null, engine.userId);
+        tradesThisScan++;
         positionMap.set(replacement.symbol, {
           symbol: replacement.symbol, qty, entryPrice: replacement.price, peakPrice: replacement.price,
           stopLoss: replacement.price * 0.88, takeProfit: replacement.price * 1.5,
@@ -1562,6 +1601,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         const limitPrice = (cand.price * 1.001).toFixed(2);
         const addOrder = await client.placeOrder({ symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "FILLED", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`, addOrder.id, null, engine.userId);
+        tradesThisScan++;
         positionMap.set(cand.symbol, {
           symbol: cand.symbol, qty, entryPrice: cand.price, peakPrice: cand.price,
           stopLoss: cand.price * 0.88, takeProfit: cand.price * 1.5,
@@ -1588,7 +1628,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       totalUnrealizedPnl += bp.unrealizedPnl;
     }
   } catch { /* use 0 */ }
-  await upsertDailyPnl(today, 0, totalUnrealizedPnl, 0, engine.halted, undefined, engine.userId);
+  await upsertDailyPnl(today, realizedPnlThisScan, totalUnrealizedPnl, tradesThisScan, engine.halted, undefined, engine.userId);
 
   engine.lastScanAt = new Date();
   engine.scanCount++;
