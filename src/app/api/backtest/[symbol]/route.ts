@@ -23,7 +23,6 @@ export async function GET(
   }
 
   const searchParams = request.nextUrl.searchParams;
-  const days = Math.min(Number(searchParams.get("days")) || 90, 365);
   const holdPeriod = Math.min(Number(searchParams.get("holdPeriod")) || 20, 60);
 
   // Risk config — defaults match the live trader's settings.yaml
@@ -31,9 +30,43 @@ export async function GET(
   const takeProfitPct = Math.min(Math.max(Number(searchParams.get("takeProfit")) || 0.03, 0.005), 0.5);
   const trailingStopPct = Math.min(Math.max(Number(searchParams.get("trailingStop")) || 0.015, 0.005), 0.2);
 
+  // Date range mode: startDate + endDate (ISO YYYY-MM-DD). Otherwise fall back to "last N days".
+  const startDateRaw = searchParams.get("startDate");
+  const endDateRaw = searchParams.get("endDate");
+  const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  let days: number;
+  let endDate: Date | undefined;
+  let startDate: Date | undefined;
+
+  if (startDateRaw && endDateRaw) {
+    if (!ISO_DATE.test(startDateRaw) || !ISO_DATE.test(endDateRaw)) {
+      return NextResponse.json({ error: "Invalid date format (expected YYYY-MM-DD)" }, { status: 400 });
+    }
+    startDate = new Date(`${startDateRaw}T00:00:00Z`);
+    endDate = new Date(`${endDateRaw}T23:59:59Z`);
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || endDate <= startDate) {
+      return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
+    }
+    // Cap at ~25 years; pad with 60 days for indicator warmup.
+    const spanMs = endDate.getTime() - startDate.getTime();
+    days = Math.min(Math.ceil(spanMs / 86400000) + 60, 25 * 365);
+  } else {
+    days = Math.min(Number(searchParams.get("days")) || 90, 365);
+  }
+
   try {
     const provider = getMarketDataProvider();
-    const bars = await provider.fetchBars(upperSymbol, days, "1d");
+    let bars = await provider.fetchBars(upperSymbol, days, "1d", endDate);
+
+    // In date-range mode, trim warmup padding so the result reflects the requested window.
+    if (startDate && endDate) {
+      const startMs = startDate.getTime();
+      const endMs = endDate.getTime();
+      bars = bars.filter((b) => {
+        const t = new Date(b.date).getTime();
+        return t >= startMs && t <= endMs;
+      });
+    }
 
     if (bars.length < 50) {
       return NextResponse.json(
