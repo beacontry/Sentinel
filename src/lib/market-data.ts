@@ -7,7 +7,7 @@ import { join } from "path";
 export type BarResolution = "5m" | "1d";
 
 interface MarketDataProvider {
-  fetchBars(symbol: string, days: number, resolution?: BarResolution): Promise<Bar[]>;
+  fetchBars(symbol: string, days: number, resolution?: BarResolution, endDate?: Date): Promise<Bar[]>;
   fetchQuote(symbol: string): Promise<{ price: number; volume: number } | null>;
 }
 
@@ -57,12 +57,15 @@ async function setCachedBars(symbol: string, resolution: string, bars: Bar[], da
 
 /** Yahoo Finance provider — no API key required. */
 class YahooProvider implements MarketDataProvider {
-  async fetchBars(symbol: string, days: number, resolution: BarResolution = "5m"): Promise<Bar[]> {
-    // Check disk cache first — only serves if cached days >= requested days
-    const cached = await getCachedBars(symbol, resolution, days);
-    if (cached) return cached;
+  async fetchBars(symbol: string, days: number, resolution: BarResolution = "5m", endDate?: Date): Promise<Bar[]> {
+    // Historical fetches (endDate in the past) bypass the cache so they don't pollute live data
+    const isHistorical = endDate != null && (Date.now() - endDate.getTime()) > 24 * 60 * 60 * 1000;
+    if (!isHistorical) {
+      const cached = await getCachedBars(symbol, resolution, days);
+      if (cached) return cached;
+    }
 
-    const period2 = Math.floor(Date.now() / 1000);
+    const period2 = endDate ? Math.floor(endDate.getTime() / 1000) : Math.floor(Date.now() / 1000);
     const period1 = period2 - days * 86400;
     const interval = resolution === "1d" ? "1d" : "5m";
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=${period1}&period2=${period2}&interval=${interval}&includePrePost=false`;
@@ -108,8 +111,10 @@ class YahooProvider implements MarketDataProvider {
         });
       }
 
-      // Cache to disk for fast restarts
-      await setCachedBars(symbol, resolution, bars, days);
+      // Cache to disk for fast restarts — only for live fetches
+      if (!isHistorical) {
+        await setCachedBars(symbol, resolution, bars, days);
+      }
 
       return bars;
     } finally {
@@ -152,8 +157,8 @@ class FinnhubProvider implements MarketDataProvider {
     this.apiKey = apiKey;
   }
 
-  async fetchBars(symbol: string, days: number, resolution: BarResolution = "5m"): Promise<Bar[]> {
-    const to = Math.floor(Date.now() / 1000);
+  async fetchBars(symbol: string, days: number, resolution: BarResolution = "5m", endDate?: Date): Promise<Bar[]> {
+    const to = endDate ? Math.floor(endDate.getTime() / 1000) : Math.floor(Date.now() / 1000);
     const from = to - days * 86400;
     const res_param = resolution === "1d" ? "D" : "5";
     const url = `${this.baseUrl}/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=${res_param}&from=${from}&to=${to}&token=${this.apiKey}`;
@@ -218,10 +223,10 @@ class FallbackProvider implements MarketDataProvider {
     this.totalBudgetMs = totalBudgetMs;
   }
 
-  async fetchBars(symbol: string, days: number, resolution?: BarResolution): Promise<Bar[]> {
+  async fetchBars(symbol: string, days: number, resolution?: BarResolution, endDate?: Date): Promise<Bar[]> {
     const start = Date.now();
     try {
-      const bars = await this.primary.fetchBars(symbol, days, resolution);
+      const bars = await this.primary.fetchBars(symbol, days, resolution, endDate);
       if (bars.length > 0) return bars;
     } catch {
       // Primary failed, fall through to secondary
@@ -230,7 +235,7 @@ class FallbackProvider implements MarketDataProvider {
     if (elapsed >= this.totalBudgetMs) {
       return []; // Budget exhausted, skip secondary
     }
-    return this.secondary.fetchBars(symbol, days, resolution);
+    return this.secondary.fetchBars(symbol, days, resolution, endDate);
   }
 
   async fetchQuote(

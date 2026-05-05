@@ -24,11 +24,17 @@ const EXIT_REASON_LABELS: Record<string, { label: string; color: string }> = {
   end_of_data: { label: "End of Data", color: "text-text-muted" },
 };
 
+// Only presets that are runnable by the live engine (EngineMode in trading-engine.ts).
+const ENGINE_PRESET_KEYS: PresetName[] = [
+  "conservative", "moderate", "aggressive", "optimized",
+  "intraday", "tactical", "tactical-smart",
+];
+
 const BASE_PRESET_OPTIONS = [
   { value: "custom", label: "Custom" },
-  ...Object.entries(PRESET_LABELS).map(([key, val]) => ({
+  ...ENGINE_PRESET_KEYS.map((key) => ({
     value: key,
-    label: `${val.label} — ${val.description}`,
+    label: `${PRESET_LABELS[key].label} — ${PRESET_LABELS[key].description}`,
   })),
   { value: "auto", label: "Auto (ATR-tuned)" },
 ];
@@ -36,6 +42,15 @@ const BASE_PRESET_OPTIONS = [
 export default function BacktestPage() {
   const [symbol, setSymbol] = useState("");
   const [days, setDays] = useState(90);
+  const [rangeMode, setRangeMode] = useState<"days" | "range">("days");
+  // Default range: prior calendar year
+  const defaultRange = (() => {
+    const now = new Date();
+    const yr = now.getUTCFullYear() - 1;
+    return { start: `${yr}-01-01`, end: `${yr}-12-31` };
+  })();
+  const [startDate, setStartDate] = useState(defaultRange.start);
+  const [endDate, setEndDate] = useState(defaultRange.end);
   const [holdPeriod, setHoldPeriod] = useState(20);
   const [stopLoss, setStopLoss] = useState(2);
   const [takeProfit, setTakeProfit] = useState(3);
@@ -211,12 +226,17 @@ export default function BacktestPage() {
     setError(null);
     try {
       const params = new URLSearchParams({
-        days: String(days),
         holdPeriod: String(holdPeriod),
         stopLoss: String(stopLoss / 100),
         takeProfit: String(takeProfit / 100),
         trailingStop: String(trailingStop / 100),
       });
+      if (rangeMode === "range") {
+        params.set("startDate", startDate);
+        params.set("endDate", endDate);
+      } else {
+        params.set("days", String(days));
+      }
       const res = await fetch(
         `/api/backtest/${encodeURIComponent(symbol.toUpperCase())}?${params}`
       );
@@ -446,7 +466,7 @@ export default function BacktestPage() {
       {/* Controls */}
       <Card>
         <div className="flex flex-col gap-4">
-          {/* Row 1: Symbol, Days, Hold Period, Run */}
+          {/* Row 1: Symbol, Range mode + window, Hold Period, Run */}
           <div className="flex flex-col sm:flex-row gap-3">
             <Input
               label="Symbol"
@@ -454,18 +474,54 @@ export default function BacktestPage() {
               onChange={(e) => handleSymbolChange(e.target.value)}
               placeholder="AAPL"
             />
-            <Input
-              label="Days"
-              type="number"
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-              placeholder="90"
-            />
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">Window</span>
+              <div className="inline-flex rounded-lg border border-border bg-bg-secondary p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setRangeMode("days")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${rangeMode === "days" ? "bg-bg-elevated text-text-primary" : "text-text-muted hover:text-text-secondary"}`}
+                >
+                  Last N days
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRangeMode("range")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${rangeMode === "range" ? "bg-bg-elevated text-text-primary" : "text-text-muted hover:text-text-secondary"}`}
+                >
+                  Date range
+                </button>
+              </div>
+            </div>
+            {rangeMode === "days" ? (
+              <Input
+                label="Days"
+                type="number"
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+                placeholder="90"
+              />
+            ) : (
+              <>
+                <Input
+                  label="Start Date"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+                <Input
+                  label="End Date"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </>
+            )}
             <Input
               label="Hold Period (bars)"
               type="number"
               value={holdPeriod}
-              onChange={(e) => setHoldPeriod(Number(e.target.value))}
+              onChange={(e) => { setHoldPeriod(Number(e.target.value)); setPreset("custom"); }}
               placeholder="20"
             />
             <div className="flex items-end">
