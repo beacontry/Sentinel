@@ -8,6 +8,7 @@ import { createRouteLogger } from "@/lib/logger";
 const log = createRouteLogger("tax-harvesting");
 import { suggestHarvesting, type TaxPosition } from "@/lib/tax-engine";
 import { getMarketDataProvider } from "@/lib/market-data";
+import { getBrokerPositionCache } from "@/lib/trading-engine";
 
 export async function GET() {
   const session = await getSession();
@@ -24,17 +25,10 @@ export async function GET() {
 
     const portfolioIds = userPortfolios.map((p) => p.id);
 
-    if (portfolioIds.length === 0) {
-      return NextResponse.json(
-        { suggestions: [] },
-        { headers: { "Cache-Control": "private, no-store" } }
-      );
-    }
-
-    // Fetch all positions across portfolios
     const allPositions: TaxPosition[] = [];
     const provider = getMarketDataProvider();
 
+    // 1. Manual portfolio positions
     for (const pId of portfolioIds) {
       const positions = await db
         .select()
@@ -42,7 +36,6 @@ export async function GET() {
         .where(eq(portfolioPositions.portfolioId, pId));
 
       for (const pos of positions) {
-        // Get current price
         const quote = await provider.fetchQuote(pos.symbol).catch(() => null);
         const currentPrice = quote?.price ?? pos.entryPrice;
         const unrealizedPnl = (currentPrice - pos.entryPrice) * pos.quantity;
@@ -55,6 +48,28 @@ export async function GET() {
           unrealizedPnl,
         });
       }
+    }
+
+    // 2. Live engine positions (broker cache; broker is source of truth)
+    const brokerCache = getBrokerPositionCache(session.userId as string);
+    if (brokerCache) {
+      for (const pos of brokerCache.positions) {
+        if (pos.qty <= 0) continue;
+        allPositions.push({
+          symbol: pos.symbol,
+          quantity: pos.qty,
+          entryPrice: pos.avgEntryPrice,
+          currentPrice: pos.currentPrice,
+          unrealizedPnl: pos.unrealizedPnl,
+        });
+      }
+    }
+
+    if (allPositions.length === 0) {
+      return NextResponse.json(
+        { suggestions: [] },
+        { headers: { "Cache-Control": "private, no-store" } }
+      );
     }
 
     const suggestions = suggestHarvesting(allPositions);

@@ -38,6 +38,7 @@ export interface ScreenerCache {
   results: ScreenerResult[];
   scannedAt: Date;
   scanning: boolean;
+  scanInFlight: Promise<ScreenerResult[]> | null;
   traderPushResults: TraderPushResult[];
 }
 
@@ -48,7 +49,7 @@ const g = globalThis as typeof globalThis & {
   __screenerScheduler?: ReturnType<typeof setInterval> | null;
   __screenerSchedulerStarted?: boolean;
 };
-g.__screenerCache ??= { results: [], scannedAt: new Date(0), scanning: false, traderPushResults: [] };
+g.__screenerCache ??= { results: [], scannedAt: new Date(0), scanning: false, scanInFlight: null, traderPushResults: [] };
 
 export function getScreenerCache(): ScreenerCache {
   return g.__screenerCache!;
@@ -153,79 +154,109 @@ function isMarketOpen(): boolean {
 export async function scanAllSymbols(): Promise<ScreenerResult[]> {
   const cache = g.__screenerCache!;
 
-  // Prevent concurrent scans
-  if (cache.scanning) {
-    return cache.results;
+  // Prevent concurrent scans — share the in-flight promise so callers wait for the current scan
+  if (cache.scanning && cache.scanInFlight) {
+    return cache.scanInFlight;
   }
 
   cache.scanning = true;
-
+  const scanPromise = runScanInternal();
+  cache.scanInFlight = scanPromise;
   try {
-    const sectorMap = getPopularSymbolsBySector();
-    const allSymbols: { symbol: string; sector: string }[] = [];
-    for (const [sector, symbols] of Object.entries(sectorMap)) {
-      for (const symbol of symbols) {
-        allSymbols.push({ symbol, sector });
-      }
-    }
-
-    const provider = getMarketDataProvider();
-    const results: ScreenerResult[] = [];
-    const batchSize = SCREENER_CONFIG.batchSize;
-
-    for (let i = 0; i < allSymbols.length; i += batchSize) {
-      const batch = allSymbols.slice(i, i + batchSize);
-
-      const settled = await Promise.allSettled(
-        batch.map(async ({ symbol, sector }) => {
-          const bars = await provider.fetchBars(symbol, 90, "1d");
-          if (bars.length < 2) return null;
-
-          const analysis = await analyzeHybrid(symbol, bars, SCREENER_HYBRID_OPTIONS);
-          const result: ScreenerResult = {
-            symbol,
-            sector,
-            signal: analysis.signal,
-            confidence: analysis.confidence,
-            price: analysis.price,
-            volume: analysis.volume,
-            rsi: analysis.indicators.rsi_14,
-            volumeRatio: analysis.volumeRatio,
-            atr: analysis.indicators.atr_14,
-            indicators: analysis.indicators,
-          };
-          return result;
-        })
-      );
-
-      for (const outcome of settled) {
-        if (outcome.status === "fulfilled" && outcome.value) {
-          results.push(outcome.value);
-        }
-      }
-
-      // Delay between batches to avoid rate limits (skip after last batch)
-      if (i + batchSize < allSymbols.length) {
-        await delay(200);
-      }
-    }
-
-    cache.results = results;
-    cache.scannedAt = new Date();
-
-    // Auto-push actionable signals to the trader
-    if (isTraderConfigured()) {
-      try {
-        cache.traderPushResults = await pushScreenerSignals(results);
-      } catch {
-        cache.traderPushResults = [];
-      }
-    }
-
-    return results;
+    return await scanPromise;
   } finally {
     cache.scanning = false;
+    cache.scanInFlight = null;
   }
+}
+
+async function runScanInternal(): Promise<ScreenerResult[]> {
+  const cache = g.__screenerCache!;
+  const startedAt = Date.now();
+
+  const sectorMap = getPopularSymbolsBySector();
+  const allSymbols: { symbol: string; sector: string }[] = [];
+  for (const [sector, symbols] of Object.entries(sectorMap)) {
+    for (const symbol of symbols) {
+      allSymbols.push({ symbol, sector });
+    }
+  }
+
+  log.info({ universe: allSymbols.length }, "Screener scan starting");
+
+  const provider = getMarketDataProvider();
+  const results: ScreenerResult[] = [];
+  const batchSize = SCREENER_CONFIG.batchSize;
+  let fetchFailures = 0;
+  let analyzeFailures = 0;
+
+  for (let i = 0; i < allSymbols.length; i += batchSize) {
+    const batch = allSymbols.slice(i, i + batchSize);
+
+    const settled = await Promise.allSettled(
+      batch.map(async ({ symbol, sector }) => {
+        const bars = await provider.fetchBars(symbol, 90, "1d");
+        if (bars.length < 2) {
+          fetchFailures++;
+          return null;
+        }
+
+        const analysis = await analyzeHybrid(symbol, bars, SCREENER_HYBRID_OPTIONS);
+        const result: ScreenerResult = {
+          symbol,
+          sector,
+          signal: analysis.signal,
+          confidence: analysis.confidence,
+          price: analysis.price,
+          volume: analysis.volume,
+          rsi: analysis.indicators.rsi_14,
+          volumeRatio: analysis.volumeRatio,
+          atr: analysis.indicators.atr_14,
+          indicators: analysis.indicators,
+        };
+        return result;
+      })
+    );
+
+    for (const outcome of settled) {
+      if (outcome.status === "fulfilled" && outcome.value) {
+        results.push(outcome.value);
+      } else if (outcome.status === "rejected") {
+        analyzeFailures++;
+      }
+    }
+
+    // Delay between batches to avoid rate limits (skip after last batch)
+    if (i + batchSize < allSymbols.length) {
+      await delay(200);
+    }
+  }
+
+  cache.results = results;
+  cache.scannedAt = new Date();
+
+  log.info(
+    {
+      universe: allSymbols.length,
+      results: results.length,
+      fetchFailures,
+      analyzeFailures,
+      durationMs: Date.now() - startedAt,
+    },
+    "Screener scan complete"
+  );
+
+  // Auto-push actionable signals to the trader
+  if (isTraderConfigured()) {
+    try {
+      cache.traderPushResults = await pushScreenerSignals(results);
+    } catch (err) {
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "pushScreenerSignals failed");
+      cache.traderPushResults = [];
+    }
+  }
+
+  return results;
 }
 
 // ─── Intraday scan (5-minute bars) ──────────────────────────────────
@@ -233,78 +264,107 @@ export async function scanAllSymbols(): Promise<ScreenerResult[]> {
 export async function scanAllSymbolsIntraday(): Promise<ScreenerResult[]> {
   const cache = g.__screenerCache!;
 
-  if (cache.scanning) {
-    return cache.results;
+  if (cache.scanning && cache.scanInFlight) {
+    return cache.scanInFlight;
   }
 
   cache.scanning = true;
-
+  const scanPromise = runIntradayScanInternal();
+  cache.scanInFlight = scanPromise;
   try {
-    const sectorMap = getPopularSymbolsBySector();
-    const allSymbols: { symbol: string; sector: string }[] = [];
-    for (const [sector, symbols] of Object.entries(sectorMap)) {
-      for (const symbol of symbols) {
-        allSymbols.push({ symbol, sector });
-      }
-    }
-
-    const provider = getMarketDataProvider();
-    const results: ScreenerResult[] = [];
-    const batchSize = SCREENER_CONFIG.batchSize;
-
-    for (let i = 0; i < allSymbols.length; i += batchSize) {
-      const batch = allSymbols.slice(i, i + batchSize);
-
-      const settled = await Promise.allSettled(
-        batch.map(async ({ symbol, sector }) => {
-          // 2 days of 5-min bars gives ~156 bars — enough for all indicators
-          const bars = await provider.fetchBars(symbol, 2, "5m");
-          if (bars.length < 20) return null;
-
-          const analysis = await analyzeHybrid(symbol, bars, SCREENER_HYBRID_OPTIONS);
-          const result: ScreenerResult = {
-            symbol,
-            sector,
-            signal: analysis.signal,
-            confidence: analysis.confidence,
-            price: analysis.price,
-            volume: analysis.volume,
-            rsi: analysis.indicators.rsi_14,
-            volumeRatio: analysis.volumeRatio,
-            atr: analysis.indicators.atr_14,
-            indicators: analysis.indicators,
-          };
-          return result;
-        })
-      );
-
-      for (const outcome of settled) {
-        if (outcome.status === "fulfilled" && outcome.value) {
-          results.push(outcome.value);
-        }
-      }
-
-      if (i + batchSize < allSymbols.length) {
-        await delay(200);
-      }
-    }
-
-    cache.results = results;
-    cache.scannedAt = new Date();
-
-    // Auto-push actionable signals to the trader
-    if (isTraderConfigured()) {
-      try {
-        cache.traderPushResults = await pushScreenerSignals(results);
-      } catch {
-        cache.traderPushResults = [];
-      }
-    }
-
-    return results;
+    return await scanPromise;
   } finally {
     cache.scanning = false;
+    cache.scanInFlight = null;
   }
+}
+
+async function runIntradayScanInternal(): Promise<ScreenerResult[]> {
+  const cache = g.__screenerCache!;
+  const startedAt = Date.now();
+
+  const sectorMap = getPopularSymbolsBySector();
+  const allSymbols: { symbol: string; sector: string }[] = [];
+  for (const [sector, symbols] of Object.entries(sectorMap)) {
+    for (const symbol of symbols) {
+      allSymbols.push({ symbol, sector });
+    }
+  }
+
+  log.info({ universe: allSymbols.length }, "Screener intraday scan starting");
+
+  const provider = getMarketDataProvider();
+  const results: ScreenerResult[] = [];
+  const batchSize = SCREENER_CONFIG.batchSize;
+  let fetchFailures = 0;
+  let analyzeFailures = 0;
+
+  for (let i = 0; i < allSymbols.length; i += batchSize) {
+    const batch = allSymbols.slice(i, i + batchSize);
+
+    const settled = await Promise.allSettled(
+      batch.map(async ({ symbol, sector }) => {
+        // 2 days of 5-min bars gives ~156 bars — enough for all indicators
+        const bars = await provider.fetchBars(symbol, 2, "5m");
+        if (bars.length < 20) {
+          fetchFailures++;
+          return null;
+        }
+
+        const analysis = await analyzeHybrid(symbol, bars, SCREENER_HYBRID_OPTIONS);
+        const result: ScreenerResult = {
+          symbol,
+          sector,
+          signal: analysis.signal,
+          confidence: analysis.confidence,
+          price: analysis.price,
+          volume: analysis.volume,
+          rsi: analysis.indicators.rsi_14,
+          volumeRatio: analysis.volumeRatio,
+          atr: analysis.indicators.atr_14,
+          indicators: analysis.indicators,
+        };
+        return result;
+      })
+    );
+
+    for (const outcome of settled) {
+      if (outcome.status === "fulfilled" && outcome.value) {
+        results.push(outcome.value);
+      } else if (outcome.status === "rejected") {
+        analyzeFailures++;
+      }
+    }
+
+    if (i + batchSize < allSymbols.length) {
+      await delay(200);
+    }
+  }
+
+  cache.results = results;
+  cache.scannedAt = new Date();
+
+  log.info(
+    {
+      universe: allSymbols.length,
+      results: results.length,
+      fetchFailures,
+      analyzeFailures,
+      durationMs: Date.now() - startedAt,
+    },
+    "Screener intraday scan complete"
+  );
+
+  if (isTraderConfigured()) {
+    try {
+      cache.traderPushResults = await pushScreenerSignals(results);
+    } catch (err) {
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, "pushScreenerSignals failed");
+      cache.traderPushResults = [];
+    }
+  }
+
+  return results;
 }
 
 // ─── Auto-scan scheduler ───────────────────────────────────────────

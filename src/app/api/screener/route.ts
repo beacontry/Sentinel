@@ -36,11 +36,12 @@ export async function GET() {
     const ageMs = Date.now() - cache.scannedAt.getTime();
     const stale = ageMs > SCREENER_CONFIG.cacheTtlSeconds * 1000;
     const hasData = cache.results.length > 0;
+    const everScanned = cache.scannedAt.getTime() > 0;
 
     return NextResponse.json(
       {
         results: cache.results,
-        scannedAt: cache.scannedAt.toISOString(),
+        scannedAt: everScanned ? cache.scannedAt.toISOString() : null,
         scanning: cache.scanning,
         stale: hasData ? stale : true,
         count: cache.results.length,
@@ -91,15 +92,16 @@ export async function POST(request: Request) {
     const cache = getScreenerCache();
     const ageMs = Date.now() - cache.scannedAt.getTime();
     const stale = ageMs > SCREENER_CONFIG.cacheTtlSeconds * 1000;
+    const everScanned = cache.scannedAt.getTime() > 0;
 
-    // If cache is empty or stale, trigger a fresh scan
+    // If cache is empty or stale, trigger a fresh scan (or join an in-flight one)
     let results = cache.results;
     let scannedAt = cache.scannedAt;
     let freshScan = false;
 
     if (results.length === 0 || stale) {
       results = await scanAllSymbols();
-      scannedAt = new Date();
+      scannedAt = cache.scannedAt;
       freshScan = true;
     }
 
@@ -109,8 +111,8 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         results: filtered,
-        scannedAt: scannedAt.toISOString(),
-        scanning: false,
+        scannedAt: everScanned ? scannedAt.toISOString() : null,
+        scanning: cache.scanning,
         stale: !freshScan && stale,
         count: filtered.length,
         totalSymbols: results.length,
