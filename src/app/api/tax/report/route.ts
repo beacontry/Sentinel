@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { portfolios, portfolioTrades } from "@/lib/db/schema";
+import { portfolios, portfolioTrades, traderTrades } from "@/lib/db/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { calculateTaxSummary, type TaxTrade } from "@/lib/tax-engine";
 import { toCSV } from "@/lib/csv";
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   const yearEnd = new Date(`${year}-12-31T23:59:59Z`);
 
   try {
-    // Get user's portfolios
+    // 1. Manual portfolio trades
     const userPortfolios = await db
       .select({ id: portfolios.id })
       .from(portfolios)
@@ -31,27 +31,8 @@ export async function GET(request: NextRequest) {
 
     const portfolioIds = userPortfolios.map((p) => p.id);
 
-    if (portfolioIds.length === 0) {
-      const emptyResult = {
-        year,
-        summary: {
-          shortTermGains: 0,
-          shortTermLosses: 0,
-          longTermGains: 0,
-          longTermLosses: 0,
-          netGain: 0,
-          estimatedTax: 0,
-          tradeCount: 0,
-        },
-        trades: [],
-      };
-      return NextResponse.json(emptyResult, {
-        headers: { "Cache-Control": "private, no-store" },
-      });
-    }
-
-    // Fetch all trades for the year across all portfolios
     const allTrades: TaxTrade[] = [];
+
     for (const pId of portfolioIds) {
       const trades = await db
         .select()
@@ -73,6 +54,55 @@ export async function GET(request: NextRequest) {
           executedAt: t.executedAt.toISOString(),
         });
       }
+    }
+
+    // 2. Live engine trades (Alpaca fills) — filter by fill time, not order creation,
+    //    so trades placed in Dec but filled in Jan land in the right tax year.
+    const engineTrades = await db
+      .select()
+      .from(traderTrades)
+      .where(
+        and(
+          eq(traderTrades.userId, session.userId as string),
+          eq(traderTrades.status, "FILLED")
+        )
+      );
+
+    for (const t of engineTrades) {
+      const price = t.fillPrice ?? t.limitPrice ?? 0;
+      if (price <= 0) continue;
+      const executedAt = t.fillTime ?? t.createdAt;
+      if (executedAt < yearStart || executedAt > yearEnd) continue;
+
+      // Normalize engine action vocabulary (BUY / SELL / manual_close) to BUY/SELL
+      const action = t.action.toUpperCase() === "BUY" ? "BUY" : "SELL";
+
+      allTrades.push({
+        symbol: t.symbol,
+        action,
+        quantity: t.quantity,
+        price,
+        executedAt: executedAt.toISOString(),
+      });
+    }
+
+    if (allTrades.length === 0) {
+      const emptyResult = {
+        year,
+        summary: {
+          shortTermGains: 0,
+          shortTermLosses: 0,
+          longTermGains: 0,
+          longTermLosses: 0,
+          netGain: 0,
+          estimatedTax: 0,
+          tradeCount: 0,
+        },
+        trades: [],
+      };
+      return NextResponse.json(emptyResult, {
+        headers: { "Cache-Control": "private, no-store" },
+      });
     }
 
     const summary = calculateTaxSummary(allTrades);

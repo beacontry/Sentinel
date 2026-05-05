@@ -128,6 +128,7 @@ export default function ScreenerPage() {
   const [results, setResults] = useState<ScreenerResult[]>([]);
   const [totalSymbols, setTotalSymbols] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [scannedAt, setScannedAt] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +155,7 @@ export default function ScreenerPage() {
       const res = await fetch("/api/screener");
       if (!res.ok) return;
       const data = await res.json();
+      setScanning(data.scanning ?? false);
       if (data.results?.length > 0) {
         setResults(data.results);
         setTotalSymbols(data.count ?? data.results.length);
@@ -161,6 +163,9 @@ export default function ScreenerPage() {
         setStale(data.stale ?? false);
         setTraderPush(data.traderPush ?? []);
         setTraderConfigured(data.traderConfigured ?? false);
+      } else if (data.scannedAt == null) {
+        // No scan ever completed — clear stale UI state
+        setScannedAt(null);
       }
     } catch {
       // Non-critical polling failure
@@ -194,6 +199,7 @@ export default function ScreenerPage() {
       setResults(data.results ?? []);
       setTotalSymbols(data.totalSymbols ?? data.count ?? 0);
       setScannedAt(data.scannedAt ?? null);
+      setScanning(data.scanning ?? false);
       setStale(data.stale ?? false);
       setTraderPush(data.traderPush ?? []);
       setTraderConfigured(data.traderConfigured ?? false);
@@ -538,11 +544,13 @@ export default function ScreenerPage() {
       )}
 
       {/* Results table */}
-      {loading && results.length === 0 ? (
+      {(loading || scanning) && results.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20">
           <div className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin mb-4" />
           <p className="text-sm text-text-secondary">
-            Scanning symbols... This may take a moment.
+            {scanning && !loading
+              ? "Scan in progress on the server — results will appear shortly."
+              : "Scanning symbols... This may take a moment."}
           </p>
         </div>
       ) : results.length === 0 && scannedAt ? (
