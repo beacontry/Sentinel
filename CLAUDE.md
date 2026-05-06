@@ -45,6 +45,15 @@ All components use the same signal function — `analyzeBars()` from `src/lib/in
 ### Screener (Shared)
 The screener scans market data and is shared across users (not user-specific). It pushes actionable signals (BUY/STRONG_BUY, confidence ≥ 0.6) to the engine via `pushExternalSignal()`. Signals are in-memory, expire after 30 minutes. Optimization runs are admin-only but results (strategy params) are shared globally.
 
+**Concurrency:** `scanAllSymbols` / `scanAllSymbolsIntraday` store the in-flight scan promise on the cache (`cache.scanInFlight`). Concurrent callers (e.g. user clicks "Scan Market" while the scheduler is running) await the running scan rather than receiving an empty cache. The route surfaces `cache.scanning` to the client; the screener page shows "Scan in progress" when true. `scannedAt` is `null` until the first scan completes (not epoch).
+
+### Tax Center Data Sources
+`/api/tax/report` and `/api/tax/harvesting` merge **both** manual portfolio entries and live engine activity:
+- **Realized gains:** `portfolioTrades` (manual) + `traderTrades` (engine fills, `status=FILLED`, scoped by `userId`, filtered by `fillTime` so cross-year fills land in the right tax year). Engine actions `BUY`/`SELL`/`manual_close` normalize to `BUY`/`SELL`.
+- **Harvesting candidates:** `portfolioPositions` (manual) + `getBrokerPositionCache(userId)` (live broker positions — broker is source of truth, no DB query).
+
+The separate `/dashboard/tax` page (Form 8949) reads engine trades only; Tax Center is the unified view.
+
 ### Broker Connections
 Each user has their own broker connection (`brokerConnections` table, scoped by `userId`). The engine resolves the active connection for the authenticated user via `resolveBrokerClient(userId)`.
 
@@ -255,6 +264,10 @@ Located at `src/app/dashboard/*/page.tsx`:
 - `/api/breadth` — market breadth: advance/decline, % above SMA 50/200, avg RSI, sector breakdown
 - `/api/sector-rotation` — rolling 1w/1m/3m sector performance with rotation phase classification (leading/weakening/lagging/improving)
 - `/api/unusual-activity` — volume spike detection (2x+ 20-day avg) across tracked symbols
+
+### Backtest Page
+- **Strategy presets** are filtered to the 7 engine-runnable modes (`conservative`, `moderate`, `aggressive`, `optimized`, `intraday`, `tactical`, `tactical-smart`) plus `custom` and `auto` — backtest and Live Trader share the same preset universe so what you tune is what you can deploy.
+- **Date-range mode**: `/api/backtest/[symbol]` accepts `startDate`/`endDate` (`YYYY-MM-DD`) in addition to `days`. Provider `fetchBars()` accepts an optional `endDate`; historical fetches (>24h in the past) bypass the disk cache. Daily bars only — Yahoo retains ~60 days of intraday history, so multi-year 5m backtests aren't possible without a paid feed.
 
 ### Sub-Navigation Groups
 Pages are organized under sidebar nav items via `SUB_NAV` in `nav-config.ts`:

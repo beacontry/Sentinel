@@ -202,6 +202,24 @@ The stock universe auto-updates daily from Wikipedia's S&P 500 constituents tabl
 
 The Screener feeds signals directly into the trading engine. When the Screener finds a BUY/STRONG_BUY signal on any stock (including outside the S&P 500), it pushes it to the engine's queue. The engine processes these alongside its regular scan, allowing it to trade opportunities from the entire market.
 
+Concurrent calls to `scanAllSymbols` share the in-flight scan promise — clicking "Scan Market" while the scheduler is running waits for that scan rather than returning empty results. The route exposes the live `scanning` flag so the UI can show "Scan in progress" instead of misreporting "No matches found".
+
+## Backtest Lab
+
+`/dashboard/backtest` runs strategies against historical bars from `/api/backtest/[symbol]`.
+
+- **Strategy Preset** dropdown is restricted to the 7 engine-runnable modes plus `Custom` and `Auto (ATR-tuned)`. Selecting a preset syncs Hold Period, Stop Loss, Trail Stop, and Take Profit; editing any of those fields flips the preset to `Custom`.
+- **Window** toggle: "Last N days" (capped at 365) or "Date range" with start/end pickers (caps at ~25 years, 60-day indicator warmup pad applied internally). Date-range mode is daily-bars only — Yahoo only retains ~60 days of intraday data.
+- Historical fetches (endDate >24h in the past) bypass the disk cache so they don't pollute live data.
+
+## Tax Center
+
+`/dashboard/tax-center` is the unified tax view. `/api/tax/report` and `/api/tax/harvesting` merge:
+- **Realized gains** from manual `portfolioTrades` and engine `traderTrades` (status=FILLED, filtered by `fillTime` so cross-year fills are taxed correctly).
+- **Harvesting candidates** from manual `portfolioPositions` and live broker positions (`getBrokerPositionCache(userId)` — broker is source of truth).
+
+The separate `/dashboard/tax` page generates IRS Form 8949 from engine fills only.
+
 ## Broker Integration
 
 Three brokers supported via unified `BrokerClient` interface:
