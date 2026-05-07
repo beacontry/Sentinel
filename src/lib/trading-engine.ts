@@ -1209,11 +1209,25 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!);
   engine.positionCount = positionMap.size;
 
-  const isInvested = currentPositions.length > 0;
+  // Pending limit buys count as "invested" — without this, a re-scan before
+  // limits fill re-runs the entry loop and doubles every order.
+  const pendingBuySymbols = new Set<string>();
+  try {
+    const openOrders = await client.getOrders(100);
+    for (const o of openOrders) {
+      if (o.side === "buy" && ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)) {
+        pendingBuySymbols.add(o.symbol);
+      }
+    }
+  } catch {
+    // If order fetch fails, fall back to held-only check (best effort)
+  }
+
+  const isInvested = currentPositions.length > 0 || pendingBuySymbols.size > 0;
 
   log.info({
     spyPrice: spyPrice.toFixed(2), smaExit: smaExit.toFixed(2), smaTrend: smaTrend.toFixed(2),
-    spyRSI: spyRSI.toFixed(1), confirmedBelow, isInvested, positions: positionMap.size,
+    spyRSI: spyRSI.toFixed(1), confirmedBelow, isInvested, positions: positionMap.size, pendingBuys: pendingBuySymbols.size,
   }, "Tactical scan");
 
   if (isInvested && confirmedBelow && spyPrice < smaExit) {
@@ -1351,7 +1365,6 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   }
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!);
   engine.positionCount = positionMap.size;
-  const isInvested = currentPositions.length > 0;
 
   // Track for daily PnL: limit-order buys may not show in getPositions() yet
   // when the next scan runs, so without these counters the dashboard sees zero.
@@ -1372,6 +1385,10 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   } catch {
     // If order fetch fails, fall back to held-only check (best effort)
   }
+
+  // Pending limit buys count as "invested" — otherwise the entry branch
+  // re-runs the full buy-in before any limits fill, doubling every order.
+  const isInvested = currentPositions.length > 0 || pendingBuySymbols.size > 0;
 
   log.info({ spyPrice: spyPrice.toFixed(2), sma20: sma20.toFixed(2), sma50: sma50.toFixed(2), confirmedBelow, isInvested, positions: positionMap.size, pendingBuys: pendingBuySymbols.size }, "Tactical Smart scan");
 
@@ -2298,15 +2315,11 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
         )
       );
     for (const row of recentBuys) {
-      const receivedAt = row.createdAt instanceof Date ? row.createdAt.getTime() : Date.now();
-      engine.externalSignals.push({
-        symbol: `cooldown:${row.symbol}`,
-        signal: "COOLDOWN",
-        confidence: 0,
-        price: 0,
-        source: "engine",
-        receivedAt,
-      });
+      const buyAt = row.createdAt instanceof Date ? row.createdAt.getTime() : Date.now();
+      // Earlier versions wrote these into externalSignals with a synthetic
+      // "cooldown:SYMBOL" key — but the in-loop check reads engine.cooldowns,
+      // so post-restart cooldowns were silently no-op. Write to the right map.
+      engine.cooldowns.set(row.symbol, buyAt);
     }
     if (recentBuys.length > 0) {
       log.info({ userId, hydrated: recentBuys.length }, "Hydrated cooldown markers from recent buys");
