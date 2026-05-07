@@ -8,8 +8,15 @@ import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("screener");
 
-// Screener always disables AI scoring (too slow for batch scanning)
+// Screener runs pure-technical signals only. Sentiment/options/analyst layers
+// each hit external APIs (Finnhub free tier is 60 req/min serialized) which
+// pushed full-universe scans to 15–45 min. The trader engine still runs the
+// full hybrid pipeline per symbol it considers — so screener-pushed signals
+// get re-evaluated with sentiment/options/analyst at trade-decision time.
 const SCREENER_HYBRID_OPTIONS = {
+  enableSentiment: false,
+  enableOptionsFlow: false,
+  enableAnalyst: false,
   enableAiScoring: false,
 } as const;
 
