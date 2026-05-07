@@ -228,7 +228,7 @@ async function runScanInternal(): Promise<ScreenerResult[]> {
 
     // Delay between batches to avoid rate limits (skip after last batch)
     if (i + batchSize < allSymbols.length) {
-      await delay(200);
+      await delay(50);
     }
   }
 
@@ -337,7 +337,7 @@ async function runIntradayScanInternal(): Promise<ScreenerResult[]> {
     }
 
     if (i + batchSize < allSymbols.length) {
-      await delay(200);
+      await delay(50);
     }
   }
 

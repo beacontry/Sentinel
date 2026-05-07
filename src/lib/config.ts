@@ -34,7 +34,7 @@ export const SIGNAL_CONFIG = {
 } as const;
 
 export const SCREENER_CONFIG = {
-  batchSize: 10,
+  batchSize: 25,
   cacheTtlSeconds: 300,
   maxFilters: 10,
   intradayIntervalMs: 5 * 60 * 1000, // 5 minutes
