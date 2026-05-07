@@ -18,7 +18,7 @@ const BAR_CACHE_DIR = join(
   "bar-cache"
 );
 const BAR_CACHE_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours for daily bars
-const BAR_CACHE_5M_MAX_AGE_MS = 10 * 60 * 1000;  // 10 minutes for 5-min bars
+const BAR_CACHE_5M_MAX_AGE_MS = 11 * 60 * 1000;  // 11 min — slightly past the 5-min scan interval so the next scan fully hits cache even if the prior scan straddled the boundary
 
 let barCacheDirReady = false;
 async function ensureBarCacheDir() {
