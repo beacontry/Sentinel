@@ -55,6 +55,9 @@ export interface ExternalSignal {
   price: number;
   source: string;
   receivedAt: number;
+  /** Optional — passed through from the screener so the DB row written for
+   *  Recent Signals carries a real volume rather than 0. */
+  volume?: number;
 }
 
 export interface EngineState {
@@ -2754,6 +2757,18 @@ export function pushExternalSignal(signal: ExternalSignal, userId?: string): boo
 
   engine.externalSignals.push(signal);
   log.info({ symbol: signal.symbol, signal: signal.signal, source: signal.source }, "External signal received");
+  // Mirror to trader_signals so the user sees screener-pushed signals in
+  // Recent Signals immediately, not only after the engine's next scan picks
+  // up the symbol. Fire-and-forget — the queue push is the source of truth.
+  void logSignal(
+    signal.symbol,
+    signal.signal,
+    signal.price,
+    signal.volume ?? 0,
+    { source: signal.source, confidence: signal.confidence },
+    false,
+    engine.userId,
+  );
   return true;
 }
 
@@ -2776,6 +2791,17 @@ export function broadcastExternalSignal(signal: ExternalSignal): number {
     engine.externalSignals.push(signal);
     accepted++;
     log.info({ symbol: signal.symbol, signal: signal.signal, source: signal.source, userId }, "External signal broadcast to engine");
+    // Mirror to trader_signals per accepted engine — see comment in
+    // pushExternalSignal. Fire-and-forget.
+    void logSignal(
+      signal.symbol,
+      signal.signal,
+      signal.price,
+      signal.volume ?? 0,
+      { source: signal.source, confidence: signal.confidence },
+      false,
+      userId,
+    );
   }
   return accepted;
 }

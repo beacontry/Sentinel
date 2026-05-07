@@ -69,6 +69,7 @@ export async function pushScreenerSignals(
       signal: r.signal,
       confidence: r.confidence,
       price: r.price,
+      volume: r.volume,
       source: "screener",
       receivedAt: now,
     });
