@@ -529,9 +529,9 @@
 
   <!-- ===== HERO ===== -->
   <header class="hero">
-    <div class="hero-badge">Sentinel Engine v1</div>
+    <div class="hero-badge">Sentinel Engine &middot; v2 &middot; Pre-Live Hardening</div>
     <h1>Trading Engine Ruleset</h1>
-    <p>How Sentinel scans the S&P 500, generates signals, enforces safety gates, and executes trades through Alpaca &mdash; fully automated.</p>
+    <p>How Sentinel scans the S&P 500, generates signals, enforces safety gates, and executes trades through Alpaca &mdash; with five circuit breakers, tamper-evident audit log, and personalized tax/PDT protections gating every live order.</p>
   </header>
 
   <!-- ===== TOC ===== -->
@@ -553,6 +553,11 @@
       <a href="#screener" data-num="13">Screener Flow</a>
       <a href="#mode-matrix" data-num="14">Mode &times; Optimizer Matrix</a>
       <a href="#data" data-num="15">Data Sources</a>
+      <a href="#live-mode" data-num="16">Live Trading Mode</a>
+      <a href="#circuit-breakers" data-num="17">Capital Circuit Breakers</a>
+      <a href="#tax-pdt" data-num="18">Tax &amp; PDT Protections</a>
+      <a href="#audit-log" data-num="19">Audit Log</a>
+      <a href="#going-live" data-num="20">Going Live &amp; Rollback</a>
     </div>
   </nav>
 
@@ -972,7 +977,7 @@
 
     <div class="callout alert">
       <span class="callout-icon">&#9888;</span>
-      <span><strong>Paper Mode Only.</strong> The engine refuses to start if the broker connection is a "live" environment. Only paper trading connections are allowed.</span>
+      <span><strong>Live trading is env-gated.</strong> The engine refuses to start against a <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">live</code> broker connection unless <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">ALLOW_LIVE_TRADING=1</code> is set in the server environment. Even when unlocked, every live boot fires a warn-level log, captures an audit row with <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">environment="live"</code>, and the Trader UI shows a persistent red LIVE banner. See section 16 (Live Trading Mode) and section 20 (Going Live &amp; Rollback).</span>
     </div>
 
     <h3>Dual-Layer Stop Protection</h3>
@@ -1327,10 +1332,286 @@
     </div>
   </section>
 
+  <!-- ===== 16 · LIVE TRADING MODE ===== -->
+  <section class="section" id="live-mode">
+    <div class="section-header">
+      <div class="section-num">16</div>
+      <h2>Live Trading Mode</h2>
+    </div>
+
+    <p>The engine code path is <strong>identical between paper and live</strong>. The only environment-specific branches are: the Alpaca client constructor (picks <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">api.alpaca.markets</code> vs <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">paper-api.alpaca.markets</code>), the boot-time env gate, and the UI banner. Signal generation, order construction, stop calculation, and all five circuit breakers (section 17) operate identically in both environments.</p>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <span><strong>What carries over from paper:</strong> signals, strategy, risk-profile sizing, all engine safeguards. <strong>What does NOT carry over:</strong> fill rate, slippage, partial fills, order rejection patterns, settlement timing, PDT lock, wash sales. Outcomes are at the broker/market layer, not the engine.</span>
+    </div>
+
+    <h3>Boot Gate</h3>
+    <p>At <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">startEngine()</code>, the engine resolves the active broker connection and inspects its <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">environment</code> field. Behavior:</p>
+    <ul>
+      <li><code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">environment === "paper"</code> &rarr; engine starts normally.</li>
+      <li><code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">environment === "live"</code> AND <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">ALLOW_LIVE_TRADING !== "1"</code> &rarr; refused. Returns a specific error to the UI naming the env var that must be set. Emits <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">engine.live_blocked</code> audit event with the connection id.</li>
+      <li><code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">environment === "live"</code> AND env unlocked &rarr; engine starts; warn-level log; <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">engine.started</code> audit row includes <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">metadata.environment="live"</code> and boot equity snapshot; UI flips on the persistent red LIVE banner.</li>
+    </ul>
+
+    <h3>Paper vs Live: What Actually Differs</h3>
+    <table class="data-table">
+      <thead><tr><th>Concern</th><th>Paper</th><th>Live</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Limit BUY fills</strong> at <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">price &times; 1.001</code></td><td>Aggressive &mdash; almost always fills</td><td>Fills only if book reaches the limit. Many will miss when market moves through.</td></tr>
+        <tr><td><strong>Slippage on market sells</strong></td><td>Zero</td><td>Real bid; measurable drag on stop-loss exits</td></tr>
+        <tr><td><strong>Partial fills</strong></td><td>Rare</td><td>Common on &gt;100 shares or thin names. Reconciled on next scan via <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">syncPositionMapFromBroker</code></td></tr>
+        <tr><td><strong>Order rejection</strong></td><td>Almost never</td><td>PDT, buying-power strictness w/ maintenance margin, wash-sale flags, halted symbols, IPO restrictions. Each becomes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.rejected</code> audit row; engine continues</td></tr>
+        <tr><td><strong>Settlement</strong></td><td>Instant</td><td>T+1 on stock proceeds. Account-switch detector's 50% drop tripwire absorbs normal swings; brutal days may legitimately fire</td></tr>
+        <tr><td><strong>Disaster stops (18%)</strong></td><td>Fills at trigger</td><td>Executes at next available print after trigger. On volatile/illiquid names: can realize &gt;18%</td></tr>
+        <tr><td><strong>Day-trade count / PDT</strong></td><td>N/A in paper</td><td>4 round-trips in 5 business days &amp; equity &lt; $25k &rarr; 90-day flag. Engine refuses intraday mode when vulnerable (section 18)</td></tr>
+        <tr><td><strong>Wash sales (&sect;1091)</strong></td><td>Irrelevant</td><td>Tracked unless &sect;475(f) MTM elected. Engine's wash-sale protection (section 18) blocks re-entries for 31 days after a losing close</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span><strong>Recommendation:</strong> run paper and live in parallel for the first week. Same risk profile, small live size. Compare audit rows for <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.placed</code> vs <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.rejected</code> &mdash; the P&amp;L delta on identical signals is your paper-to-live tax.</span>
+    </div>
+  </section>
+
+  <!-- ===== 17 · CAPITAL CIRCUIT BREAKERS ===== -->
+  <section class="section" id="circuit-breakers">
+    <div class="section-header">
+      <div class="section-num">17</div>
+      <h2>Capital Circuit Breakers</h2>
+    </div>
+
+    <p>Five auto-halt or auto-block conditions layered on top of the existing safety systems (section 08). All operate identically in paper and live. Each emits a distinct audit reason so the audit viewer can filter cause.</p>
+
+    <h3>1. Daily Notional Cap</h3>
+    <div class="filter-gate">
+      <div class="gate-num">01</div>
+      <div class="gate-body">
+        <div class="gate-name">Gross BUY notional / day &le; <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">maxDailyNotionalPct &times; bootEquity</code></div>
+        <div class="gate-rule">Sum of every BUY's qty &times; limitPrice tracked on engine state (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.dailyNotional</code>); resets at day rollover. Default cap 100%, configurable per user in risk profile (suggest 50% on a small account).</div>
+        <div class="gate-action">Block BUY; audit <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.rejected</code> reason=<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daily_notional_cap_exceeded</code></div>
+      </div>
+    </div>
+
+    <h3>2. Order Rate Limit</h3>
+    <div class="filter-gate">
+      <div class="gate-num">02</div>
+      <div class="gate-body">
+        <div class="gate-name">Max 30 orders / 60s sliding window per engine</div>
+        <div class="gate-rule">Timestamps of every BUY and SELL pushed onto <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.recentOrderTimestamps</code>; pruned on each gate check. Defense against signal-storm bugs that could fire dozens of orders in seconds.</div>
+        <div class="gate-action">Block; audit <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.rejected</code> reason=<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order_rate_limit_exceeded</code></div>
+      </div>
+    </div>
+
+    <h3>3. Broker Auto-Halt</h3>
+    <div class="filter-gate">
+      <div class="gate-num">03</div>
+      <div class="gate-body">
+        <div class="gate-name">5 consecutive <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">getPositions()</code> failures &rarr; halt</div>
+        <div class="gate-rule">Tracked via <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.consecutiveBrokerFailures</code>. Replaces the older log-only behavior &mdash; stale position data is more dangerous than not trading.</div>
+        <div class="gate-action">Halt engine; audit <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.halted</code> reason=<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">broker_unreachable</code>; user must Stop+Start to clear</div>
+      </div>
+    </div>
+
+    <h3>4. Account-Switch Detection</h3>
+    <div class="filter-gate">
+      <div class="gate-num">04</div>
+      <div class="gate-body">
+        <div class="gate-name">Boot snapshot mismatch on equity or account number</div>
+        <div class="gate-rule">At <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">startEngine()</code> the engine captures <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">{equity, accountNumber}</code> from <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getAccount()</code>. Every scan compares the live snapshot: different <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">accountNumber</code> &rarr; halt; equity drop &gt; 50% &rarr; halt. Catches "wrong API key pasted" and "connection update mid-session swapped accounts" disasters.</div>
+        <div class="gate-action">Halt; audit reason=<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">account_mismatch</code> or <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">equity_collapse</code>; requires explicit Stop+Start to acknowledge</div>
+      </div>
+    </div>
+
+    <h3>5. Consecutive-Loss Halt</h3>
+    <div class="filter-gate">
+      <div class="gate-num">05</div>
+      <div class="gate-body">
+        <div class="gate-name">N losing trades in a row &rarr; halt</div>
+        <div class="gate-rule">After every closed trade, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">recordTradeResult(engine, pnl)</code> increments <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.consecutiveLosses</code> on losses, resets on any winner (zero P&amp;L doesn't reset &mdash; rare exact-even close). Default threshold 5, configurable in risk profile (suggest 3 for small live accounts).</div>
+        <div class="gate-action">Halt; audit reason=<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">consecutive_losses</code> with count + threshold</div>
+      </div>
+    </div>
+
+    <div class="callout safe">
+      <span class="callout-icon">&#10003;</span>
+      <span><strong>Gate ordering inside <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder()</code>:</strong> wash-sale &rarr; PDT &rarr; daily notional &rarr; rate limit. Cheapest checks fire first; the first reason found is what the audit log records. Sells (exits) are <em>never</em> blocked by these gates &mdash; exiting a position takes priority over any safeguard.</span>
+    </div>
+  </section>
+
+  <!-- ===== 18 · TAX & PDT PROTECTIONS ===== -->
+  <section class="section" id="tax-pdt">
+    <div class="section-header">
+      <div class="section-num">18</div>
+      <h2>Tax &amp; PDT Protections</h2>
+    </div>
+
+    <p>Three personalized protections that vary by account state and user election. All can be observed/toggled from the Trader page.</p>
+
+    <h3>&sect;475(f) MTM Toggle</h3>
+    <p>Trader page renders a "Tax election" card with a single checkbox: <em>"I have elected &sect;475(f) Mark-to-Market"</em>. Writes to the existing <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">user_tax_status</code> table via <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">PUT /api/tax-status</code>. The engine reads this at <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">startEngine()</code> via <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">loadTaxStatus(userId)</code>.</p>
+    <ul>
+      <li><strong>Unchecked (default):</strong> Wash-sale protection ON.</li>
+      <li><strong>Checked:</strong> Wash-sale protection OFF. MTM traders are exempt from &sect;1091, so the engine doesn't block re-entries on losing exits.</li>
+    </ul>
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <span><strong>Self-attestation only.</strong> Sentinel does not file or validate the election with the IRS. The election deadline is April 15 of the prior tax year (or as a new entity). Check the box only if you actually filed.</span>
+    </div>
+
+    <h3>Wash-Sale Protection</h3>
+    <p>When enabled (MTM unchecked), the engine blocks BUYs on any symbol with a losing exit in the last 31 calendar days. One day past the IRS 30-day rule for safety margin.</p>
+    <ul>
+      <li><strong>Source query:</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">SELECT DISTINCT symbol FROM trader_trades WHERE user_id=? AND action IN ('SELL','manual_close') AND pnl &lt; 0 AND created_at &gt; now() - 31 days</code></li>
+      <li><strong>Cached for 5 min</strong> on engine state as <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">washSaleBlockedSymbols: Set&lt;string&gt;</code> &mdash; one batched DISTINCT query per refresh, O(1) lookup per BUY.</li>
+      <li><strong>Symbol-level, not lot-level:</strong> one partial losing close blocks the whole ticker for 31 days. Over-conservative, but simpler and safer than per-lot accounting.</li>
+      <li><strong>Manual closes count:</strong> the Trader UI's Flatten command logs <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">action="manual_close"</code> in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">trader_trades</code>; those also feed the wash-sale set.</li>
+      <li><strong>Does NOT catch:</strong> manual BUYs through Alpaca's own app (engine sees them only after position sync, too late to block); "substantially identical" ETFs (SPY &harr; IVV); different share classes (GOOG vs GOOGL).</li>
+    </ul>
+    <div class="filter-gate">
+      <div class="gate-num">WS</div>
+      <div class="gate-body">
+        <div class="gate-name">Symbol in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">washSaleBlockedSymbols</code> &amp; protection enabled</div>
+        <div class="gate-rule">Audit reason <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">wash_sale_protection</code>; metadata includes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">windowDays=31</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">mtmElected=false</code></div>
+        <div class="gate-action">BUY skipped; engine moves to next symbol</div>
+      </div>
+    </div>
+
+    <h3>PDT Protection (Pattern Day Trader)</h3>
+    <p>Auto-detected from <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">account.equity &lt; $25,000</code>. Reads broker-reported <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytrade_count</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pattern_day_trader</code> fields from <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getAccount()</code> on every scan, evaluated by <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">evaluatePdtState(engine, account)</code>.</p>
+
+    <h4 style="margin-top:16px;color:var(--text-secondary);font-size:0.95rem;">Three behaviors:</h4>
+    <ol>
+      <li style="margin-bottom:10px"><strong>Boot mode-refusal.</strong> If <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">isPdtVulnerable(bootAccount)</code> AND mode is <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">intraday</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">startEngine()</code> returns a clear error naming the equity threshold and acceptable modes. Tactical/tactical-smart/conservative/moderate/optimized are still allowed &mdash; they're swing-oriented.</li>
+      <li style="margin-bottom:10px"><strong>Mid-session re-evaluation.</strong> Every scan, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">evaluatePdtState()</code> reads live <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">equity</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytradeCount</code>. Transition <em>not-vulnerable &rarr; vulnerable</em> emits one <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.pdt_vulnerable</code> audit event (informational, no halt) and flips the Trader page warning panel.</li>
+      <li><strong>Buy-block.</strong> When <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdtVulnerable AND daytradeCount &gt;= 3</code> (one shy of the 4-trade PDT flag), all new BUYs blocked. Audit reason <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdt_protection</code>. <strong>SELLs always allowed</strong> &mdash; exits override PDT, since losing a position to a lock is worse than the lock itself.</li>
+    </ol>
+
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span><strong>Note:</strong> Alpaca uses <em>previous business day's closing equity</em> for the actual PDT flag, not real-time. Sentinel treats <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">equity &lt; $25k</code> as vulnerable in real-time, which is intentionally more conservative.</span>
+    </div>
+  </section>
+
+  <!-- ===== 19 · AUDIT LOG ===== -->
+  <section class="section" id="audit-log">
+    <div class="section-header">
+      <div class="section-num">19</div>
+      <h2>Audit Log</h2>
+    </div>
+
+    <p>Append-only, hash-chained, tamper-evident record of every privileged action. Schema in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">drizzle/0016_audit_log.sql</code>; helper in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">src/lib/audit.ts</code>; admin viewer at <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/dashboard/admin/audit</code>.</p>
+
+    <h3>Row Shape</h3>
+    <p>One row per event with the actor, action, resource, IP / user-agent, structured metadata, and the hash-chain pointers:</p>
+    <div class="formula-block" style="white-space:pre">id (bigserial)              prev_hash (text)
+created_at (timestamptz)    hash (text)
+actor_user_id (uuid)        ip (text)
+actor_email (text)          user_agent (text)
+actor_role (text)           metadata (jsonb)
+action (text)               resource_type (text)
+                            resource_id (text)</div>
+
+    <h3>Hash Chain</h3>
+    <p>Each row's <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">hash</code> is the SHA-256 of its predecessor's hash plus its own canonical fields:</p>
+    <div class="formula-block" style="white-space:pre">hash = sha256(
+  prev_hash || \0 ||
+  created_at.toISOString() || \0 ||
+  actor_user_id || \0 ||
+  action || \0 ||
+  resource_type || \0 ||
+  resource_id || \0 ||
+  canonical_json(metadata)
+)</div>
+    <p>NUL byte separator cannot occur in any UTF-8 string field, preventing field-confusion / length-extension attacks. <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canonical_json</code> sorts keys at every depth so equivalent objects produce identical hashes.</p>
+    <p>The genesis row's <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">prev_hash</code> is the literal string <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">"GENESIS"</code>. Tampering with any row breaks the chain at that row when verified.</p>
+
+    <h3>Write Path</h3>
+    <p><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">writeAudit()</code> opens a Postgres transaction, takes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pg_advisory_xact_lock(8493920100)</code> (auto-released on commit), reads the tail row's hash, computes the new hash, inserts. Concurrent writers serialize on the advisory lock so the chain can't fork.</p>
+    <p>The helper <strong>never throws</strong> &mdash; failures log and return null. Audit problems must not cascade into request failures (rather lose a log line than refuse a legitimate trade).</p>
+
+    <h3>What's Logged</h3>
+    <table class="data-table">
+      <thead><tr><th>Action</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">auth.login_success</code></td><td>Successful login</td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">auth.login_failed</code></td><td>Failed login (attacker IP captured via X-Forwarded-For)</td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">auth.user_registered</code></td><td>New account via invite</td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">invite.sent</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">invite.consumed</code></td><td>Admin sends / new user consumes</td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">broker.connection.created</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.updated</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.deleted</code></td><td>Broker connection lifecycle (rotated secrets flagged in metadata, never logged in plaintext)</td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.started</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.stopped</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.halted</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.mode_switched</code></td><td>Engine state changes (user-driven AND automatic halts from section 17)</td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.live_blocked</code></td><td>Refused start on live broker without <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">ALLOW_LIVE_TRADING=1</code></td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.pdt_vulnerable</code></td><td>Mid-session transition into PDT-vulnerable state</td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.placed</code></td><td>Every successful broker order (manual UI, engine entries, engine exits, manual flatten)</td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.rejected</code></td><td>Broker error OR safeguard block (reason field distinguishes: <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">wash_sale_protection</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdt_protection</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daily_notional_cap_exceeded</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order_rate_limit_exceeded</code>)</td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">risk_profile.updated</code></td><td>Risk-limit change with field-level diff in metadata</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Verification</h3>
+    <p>The admin viewer at <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/dashboard/admin/audit</code> has a "Verify chain" button that calls <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">POST /api/admin/audit/verify</code>. The endpoint walks every row in id order, recomputes each hash, and reports either "intact" or the first row where the chain breaks (with stored vs expected hash). Walk takes ~2s per 100k rows.</p>
+    <p>Run it after any unusual incident, before any major decision based on the trade history, or as a periodic sanity check.</p>
+  </section>
+
+  <!-- ===== 20 · GOING LIVE & ROLLBACK ===== -->
+  <section class="section" id="going-live">
+    <div class="section-header">
+      <div class="section-num">20</div>
+      <h2>Going Live &amp; Rollback</h2>
+    </div>
+
+    <h3>Going Live</h3>
+    <ol>
+      <li style="margin-bottom:10px"><strong>Tighten risk profile</strong> (Trader page &rarr; Risk Settings). For a $5k cash-only account: <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">maxPositionPct=25&minus;33%</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">maxDailyLossPct=2%</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">maxDailyNotionalPct=0.5</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">maxConsecutiveLosses=3</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">maxPositionSize=20</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">maxExposureMultiplier=1.0</code>.</li>
+      <li style="margin-bottom:10px"><strong>Add live broker connection</strong> (Settings &rarr; Add Broker). Environment = Live, paste live Alpaca API key+secret, type "LIVE" in the confirmation input, Test, Save.</li>
+      <li style="margin-bottom:10px"><strong>Deactivate paper connection</strong> (Settings &rarr; toggle <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">isActive=false</code> on the paper row). Engine then resolves only the live one.</li>
+      <li style="margin-bottom:10px"><strong>Flip the env-gate on the droplet:</strong>
+        <div class="formula-block" style="white-space:pre">echo 'ALLOW_LIVE_TRADING=1' | sudo tee -a /opt/apps/sentinel/.env
+sudo podman stop sentinel-app &amp;&amp; sudo podman rm sentinel-app
+sudo podman run -d --name sentinel-app --network=host \
+  --env-file /opt/apps/sentinel/.env \
+  -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 \
+  -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache \
+  -v /opt/apps/sentinel/cache:/data/cache:Z \
+  --restart always -m 2g \
+  ghcr.io/ixiondt/sentinel:latest</div>
+        <p style="margin-top:8px;color:var(--text-muted);font-size:0.9rem"><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">podman restart</code> does NOT re-read env-file &mdash; must <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">stop &amp;&amp; rm &amp;&amp; run</code>.</p>
+      </li>
+      <li><strong>Start engine</strong> (Trader page &rarr; Start) in a swing mode (NOT <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">intraday</code> &mdash; engine refuses if equity &lt; $25k). Watch the persistent red LIVE banner appear, audit log fill with <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.started</code> (metadata.environment="live"), and the boot equity snapshot get captured.</li>
+    </ol>
+
+    <h3>Rollback &mdash; Three Off-Ramps</h3>
+
+    <div class="card">
+      <div class="card-title">A. Env-only rollback &mdash; "live went badly, go back to paper"</div>
+      <p>Cheapest path. No code changes, no rebuild, no DB changes. Clear <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">ALLOW_LIVE_TRADING</code> in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/opt/apps/sentinel/.env</code>, recreate container (same <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">podman run</code> as above). Engine immediately refuses live boots; live broker row stays in DB for easy re-enable.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">B. Code revert &mdash; Phase 3 false halts / audit too slow</div>
+      <p><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">git revert</code> phase commits in reverse order (4 &rarr; 3 &rarr; 2). Migrations stay applied (additive). <strong>Do not revert Phase 1</strong> &mdash; it would re-introduce the silent-plaintext decrypt fallback. Phase 4 depends on Phase 2 (audit viewer reads the table), so revert 4 before 2.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">C. Migration drop &mdash; only when table is corrupted</div>
+      <p>Almost never needed. <strong>Always pair with the matching code revert</strong> or <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">loadRiskLimits()</code> crashes on every scan. For audit_log: <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">TRUNCATE audit_log</code> is the clean reset (next write becomes new genesis). <strong>Do NOT</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">DELETE WHERE id &lt; N</code> &mdash; that breaks the hash chain forever.</p>
+    </div>
+
+    <h3>What to Watch in the First Hour</h3>
+    <ul>
+      <li><strong>Red LIVE banner missing.</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.environment</code> not captured at boot. Stop engine, check the <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.started</code> audit row metadata; restart engine.</li>
+      <li><strong>PDT panel missing at &lt;$25k.</strong> Alpaca didn't return <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytrade_count</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pattern_day_trader</code>. Check live <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">account.equity</code> matches what you expect.</li>
+      <li><strong>Many <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.rejected</code> rows with <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">insufficient_buying_power</code>.</strong> Live broker margin/cash strictness. Tighten <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">positionPct</code> if persistent.</li>
+      <li><strong>Chain verify reports a break.</strong> <em>Stop immediately. Do not trade.</em> Investigate before resuming &mdash; this is the critical evidence trail.</li>
+      <li><strong>First buys filling at unexpected prices.</strong> Real slippage between paper assumption and live execution. Document the delta &mdash; that's your paper-to-live tax.</li>
+    </ul>
+  </section>
+
   <!-- ===== FOOTER ===== -->
   <footer class="footer">
-    <p><span class="brand">Sentinel</span> &mdash; Trading Intelligence Platform</p>
-    <p style="margin-top:4px">All rules enforced programmatically. No manual intervention required.</p>
+    <p><span class="brand">Sentinel</span> &mdash; Trading Intelligence Platform &middot; v2 Pre-Live Hardening</p>
+    <p style="margin-top:4px">All rules enforced programmatically. Hash-chained audit on every privileged action. Five capital circuit breakers. Tax + PDT protections layered on every BUY.</p>
   </footer>
 
 </div>
