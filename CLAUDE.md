@@ -7,7 +7,7 @@
 - Anthropic SDK for AI chat analysis
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
-- Vitest for testing (186 tests across indicators, analyzer, validators, signal translator, rate-limiter, db-timeout, crypto, audit, engine-safeguards)
+- Vitest for testing (199 tests across indicators, analyzer, validators, signal translator, rate-limiter, db-timeout, crypto, audit, engine-safeguards incl. wash-sale + PDT)
 - Alpaca Markets API for paper/live trading
 
 ## Architecture: Multi-Tenant Trading Engine
@@ -321,6 +321,42 @@ TRUNCATE audit_log;
 ```
 
 The next `writeAudit()` becomes the new genesis row (`prev_hash = "GENESIS"`). Don't `DELETE FROM ... WHERE id < N` to "prune" — that breaks the chain (the next row's `prev_hash` points to a deleted predecessor) and `verifyAuditChain()` will flag it forever. Truncate is the clean reset; partial delete is a one-way break unless you also rewrite every subsequent row's prev_hash + hash.
+
+### Phase 5 — Personalized live-trading protections
+
+Three opt-in/auto protections layered on top of the Phase 3 safeguards. All operate alongside (not instead of) the existing notional cap, rate limit, broker-failure halt, and account-switch detection.
+
+**MTM election (Trader page → Tax election card):**
+Self-attested §475(f) Mark-to-Market checkbox. Writes to existing `user_tax_status` table via `PUT /api/tax-status`. Drives **wash-sale protection** as a single switch:
+- MTM unchecked (default) → wash-sale protection ON
+- MTM checked → wash-sale protection OFF (MTM traders are exempt from §1091)
+
+Engine reads `hasTraderTaxStatus` at `startEngine()`. Toggle takes effect on next engine start. While running, the wash-sale set is refreshed every 5 minutes from `trader_trades`.
+
+**Wash-sale protection:**
+Blocks BUYs on any symbol with a losing exit (`action IN ('SELL','manual_close') AND pnl < 0`) within the last **31 calendar days** (1 day past IRS 30-day for safety). Symbol-level, not lot-level — over-conservative but simpler. Caches the symbol set on engine state, single batched query per scan, O(1) check per buy. Audit reason: `wash_sale_protection`.
+
+Does NOT catch: manual buys via Alpaca's UI (engine can't see those at order time), "substantially identical" ETFs (engine treats only exact-ticker matches), different share classes (GOOG ≠ GOOGL by engine logic).
+
+**PDT protection:**
+Auto-detected from `account.equity < $25,000`. Three behaviors:
+- **At startup:** refuse to start `intraday` mode if PDT-vulnerable. Returns specific error with the equity threshold. Other modes (conservative / moderate / optimized / tactical / tactical-smart) allowed — they're swing-oriented and rarely produce same-day round-trips.
+- **Mid-session re-evaluation:** every scan calls `evaluatePdtState()` against live `account.equity` and `account.daytradeCount`. Transition from not-vulnerable → vulnerable emits one `engine.pdt_vulnerable` audit event (informational, no halt) and flips the Trader page warning panel on.
+- **Buy block:** when `pdtVulnerable && daytradeCount >= 3` (one shy of the PDT-flag at 4), all new BUYs blocked. Audit reason: `pdt_protection`. **SELLs always allowed** — exits override PDT.
+
+Gate ordering inside `canPlaceBuyOrder()`: wash-sale → PDT → notional → rate-limit. Cheapest checks first; the first reason found is what's logged.
+
+**UI surfaces (Trader page):**
+- Yellow PDT warning panel: "PDT-vulnerable — X day-trades / 5d window. Y / 4 limit."
+- Tax election card with MTM checkbox + wash-sale protection status badge (On / Off, blocked-symbol count).
+
+**Recommended risk profile for $5k cash-only live account:**
+- Engine mode: `conservative`, `moderate`, or `optimized` (avoid `intraday` and `tactical-smart`)
+- `maxPositionPct`: 25-33% (3-4 positions max — meaningful per-trade size)
+- `maxDailyLossPct`: 2% ($100/day stop)
+- `maxDailyNotionalPct`: 0.5 (50% of equity / day)
+- `maxConsecutiveLosses`: 3
+- MTM checkbox: unchecked unless you actually filed §475(f) at last year-start
 
 ## Security & Route Patterns
 
