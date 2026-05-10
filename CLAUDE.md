@@ -7,7 +7,7 @@
 - Anthropic SDK for AI chat analysis
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
-- Vitest for testing (96 tests across indicators, analyzer, validators, signal translator, rate-limiter, db-timeout)
+- Vitest for testing (186 tests across indicators, analyzer, validators, signal translator, rate-limiter, db-timeout, crypto, audit, engine-safeguards)
 - Alpaca Markets API for paper/live trading
 
 ## Architecture: Multi-Tenant Trading Engine
@@ -142,6 +142,37 @@ Registration is **invite-only**. No public signup.
 
 **Admin UI:** Invitations section on admin page — email input to send invites, table of sent invites with status (Pending/Registered/Expired), copy link button.
 
+### Email delivery (Resend)
+
+Invite and alert emails are sent through **[Resend](https://resend.com)** via `src/lib/email.ts`. Two helpers: `sendInviteEmail(to, signupUrl)` and `sendAlertEmail(to, subject, body)`. Both branded HTML templates inlined in the same file.
+
+**Required env vars** (`/opt/apps/sentinel/.env` on prod):
+```bash
+RESEND_API_KEY=re_...                                        # Sending-only API key from Resend → API Keys
+EMAIL_FROM=Sentinel <noreply@guardcybersolutionsllc.com>     # Must use a Resend-verified domain
+```
+
+**Graceful fallback** — if `RESEND_API_KEY` is missing, both helpers log `"Email not configured"` and return `{ success: false }`. The invite route still creates the DB record and returns the signup URL so admins can copy/paste the link manually. **Never throws**, so the app stays usable when email is mis-configured.
+
+**Verified domain** — the apex `guardcybersolutionsllc.com` is verified in Resend (shared across all GuardCyber apps). DKIM signs as `d=guardcybersolutionsllc.com` so the strict DMARC (`p=reject; adkim=s`) on the apex is satisfied. SPF lives on the `send.<domain>` envelope subdomain, but DMARC alignment is satisfied via DKIM regardless. **No per-app DNS work** is needed for new tenants — only a `RESEND_API_KEY` and `EMAIL_FROM` env var.
+
+**Rotating the key:**
+1. Resend → API Keys → revoke old key → create new "sentinel-prod" key (Sending access only)
+2. Update `RESEND_API_KEY=` in `/opt/apps/sentinel/.env`
+3. **`podman stop && rm && run`** — `podman restart` does NOT re-read the env-file, only `run` does
+4. Recreate command (verbatim, from `podman inspect`):
+   ```bash
+   podman run -d --name sentinel-app --network=host \
+     --env-file /opt/apps/sentinel/.env \
+     -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 \
+     -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache \
+     -v /opt/apps/sentinel/cache:/data/cache:Z \
+     --restart always -m 2g \
+     ghcr.io/ixiondt/sentinel:latest
+   ```
+
+**Inbound mail** (bounces, replies to `noreply@`, anyone emailing the domain): Cloudflare Email Routing forwards everything to the admin inbox via a catch-all rule. See GuardCyber `README.md` § Email Infrastructure for the shared setup.
+
 ## Risk Profile (Single Source of Truth)
 
 Risk settings live on the **Trader page** only (not Settings). Stored in `user_risk_profiles` table, loaded by the engine via `loadRiskLimits()` in `trading-engine.ts`.
@@ -156,8 +187,42 @@ Risk settings live on the **Trader page** only (not Settings). Stored in `user_r
 | `maxDrawdownPct` | Used with accountSize for legacy exposure calc when multiplier isn't set |
 | `riskTolerance` | Presets only — pre-fills other fields |
 | `maxSingleTradeLoss` | Informational — not enforced by engine |
+| `maxDailyNotionalPct` | Cap on gross BUY notional / day as fraction of equity (default 1.0 = 100%) |
+| `maxConsecutiveLosses` | Auto-halt threshold; resets on any winning trade (default 5) |
 
 **Engine boot:** Engines auto-restart on server startup via `instrumentation.ts` → `bootEngines()`. Checks all users with active broker connections, restores last-used mode.
+
+## Live Trading
+
+Live trading is gated behind `ALLOW_LIVE_TRADING=1` in the server environment. Without it, the engine refuses to start on any broker connection where `environment="live"` and emits an `engine.live_blocked` audit event. Paper connections are unaffected.
+
+**Going live (one-time setup):**
+1. Tighten risk profile on Trader page first — recommend `maxPositionPct` 2–5%, `maxDailyLossPct` 1%, `maxDailyNotionalPct` 0.5 (50% of equity), `maxConsecutiveLosses` 3.
+2. Settings → Broker Connections → Add → environment = Live → paste live API keys → type "LIVE" to confirm → Save. Test before saving.
+3. On the droplet:
+   ```bash
+   echo 'ALLOW_LIVE_TRADING=1' | sudo tee -a /opt/apps/sentinel/.env
+   # podman restart does NOT re-read .env — must stop+rm+run
+   ssh deploy@<host> 'sudo podman stop sentinel-app && sudo podman rm sentinel-app && \
+     sudo podman run -d --name sentinel-app --network=host \
+     --env-file /opt/apps/sentinel/.env \
+     -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 \
+     -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache \
+     -v /opt/apps/sentinel/cache:/data/cache:Z \
+     --restart always -m 2g \
+     ghcr.io/ixiondt/sentinel:latest'
+   ```
+4. Trader page → Start. Watch the persistent red LIVE banner appear. First scan should populate audit log with `engine.started` (metadata.environment = "live") and the boot equity snapshot.
+5. Monitor the **Audit Log** page (`/dashboard/admin/audit`) on first session — every order, halt, and rejection is logged with hash chain.
+
+**Safeguards active on every live engine** (independent of risk profile):
+- Account-switch detection: halt if `account_number` changes mid-session OR equity drops > 50% from boot snapshot.
+- Broker auto-halt: 5 consecutive `getPositions()` failures → halt (was log-only before).
+- Order rate limit: 30 orders / 60s sliding window per engine — defense against signal-storm bugs.
+- Daily notional cap: rejects BUYs that would exceed `maxDailyNotionalPct × bootEquity` (cumulative across the day).
+- Consecutive-loss halt: tracks losing trades since last winner; halts at threshold.
+
+All halts emit `engine.halted` audit events with `metadata.reason ∈ {broker_unreachable, account_mismatch, equity_collapse, consecutive_losses, user_requested_flatten_all}`.
 
 ## Security & Route Patterns
 

@@ -132,6 +132,8 @@ export default function SettingsPage() {
   });
   const [brokerError, setBrokerError] = useState("");
   const [brokerSaving, setBrokerSaving] = useState(false);
+  // Phase 4 — confirmation typed by user before saving with environment="live"
+  const [liveConfirmText, setLiveConfirmText] = useState("");
   const [brokerTesting, setBrokerTesting] = useState(false);
   const [brokerTestResult, setBrokerTestResult] = useState<{
     success: boolean;
@@ -274,6 +276,7 @@ export default function SettingsPage() {
     setEditingBroker(null);
     setBrokerError("");
     setBrokerTestResult(null);
+    setLiveConfirmText("");
   }
 
   async function handleTestBroker() {
@@ -329,6 +332,16 @@ export default function SettingsPage() {
   async function handleSaveBroker() {
     if (!editingBroker && (!brokerForm.apiKey || !brokerForm.apiSecret)) {
       setBrokerError("API Key and Secret are required");
+      return;
+    }
+
+    // Belt + suspenders for the disabled button: re-check typed LIVE confirmation
+    if (
+      brokerForm.environment === "live" &&
+      (!editingBroker || editingBroker.environment !== "live") &&
+      liveConfirmText !== "LIVE"
+    ) {
+      setBrokerError('Type "LIVE" exactly to confirm a live broker connection.');
       return;
     }
 
@@ -584,8 +597,45 @@ export default function SettingsPage() {
             label="Environment"
             options={ENVIRONMENT_OPTIONS}
             value={brokerForm.environment}
-            onChange={(value) => setBrokerForm((f) => ({ ...f, environment: value }))}
+            onChange={(value) => {
+              setBrokerForm((f) => ({ ...f, environment: value }));
+              setLiveConfirmText(""); // any environment change resets the confirmation
+            }}
           />
+
+          {/* Live confirmation — required when newly switching to live OR creating a live connection */}
+          {brokerForm.environment === "live" &&
+            (!editingBroker || editingBroker.environment !== "live") && (
+              <div className="rounded-lg border border-bearish/40 bg-bearish/5 p-3 space-y-3">
+                <div className="flex items-start gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-bearish mt-1.5 animate-pulse" />
+                  <div className="text-sm">
+                    <div className="font-semibold text-bearish">You are saving a LIVE broker connection.</div>
+                    <div className="text-text-secondary mt-1">
+                      Once active, the engine can place orders against this account with real money — subject to
+                      your risk-profile limits and the engine&apos;s safeguards (notional cap, rate limit,
+                      consecutive-loss halt, account-switch detection). The Trader page will show a persistent
+                      red LIVE banner while the engine is running.
+                    </div>
+                    <div className="text-text-muted text-xs mt-2">
+                      Live trading also requires{" "}
+                      <code className="px-1 py-0.5 rounded bg-bg-elevated text-text-secondary">
+                        ALLOW_LIVE_TRADING=1
+                      </code>{" "}
+                      in the server environment. Without it, the engine refuses to start on live connections
+                      (you can still save the connection here for later).
+                    </div>
+                  </div>
+                </div>
+                <Input
+                  label='Type "LIVE" exactly to confirm'
+                  value={liveConfirmText}
+                  onChange={(e) => setLiveConfirmText(e.target.value)}
+                  placeholder="LIVE"
+                  autoComplete="off"
+                />
+              </div>
+            )}
 
           {/* Test result */}
           {brokerTestResult && (
@@ -642,6 +692,11 @@ export default function SettingsPage() {
           <Button
             onClick={handleSaveBroker}
             loading={brokerSaving}
+            disabled={
+              brokerForm.environment === "live" &&
+              (!editingBroker || editingBroker.environment !== "live") &&
+              liveConfirmText !== "LIVE"
+            }
           >
             {editingBroker ? "Update" : "Save"}
           </Button>
