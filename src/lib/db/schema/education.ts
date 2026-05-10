@@ -52,6 +52,14 @@ export const educationGuideViews = pgTable("education_guide_views", {
   lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }).defaultNow().notNull(),
   viewCount: integer("view_count").notNull().default(1),
   bookmarked: boolean("bookmarked").notNull().default(false),
+  /** Most recent quiz score (0..total) — nullable until first attempt. */
+  quizScore: integer("quiz_score"),
+  /** Total questions on the most recent attempt — used to derive percentage. */
+  quizTotal: integer("quiz_total"),
+  /** Set the first time the user passes (>= 80%); never reset on subsequent attempts. */
+  quizPassedAt: timestamp("quiz_passed_at", { withTimezone: true }),
+  /** Number of submitted attempts. Bumped every quiz POST. */
+  quizAttempts: integer("quiz_attempts").notNull().default(0),
 }, (t) => [
   index("education_guide_views_user_idx").on(t.userId),
   uniqueIndex("education_guide_views_user_slug_idx").on(t.userId, t.slug),

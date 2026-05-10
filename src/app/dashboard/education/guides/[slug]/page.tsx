@@ -5,6 +5,7 @@ import { ArrowLeft, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { EducationalDisclaimer } from "@/components/education/educational-disclaimer";
 import { GuideProgressTracker } from "@/components/education/guide-progress-tracker";
+import { GuideQuiz } from "@/components/education/guide-quiz";
 import {
   GuideRenderer,
   GuideTableOfContents,
@@ -15,6 +16,7 @@ import {
   getGuideBySlug,
   type GuideDifficulty,
 } from "@/lib/education/guides-data";
+import { getQuizForGuide } from "@/lib/education/quizzes-data";
 
 const DIFFICULTY_VARIANT: Record<
   GuideDifficulty,
@@ -51,6 +53,7 @@ export default async function GuidePage({
   const { slug } = await params;
   const guide = getGuideBySlug(slug);
   if (!guide) notFound();
+  const quiz = getQuizForGuide(slug);
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -93,8 +96,11 @@ export default async function GuidePage({
 
       {/* Body — TOC sidebar on lg+, stacked on mobile */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_240px] gap-8">
-        <div className="min-w-0 max-w-3xl">
+        <div className="min-w-0 max-w-3xl space-y-8">
           <GuideRenderer guide={guide} />
+          {quiz && quiz.length > 0 && (
+            <GuideQuiz slug={guide.slug} questions={quiz} />
+          )}
         </div>
         <aside className="hidden lg:block">
           <div className="sticky top-6">

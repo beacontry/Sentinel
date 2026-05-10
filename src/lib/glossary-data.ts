@@ -900,4 +900,172 @@ export const GLOSSARY_TERMS: GlossaryTerm[] = [
       "AGI ≠ MAGI — most income tests use MAGI, which adds certain items back.",
     ],
   },
+
+  // ─── Trader-tax & estate additions for v2 guides ────────────────────────
+
+  {
+    id: "trader-tax-status",
+    term: "Trader Tax Status (TTS)",
+    definition:
+      "IRS classification for active traders meeting frequency/regularity tests under case law (Holsinger, Endicott). Grants Schedule C deductions for trading expenses (home office, education, software) but does NOT change wash-sale or capital-gain treatment by itself — that requires the §475(f) MTM election. No formal IRS application; you self-declare on your return.",
+    category: "wealth",
+    examples: [
+      "Common qualifying profile: 4+ trades/day, 75%+ of trading days active, average holding under 31 days, full-time activity.",
+      "TTS without MTM election: still file gains on Schedule D / Form 8949 with $3K loss limit and wash sales — only the expense deductibility changes.",
+    ],
+  },
+  {
+    id: "section-475f",
+    term: "§475(f) Mark-to-Market Election",
+    definition:
+      "Optional tax election that converts trader gains/losses to ordinary income, removes the $3,000 capital loss limit, and exempts the trader from wash-sale rules. Filed via a written statement attached to the prior-year return by April 15, plus Form 3115 to formalize the accounting-method change. Required if you have Trader Tax Status and want to fully decouple from capital-gains treatment.",
+    category: "wealth",
+    examples: [
+      "To elect MTM for tax year 2026: attach the election statement to your 2025 return filed by April 15, 2026.",
+      "Once elected, year-end open positions are treated as if sold at fair market value — basis is reset and gain/loss is recognized.",
+    ],
+  },
+  {
+    id: "form-3115",
+    term: "Form 3115",
+    definition:
+      "Application for Change in Accounting Method. Required to formalize a §475(f) MTM election (changes from realization to mark-to-market). Filed in the year of the election with both the taxpayer's return and a separate copy mailed to the IRS National Office. Includes a §481(a) adjustment for the transition.",
+    category: "wealth",
+    examples: [
+      "Filing 3115 for MTM election triggers a one-time §481(a) adjustment — open positions on Jan 1 are deemed sold at FMV.",
+      "Missing Form 3115 doesn't void the election, but invites IRS scrutiny — file it.",
+    ],
+  },
+  {
+    id: "form-4797",
+    term: "Form 4797",
+    definition:
+      "Sales of Business Property — used by §475(f) MTM electors to report trading gains/losses as ordinary income (Part II) instead of capital gains on Form 8949 / Schedule D. Also used for §1231 property and depreciation recapture, but for traders it's the ordinary-income trading vehicle.",
+    category: "wealth",
+    examples: [
+      "Pre-MTM trader: gains on Form 8949 → Schedule D, capped $3K loss limit.",
+      "Post-MTM trader: gains on Form 4797 Part II → Form 1040 line 8, no capital-loss limit.",
+    ],
+  },
+  {
+    id: "form-1040-es",
+    term: "Form 1040-ES",
+    definition:
+      "Estimated Tax for Individuals. Quarterly payment voucher used by self-employed, retirees, and traders without sufficient W-2 withholding. Due dates: April 15 (Q1), June 15 (Q2), September 15 (Q3), January 15 of next year (Q4). Underpayment may trigger §6654 penalty unless safe-harbor rules are met.",
+    category: "wealth",
+    examples: [
+      "Trader nets $200K in Q1 with no withholding: should make Q1 estimated payment of ~$45K by April 15 to avoid penalty.",
+      "Withheld income (W-2, 1099-R) is treated as paid evenly across the year — quarterly payments aren't.",
+    ],
+  },
+  {
+    id: "safe-harbor-estimated-tax",
+    term: "Safe Harbor (Estimated Tax)",
+    definition:
+      "Two paths to avoid §6654 underpayment penalty: (a) pay 90% of the current year's tax, OR (b) pay 100% of prior year's tax (110% if prior-year AGI > $150K). Meeting either eliminates the penalty regardless of how lumpy the actual income is.",
+    category: "wealth",
+    examples: [
+      "Prior-year AGI $200K, tax $40K: 110% safe harbor = pay $44K through estimates/withholding to be safe regardless of current-year income.",
+      "Trader expecting a huge year? Pay 110% of last year's tax in even quarterly chunks — IRS doesn't penalize even if you owe $300K extra at filing.",
+    ],
+  },
+  {
+    id: "section-1091",
+    term: "§1091 (Wash Sale Rule)",
+    definition:
+      "IRC section disallowing a capital loss when 'substantially identical' securities are bought within 30 days before OR after the loss sale. The disallowed loss adds to the cost basis of the replacement security. Includes spouse's accounts and IRAs (Rev. Rul. 2008-5).",
+    category: "wealth",
+    examples: [
+      "Sell SPY at $5K loss on Dec 15, buy SPY in your IRA on Dec 20: loss permanently lost (basis adjustment can't apply to an IRA).",
+      "§475(f) MTM electors are exempt from §1091 entirely.",
+    ],
+  },
+  {
+    id: "substantially-identical",
+    term: "Substantially Identical Security",
+    definition:
+      "Wash-sale standard for what triggers loss disallowance. Same CUSIP is clearly identical. Different ETFs tracking the same index (SPY/IVV/VOO) are widely viewed as substantially identical. Different total-market or sector ETFs (SPY vs VTI) generally are not. Bonds with same issuer/coupon/maturity are. Stock and its options can be.",
+    category: "wealth",
+    examples: [
+      "Common safe swap pair: SPY → VTI (S&P 500 to total US market) — different index methodology.",
+      "Risky: SPY → VOO. Both track S&P 500 — IRS hasn't issued bright-line guidance, but most tax pros consider them substantially identical.",
+    ],
+  },
+  {
+    id: "ilit",
+    term: "ILIT (Irrevocable Life Insurance Trust)",
+    definition:
+      "Irrevocable trust that owns a life insurance policy on the grantor. Proceeds escape the grantor's estate (avoiding estate tax) while remaining payable to beneficiaries. Funded with annual gifts via 'Crummey' withdrawal rights. Common HNW estate-planning tool when permanent insurance is also needed for liquidity.",
+    category: "wealth",
+    examples: [
+      "$10M estate near the federal exemption: ILIT-owned $5M permanent policy can fund estate-tax liquidity without inflating the taxable estate.",
+      "Three-year lookback rule: transferring an existing policy to an ILIT pulls it back into the estate if death occurs within 3 years.",
+    ],
+  },
+  {
+    id: "per-stirpes",
+    term: "Per Stirpes",
+    definition:
+      "Beneficiary designation method: if a named beneficiary predeceases you, their share passes to THEIR descendants (kids, grandkids), not to your other beneficiaries. Latin for 'by the branch.' Default in many states for intestate succession.",
+    category: "wealth",
+    examples: [
+      "You name three kids equally. One predeceases you, leaving two grandchildren: per stirpes splits that child's third equally between the two grandkids.",
+      "Per capita instead would split the same estate equally among the surviving beneficiaries — the grandchildren would get nothing.",
+    ],
+  },
+  {
+    id: "durable-poa",
+    term: "Durable Power of Attorney",
+    definition:
+      "Legal document granting a designated 'agent' authority to act on your behalf for financial decisions. 'Durable' means it survives your incapacity (regular POAs end at incapacity). Springing variants only activate upon disability certification. Revocable while you're competent.",
+    category: "wealth",
+    examples: [
+      "If you become incapacitated without a durable POA, your family typically must petition for guardianship/conservatorship — slow, expensive, public.",
+      "Pair with a Healthcare POA / Advance Directive for medical decisions — financial POA does not cover medical authority.",
+    ],
+  },
+  {
+    id: "tod-pod",
+    term: "TOD / POD",
+    definition:
+      "Transfer-on-Death and Payable-on-Death designations. Allow brokerage and bank accounts to bypass probate by passing directly to a named beneficiary at death. TOD for securities, POD for cash accounts. Override the will. Free and easy to set up.",
+    category: "wealth",
+    examples: [
+      "Brokerage account TOD'd to your spouse: zero probate, immediate transfer on death certificate presentation.",
+      "Pitfall: TOD overrides the will. Forgetting to update after divorce can leave assets to an ex-spouse.",
+    ],
+  },
+  {
+    id: "revocable-living-trust",
+    term: "Revocable Living Trust",
+    definition:
+      "A trust you create during your life, retain control over, and can amend or revoke at will. Assets titled to the trust avoid probate and remain private. Does NOT reduce estate or income taxes. Useful for real estate in multiple states, privacy, and incapacity planning.",
+    category: "wealth",
+    examples: [
+      "Most middle-class estates don't need a living trust — a will + beneficiary designations achieve the same goals at lower cost.",
+      "Common need: real estate in multiple states (avoids ancillary probate in each); wanting privacy (wills become public record at probate).",
+    ],
+  },
+  {
+    id: "intestate",
+    term: "Intestate Succession",
+    definition:
+      "State-defined default distribution of your assets when you die without a valid will. Each state has its own statute — typically prioritizes spouse and children, then parents, siblings, etc. Probate court appoints an administrator. Slower and less private than dying with a will.",
+    category: "wealth",
+    examples: [
+      "Common state default: spouse gets 50%, kids split 50%. Many people would prefer 100% to spouse and trust them to support kids.",
+      "Unmarried partners typically inherit nothing under intestate succession regardless of length of relationship.",
+    ],
+  },
+  {
+    id: "hifo-cost-basis",
+    term: "HIFO Cost Basis",
+    definition:
+      "Highest In, First Out — cost-basis lot-selection method that sells the highest-cost lot first to minimize realized gains. Great for tax-loss harvesting. Not available at all brokers; some offer 'Specific ID' or 'Lot Selection' which lets you achieve the same. Default at most brokers is FIFO (oldest lot first).",
+    category: "wealth",
+    examples: [
+      "Long position with 5 lots at $100, $120, $150, $180, $200; current price $180. HIFO sells the $200 lot first, realizing a $20 loss instead of an $80 gain.",
+      "Switch to specific-ID or HIFO before tax-loss harvesting — FIFO usually realizes gains exactly when you don't want them.",
+    ],
+  },
 ];

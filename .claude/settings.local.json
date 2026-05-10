@@ -115,7 +115,8 @@
       "Skill(schedule)",
       "Bash(git stash *)",
       "Bash(echo \"tsc=$?\")",
-      "Bash(search\" 2>&1)"
+      "Bash(search\" 2>&1)",
+      "Bash(scp *)"
     ]
   }
 }

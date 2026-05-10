@@ -8,6 +8,14 @@ export interface GuideProgressEntry {
   firstViewedAt: string;
   lastViewedAt: string;
   bookmarked: boolean;
+  /** Most recent quiz score (raw; null if never attempted). */
+  quizScore: number | null;
+  /** Total questions on most recent attempt. */
+  quizTotal: number | null;
+  /** Timestamp of the FIRST passing attempt; null if never passed. */
+  quizPassedAt: string | null;
+  /** Number of attempts. */
+  quizAttempts: number;
 }
 
 export interface ProgressSummary {
@@ -15,6 +23,8 @@ export interface ProgressSummary {
   totalGuides: number;
   readCount: number;
   bookmarkCount: number;
+  /** Number of guides where the user has passed the quiz. */
+  passedQuizCount: number;
 }
 
 const EMPTY: ProgressSummary = {
@@ -22,6 +32,7 @@ const EMPTY: ProgressSummary = {
   totalGuides: 0,
   readCount: 0,
   bookmarkCount: 0,
+  passedQuizCount: 0,
 };
 
 /**

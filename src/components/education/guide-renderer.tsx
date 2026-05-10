@@ -13,6 +13,9 @@ import { CollegeFundingCompareCalculator } from "@/components/education/calculat
 import { TermVsWholeLifeCalculator } from "@/components/education/calculators/term-vs-whole-life";
 import { TaxLossHarvestingCalculator } from "@/components/education/calculators/tax-loss-harvesting";
 import { EmployerMatchOptimizerCalculator } from "@/components/education/calculators/employer-match-optimizer";
+import { CompoundInterestCalculator } from "@/components/education/calculators/compound-interest";
+import { FireNumberCalculator } from "@/components/education/calculators/fire-number";
+import { QuarterlyTaxEstimatorCalculator } from "@/components/education/calculators/quarterly-tax-estimator";
 
 // ─── Callout ──────────────────────────────────────────────────────────────
 
@@ -220,6 +223,12 @@ function Block({ block }: { block: GuideBlock }) {
             return <TaxLossHarvestingCalculator />;
           case "employer-match-optimizer":
             return <EmployerMatchOptimizerCalculator />;
+          case "compound-interest":
+            return <CompoundInterestCalculator />;
+          case "fire-number":
+            return <FireNumberCalculator />;
+          case "quarterly-tax-estimator":
+            return <QuarterlyTaxEstimatorCalculator />;
           default:
             return null;
         }

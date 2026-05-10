@@ -70,7 +70,10 @@ export interface GuideCalculator {
     | "college-funding-compare"
     | "term-vs-whole-life"
     | "tax-loss-harvesting"
-    | "employer-match-optimizer";
+    | "employer-match-optimizer"
+    | "compound-interest"
+    | "fire-number"
+    | "quarterly-tax-estimator";
   caption?: string;
 }
 
@@ -89,6 +92,17 @@ export interface GuideSection {
   blocks: GuideBlock[];
 }
 
+export interface QuizQuestion {
+  /** The question prompt. */
+  question: string;
+  /** 4 options, exactly one correct. */
+  options: [string, string, string, string];
+  /** Index 0..3 of the correct option. */
+  correctIndex: 0 | 1 | 2 | 3;
+  /** Brief explanation shown after submit, regardless of correctness. */
+  explanation: string;
+}
+
 export interface Guide {
   slug: string;
   title: string;
@@ -103,6 +117,8 @@ export interface Guide {
   /** Quick-reference key facts shown above the body */
   keyFacts: { label: string; value: string }[];
   sections: GuideSection[];
+  /** Optional 5-question quiz; pass = >= 80% (4/5). */
+  quiz?: QuizQuestion[];
 }
 
 // ─── Topic metadata ───────────────────────────────────────────────────────
@@ -1539,6 +1555,1030 @@ const termLife: Guide = {
   ],
 };
 
+// ─── Trader Tax Status & §475(f) Mark-to-Market Election ────────────────
+
+const traderTaxMtm: Guide = {
+  slug: "trader-tax-status-and-mtm-election",
+  title: "Trader Tax Status & §475(f) Mark-to-Market Election",
+  topic: "tax",
+  difficulty: "advanced",
+  summary:
+    "Who qualifies, what the election actually does, deadlines and forms, and the irreversible commitment you're making.",
+  readingMinutes: 14,
+  lastReviewed: "2026-05-01",
+  keyFacts: [
+    { label: "Election Deadline", value: "April 15 of election year" },
+    { label: "Loss Limit Removed", value: "$3K → unlimited (ordinary)" },
+    { label: "Wash Sales", value: "Exempted under MTM" },
+    { label: "Treatment", value: "Ordinary income, not capital" },
+    { label: "Forms", value: "Form 4797 + Form 3115" },
+    { label: "Reversibility", value: "Difficult — formal IRS approval needed" },
+  ],
+  sections: [
+    {
+      id: "two-things",
+      heading: "Two separate things — don't confuse them",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "There are two distinct concepts here, and most online discussion blurs them. Understanding the difference is critical because they have very different effects on your taxes.",
+        },
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "Trader Tax Status (TTS) — IRS classification based on case law (Holsinger, Endicott). Lets you deduct trading expenses on Schedule C. Does NOT change how gains are taxed or eliminate wash sales.",
+            "§475(f) Mark-to-Market Election — A formal election that converts gains/losses to ordinary income, removes the $3K loss limit, and exempts you from wash-sale rules. Requires TTS to elect, but TTS does not require the election.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "You can have TTS without MTM",
+          body: "Many traders qualify for TTS (claim Schedule C expenses) while still treating their gains as capital and reporting on Form 8949. They keep wash-sale rules and the $3K loss limit but get expense deductions. MTM is the bigger commitment.",
+        },
+      ],
+    },
+    {
+      id: "qualifying-tts",
+      heading: "Qualifying for Trader Tax Status",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "There's no IRS form to apply — you self-declare on your tax return. But the IRS can challenge it, and case law has produced rough quantitative tests. The leading cases are Holsinger (2008) and Endicott (2013).",
+        },
+        {
+          type: "table",
+          caption: "Practitioner-consensus TTS thresholds (case-law based)",
+          headers: ["Factor", "Approximate Threshold", "Why It Matters"],
+          rows: [
+            [
+              "Trade frequency",
+              "4+ trades/day, 720+ trades/year",
+              "Demonstrates active business, not investing",
+            ],
+            [
+              "Trading days",
+              "75%+ of available trading days active",
+              "Continuity — sporadic trading fails",
+            ],
+            [
+              "Average holding period",
+              "Under 31 days; under 7 days for day-traders",
+              "Short-term focus signals trading vs. investing",
+            ],
+            [
+              "Hours per day",
+              "4+ hours typical",
+              "Shows business-like activity",
+            ],
+            [
+              "Income source",
+              "Trading is primary or material livelihood",
+              "Hobby traders generally fail",
+            ],
+            [
+              "Equipment & subscriptions",
+              "Multi-monitor, real-time data, charting tools",
+              "Indicia of a trade or business",
+            ],
+          ],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Part-time / W-2 day-job traders",
+          body: "Endicott had a full-time job and was denied TTS. The IRS argued his trading wasn't his primary livelihood. Part-time traders can still qualify but face higher scrutiny — more documentation, clearer separation between investment and trading accounts, demonstrable hours.",
+        },
+      ],
+    },
+    {
+      id: "what-mtm-does",
+      heading: "What the §475(f) MTM election actually does",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Converts trading gains and losses to ORDINARY income (no more capital-gain rates — both good and bad).",
+            "Removes the $3,000 capital loss limit. Big trading losses fully offset other income (W-2, business, etc.) in the year incurred.",
+            "Exempts trading positions from wash-sale rules — you can sell at a loss and rebuy the same security minutes later with no disallowance.",
+            "Year-end open positions are 'marked to market' — deemed sold at FMV on Dec 31 for tax purposes; basis resets Jan 1.",
+            "Trading reported on Form 4797 Part II, not Schedule D / Form 8949.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Why active traders elect MTM",
+          body: "If you're netting six-figure trading losses in a bad year, the $3K capital loss limit is brutal — you carry forward the rest for decades while still owing tax on your W-2 income. MTM lets a $200K trading loss offset $200K of other income immediately. For active traders, that asymmetric protection is the entire point.",
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "The other side: gains become ordinary",
+          body: "MTM also gives up long-term capital-gains rates. If you have positions held over a year (rare for active traders), those would have been taxed at 15-20% as LTCG; under MTM they're ordinary at up to 37%. For pure day-traders this rarely matters; for swing traders it can.",
+        },
+      ],
+    },
+    {
+      id: "deadline",
+      heading: "The election deadline (don't miss this)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "The election must be filed BY APRIL 15 OF THE TAX YEAR YOU WANT IT TO APPLY. This is the single most important date in the entire process and a common reason traders fail to elect when they meant to.",
+        },
+        {
+          type: "key-value",
+          caption: "Election timing",
+          pairs: [
+            { label: "Want MTM for 2026?", value: "File election by April 15, 2026 (with 2025 return)" },
+            { label: "Want MTM for 2027?", value: "File election by April 15, 2027 (with 2026 return)" },
+            { label: "Missed the deadline?", value: "Wait until next year — no late election" },
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "The election is filed as a written statement attached to your prior year's return (or the return for the year before the year you want it to apply). For first-time filers, it's attached to a timely-filed extension request (Form 4868) by April 15.",
+        },
+      ],
+    },
+    {
+      id: "how-to-elect",
+      heading: "How to actually file the election",
+      blocks: [
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "Draft an election statement: Internal Revenue Code §475(f), name, SSN, that you elect MTM for the trade or business of trading securities effective for the tax year [YEAR].",
+            "Attach the statement to your prior-year tax return OR to a timely-filed Form 4868 (extension request) by April 15.",
+            "In the year of election, file Form 3115 (Application for Change in Accounting Method) to formalize the §481(a) adjustment for the transition. Two copies: one with the return, one mailed to the IRS National Office.",
+            "Going forward, report all trading on Form 4797 Part II — ordinary income/loss.",
+            "On December 31 of each year, mark all open positions to fair market value. Basis resets January 1.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "Use a CPA who's done this",
+          body: "Form 3115 is non-trivial. The §481(a) adjustment (transition treatment of pre-election open positions) trips up DIY filers. The IRS scrutinizes botched 475 elections. Spend the few hundred dollars on a trader-tax CPA — Robert Green / Greentrader.com is the canonical resource.",
+        },
+      ],
+    },
+    {
+      id: "irreversibility",
+      heading: "The irreversibility problem",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Once you elect §475(f), revoking it requires formal IRS consent via another Form 3115 — and the IRS rarely grants it. Practical effect: the election is one-way. You're committing to ordinary-income treatment indefinitely, even if your trading style changes (e.g., you start swing trading and want LTCG treatment again).",
+        },
+        {
+          type: "paragraph",
+          text: "This is why the election shouldn't be made casually. Best candidates: full-time day-traders with predictable high-frequency activity. Worst candidates: traders who oscillate between active day-trading and longer-horizon investing.",
+        },
+      ],
+    },
+    {
+      id: "wash-sale-impact",
+      heading: "What MTM does to wash sales",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Under MTM, §1091 wash-sale rules don't apply to trading positions. This is a meaningful operational benefit, not just a tax-rate question.",
+        },
+        {
+          type: "list",
+          items: [
+            "Without MTM: scalping the same stock dozens of times can disallow most realized losses for the year, deferring them into the basis of follow-on purchases.",
+            "With MTM: every sale produces a clean ordinary loss or gain. Tax accounting matches your actual P&L exactly.",
+            "Year-end harvesting becomes irrelevant — losses are immediately usable.",
+            "Note: investment positions you hold OUTSIDE the trading business (long-term portfolio in a separate account) still follow regular rules. The election applies to your trading activity only.",
+          ],
+        },
+        {
+          type: "calculator",
+          calculator: "tax-loss-harvesting",
+          caption: "TLH still matters for non-trader portfolios — see how losses flow",
+        },
+      ],
+    },
+    {
+      id: "when-it-fits",
+      heading: "When MTM is the right call",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Full-time day-traders with consistent multi-year track records and clear TTS qualification.",
+            "Traders whose annual P&L volatility means a large loss year is plausible — the $3K limit removal is the biggest practical win.",
+            "Traders running into wash-sale paperwork hell on dozens of symbols.",
+            "Traders with no W-2 income to absorb capital losses against (so the $3K limit hurts more).",
+            "Traders setting up a trading entity (LLC/S-Corp) where the election is being applied entity-wide.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "when-it-doesnt",
+      heading: "When MTM is the WRONG call",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Hybrid traders/investors who hold long-term positions for LTCG treatment.",
+            "Traders whose income is primarily long-term gains (the rate spread is too costly).",
+            "Anyone who doesn't reliably meet TTS — the IRS can disallow both TTS and the election.",
+            "Traders with stable years and small P&L — the $3K limit doesn't bite, and MTM's complexity isn't worth it.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Halfway-house option",
+          body: "Many active traders adopt TTS (Schedule C deductions, no election), keep capital-gain treatment, and use careful position sizing to avoid catastrophic loss years. This captures the expense-deduction win without the irreversibility of MTM.",
+        },
+      ],
+    },
+    {
+      id: "state-coordination",
+      heading: "State tax coordination",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Most states automatically conform to the federal §475(f) election — but check your state's rules. A few states (notably California and New York) have nuances around how MTM-electing traders report. Some states deny ordinary loss treatment for state purposes even if federally allowed.",
+        },
+        {
+          type: "paragraph",
+          text: "If you live in a high-tax state (CA, NY, NJ) and trade actively, factor state coordination into the election decision. A trader-tax CPA familiar with your state is essential.",
+        },
+      ],
+    },
+    {
+      id: "resources",
+      heading: "Further resources",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "GreenTraderTax.com — Robert Green's blog and books are the canonical practitioner resource for trader tax issues.",
+            "IRS Publication 550 — Investment Income and Expenses (general framework).",
+            "IRS Topic 429 — Traders in Securities (official IRS positioning).",
+            "Holsinger v. Commissioner (2008), Endicott v. Commissioner (2013) — leading TTS cases.",
+            "Rev. Proc. 99-17 — procedures for making and revoking the §475(f) election.",
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+// ─── Wash Sale Deep Dive ─────────────────────────────────────────────────
+
+const washSaleDeepDive: Guide = {
+  slug: "wash-sale-rules-deep-dive",
+  title: "Wash Sale Rules: A Deep Dive",
+  topic: "tax",
+  difficulty: "intermediate",
+  summary:
+    "How §1091 actually works, the cross-account and cross-spouse traps, the IRA permanent-loss disaster, and ETF swap strategies that hold up.",
+  readingMinutes: 11,
+  lastReviewed: "2026-05-01",
+  keyFacts: [
+    { label: "Window", value: "30 days BEFORE and AFTER" },
+    { label: "Spouse Account", value: "Counted (§1091)" },
+    { label: "IRA Replacement", value: "Permanent loss (Rev. Rul. 2008-5)" },
+    { label: "Disallowed Loss", value: "Adds to replacement's basis" },
+    { label: "Holding Period", value: "Carries from original lot" },
+    { label: "MTM Exemption", value: "§475(f) electors exempt" },
+  ],
+  sections: [
+    {
+      id: "the-rule",
+      heading: "The rule itself",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Under IRC §1091, you cannot deduct a loss from selling a security if, within a 61-day window centered on the sale (30 days before, the sale day, 30 days after), you ALSO acquire a substantially identical security. The disallowed loss isn't gone forever — it adds to the basis of the replacement security and carries the original holding period.",
+        },
+        {
+          type: "key-value",
+          caption: "Mechanics example",
+          pairs: [
+            { label: "Buy 100 SPY @ $500", value: "Cost basis $50,000" },
+            { label: "Sell 100 SPY @ $450", value: "Realized $5,000 loss" },
+            { label: "Buy 100 SPY @ $460 within 30 days", value: "Wash sale" },
+            { label: "$5,000 loss disallowed", value: "Added to new lot's basis" },
+            { label: "New lot's adjusted basis", value: "$46,000 + $5,000 = $51,000" },
+            { label: "When you eventually sell that lot", value: "Loss is recovered then" },
+          ],
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "Wash sales defer, they don't kill (usually)",
+          body: "In a regular taxable account, a wash sale just delays the loss recognition until you sell the replacement. The exception is when the replacement is in an IRA — see below.",
+        },
+      ],
+    },
+    {
+      id: "the-window",
+      heading: "Understanding the 61-day window",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "The window cuts both directions from the sale date — many beginners miss this.",
+        },
+        {
+          type: "list",
+          items: [
+            "If you BUY shares on Dec 1, then SELL at a loss on Dec 15 — wash sale (purchase was within 30 days before the sale).",
+            "If you SELL at a loss on Dec 15, then BUY shares on Dec 28 — wash sale (purchase within 30 days after).",
+            "If you BUY on Nov 1, SELL at a loss on Dec 15, then BUY again on Jan 20 — wash sale on the November purchase, not the January one.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "December tax-loss harvesting trap",
+          body: "Selling for a loss on Dec 28 and buying back on Jan 5 of the new year is STILL a wash sale. The window doesn't reset at year-end. Wait at least 31 days, or buy a non-substantially-identical replacement.",
+        },
+      ],
+    },
+    {
+      id: "spouse-and-cross-account",
+      heading: "Spouse accounts and cross-account purchases (§1091 traps)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "§1091 explicitly aggregates purchases by you AND your spouse, AND across all your accounts (taxable, IRA, employer 401(k), DRIP plans). You can't escape a wash sale by buying the replacement in a different account — even one you didn't realize was buying.",
+        },
+        {
+          type: "list",
+          items: [
+            "Sell SPY at a loss in your taxable brokerage; spouse buys SPY in their account → wash sale.",
+            "Sell SPY at a loss; your DRIP automatically reinvests dividends back into SPY a week later → wash sale on the reinvested amount.",
+            "Sell SPY at a loss; your 401(k)'s S&P 500 fund makes a scheduled buy → arguably a wash sale (caselaw murky; conservative answer is yes).",
+            "Sell at a loss in your traditional IRA, replacement bought in your Roth IRA → wash sale within IRA, but rule rarely matters since IRA gains/losses aren't recognized anyway.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Coordinate with your spouse",
+          body: "Before harvesting losses, check what your spouse is buying that month. Auto-investment plans (DRIP, 401(k), HSA, IRA) are silent wash-sale generators if either spouse holds the same security elsewhere.",
+        },
+      ],
+    },
+    {
+      id: "ira-trap",
+      heading: "The IRA permanent-loss disaster (Rev. Rul. 2008-5)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Under IRS Revenue Ruling 2008-5, when the wash-sale replacement is bought in a tax-advantaged account (IRA, 401(k), HSA), the disallowed loss is PERMANENTLY LOST — there's no basis adjustment because the IRA doesn't track basis the same way.",
+        },
+        {
+          type: "key-value",
+          caption: "Worst-case example",
+          pairs: [
+            { label: "Sell 100 SPY at $50K loss in taxable account", value: "Dec 10" },
+            { label: "Replace with SPY in your Roth IRA", value: "Dec 15" },
+            { label: "Wash sale triggered", value: "$50K loss disallowed" },
+            { label: "Basis adjustment in IRA?", value: "NO — loss vanishes" },
+            { label: "Tax consequence", value: "$50K real loss, $0 deductible, no future recovery" },
+          ],
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "Audit-driven, manual catch only",
+          body: "Brokers don't track wash sales across your taxable + IRA accounts (they only see one account each). You're responsible for surfacing them on your tax return. The IRS catches these via 1099 reconciliation when they get suspicious. Better to never trigger them in the first place.",
+        },
+      ],
+    },
+    {
+      id: "substantially-identical",
+      heading: "What &apos;substantially identical&apos; actually means",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "There's no bright-line IRS guidance. Practitioner consensus has emerged around several patterns:",
+        },
+        {
+          type: "table",
+          caption: "Substantially-identical patterns",
+          headers: ["Comparison", "Substantially Identical?", "Reasoning"],
+          rows: [
+            [
+              "Same ticker (SPY → SPY)",
+              "Yes",
+              "Identical CUSIP",
+            ],
+            [
+              "S&P 500 ETFs (SPY → IVV → VOO → SPLG)",
+              "Yes (consensus)",
+              "Track same index, sometimes same prospectus",
+            ],
+            [
+              "S&P 500 → Total Market (SPY → VTI)",
+              "No (consensus)",
+              "Different index methodology, different holdings count",
+            ],
+            [
+              "S&P 500 → Equal-Weight S&P (SPY → RSP)",
+              "No (consensus)",
+              "Different weighting methodology",
+            ],
+            [
+              "S&P 500 → Russell 1000 (SPY → IWB)",
+              "No (consensus)",
+              "Different index provider, different holdings",
+            ],
+            [
+              "Stock and its options (AAPL → AAPL calls)",
+              "Yes (treasury reg)",
+              "Treas. Reg. §1.1233-1 — options with same underlying",
+            ],
+            [
+              "Different bonds same issuer",
+              "Sometimes",
+              "Same coupon + maturity = yes; different = no",
+            ],
+            [
+              "Active fund vs index fund (same category)",
+              "No",
+              "Different management, different holdings",
+            ],
+          ],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Conservative practice",
+          body: "Tax pros generally avoid swapping among the four big S&P 500 ETFs (SPY, IVV, VOO, SPLG) for harvesting because the IRS could plausibly call them substantially identical. Standard safe pattern: SPY → VTI (S&P 500 → total market) for harvesting, then back to SPY after 31 days if desired.",
+        },
+      ],
+    },
+    {
+      id: "etf-swap-pairs",
+      heading: "Reliable ETF swap pairs for harvesting",
+      blocks: [
+        {
+          type: "table",
+          caption: "Conservative swap pairs (different indexes / methodologies)",
+          headers: ["Asset Class", "Sell", "Replace With", "Then Optionally Swap Back"],
+          rows: [
+            [
+              "US Large Cap",
+              "SPY / IVV / VOO",
+              "VTI (Total Market) or RSP (Equal Weight)",
+              "After 31+ days",
+            ],
+            [
+              "US Total Market",
+              "VTI / ITOT",
+              "SCHB or IWV (Russell 3000)",
+              "After 31+ days",
+            ],
+            [
+              "International Developed",
+              "VEA / IEFA",
+              "SCHF or VXUS (broader)",
+              "After 31+ days",
+            ],
+            [
+              "Emerging Markets",
+              "VWO / IEMG",
+              "SCHE or SPEM",
+              "After 31+ days",
+            ],
+            [
+              "US Aggregate Bonds",
+              "BND / AGG",
+              "SCHZ or VCSH (different duration)",
+              "Often hold replacement",
+            ],
+            [
+              "Short-Term Treasuries",
+              "SHV / BIL",
+              "SHY (slightly longer duration)",
+              "After 31+ days",
+            ],
+          ],
+        },
+      ],
+    },
+    {
+      id: "operational",
+      heading: "Operational tips",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Turn off DRIP on positions where you may want to harvest losses.",
+            "Audit auto-investment programs (401(k), HSA, robo-advisors) — these silently generate wash sales.",
+            "Use HIFO or specific-ID lot selection at your broker; FIFO often realizes gains exactly when you don't want them.",
+            "Track wash sales monthly, not at year-end — easier to recover and avoid IRA traps.",
+            "If you elect §475(f) MTM (see Trader Tax Status guide), wash sales are exempted entirely. Big operational simplification.",
+            "Brokers report wash sales on Form 1099-B per account only — they cannot see across accounts. Cross-account tracking is YOUR responsibility.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "calculator-link",
+      heading: "Run the impact",
+      blocks: [
+        {
+          type: "calculator",
+          calculator: "tax-loss-harvesting",
+          caption: "See how losses flow against gains and ordinary income",
+        },
+      ],
+    },
+  ],
+};
+
+// ─── Quarterly Estimated Taxes for Traders ──────────────────────────────
+
+const quarterlyEstimatedTaxes: Guide = {
+  slug: "quarterly-estimated-taxes-for-traders",
+  title: "Quarterly Estimated Taxes for Traders",
+  topic: "tax",
+  difficulty: "intermediate",
+  summary:
+    "When you owe estimated payments, safe-harbor rules, how to actually pay, and the withholding hack that's often easier.",
+  readingMinutes: 9,
+  lastReviewed: "2026-05-01",
+  keyFacts: [
+    { label: "Required If", value: "Owe ≥ $1,000 at filing" },
+    { label: "Q1 Due", value: "April 15" },
+    { label: "Q2 Due", value: "June 15" },
+    { label: "Q3 Due", value: "September 15" },
+    { label: "Q4 Due", value: "January 15 (next year)" },
+    { label: "Penalty Rate", value: "Federal short-term rate + 3% annualized" },
+  ],
+  sections: [
+    {
+      id: "who-must-pay",
+      heading: "Who must pay quarterly estimates",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "If you expect to owe at least $1,000 in federal tax after subtracting withholding and refundable credits, you must pay quarterly estimates — or be subject to §6654 underpayment penalties. Most active traders without substantial W-2 withholding fall into this bucket.",
+        },
+        {
+          type: "list",
+          items: [
+            "Self-employed traders or anyone without W-2 income covering most of their tax.",
+            "W-2 employees who additionally generate substantial trading gains, dividend income, or 1099 income their withholding doesn't cover.",
+            "Retirees taking 401(k) / IRA withdrawals without elected withholding.",
+            "Anyone running a side business, rental, or partnership with positive net income.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "W-2 withholding usually beats estimates",
+          body: "If you have a day job, increasing your W-2 withholding is almost always easier than making quarterly estimates. Withholding is treated as paid evenly across the year regardless of when it was withheld, so a December bump can fix Q1-Q3 underpayment retroactively.",
+        },
+      ],
+    },
+    {
+      id: "safe-harbor",
+      heading: "The two safe-harbor paths",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "You avoid the §6654 underpayment penalty if you meet EITHER safe harbor by year-end. Pick whichever is easier:",
+        },
+        {
+          type: "table",
+          caption: "Safe-harbor options",
+          headers: ["Path", "Requirement", "When To Use"],
+          rows: [
+            [
+              "90% rule",
+              "Pay at least 90% of current-year total tax",
+              "If current year is much lower than last year",
+            ],
+            [
+              "100% / 110% prior-year rule",
+              "Pay 100% of prior-year tax (110% if prior AGI > $150K)",
+              "If current year is much HIGHER — pay last year's number, owe extra at filing without penalty",
+            ],
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Big trading year? Use prior-year safe harbor",
+          body: "If you tripled last year's income, you don't have to estimate the new (huge) tax bill. Pay 110% of last year's tax in even quarterly chunks; you can owe $200K extra at filing with zero penalty. The IRS just wants you to be reasonably current, not perfect.",
+        },
+      ],
+    },
+    {
+      id: "calculator-embed",
+      heading: "Calculate your safe-harbor target",
+      blocks: [
+        {
+          type: "calculator",
+          calculator: "quarterly-tax-estimator",
+          caption: "Estimate current-year tax and required Q4 payment",
+        },
+      ],
+    },
+    {
+      id: "penalty-math",
+      heading: "What the penalty actually costs",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "The §6654 penalty is approximately the federal short-term interest rate + 3 percentage points, annualized, on the underpayment for the period it was outstanding. As of early 2026 that's roughly 8% annualized.",
+        },
+        {
+          type: "key-value",
+          caption: "Example penalty calculation",
+          pairs: [
+            { label: "Q1 underpayment", value: "$5,000 missed by April 15" },
+            { label: "Made up at filing", value: "April 15 next year" },
+            { label: "Days outstanding", value: "365" },
+            { label: "Annualized rate", value: "~8%" },
+            { label: "Approximate penalty", value: "~$400" },
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "Penalties are not deductible. They're not punitive in the criminal sense — just an interest charge. For traders the calculation is on each quarter's shortfall, calculated independently, so a Q1 miss is more expensive than a Q4 miss of the same dollar amount.",
+        },
+      ],
+    },
+    {
+      id: "how-to-pay",
+      heading: "How to actually make the payment",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "EFTPS (Electronic Federal Tax Payment System): the IRS's free system. Free, scheduled, and reliable. One-time enrollment — DO IT NOW; the PIN comes by mail and takes a week.",
+            "IRS Direct Pay: web-based, no enrollment, free for individuals. Pay from a bank account directly. Easiest if you don't pay frequently.",
+            "Form 1040-ES voucher mailed with a check: works but slow and easy to misplace.",
+            "Credit/debit card via approved processors: works but charges 1.85–2.50% — bad value for tax payments unless you're chasing card rewards.",
+            "Withholding bump on W-2: easiest of all if you have a day job. File a new W-4 mid-year specifying additional withholding.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Set up EFTPS this week",
+          body: "EFTPS lets you schedule payments months in advance, see history, and avoid USPS issues. The mail-in PIN process takes ~10 days, so do the enrollment now — even if you don't make a payment for months. You'll thank yourself the first time the deadline sneaks up.",
+        },
+      ],
+    },
+    {
+      id: "deadlines",
+      heading: "Deadlines (don't miss them)",
+      blocks: [
+        {
+          type: "table",
+          headers: ["Quarter", "Income Period Covered", "Payment Due"],
+          rows: [
+            ["Q1", "Jan 1 – Mar 31", "April 15"],
+            ["Q2", "Apr 1 – May 31 (only 2 months)", "June 15"],
+            ["Q3", "Jun 1 – Aug 31", "September 15"],
+            ["Q4", "Sep 1 – Dec 31", "January 15 of next year"],
+          ],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Q2 is two months, not three",
+          body: "The IRS quarters are not equal. Q1 is 3 months, Q2 is 2 months (April-May), Q3 is 3 months (June-August), Q4 is 4 months. This trips up traders trying to compute &apos;earnings this quarter&apos; manually. The simpler approach: meet safe-harbor in equal quarterly amounts and ignore the timing irregularity.",
+        },
+      ],
+    },
+    {
+      id: "state-coordination",
+      heading: "State estimated taxes",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Most states with income tax also require estimated payments — separate from federal, separate due dates in some states, separate forms. Check your state's department of revenue site.",
+        },
+        {
+          type: "list",
+          items: [
+            "California: similar quarterly schedule, can use FTB Web Pay.",
+            "New York: similar schedule, IT-2105 form, can use NYS Online Services.",
+            "No-income-tax states (FL, TX, WA, NV, AK, SD, WY, TN, NH): no state estimates required.",
+            "Penalties at the state level vary — generally less harsh than federal but still worth avoiding.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "annualized-income-method",
+      heading: "Annualized Income Installment Method (advanced)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "If your trading income is highly seasonal — e.g., you make most of your money in Q4 — the standard equal-quarter assumption can overstate Q1-Q3 underpayment. Form 2210 Schedule AI lets you allocate income to the quarter actually earned.",
+        },
+        {
+          type: "paragraph",
+          text: "Trade-offs: more paperwork, but can substantially reduce penalty if your earnings cluster heavily in Q3-Q4. Most active traders skip this and just meet safe-harbor evenly; only worth the effort for genuinely lopsided years.",
+        },
+      ],
+    },
+    {
+      id: "operational",
+      heading: "Operational tips",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Set up EFTPS now, before you need it.",
+            "Calendar all four due dates with a 5-day buffer for payment scheduling.",
+            "Track YTD federal tax estimate monthly, not quarterly — gives you time to adjust.",
+            "If your trading volume is going up rapidly mid-year, increase quarterly estimates immediately rather than waiting for the safe-harbor calculation to catch up.",
+            "Keep a separate tax savings account funded automatically — pull from it for estimates so you're never scrambling for cash.",
+            "Don't conflate estimated tax payments with self-employment tax (different calculation, also paid via 1040-ES line items).",
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+// ─── Estate Planning Basics ──────────────────────────────────────────────
+
+const estatePlanningBasics: Guide = {
+  slug: "estate-planning-basics",
+  title: "Estate Planning Basics",
+  topic: "estate",
+  difficulty: "intermediate",
+  summary:
+    "Wills, beneficiary designations, the step-up trick, simple revocable trusts, and the four documents most adults actually need.",
+  readingMinutes: 12,
+  lastReviewed: "2026-05-01",
+  keyFacts: [
+    { label: "Federal Estate Tax Exemption", value: "~$13.9M / $27.8M MFJ (2026)" },
+    { label: "Step-Up in Basis", value: "Resets to FMV at death" },
+    { label: "Beneficiary Designations", value: "Override the will" },
+    { label: "Probate Bypass", value: "Trusts, TOD/POD, joint titling" },
+    { label: "Most People Need", value: "Will + designations + POAs" },
+    { label: "ILIT Lookback", value: "3 years" },
+  ],
+  sections: [
+    {
+      id: "the-four-docs",
+      heading: "The four documents most adults actually need",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Estate planning sounds intimidating, but for most people the core deliverable is four simple documents. You can have all of them in place inexpensively (~$300–800 with a local attorney, or under $200 via online services for straightforward situations).",
+        },
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "Last Will and Testament — names guardians for minor children, names an executor, and distributes assets not governed by other mechanisms.",
+            "Durable Power of Attorney (Financial) — designates someone to handle finances if you become incapacitated.",
+            "Healthcare Power of Attorney / Advance Directive — designates someone to make medical decisions and states your preferences (DNR, ventilation, etc.).",
+            "HIPAA Release — lets your designated agents access your medical records.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Most middle-class estates need ONLY these four",
+          body: "Trusts get marketed aggressively, but for the vast majority of people they're overkill. A will plus updated beneficiary designations on retirement accounts and life insurance handles 90% of cases.",
+        },
+      ],
+    },
+    {
+      id: "beneficiary-supremacy",
+      heading: "Beneficiary designations override your will",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "This is the single most-overlooked fact in estate planning. Retirement accounts (401(k), IRA, Roth IRA), life insurance, annuities, and TOD/POD-titled brokerage accounts pass directly to the named beneficiary at death — REGARDLESS of what your will says. Your will can leave 'everything to my spouse' but if your 401(k) still names your ex, the ex inherits the 401(k).",
+        },
+        {
+          type: "list",
+          items: [
+            "Update beneficiaries after every major life event: marriage, divorce, kid born, death of a beneficiary.",
+            "Most accounts allow primary AND contingent beneficiaries — use both. If your spouse predeceases you, contingent beneficiaries (kids, charity) take over without going through probate.",
+            "Naming 'estate' as beneficiary is usually a mistake — forces probate and may accelerate income taxation on inherited retirement accounts.",
+            "Beneficiary designations can specify per-stirpes (default in most contracts) or per-capita — be deliberate.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "Common error: ex-spouse on retirement plan",
+          body: "Following Kennedy v. DuPont (2009), employer plan beneficiary designations control even after divorce, even if state law would have revoked them. After every divorce: log into every account and update designations the same day.",
+        },
+      ],
+    },
+    {
+      id: "step-up-basis",
+      heading: "The step-up in basis (huge tax benefit)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "When someone dies owning appreciated assets (stocks, real estate, mutual funds), the cost basis 'steps up' to the fair market value at the date of death. Heirs can sell immediately with zero capital-gains tax on appreciation that occurred during the deceased's lifetime.",
+        },
+        {
+          type: "key-value",
+          caption: "Step-up example",
+          pairs: [
+            { label: "Parent buys stock 30 years ago", value: "$10,000 basis" },
+            { label: "Stock worth at parent's death", value: "$200,000" },
+            { label: "Embedded gain", value: "$190,000" },
+            { label: "Heir's new basis (stepped-up)", value: "$200,000" },
+            { label: "Heir sells for $205,000", value: "Owes tax on $5,000 (NOT $195,000)" },
+            { label: "Tax savings", value: "$28,500+ on this one position" },
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Strategic implication: don't sell appreciated assets late in life",
+          body: "Holding highly appreciated positions until death lets your heirs receive them with zero embedded tax liability. This is one reason elderly investors are reluctant to sell winners — and it's a defensible strategy if their estate is below the federal exemption.",
+        },
+        {
+          type: "paragraph",
+          text: "Note: step-up doesn't apply to retirement accounts. Inherited 401(k)s and traditional IRAs come with the deceased's full embedded tax liability. Roth IRAs come tax-free either way. Step-up is most powerful for taxable brokerage accounts and real estate.",
+        },
+      ],
+    },
+    {
+      id: "probate",
+      heading: "Probate — what it is and how to bypass it",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Probate is the court process of validating a will, paying creditors, and distributing assets. It's slow (6-18 months in most states), public (the will and inventory become public record), and costly (3-7% of estate value in attorney and court fees, depending on state).",
+        },
+        {
+          type: "paragraph",
+          text: "Several mechanisms bypass probate entirely:",
+        },
+        {
+          type: "table",
+          headers: ["Mechanism", "What It Does", "Cost"],
+          rows: [
+            [
+              "Beneficiary designations",
+              "Retirement, life insurance, annuities pass directly",
+              "Free",
+            ],
+            [
+              "TOD / POD",
+              "Brokerage and bank accounts pass directly",
+              "Free at most institutions",
+            ],
+            [
+              "Joint Tenancy with Right of Survivorship (JTWROS)",
+              "Real estate / accounts pass to surviving co-owner",
+              "Free, but loses partial step-up; ownership shared during life",
+            ],
+            [
+              "Revocable Living Trust",
+              "Assets titled to the trust pass per trust terms",
+              "$1,500–3,500 to set up; assets need re-titling",
+            ],
+            [
+              "Tenancy by the Entirety (married couples in some states)",
+              "Real estate passes automatically + creditor protection",
+              "Free in eligible states",
+            ],
+          ],
+        },
+      ],
+    },
+    {
+      id: "trusts",
+      heading: "When you might actually need a trust",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Revocable living trusts are sold aggressively — they sound sophisticated and let attorneys charge more. Real use cases are narrower:",
+        },
+        {
+          type: "list",
+          items: [
+            "Real estate in MULTIPLE states — avoids ancillary probate in each state.",
+            "Privacy concerns — wills become public record at probate; trust contents stay private.",
+            "Incapacity planning beyond a POA — trusts can specify management during disability without court intervention.",
+            "Large estates approaching the federal exemption ($13.9M / person in 2026, $27.8M for couples) — need trust planning to capture both spouses' exemptions and minimize estate tax.",
+            "Special-needs beneficiaries — special-needs trusts preserve eligibility for means-tested government benefits.",
+            "Spendthrift beneficiaries — trusts can control distribution timing for heirs who'd blow a lump sum.",
+            "Second marriages with children from prior relationships — provide for current spouse during life, then direct remainder to original kids.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Funding the trust matters",
+          body: "Setting up a revocable trust without re-titling assets to the trust is the most common error. Untitled assets still go through probate. Your attorney should walk you through funding (re-titling deeds, transferring brokerage accounts) — and you have to actually do it.",
+        },
+      ],
+    },
+    {
+      id: "ilit",
+      heading: "ILIT for high-net-worth with permanent insurance",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "If you have permanent life insurance AND a taxable estate (above ~$13.9M / individual), an Irrevocable Life Insurance Trust (ILIT) keeps the policy proceeds out of your estate while still letting them benefit your heirs.",
+        },
+        {
+          type: "paragraph",
+          text: "Mechanics: the trust owns the policy; you pay premiums via 'gifts' to the trust (using Crummey withdrawal rights to qualify for annual gift-tax exclusion); when you die, the trust receives the death benefit outside your estate.",
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Three-year lookback",
+          body: "Transferring an EXISTING policy to an ILIT pulls it back into your estate if you die within 3 years (§2035). To avoid: have the ILIT purchase a NEW policy from day one. Don't transfer existing policies into ILITs unless you have certainty of 3+ years.",
+        },
+      ],
+    },
+    {
+      id: "guardianship",
+      heading: "Guardianship for minor children",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "If you have minor children, designating a guardian in your will is non-negotiable. Without it, the courts decide — and the courts may not pick whom you'd have chosen. The choice is hard (split custody between extended family? best parents vs. closest geography?), but having ANY designation beats having none.",
+        },
+        {
+          type: "list",
+          items: [
+            "Discuss with the prospective guardian first — surprise designations are unfair to all parties.",
+            "Name backup guardians in case the primary is unavailable or declines.",
+            "Consider separating financial guardianship (manages money) from physical guardianship (raises kids) — the right person for one isn't always right for both.",
+            "Set up a testamentary trust in the will to manage assets for minors until they reach a chosen age (usually 25-30, not 18 — most 18-year-olds shouldn't get a lump sum).",
+          ],
+        },
+      ],
+    },
+    {
+      id: "common-mistakes",
+      heading: "Common mistakes",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Never updating beneficiary designations after divorce, marriage, or birth.",
+            "Naming 'my estate' as beneficiary on retirement accounts (forces probate, accelerates taxation).",
+            "Using JTWROS with adult children to avoid probate — exposes the asset to the child's creditors and divorce, and forfeits step-up basis.",
+            "Setting up a revocable trust and never re-titling assets into it.",
+            "Treating an inheritance pre-tax as if it's spendable — withhold for taxes first.",
+            "DIY-ing estate plans for blended families, business ownership, or estates over $5M — these need professional drafting.",
+            "Hiding documents in a safe deposit box that requires a court order to open.",
+            "Failing to communicate plans — heirs surprised by terms often dispute them.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "where-to-store",
+      heading: "Where to keep documents",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Original will: at home in a fire-safe, OR with the attorney who drafted it. Some states allow lodging it with the probate court for a small fee.",
+            "Copies: with executor + healthcare agent + adult children.",
+            "Digital copies: in encrypted password manager (1Password, Bitwarden) accessible to spouse / executor.",
+            "Asset inventory + account list: separate document, kept current. List of accounts, login locations, beneficiaries, and approximate values. The executor's life is much easier with this.",
+            "Crypto: explicit instructions for keys/seed phrases; otherwise often permanently lost at death.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "review-cadence",
+      heading: "Review cadence",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Major life events trigger immediate review: marriage, divorce, birth, adoption, death of beneficiary, move to a new state.",
+            "Otherwise: every 3-5 years — laws change, tax exemptions change, family situations evolve.",
+            "Don't wait for the &quot;perfect&quot; plan — having basic documents in place at 30 beats having sophisticated documents finally drafted at 65 after a heart attack.",
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 // ─── Registry ────────────────────────────────────────────────────────────
 
 export const GUIDES: Guide[] = [
@@ -1549,6 +2589,10 @@ export const GUIDES: Guide[] = [
   orderOfOperations,
   backdoorRoth,
   termLife,
+  traderTaxMtm,
+  washSaleDeepDive,
+  quarterlyEstimatedTaxes,
+  estatePlanningBasics,
 ];
 
 export function getGuideBySlug(slug: string): Guide | undefined {

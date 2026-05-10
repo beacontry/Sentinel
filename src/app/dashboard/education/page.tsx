@@ -10,6 +10,7 @@ import {
   Check,
   Clock,
   GraduationCap,
+  Trophy,
 } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
@@ -68,12 +69,19 @@ const DIFFICULTY_VARIANT: Record<
 
 export default function EducationPage() {
   const [hubTab, setHubTab] = useState("glossary");
-  const { progress, readCount } = useEducationProgress();
+  const { progress, readCount, passedQuizCount } = useEducationProgress();
 
   const progressBySlug = useMemo(() => {
-    const m = new Map<string, { viewed: boolean; bookmarked: boolean }>();
+    const m = new Map<
+      string,
+      { viewed: boolean; bookmarked: boolean; quizPassed: boolean }
+    >();
     for (const p of progress) {
-      m.set(p.slug, { viewed: p.viewCount > 0, bookmarked: p.bookmarked });
+      m.set(p.slug, {
+        viewed: p.viewCount > 0,
+        bookmarked: p.bookmarked,
+        quizPassed: p.quizPassedAt !== null,
+      });
     }
     return m;
   }, [progress]);
@@ -123,7 +131,7 @@ export default function EducationPage() {
           { label: "Glossary Terms", value: String(GLOSSARY_TERMS.length) },
           { label: "Guides", value: String(GUIDES.length) },
           { label: "Guides Read", value: `${readCount} / ${GUIDES.length}`, tone: readCount > 0 ? "brand" : "neutral" },
-          { label: "Active Section", value: hubTab.charAt(0).toUpperCase() + hubTab.slice(1), tone: "brand" },
+          { label: "Quizzes Passed", value: `${passedQuizCount} / ${GUIDES.length}`, tone: passedQuizCount > 0 ? "bullish" : "neutral" },
         ]}
       />
 
@@ -207,7 +215,15 @@ export default function EducationPage() {
                         <Badge variant={DIFFICULTY_VARIANT[guide.difficulty]}>
                           {guide.difficulty}
                         </Badge>
-                        {p?.bookmarked && (
+                        {p?.quizPassed && (
+                          <span
+                            className="inline-flex items-center gap-1 text-xs text-bullish"
+                            title="Quiz passed"
+                          >
+                            <Trophy className="h-3.5 w-3.5" />
+                          </span>
+                        )}
+                        {p?.bookmarked && !p?.quizPassed && (
                           <span
                             className="inline-flex items-center gap-1 text-xs text-accent"
                             title="Bookmarked"
@@ -215,7 +231,7 @@ export default function EducationPage() {
                             <BookmarkCheck className="h-3.5 w-3.5" />
                           </span>
                         )}
-                        {p?.viewed && !p?.bookmarked && (
+                        {p?.viewed && !p?.bookmarked && !p?.quizPassed && (
                           <span
                             className="inline-flex items-center gap-1 text-xs text-bullish"
                             title="Viewed"
