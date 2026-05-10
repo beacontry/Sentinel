@@ -220,6 +220,51 @@ Concurrent calls to `scanAllSymbols` share the in-flight scan promise — clicki
 
 The separate `/dashboard/tax` page generates IRS Form 8949 from engine fills only.
 
+The Tax Center is wired to the Education section:
+- **`PersonalizedTaxEducation`** ranks education links by user data (harvestable losses, trade count, estimated tax). Links adapt their blurbs to actual numbers.
+- **`TaxStatusCard`** lets the user self-attest Trader Tax Status and §475(f) MTM election year. Pure record-keeping — Sentinel does not file Form 3115 with the IRS or validate qualification. Stored in the `user_tax_status` table.
+
+## Education & Personal Finance
+
+`/dashboard/education` is a hub with three top-level tabs (**Glossary** | **Guides** | **Calculators**) plus dedicated routes for guides and spaced-repetition review.
+
+### Content (all typed TS data — adding is just an array push)
+
+| Layer | Count | Source |
+|---|---|---|
+| Long-form guides | 14 | `src/lib/education/guides-data.ts` |
+| Glossary terms | 95 (75 wealth + 20 trading) | `src/lib/glossary-data.ts` |
+| Quizzes | 70 questions across 14 guides | `src/lib/education/quizzes-data.ts` |
+| Calculators | 8 | `src/components/education/calculators/*.tsx` |
+
+Guides cover Roth IRA, HSA, 529, permanent life insurance, term life, order-of-operations, Backdoor/Mega Backdoor Roth, Trader Tax Status & §475(f) MTM, Wash Sale rules, Quarterly Estimated Taxes, Estate Planning, Roth Conversion Ladder, Asset Location, and Social Security Claiming. Calculators include Roth vs Traditional, College Funding Compare, Term vs Whole Life, Tax-Loss Harvesting, 401(k) Match Optimizer, Compound Interest, FIRE Number, and Quarterly Tax Estimator.
+
+### Cross-feature integration
+
+- **AI Chat RAG** — `gatherChatContext()` calls `searchGuides(query, 3)` (in-memory inverted index, TF-IDF + boosts) to inject relevant guide snippets into the system prompt. Chatbot answers cite guides at `/dashboard/education/guides/<slug>#<sectionId>`.
+- **Tax Center & Trader page** — see Tax Center section above. Trader page also hosts `TraderTaxCallouts` showing harvestable unrealized losses with MTM-aware messaging.
+- **Dashboard widgets** — `NetWorthWidget` (aggregates paper portfolios + live broker positions via `/api/portfolio/summary`) and `ContinueReadingWidget` (next education action) registered in `widget-registry.ts`.
+- **Glossary auto-link** — `GlossaryAwareText` wraps known glossary terms inline inside guide paragraphs/lists/callouts with hover-tooltip definitions.
+- **Print/PDF export** — `PrintButton` triggers `window.print()`; full `@media print` stylesheet in `globals.css` produces a clean PDF with the disclaimer prominently boxed.
+
+### Spaced-repetition review
+
+`/dashboard/education/review` runs an SM-2 algorithm over the glossary. Users grade recall on a 0–5 scale (Anki-style); intervals grow with success and reset on lapses. Ease factor stored as integer ×100 in `glossary_review_state`.
+
+### Database
+
+| Table | Purpose |
+|---|---|
+| `education_guide_views` | Per-user view count, bookmark, quiz state (`quiz_score`, `quiz_total`, `quiz_passed_at`, `quiz_attempts`). Slug is text — guides live in TS, no FK to a guides table. |
+| `glossary_review_state` | SM-2 per `(user_id, term_id)`. `ease_factor` x100 integer. |
+| `user_tax_status` | One row per user. Self-attested TTS + MTM election year + notes. |
+
+Migrations: `0013_education_guide_views.sql`, `0014_education_guide_quiz.sql`, `0015_education_review_and_tax_status.sql`. All idempotent.
+
+### Disclaimers
+
+`<EducationalDisclaimer />` (full + compact) is on every guide top + footer, every calculator, the hub page, and the guides index. Tagged with `data-print-disclaimer` for prominent rendering in PDFs. Tax-status modal carries an additional "self-attestation only" warning.
+
 ## Broker Integration
 
 Three brokers supported via unified `BrokerClient` interface:
@@ -241,7 +286,7 @@ All brokers support: `getAccount()`, `getPositions()`, `getOrders()`, `placeOrde
 | **Screener** | Screener | Scan market for setups, feeds signals to engine |
 | **Trader** | Live Trader, Strategies, Backtest, Optimizer, Alerts, Calculator | Execution and strategy management |
 | **Journal** | Journal, Performance, P&L Calendar, Tax Center | Trade review and tracking |
-| **Research** | News, Articles, Filings, Insights, Education | Market research |
+| **Research** | News, Articles, Filings, Insights, Education (14 guides + 8 calculators + 95 glossary terms + spaced-repetition review) | Market research and personal-finance education |
 | **Macro** | Calendar, Currency, Policy | Economic events and FX |
 | **Community** | Feed, Forum, Posts | Social trading |
 | **Admin** | Admin, Settings | User management and configuration |
