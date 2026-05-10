@@ -593,12 +593,20 @@ async function resolveBrokerClient(
     return null;
   }
 
-  const client = createBrokerClient(
-    conn.broker,
-    decrypt(conn.apiKey),
-    decrypt(conn.apiSecret),
-    conn.environment
-  );
+  let apiKey: string;
+  let apiSecret: string;
+  try {
+    apiKey = decrypt(conn.apiKey);
+    apiSecret = decrypt(conn.apiSecret);
+  } catch (err) {
+    log.error(
+      { err: err instanceof Error ? err.message : "unknown", connectionId: conn.id },
+      "Failed to decrypt broker credentials — ENCRYPTION_KEY rotated or row corrupted; user must re-add connection"
+    );
+    return null;
+  }
+
+  const client = createBrokerClient(conn.broker, apiKey, apiSecret, conn.environment);
 
   return { client, connectionId: conn.id };
 }
