@@ -262,6 +262,7 @@ export const AuditAction = {
   ENGINE_HALTED: "engine.halted",
   ENGINE_MODE_SWITCHED: "engine.mode_switched",
   ENGINE_LIVE_BLOCKED: "engine.live_blocked",
+  ENGINE_PDT_VULNERABLE: "engine.pdt_vulnerable",
   // Orders
   ORDER_PLACED: "order.placed",
   ORDER_REJECTED: "order.rejected",

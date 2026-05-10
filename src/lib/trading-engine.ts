@@ -34,8 +34,9 @@ import {
   traderStatus,
   traderDailyPnl,
   optimizationRuns,
+  userTaxStatus,
 } from "./db/schema";
-import { eq, and, desc, gt } from "drizzle-orm";
+import { eq, and, desc, gt, inArray, lt } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
 import { writeAudit, AuditAction } from "./audit";
 
@@ -100,6 +101,21 @@ export interface EngineState {
   consecutiveLosses: number;
   /** Sliding-window timestamps (ms) of recent order placements for rate limiting. */
   recentOrderTimestamps: number[];
+  // ── Phase 5 — personalized live-trading protections ──
+  /** True when user has self-attested §475(f) MTM election. Disables wash-sale tracking. */
+  mtmElected: boolean;
+  /** True when the engine should block re-entries on symbols with recent losing closes. Inverse of mtmElected. */
+  washSaleProtectionEnabled: boolean;
+  /** Symbols with a losing SELL or manual_close within the last 31 days. Refreshed each scan. */
+  washSaleBlockedSymbols: Set<string>;
+  /** Last refresh time for washSaleBlockedSymbols (ms epoch). */
+  washSaleLastRefreshAt: number;
+  /** True when account is below the PDT equity threshold ($25k) — re-evaluated every scan. */
+  pdtVulnerable: boolean;
+  /** Broker-reported day-trade count over the last 5 business days. Refreshed every scan. */
+  pdtDayTradeCount: number;
+  /** Broker-reported PDT flag — true once Alpaca has actually flagged the account. */
+  pdtPatternFlagged: boolean;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -133,6 +149,13 @@ function createDefaultEngine(): EngineState {
     dailyNotional: 0,
     consecutiveLosses: 0,
     recentOrderTimestamps: [],
+    mtmElected: false,
+    washSaleProtectionEnabled: true, // default conservative — disabled only when MTM elected
+    washSaleBlockedSymbols: new Set(),
+    washSaleLastRefreshAt: 0,
+    pdtVulnerable: false,
+    pdtDayTradeCount: 0,
+    pdtPatternFlagged: false,
   };
 }
 
@@ -401,6 +424,11 @@ const ORDER_RATE_LIMIT_PER_MIN = 30;             // hard cap orders/minute per e
 const ORDER_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const ACCOUNT_SWITCH_EQUITY_DROP_PCT = 0.5;       // halt if equity drops > 50% from boot snapshot
 const BROKER_FAILURE_HALT_THRESHOLD = 5;          // consecutive failures → engine halt
+// Phase 5: personalized live-trading protections
+const WASH_SALE_WINDOW_DAYS = 31;                 // calendar days; one day past IRS 30-day rule for safety
+const WASH_SALE_REFRESH_MS = 5 * 60 * 1000;       // re-query trader_trades at most every 5 min
+const PDT_EQUITY_THRESHOLD = 25_000;              // account < this AND not margin → PDT-vulnerable
+const PDT_DAYTRADE_BUY_BLOCK = 3;                 // block new buys when count reaches this (4 = flag)
 const BARS_FOR_ANALYSIS = 90;
 const MAX_ERROR_LOG = 50;
 
@@ -472,7 +500,9 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
 // ─── Live-Trading Safeguards (Phase 3) ───────────────────────────────────────
 
 /**
- * Gate every BUY before it's submitted. Checks:
+ * Gate every BUY before it's submitted. Checks (in order, cheapest first):
+ *  - wash-sale: symbol has a losing exit within 31 days AND MTM not elected
+ *  - PDT: account < $25k AND daytrade count ≥ 3 (one shy of the PDT-flag threshold)
  *  - daily notional cap (gross BUY notional vs equity)
  *  - global order rate limit (sliding 60s window, 30 orders max)
  *
@@ -481,10 +511,37 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
  */
 function canPlaceBuyOrder(
   engine: EngineState,
+  symbol: string,
   notionalUsd: number,
   riskLimits: RiskLimits,
   bootEquity: number
 ): { ok: true } | { ok: false; reason: string; details: Record<string, unknown> } {
+  // Wash-sale: block re-entry on symbols with a losing close in the last 31 days
+  if (engine.washSaleProtectionEnabled && engine.washSaleBlockedSymbols.has(symbol)) {
+    return {
+      ok: false,
+      reason: "wash_sale_protection",
+      details: {
+        symbol,
+        windowDays: WASH_SALE_WINDOW_DAYS,
+        mtmElected: engine.mtmElected,
+      },
+    };
+  }
+
+  // PDT: when account is vulnerable AND day-trade count is at the danger line
+  if (engine.pdtVulnerable && engine.pdtDayTradeCount >= PDT_DAYTRADE_BUY_BLOCK) {
+    return {
+      ok: false,
+      reason: "pdt_protection",
+      details: {
+        daytradeCount: engine.pdtDayTradeCount,
+        threshold: PDT_DAYTRADE_BUY_BLOCK,
+        patternFlagged: engine.pdtPatternFlagged,
+      },
+    };
+  }
+
   // Notional cap — only blocks BUYs (sells/exits always allowed)
   const notionalCap = bootEquity * riskLimits.maxDailyNotionalPct;
   if (notionalCap > 0 && engine.dailyNotional + notionalUsd > notionalCap) {
@@ -565,6 +622,116 @@ function tripSafeguardHalt(engine: EngineState, reason: string, details: Record<
 /** Live-trading is gated behind ALLOW_LIVE_TRADING=1. Returns true when live is permitted. */
 export function isLiveTradingAllowed(): boolean {
   return process.env.ALLOW_LIVE_TRADING === "1";
+}
+
+// ─── Phase 5: MTM / Wash-Sale / PDT helpers ───────────────────────────────────
+
+/**
+ * Read the user's self-attested §475(f) MTM election from user_tax_status.
+ * Returns false when the row doesn't exist or the field isn't set — the safer
+ * default (engine assumes wash-sale rule applies and enables protection).
+ */
+async function loadTaxStatus(userId: string): Promise<{ mtmElected: boolean }> {
+  try {
+    const [row] = await db
+      .select({ hasTraderTaxStatus: userTaxStatus.hasTraderTaxStatus })
+      .from(userTaxStatus)
+      .where(eq(userTaxStatus.userId, userId))
+      .limit(1);
+    return { mtmElected: row?.hasTraderTaxStatus === true };
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown", userId },
+      "Failed to load tax status — defaulting to MTM=false (wash-sale protection ON)"
+    );
+    return { mtmElected: false };
+  }
+}
+
+/**
+ * Query trader_trades for symbols with a losing exit in the last 31 days.
+ * "Exit" = action IN ('SELL', 'manual_close') AND pnl < 0.
+ *
+ * Single batched query — caller checks the resulting Set in O(1) per buy.
+ * Refreshed at most once per WASH_SALE_REFRESH_MS to avoid hitting the DB
+ * on every scan.
+ */
+async function refreshWashSaleBlockedSymbols(userId: string): Promise<Set<string>> {
+  const cutoff = new Date(Date.now() - WASH_SALE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  try {
+    const rows = await db
+      .selectDistinct({ symbol: traderTrades.symbol })
+      .from(traderTrades)
+      .where(
+        and(
+          eq(traderTrades.userId, userId),
+          inArray(traderTrades.action, ["SELL", "manual_close"]),
+          gt(traderTrades.createdAt, cutoff),
+          lt(traderTrades.pnl, 0)
+        )
+      );
+    return new Set(rows.map((r) => r.symbol));
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown", userId },
+      "Failed to refresh wash-sale blocked symbols — keeping previous set"
+    );
+    // Defensive: empty set on first-time failure rather than throwing
+    return new Set();
+  }
+}
+
+/** Refresh `engine.washSaleBlockedSymbols` if the cache is stale or empty. No-op when MTM elected. */
+async function maybeRefreshWashSaleSet(engine: EngineState): Promise<void> {
+  if (!engine.washSaleProtectionEnabled || !engine.userId) return;
+  const age = Date.now() - engine.washSaleLastRefreshAt;
+  if (engine.washSaleLastRefreshAt > 0 && age < WASH_SALE_REFRESH_MS) return;
+  engine.washSaleBlockedSymbols = await refreshWashSaleBlockedSymbols(engine.userId);
+  engine.washSaleLastRefreshAt = Date.now();
+}
+
+/** Pure PDT-vulnerability check from a broker account snapshot. */
+function isPdtVulnerable(account: BrokerAccount): boolean {
+  return account.equity < PDT_EQUITY_THRESHOLD;
+}
+
+/**
+ * Re-evaluate PDT state from a live account snapshot. Called every scan after
+ * a successful getAccount(). Detects transitions (was not vulnerable → became
+ * vulnerable) and emits one informational audit event per transition so the
+ * UI banner can flip without spamming the log.
+ */
+function evaluatePdtState(engine: EngineState, account: BrokerAccount): void {
+  const wasVulnerable = engine.pdtVulnerable;
+  const nowVulnerable = isPdtVulnerable(account);
+  engine.pdtVulnerable = nowVulnerable;
+  engine.pdtDayTradeCount = account.daytradeCount ?? 0;
+  engine.pdtPatternFlagged = account.patternDayTrader === true;
+
+  if (!wasVulnerable && nowVulnerable) {
+    log.warn(
+      {
+        userId: engine.userId,
+        equity: account.equity,
+        threshold: PDT_EQUITY_THRESHOLD,
+        daytradeCount: engine.pdtDayTradeCount,
+      },
+      "Engine entered PDT-vulnerable state (equity dropped below threshold mid-session)"
+    );
+    void writeAudit({
+      actor: { userId: engine.userId, email: null, role: null },
+      action: AuditAction.ENGINE_PDT_VULNERABLE,
+      resourceType: "engine",
+      resourceId: engine.userId,
+      metadata: {
+        equity: account.equity,
+        threshold: PDT_EQUITY_THRESHOLD,
+        daytradeCount: engine.pdtDayTradeCount,
+        patternFlagged: engine.pdtPatternFlagged,
+        mode: engine.mode,
+      },
+    });
+  }
 }
 
 /** Intraday strategy: tighter stops, faster exits */
@@ -1443,7 +1610,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
 
         const limitPrice = (quote.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = canPlaceBuyOrder(engine, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
         if (!gate.ok) {
           log.warn({ symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Tactical BUY blocked");
           void writeAudit({
@@ -1669,7 +1836,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const limitPrice = (price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = canPlaceBuyOrder(engine, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
         if (!gate.ok) {
           log.warn({ symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Smart BUY blocked");
           void writeAudit({
@@ -1787,7 +1954,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const limitPrice = (replacement.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = canPlaceBuyOrder(engine, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = canPlaceBuyOrder(engine, replacement.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
         if (!gate.ok) {
           log.warn({ symbol: replacement.symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Swap BUY blocked");
           void writeAudit({
@@ -1834,7 +2001,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = canPlaceBuyOrder(engine, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = canPlaceBuyOrder(engine, cand.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
         if (!gate.ok) {
           log.warn({ symbol: cand.symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Add BUY blocked");
           void writeAudit({
@@ -2042,9 +2209,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     }
   }
 
-  // Account-switch detection: compare current account to boot snapshot.
-  // Catches "wrong key pasted in", "production key pointed at sandbox", or
-  // a connection update mid-session pointing at a different account.
+  // Account-switch detection + PDT re-evaluation: compare current account to
+  // boot snapshot AND refresh live PDT state (equity / daytradeCount can change
+  // intra-session — see evaluatePdtState).
   if (engine.boot && engine.brokerConnected) {
     try {
       const currentAccount = await client.getAccount();
@@ -2071,10 +2238,17 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         });
         return;
       }
+      // Phase 5: refresh PDT state from live account (equity + daytradeCount).
+      // Transitions get one audit event each via evaluatePdtState.
+      evaluatePdtState(engine, currentAccount);
     } catch {
       // Account fetch failure — already counted as a broker failure above; don't double-count.
     }
   }
+
+  // Phase 5: refresh wash-sale-blocked symbol set if cache is stale.
+  // No-op when MTM is elected. One DB query per scan max (cached for 5 min).
+  await maybeRefreshWashSaleSet(engine);
 
   const positionMap = getPositionMap(engine?.userId ?? engineUserId);
 
@@ -2387,7 +2561,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         // Phase 3 safeguards: notional cap + rate limit gate before submission
         const buyNotional = qty * limitPrice;
         const bootEquity = engine.boot?.equity ?? equity;
-        const gate = canPlaceBuyOrder(engine, buyNotional, riskLimits, bootEquity);
+        const gate = canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity);
         if (!gate.ok) {
           log.warn(
             { symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details },
@@ -2599,6 +2773,17 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     return { ok: false, error: `Broker connection test failed: ${msg}` };
   }
 
+  // Phase 5: refuse to start intraday mode when the account is PDT-vulnerable
+  // (< $25k). Other modes still allowed — they're swing-oriented and rarely
+  // produce same-day round-trips. Mode refusal is a startup check only; once
+  // running, mid-session equity drops are handled per-scan by evaluatePdtState.
+  if (isPdtVulnerable(bootAccount) && mode === "intraday") {
+    return {
+      ok: false,
+      error: `Cannot start engine in intraday mode: account equity is $${bootAccount.equity.toFixed(2)} (< $${PDT_EQUITY_THRESHOLD.toLocaleString()}) and is subject to PDT rule. Choose conservative / moderate / optimized / tactical / tactical-smart, or raise equity above $${PDT_EQUITY_THRESHOLD.toLocaleString()}.`,
+    };
+  }
+
   // Replace old safety stops with wide disaster stops (engine manages tighter exits dynamically).
   // placeDisasterStops cancels existing orders and waits for shares to release before placing.
   try {
@@ -2625,6 +2810,21 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   engine.dailyNotional = 0;
   engine.consecutiveLosses = 0;
   engine.recentOrderTimestamps = [];
+
+  // Phase 5 — load tax status (drives wash-sale protection) and prime PDT state.
+  const { mtmElected } = await loadTaxStatus(userId);
+  engine.mtmElected = mtmElected;
+  engine.washSaleProtectionEnabled = !mtmElected;
+  engine.washSaleBlockedSymbols = new Set();
+  engine.washSaleLastRefreshAt = 0;
+  if (engine.washSaleProtectionEnabled) {
+    // Prime the set so the first scan's first buy is gated correctly.
+    engine.washSaleBlockedSymbols = await refreshWashSaleBlockedSymbols(userId);
+    engine.washSaleLastRefreshAt = Date.now();
+  }
+  engine.pdtVulnerable = isPdtVulnerable(bootAccount);
+  engine.pdtDayTradeCount = bootAccount.daytradeCount ?? 0;
+  engine.pdtPatternFlagged = bootAccount.patternDayTrader === true;
 
   // Clear halted flag in database so UI stops showing "Trading Halted"
   const today = getETDateString();
@@ -3269,6 +3469,13 @@ export function getEngineStatus(userId?: string): {
   dailyNotional: number;
   consecutiveLosses: number;
   liveTradingAllowed: boolean;
+  // Phase 5 — personalized live-trading protections
+  mtmElected: boolean;
+  washSaleProtectionEnabled: boolean;
+  washSaleBlockedCount: number;
+  pdtVulnerable: boolean;
+  pdtDayTradeCount: number;
+  pdtPatternFlagged: boolean;
 } {
   const engine = userId ? getEngine(userId) : getEngine();
   return {
@@ -3290,6 +3497,12 @@ export function getEngineStatus(userId?: string): {
     dailyNotional: engine.dailyNotional,
     consecutiveLosses: engine.consecutiveLosses,
     liveTradingAllowed: isLiveTradingAllowed(),
+    mtmElected: engine.mtmElected,
+    washSaleProtectionEnabled: engine.washSaleProtectionEnabled,
+    washSaleBlockedCount: engine.washSaleBlockedSymbols.size,
+    pdtVulnerable: engine.pdtVulnerable,
+    pdtDayTradeCount: engine.pdtDayTradeCount,
+    pdtPatternFlagged: engine.pdtPatternFlagged,
   };
 }
 

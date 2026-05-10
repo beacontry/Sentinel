@@ -169,6 +169,20 @@ interface EngineStatus {
   dailyNotional?: number;
   consecutiveLosses?: number;
   liveTradingAllowed?: boolean;
+  // Phase 5 — personalized live-trading protections
+  mtmElected?: boolean;
+  washSaleProtectionEnabled?: boolean;
+  washSaleBlockedCount?: number;
+  pdtVulnerable?: boolean;
+  pdtDayTradeCount?: number;
+  pdtPatternFlagged?: boolean;
+}
+
+interface TaxStatus {
+  hasTraderTaxStatus: boolean;
+  mtmElectionYear: number | null;
+  mtmDeclaredAt: string | null;
+  notes: string | null;
 }
 
 export default function TraderPage() {
@@ -189,6 +203,44 @@ export default function TraderPage() {
   });
   const [riskSaving, setRiskSaving] = useState(false);
   const [riskSaved, setRiskSaved] = useState(false);
+
+  // Phase 5 — MTM election state, loaded from /api/tax-status
+  const [taxStatus, setTaxStatus] = useState<TaxStatus | null>(null);
+  const [mtmSaving, setMtmSaving] = useState(false);
+
+  async function loadTaxStatus() {
+    try {
+      const res = await fetch("/api/tax-status");
+      if (res.ok) setTaxStatus(await res.json());
+    } catch {
+      /* non-critical */
+    }
+  }
+
+  async function toggleMtm(next: boolean) {
+    setMtmSaving(true);
+    try {
+      const res = await fetch("/api/tax-status", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hasTraderTaxStatus: next,
+          mtmElectionYear: next ? new Date().getFullYear() : null,
+          notes: taxStatus?.notes ?? null,
+        }),
+      });
+      if (res.ok) {
+        setTaxStatus(await res.json());
+        // Engine reads tax status at start; surface a hint that the change
+        // takes effect on the next engine start (or next scan for the
+        // wash-sale set refresh — capped at 5 min).
+      }
+    } catch {
+      /* non-critical */
+    } finally {
+      setMtmSaving(false);
+    }
+  }
 
   async function load() {
     try {
@@ -211,7 +263,7 @@ export default function TraderPage() {
   // Initial load
   useEffect(() => {
     load();
-   
+    loadTaxStatus();
   }, []);
 
   // Poll for updates
@@ -349,6 +401,87 @@ export default function TraderPage() {
           )}
         </div>
       )}
+
+      {/* PDT warning — engine is running on a sub-$25k account */}
+      {engine?.running && engine?.pdtVulnerable && (
+        <div
+          role="alert"
+          className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <div className="font-semibold text-warning">
+                PDT-vulnerable account
+                {engine.pdtPatternFlagged && " · flagged"}
+              </div>
+              <div className="text-text-secondary mt-0.5">
+                Equity is below $25,000. {engine.pdtDayTradeCount ?? 0} day-trade{(engine.pdtDayTradeCount ?? 0) === 1 ? "" : "s"} in the last 5 business days.
+                {(engine.pdtDayTradeCount ?? 0) >= 3 && " New BUYs are blocked until count rolls off."}
+              </div>
+              <div className="text-text-muted text-xs mt-1">
+                Intraday mode is refused at boot when vulnerable. Sells (exits) remain unrestricted.
+              </div>
+            </div>
+          </div>
+          <div className="text-[11px] font-mono text-text-muted whitespace-nowrap">
+            {engine.pdtDayTradeCount ?? 0} / 4 limit
+          </div>
+        </div>
+      )}
+
+      {/* Tax election (§475(f) MTM) + wash-sale protection status */}
+      <Card className="p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-text-primary">Tax election</div>
+            <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={taxStatus?.hasTraderTaxStatus === true}
+                onChange={(e) => toggleMtm(e.target.checked)}
+                disabled={mtmSaving}
+                className="h-4 w-4 rounded border-border accent-accent cursor-pointer"
+              />
+              <span className="text-sm text-text-secondary">
+                I have elected <span className="font-medium text-text-primary">§475(f) Mark-to-Market</span>
+                {taxStatus?.mtmElectionYear && (
+                  <span className="text-text-muted"> ({taxStatus.mtmElectionYear})</span>
+                )}
+              </span>
+            </label>
+            <div className="text-xs text-text-muted mt-1">
+              Self-attested. MTM traders are exempt from §1091 wash-sale rule. Election deadline was Apr 15 of the prior tax year — Sentinel does not file or validate.
+            </div>
+          </div>
+          <div className="sm:border-l sm:border-border sm:pl-4 sm:min-w-[200px]">
+            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+              Wash-sale protection
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              <span
+                className={`inline-block w-2 h-2 rounded-full ${
+                  engine?.washSaleProtectionEnabled ? "bg-bullish" : "bg-text-muted"
+                }`}
+              />
+              <span className="text-sm font-medium">
+                {engine?.washSaleProtectionEnabled ? "On" : "Off"}
+              </span>
+              {(engine?.washSaleBlockedCount ?? 0) > 0 && (
+                <span className="text-xs font-mono text-text-muted">
+                  {engine?.washSaleBlockedCount} symbol{(engine?.washSaleBlockedCount ?? 0) === 1 ? "" : "s"} blocked
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-text-muted mt-1">
+              {engine?.washSaleProtectionEnabled
+                ? "Re-entries blocked for 31 days after any losing close."
+                : "MTM elected — wash sale rule does not apply."}
+            </div>
+          </div>
+        </div>
+      </Card>
+
       {/* Engine controls — each user has their own independent engine */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
