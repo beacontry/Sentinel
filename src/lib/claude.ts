@@ -201,6 +201,21 @@ class LLMClient {
       }
     }
 
+    if (ctx.educationGuides && ctx.educationGuides.length > 0) {
+      parts.push("\n## Relevant Sentinel Education Guides");
+      parts.push(
+        "When you reference these in your answer, cite them as a Markdown link in this format:",
+      );
+      parts.push(
+        "[Guide Title — section](/dashboard/education/guides/<slug>#<sectionId>)",
+      );
+      for (const g of ctx.educationGuides) {
+        parts.push(
+          `- [${g.title} — ${g.sectionHeading}](/dashboard/education/guides/${g.slug}#${g.sectionId}): ${g.snippet}`,
+        );
+      }
+    }
+
     return parts.join("\n");
   }
 }

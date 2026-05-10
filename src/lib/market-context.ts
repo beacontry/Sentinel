@@ -4,6 +4,7 @@ import { desc, gte } from "drizzle-orm";
 import { getFinnhubClient } from "./finnhub";
 import { getMarketDataProvider } from "./market-data";
 import { getPopularSymbolsBySector, getSymbolSector } from "./sectors";
+import { searchGuides } from "./education/guide-search";
 import type { MarketContext, ChatContext } from "@/types";
 
 interface SymbolChange {
@@ -190,5 +191,23 @@ export async function gatherChatContext(question: string): Promise<ChatContext> 
     }
   }
 
-  return { news, recentDigest, topMovers, relevantSignals };
+  // Education guide retrieval — RAG step. Synchronous (in-memory index) so
+  // we don't need to await; failures here should not break chat.
+  let educationGuides: ChatContext["educationGuides"] = undefined;
+  try {
+    const hits = searchGuides(question, 3);
+    if (hits.length > 0) {
+      educationGuides = hits.map((h) => ({
+        slug: h.slug,
+        title: h.title,
+        sectionId: h.sectionId,
+        sectionHeading: h.sectionHeading,
+        snippet: h.snippet,
+      }));
+    }
+  } catch {
+    // Non-critical
+  }
+
+  return { news, recentDigest, topMovers, relevantSignals, educationGuides };
 }

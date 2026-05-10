@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -231,7 +232,17 @@ export default function TaxReportPage() {
         </div>
         <p className="text-xs text-text-muted mt-3 flex items-start gap-1.5">
           <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-          Tax estimates are approximate. Uses 2024 federal brackets. Consult a tax professional for filing.
+          <span>
+            Tax estimates are approximate. Uses 2024 federal brackets. Consult a
+            tax professional for filing. Owe estimated taxes?{" "}
+            <Link
+              href="/dashboard/education/guides/quarterly-estimated-taxes-for-traders"
+              className="text-accent hover:underline"
+            >
+              Read the quarterly estimates guide
+            </Link>
+            .
+          </span>
         </p>
       </Card>
 

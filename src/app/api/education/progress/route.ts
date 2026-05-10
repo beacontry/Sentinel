@@ -23,6 +23,7 @@ export async function GET() {
       totalGuides: GUIDES.length,
       readCount: 0,
       bookmarkCount: 0,
+      passedQuizCount: 0,
     });
   }
 
@@ -46,6 +47,10 @@ export async function GET() {
         firstViewedAt: r.firstViewedAt.toISOString(),
         lastViewedAt: r.lastViewedAt.toISOString(),
         bookmarked: r.bookmarked,
+        quizScore: r.quizScore,
+        quizTotal: r.quizTotal,
+        quizPassedAt: r.quizPassedAt?.toISOString() ?? null,
+        quizAttempts: r.quizAttempts,
       }));
 
     return NextResponse.json({
@@ -53,6 +58,7 @@ export async function GET() {
       totalGuides: GUIDES.length,
       readCount: progress.length,
       bookmarkCount: progress.filter((p) => p.bookmarked).length,
+      passedQuizCount: progress.filter((p) => p.quizPassedAt !== null).length,
     });
   } catch (err) {
     if (isStatementTimeout(err)) {

@@ -251,6 +251,14 @@ export interface ChatContext {
   recentDigest: string | null;
   topMovers: { symbol: string; changePct: number }[];
   relevantSignals: { symbol: string; signal: string; plainEnglish: string }[];
+  /** Top-K relevant Sentinel education guide snippets for the current query. */
+  educationGuides?: {
+    slug: string;
+    title: string;
+    sectionId: string;
+    sectionHeading: string;
+    snippet: string;
+  }[];
 }
 
 // ─── Trade Journal ──────────────────────────────────────────────────

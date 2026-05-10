@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
   Download,
   Leaf,
   Calendar,
+  BookOpen,
 } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
@@ -228,6 +230,13 @@ export default function TaxCenterPage() {
                 <p className="text-xs text-text-muted mt-1">
                   Net: {formatCurrency(summary.netGain)}
                 </p>
+                <Link
+                  href="/dashboard/education/guides/quarterly-estimated-taxes-for-traders"
+                  className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+                >
+                  <BookOpen className="w-3 h-3" />
+                  Owe quarterly?
+                </Link>
               </div>
               <div className="p-2 rounded-lg bg-warning/10">
                 <DollarSign className="w-4 h-4 text-warning" />
@@ -320,6 +329,13 @@ export default function TaxCenterPage() {
             <Leaf className="w-4 h-4 text-bullish" />
             Tax-Loss Harvesting Suggestions
           </CardTitle>
+          <Link
+            href="/dashboard/education/guides/wash-sale-rules-deep-dive"
+            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            Wash sale rules
+          </Link>
         </CardHeader>
 
         {harvestLoading ? (
@@ -329,10 +345,20 @@ export default function TaxCenterPage() {
             ))}
           </div>
         ) : suggestions.length === 0 ? (
-          <div className="py-8 text-center">
+          <div className="py-8 text-center space-y-3">
             <p className="text-sm text-text-muted">
               No harvesting opportunities found. Positions with unrealized
               losses will appear here.
+            </p>
+            <p className="text-xs text-text-muted">
+              Want to see how harvesting actually works?{" "}
+              <Link
+                href="/dashboard/education#calculators"
+                className="text-accent hover:underline inline-flex items-center gap-1"
+              >
+                <BookOpen className="w-3 h-3" />
+                Try the Tax-Loss Harvesting calculator
+              </Link>
             </p>
           </div>
         ) : (
@@ -378,10 +404,85 @@ export default function TaxCenterPage() {
             <p className="text-xs text-text-muted mt-2">
               * Tax-loss harvesting involves selling securities at a loss to offset
               capital gains. The wash-sale rule prevents repurchasing the same
-              security within 30 days. Consult a tax professional before acting.
+              security within 30 days.{" "}
+              <Link
+                href="/dashboard/education/guides/wash-sale-rules-deep-dive"
+                className="text-accent hover:underline"
+              >
+                Read the deep-dive on wash sales
+              </Link>{" "}
+              before acting — IRA replacements can permanently kill the loss.
             </p>
           </div>
         )}
+      </Card>
+
+      {/* Education footer — surface relevant guides */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-accent" />
+            Tax Education
+          </CardTitle>
+        </CardHeader>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Link
+            href="/dashboard/education/guides/wash-sale-rules-deep-dive"
+            className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
+          >
+            <BookOpen className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">
+                Wash Sale Rules: A Deep Dive
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Cross-account traps, IRA disasters, ETF swap pairs that work.
+              </p>
+            </div>
+          </Link>
+          <Link
+            href="/dashboard/education/guides/trader-tax-status-and-mtm-election"
+            className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
+          >
+            <BookOpen className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">
+                Trader Tax Status & §475(f) MTM
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Who qualifies, what it does, and the irreversible commitment.
+              </p>
+            </div>
+          </Link>
+          <Link
+            href="/dashboard/education/guides/quarterly-estimated-taxes-for-traders"
+            className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
+          >
+            <BookOpen className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">
+                Quarterly Estimated Taxes
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Safe harbors, deadlines, and the withholding hack.
+              </p>
+            </div>
+          </Link>
+          <Link
+            href="/dashboard/education#calculators"
+            className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
+          >
+            <DollarSign className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">
+                Tax-Loss Harvesting Calculator
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Estimate this year&apos;s tax savings from realized losses.
+              </p>
+            </div>
+          </Link>
+        </div>
       </Card>
     </div>
   );
