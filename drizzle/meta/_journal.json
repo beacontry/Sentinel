@@ -92,6 +92,13 @@
       "when": 1777500000000,
       "tag": "0012_engine_watchdog",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778100000000,
+      "tag": "0013_education_guide_views",
+      "breakpoints": true
     }
   ]
 }
