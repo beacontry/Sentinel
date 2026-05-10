@@ -165,6 +165,9 @@ export const updateRiskProfileSchema = z.object({
   maxPositionSize: z.number().int().min(1).max(10000).nullable().optional(),
   maxSingleTradeLoss: z.number().min(1).max(100000).nullable().optional(),
   maxExposureMultiplier: z.number().min(1).max(5).nullable().optional(),
+  // Live-trading safeguards: stored as fraction 0..1 (e.g. 0.5 = 50% of equity / day)
+  maxDailyNotionalPct: z.number().min(0).max(10).nullable().optional(),
+  maxConsecutiveLosses: z.number().int().min(1).max(50).nullable().optional(),
 });
 
 // ─── Forum ────────────────────────────────────────────────────────
