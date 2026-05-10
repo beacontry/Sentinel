@@ -9,6 +9,7 @@ import {
   deleteBrokerConnectionSchema,
 } from "@/lib/validators";
 import { encrypt } from "@/lib/crypto";
+import { writeAudit, AuditAction } from "@/lib/audit";
 
 import { createRouteLogger } from "@/lib/logger";
 
@@ -82,6 +83,19 @@ export async function POST(request: Request) {
         environment: parsed.data.environment,
       })
       .returning();
+
+    await writeAudit({
+      actor: { userId: auth.userId, email: auth.email, role: auth.role },
+      action: AuditAction.BROKER_CONNECTION_CREATED,
+      resourceType: "broker_connection",
+      resourceId: connection.id,
+      metadata: {
+        broker: connection.broker,
+        environment: connection.environment,
+        label: connection.label,
+      },
+      request,
+    });
 
     return NextResponse.json(
       {
@@ -160,6 +174,23 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    // Track which fields changed; never log raw secrets, only that they rotated.
+    const changedFields = Object.keys(updates).filter((k) => k !== "updatedAt");
+    await writeAudit({
+      actor: { userId: auth.userId, email: auth.email, role: auth.role },
+      action: AuditAction.BROKER_CONNECTION_UPDATED,
+      resourceType: "broker_connection",
+      resourceId: updated.id,
+      metadata: {
+        broker: updated.broker,
+        environment: updated.environment,
+        changedFields,
+        rotatedSecrets:
+          changedFields.includes("apiKey") || changedFields.includes("apiSecret"),
+      },
+      request,
+    });
+
     return NextResponse.json({
       connection: {
         id: updated.id,
@@ -211,6 +242,15 @@ export async function DELETE(request: Request) {
     if (!deleted) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
+
+    await writeAudit({
+      actor: { userId: auth.userId, email: auth.email, role: auth.role },
+      action: AuditAction.BROKER_CONNECTION_DELETED,
+      resourceType: "broker_connection",
+      resourceId: deleted.id,
+      metadata: { broker: deleted.broker, environment: deleted.environment },
+      request,
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

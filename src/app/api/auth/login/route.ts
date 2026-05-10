@@ -4,6 +4,7 @@ import { users } from "@/lib/db/schema";
 import { loginSchema } from "@/lib/validators";
 import { verifyPassword, createToken, setSessionCookie } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
+import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
 import { eq } from "drizzle-orm";
 
@@ -39,6 +40,12 @@ export async function POST(request: Request) {
       .limit(1);
 
     if (!user) {
+      await writeAudit({
+        actor: { userId: null, email },
+        action: AuditAction.AUTH_LOGIN_FAILED,
+        metadata: { email, reason: "user_not_found" },
+        request,
+      });
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
@@ -47,6 +54,12 @@ export async function POST(request: Request) {
 
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
+      await writeAudit({
+        actor: { userId: user.id, email: user.email, role: user.role },
+        action: AuditAction.AUTH_LOGIN_FAILED,
+        metadata: { email: user.email, reason: "wrong_password" },
+        request,
+      });
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
@@ -58,6 +71,13 @@ export async function POST(request: Request) {
       email: user.email,
       name: user.name,
       role: user.role as "admin" | "user",
+    });
+
+    await writeAudit({
+      actor: { userId: user.id, email: user.email, role: user.role },
+      action: AuditAction.AUTH_LOGIN_SUCCESS,
+      metadata: { email: user.email },
+      request,
     });
 
     const cookie = setSessionCookie(token);

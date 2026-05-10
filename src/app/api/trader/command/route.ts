@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
+import { writeAudit, AuditAction } from "@/lib/audit";
 import { rateLimit } from "@/lib/rate-limiter";
 import { z } from "zod";
 
@@ -92,6 +93,23 @@ export async function POST(request: NextRequest) {
             results.push({ symbol: pos.symbol, qty: pos.qty, status: "sold", pnl: realizedPnl });
             log.info({ symbol: pos.symbol, qty: pos.qty, pnl: realizedPnl }, "Position closed via command");
 
+            await writeAudit({
+              actor: { userId: auth.userId, email: auth.email, role: auth.role },
+              action: AuditAction.ORDER_PLACED,
+              resourceType: "order",
+              metadata: {
+                symbol: pos.symbol,
+                side: "sell",
+                qty: pos.qty,
+                type: "market",
+                pnl: realizedPnl,
+                broker: conn.broker,
+                environment: conn.environment,
+                source: command === "flatten" && symbol ? "manual_flatten_one" : "manual_flatten_all",
+              },
+              request,
+            });
+
             // Record trade in DB
             try {
               await db.insert(traderTrades).values({
@@ -127,6 +145,19 @@ export async function POST(request: NextRequest) {
             const msg = err instanceof Error ? err.message : "unknown";
             results.push({ symbol: pos.symbol, qty: pos.qty, status: `failed: ${msg}` });
             log.error({ symbol: pos.symbol, err: msg }, "Failed to close position");
+            await writeAudit({
+              actor: { userId: auth.userId, email: auth.email, role: auth.role },
+              action: AuditAction.ORDER_REJECTED,
+              resourceType: "order",
+              metadata: {
+                symbol: pos.symbol,
+                side: "sell",
+                qty: pos.qty,
+                error: msg.slice(0, 200),
+                source: "manual_flatten",
+              },
+              request,
+            });
           }
         }
 

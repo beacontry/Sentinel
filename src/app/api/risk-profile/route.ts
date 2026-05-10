@@ -3,6 +3,7 @@ import { getSession, requireAuthWithCsrf } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { userRiskProfiles } from "@/lib/db/schema";
 import { updateRiskProfileSchema } from "@/lib/validators";
+import { writeAudit, AuditAction } from "@/lib/audit";
 import { eq } from "drizzle-orm";
 
 export async function GET() {
@@ -62,7 +63,22 @@ export async function PATCH(request: NextRequest) {
       .insert(userRiskProfiles)
       .values({ userId: auth.userId, ...parsed.data })
       .returning();
+    await writeAudit({
+      actor: { userId: auth.userId, email: auth.email, role: auth.role },
+      action: AuditAction.RISK_PROFILE_UPDATED,
+      resourceType: "risk_profile",
+      resourceId: auth.userId,
+      metadata: { created: true, fields: parsed.data },
+      request,
+    });
     return NextResponse.json({ profile: created });
+  }
+
+  // Diff: only record fields that actually changed
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  for (const [key, value] of Object.entries(parsed.data)) {
+    const prev = (existing as unknown as Record<string, unknown>)[key];
+    if (prev !== value) changes[key] = { from: prev ?? null, to: value ?? null };
   }
 
   const [updated] = await db
@@ -70,6 +86,17 @@ export async function PATCH(request: NextRequest) {
     .set({ ...parsed.data, updatedAt: new Date() })
     .where(eq(userRiskProfiles.userId, auth.userId))
     .returning();
+
+  if (Object.keys(changes).length > 0) {
+    await writeAudit({
+      actor: { userId: auth.userId, email: auth.email, role: auth.role },
+      action: AuditAction.RISK_PROFILE_UPDATED,
+      resourceType: "risk_profile",
+      resourceId: auth.userId,
+      metadata: { changes },
+      request,
+    });
+  }
 
   return NextResponse.json({ profile: updated });
 }

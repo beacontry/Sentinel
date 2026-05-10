@@ -7,6 +7,7 @@ import {
   getEngineStatus,
 } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
+import { writeAudit, AuditAction } from "@/lib/audit";
 import { z } from "zod";
 
 const log = createRouteLogger("trader-engine-api");
@@ -59,15 +60,33 @@ export async function POST(request: NextRequest) {
       case "switch": {
         log.info({ userId: auth.userId, mode }, "Engine mode switch requested");
         const status = getEngineStatus(auth.userId);
+        const previousMode = status.mode;
         if (status.running) {
           await stopEngine(auth.userId);
         }
         const result = await startEngine(auth.userId, mode);
         if (!result.ok) {
+          await writeAudit({
+            actor: { userId: auth.userId, email: auth.email, role: auth.role },
+            action: AuditAction.ENGINE_MODE_SWITCHED,
+            resourceType: "engine",
+            resourceId: auth.userId,
+            metadata: { ok: false, from: previousMode, to: mode, error: result.error },
+            request,
+          });
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
+        const newStatus = getEngineStatus(auth.userId);
+        await writeAudit({
+          actor: { userId: auth.userId, email: auth.email, role: auth.role },
+          action: AuditAction.ENGINE_MODE_SWITCHED,
+          resourceType: "engine",
+          resourceId: auth.userId,
+          metadata: { ok: true, from: previousMode, to: mode },
+          request,
+        });
         return NextResponse.json({
-          data: { message: `Engine switched to ${mode}`, ...getEngineStatus(auth.userId) },
+          data: { message: `Engine switched to ${mode}`, ...newStatus },
         });
       }
 
@@ -75,10 +94,27 @@ export async function POST(request: NextRequest) {
         log.info({ userId: auth.userId, mode }, "Engine start requested");
         const result = await startEngine(auth.userId, mode);
         if (!result.ok) {
+          await writeAudit({
+            actor: { userId: auth.userId, email: auth.email, role: auth.role },
+            action: AuditAction.ENGINE_STARTED,
+            resourceType: "engine",
+            resourceId: auth.userId,
+            metadata: { ok: false, mode, error: result.error },
+            request,
+          });
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
+        const newStatus = getEngineStatus(auth.userId);
+        await writeAudit({
+          actor: { userId: auth.userId, email: auth.email, role: auth.role },
+          action: AuditAction.ENGINE_STARTED,
+          resourceType: "engine",
+          resourceId: auth.userId,
+          metadata: { ok: true, mode },
+          request,
+        });
         return NextResponse.json({
-          data: { message: "Trading engine started", ...getEngineStatus(auth.userId) },
+          data: { message: "Trading engine started", ...newStatus },
         });
       }
 
@@ -88,6 +124,14 @@ export async function POST(request: NextRequest) {
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
+        await writeAudit({
+          actor: { userId: auth.userId, email: auth.email, role: auth.role },
+          action: AuditAction.ENGINE_STOPPED,
+          resourceType: "engine",
+          resourceId: auth.userId,
+          metadata: { reason: "user_requested" },
+          request,
+        });
         return NextResponse.json({
           data: { message: "Trading engine stopped", ...getEngineStatus(auth.userId) },
         });
@@ -99,6 +143,14 @@ export async function POST(request: NextRequest) {
         if (!result.ok) {
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
+        await writeAudit({
+          actor: { userId: auth.userId, email: auth.email, role: auth.role },
+          action: AuditAction.ENGINE_HALTED,
+          resourceType: "engine",
+          resourceId: auth.userId,
+          metadata: { reason: "user_requested_flatten_all" },
+          request,
+        });
         return NextResponse.json({
           data: {
             message: "Trading engine halted — all positions closed",

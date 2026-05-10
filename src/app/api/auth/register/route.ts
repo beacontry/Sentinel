@@ -4,6 +4,7 @@ import { users, invites } from "@/lib/db/schema";
 import { registerSchema } from "@/lib/validators";
 import { hashPassword, createToken, setSessionCookie } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
+import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
 import { eq, and, gt } from "drizzle-orm";
 
@@ -104,6 +105,23 @@ export async function POST(request: Request) {
       .update(invites)
       .set({ used: true, usedAt: new Date() })
       .where(eq(invites.id, invite.id));
+
+    await writeAudit({
+      actor: { userId: user.id, email: user.email, role: user.role },
+      action: AuditAction.AUTH_REGISTERED,
+      resourceType: "user",
+      resourceId: user.id,
+      metadata: { email: user.email, inviteId: invite.id },
+      request,
+    });
+    await writeAudit({
+      actor: { userId: user.id, email: user.email, role: user.role },
+      action: AuditAction.INVITE_CONSUMED,
+      resourceType: "invite",
+      resourceId: invite.id,
+      metadata: { email: user.email },
+      request,
+    });
 
     const jwtToken = await createToken({
       userId: user.id,
