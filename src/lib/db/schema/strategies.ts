@@ -55,6 +55,9 @@ export const userRiskProfiles = pgTable("user_risk_profiles", {
   maxPositionSize: integer("max_position_size"),
   maxSingleTradeLoss: real("max_single_trade_loss"),
   maxExposureMultiplier: real("max_exposure_multiplier"),
+  // Live-trading safeguards (Phase 3)
+  maxDailyNotionalPct: real("max_daily_notional_pct"), // fraction (0.5 = 50% of equity)
+  maxConsecutiveLosses: integer("max_consecutive_losses"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

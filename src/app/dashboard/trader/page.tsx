@@ -162,6 +162,13 @@ interface EngineStatus {
   dailyLoss: number;
   errors: string[];
   isOwner?: boolean;
+  // Phase 3 — live-trading safeguards
+  environment?: "paper" | "live" | null;
+  bootEquity?: number | null;
+  bootAccountNumber?: string | null;
+  dailyNotional?: number;
+  consecutiveLosses?: number;
+  liveTradingAllowed?: boolean;
 }
 
 export default function TraderPage() {
@@ -316,6 +323,32 @@ export default function TraderPage() {
           { label: "Signals", value: signals.length },
         ]}
       />
+      {/* LIVE banner — only when engine is actually running against a live broker */}
+      {engine?.running && engine?.environment === "live" && (
+        <div
+          role="alert"
+          className="rounded-xl border border-bearish/40 bg-bearish/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 rounded-full bg-bearish/20 border border-bearish/40 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-bearish">
+              <span className="inline-block w-2 h-2 rounded-full bg-bearish animate-pulse" />
+              Live
+            </div>
+            <div className="text-sm text-text-primary">
+              <span className="font-semibold">Real money is at risk.</span>
+              <span className="text-text-secondary">
+                {" "}
+                Engine is placing orders against your live broker account.
+              </span>
+            </div>
+          </div>
+          {engine.bootAccountNumber && (
+            <div className="text-[11px] font-mono text-text-muted">
+              acct ••••{engine.bootAccountNumber.slice(-4)}
+            </div>
+          )}
+        </div>
+      )}
       {/* Engine controls — each user has their own independent engine */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -376,12 +409,22 @@ export default function TraderPage() {
             <Badge variant={engine.running ? "bullish" : engine.halted ? "bearish" : "neutral"}>
               {engine.running ? `Running (${engine.mode ?? "swing"})` : engine.halted ? "Halted" : "Stopped"}
             </Badge>
+            {engine.environment && (
+              <Badge variant={engine.environment === "live" ? "bearish" : "neutral"}>
+                {engine.environment.toUpperCase()}
+              </Badge>
+            )}
             {engine.scanCount > 0 && <span className="font-mono">{engine.scanCount} scans</span>}
             {engine.lastScanAt && <span>Last: {timeAgo(engine.lastScanAt)}</span>}
             {engine.positionCount > 0 && <span className="font-mono">{engine.positionCount} positions</span>}
             {(engine.dailyLoss ?? 0) !== 0 && (
               <span className={(engine.dailyLoss ?? 0) < 0 ? "text-bearish" : "text-bullish"}>
                 Day: ${(engine.dailyLoss ?? 0).toFixed(0)}
+              </span>
+            )}
+            {(engine.consecutiveLosses ?? 0) > 0 && (
+              <span className="font-mono text-warning" title="Consecutive losing trades">
+                {engine.consecutiveLosses}L
               </span>
             )}
           </div>

@@ -37,6 +37,7 @@ import {
 } from "./db/schema";
 import { eq, and, desc, gt } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
+import { writeAudit, AuditAction } from "./audit";
 
 const log = createRouteLogger("trading-engine");
 
@@ -88,6 +89,17 @@ export interface EngineState {
   // that piggybacked on externalSignals (which got cleaned up at 30 min,
   // breaking the intended 150-min window).
   cooldowns: Map<string, number>;
+  // ── Live-trading safeguards (Phase 3) ──
+  /** Broker environment for the active connection: "paper" or "live". Captured at startEngine(). */
+  environment: "paper" | "live" | null;
+  /** Snapshot of equity + accountNumber at startEngine() — used to detect mid-session account switches. */
+  boot: { equity: number; accountNumber: string | null } | null;
+  /** Sum of gross BUY notional placed today (USD). Resets in lockstep with dailyLoss/dailyLossDate. */
+  dailyNotional: number;
+  /** Number of consecutive losing trades (resets on any winner). */
+  consecutiveLosses: number;
+  /** Sliding-window timestamps (ms) of recent order placements for rate limiting. */
+  recentOrderTimestamps: number[];
 }
 
 const g = globalThis as typeof globalThis & {
@@ -116,6 +128,11 @@ function createDefaultEngine(): EngineState {
     consecutiveBrokerFailures: 0,
     pendingExits: new Set(),
     cooldowns: new Map(),
+    environment: null,
+    boot: null,
+    dailyNotional: 0,
+    consecutiveLosses: 0,
+    recentOrderTimestamps: [],
   };
 }
 
@@ -378,6 +395,12 @@ async function passesSmartFilters(symbol: string, bars: Bar[]): Promise<{ allowe
 const DEFAULT_MAX_POSITIONS = 16;
 const DEFAULT_POSITION_PCT = 0.15;
 const DEFAULT_DAILY_LOSS_PCT = 0.02;
+const DEFAULT_MAX_DAILY_NOTIONAL_PCT = 1.0;       // 100% of equity / day
+const DEFAULT_MAX_CONSECUTIVE_LOSSES = 5;
+const ORDER_RATE_LIMIT_PER_MIN = 30;             // hard cap orders/minute per engine
+const ORDER_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const ACCOUNT_SWITCH_EQUITY_DROP_PCT = 0.5;       // halt if equity drops > 50% from boot snapshot
+const BROKER_FAILURE_HALT_THRESHOLD = 5;          // consecutive failures → engine halt
 const BARS_FOR_ANALYSIS = 90;
 const MAX_ERROR_LOG = 50;
 
@@ -387,6 +410,8 @@ interface RiskLimits {
   dailyLossPct: number;
   maxPositionSize: number;
   maxExposure: number;
+  maxDailyNotionalPct: number;
+  maxConsecutiveLosses: number;
 }
 
 async function loadRiskLimits(userId: string): Promise<RiskLimits> {
@@ -396,6 +421,8 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
     dailyLossPct: DEFAULT_DAILY_LOSS_PCT,
     maxPositionSize: 100,
     maxExposure: 0, // 0 = use account equity as cap (set below)
+    maxDailyNotionalPct: DEFAULT_MAX_DAILY_NOTIONAL_PCT,
+    maxConsecutiveLosses: DEFAULT_MAX_CONSECUTIVE_LOSSES,
   };
 
   try {
@@ -411,6 +438,10 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
       const maxPositions = profile.maxPositionPct != null ? Math.floor(100 / profile.maxPositionPct) : defaults.maxPositions;
       const dailyLossPct = profile.maxDailyLossPct != null ? profile.maxDailyLossPct / 100 : defaults.dailyLossPct;
       const maxPositionSize = profile.maxPositionSize ?? defaults.maxPositionSize;
+      const maxDailyNotionalPct =
+        profile.maxDailyNotionalPct != null ? profile.maxDailyNotionalPct : defaults.maxDailyNotionalPct;
+      const maxConsecutiveLosses =
+        profile.maxConsecutiveLosses != null ? profile.maxConsecutiveLosses : defaults.maxConsecutiveLosses;
 
       // maxExposure: use multiplier if set, else fallback to accountSize × drawdown, else 0 (engine uses 1.5× equity default)
       let maxExposure = defaults.maxExposure;
@@ -421,13 +452,119 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
         maxExposure = (profile.accountSize * profile.maxDrawdownPct) / 100;
       }
 
-      return { maxPositions, positionPct, dailyLossPct, maxPositionSize, maxExposure };
+      return {
+        maxPositions,
+        positionPct,
+        dailyLossPct,
+        maxPositionSize,
+        maxExposure,
+        maxDailyNotionalPct,
+        maxConsecutiveLosses,
+      };
     }
   } catch (err) {
     log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to load risk profile, using defaults");
   }
 
   return defaults;
+}
+
+// ─── Live-Trading Safeguards (Phase 3) ───────────────────────────────────────
+
+/**
+ * Gate every BUY before it's submitted. Checks:
+ *  - daily notional cap (gross BUY notional vs equity)
+ *  - global order rate limit (sliding 60s window, 30 orders max)
+ *
+ * Returns { ok: false, reason } if blocked, { ok: true } otherwise.
+ * Caller must call recordOrderPlacement() AFTER a successful placeOrder.
+ */
+function canPlaceBuyOrder(
+  engine: EngineState,
+  notionalUsd: number,
+  riskLimits: RiskLimits,
+  bootEquity: number
+): { ok: true } | { ok: false; reason: string; details: Record<string, unknown> } {
+  // Notional cap — only blocks BUYs (sells/exits always allowed)
+  const notionalCap = bootEquity * riskLimits.maxDailyNotionalPct;
+  if (notionalCap > 0 && engine.dailyNotional + notionalUsd > notionalCap) {
+    return {
+      ok: false,
+      reason: "daily_notional_cap_exceeded",
+      details: {
+        attemptedNotional: notionalUsd,
+        dailyNotionalSoFar: engine.dailyNotional,
+        cap: notionalCap,
+        capPctOfEquity: riskLimits.maxDailyNotionalPct,
+      },
+    };
+  }
+
+  // Rate limit — prune timestamps outside the 60s window then check count
+  const now = Date.now();
+  const windowStart = now - ORDER_RATE_LIMIT_WINDOW_MS;
+  engine.recentOrderTimestamps = engine.recentOrderTimestamps.filter((t) => t >= windowStart);
+  if (engine.recentOrderTimestamps.length >= ORDER_RATE_LIMIT_PER_MIN) {
+    return {
+      ok: false,
+      reason: "order_rate_limit_exceeded",
+      details: {
+        ordersInWindow: engine.recentOrderTimestamps.length,
+        windowMs: ORDER_RATE_LIMIT_WINDOW_MS,
+        cap: ORDER_RATE_LIMIT_PER_MIN,
+      },
+    };
+  }
+
+  return { ok: true };
+}
+
+/** Record that an order was placed — updates rate limit window + daily notional (BUYs only). */
+function recordOrderPlacement(engine: EngineState, side: "buy" | "sell", notionalUsd: number): void {
+  engine.recentOrderTimestamps.push(Date.now());
+  if (side === "buy" && notionalUsd > 0) {
+    engine.dailyNotional += notionalUsd;
+  }
+}
+
+/**
+ * Update consecutive-loss counter from a closed-trade P&L. Resets on any winner.
+ * Returns true if the engine should auto-halt (consecutive losses ≥ threshold).
+ */
+function recordTradeResult(engine: EngineState, pnl: number, threshold: number): boolean {
+  if (pnl < 0) {
+    engine.consecutiveLosses += 1;
+  } else if (pnl > 0) {
+    engine.consecutiveLosses = 0;
+  }
+  // pnl === 0 (rare — exact even close) doesn't move the counter either way
+  return engine.consecutiveLosses >= threshold;
+}
+
+/**
+ * Halt the engine due to a safeguard tripping. Called from the scan loop in
+ * response to broker disconnect, account switch, equity collapse, or
+ * consecutive-loss threshold. Engine.halted = true blocks new orders; the
+ * user must explicitly Stop+Start to clear.
+ */
+function tripSafeguardHalt(engine: EngineState, reason: string, details: Record<string, unknown>): void {
+  if (engine.halted) return;
+  engine.halted = true;
+  log.error({ userId: engine.userId, reason, ...details }, `Engine auto-halted: ${reason}`);
+  pushError(engine, `Auto-halted: ${reason}`);
+  // Fire-and-forget audit (no request context for engine-internal events)
+  void writeAudit({
+    actor: { userId: engine.userId, email: null, role: null },
+    action: AuditAction.ENGINE_HALTED,
+    resourceType: "engine",
+    resourceId: engine.userId,
+    metadata: { reason, automatic: true, ...details },
+  });
+}
+
+/** Live-trading is gated behind ALLOW_LIVE_TRADING=1. Returns true when live is permitted. */
+export function isLiveTradingAllowed(): boolean {
+  return process.env.ALLOW_LIVE_TRADING === "1";
 }
 
 /** Intraday strategy: tighter stops, faster exits */
@@ -568,7 +705,7 @@ function tradingDaysBetween(from: Date, to: Date): number {
 
 async function resolveBrokerClient(
   userId: string
-): Promise<{ client: BrokerClient; connectionId: string } | null> {
+): Promise<{ client: BrokerClient; connectionId: string; environment: "paper" | "live" } | null> {
   const connections = await db
     .select()
     .from(brokerConnections)
@@ -584,13 +721,30 @@ async function resolveBrokerClient(
     return null;
   }
 
-  // Prefer paper environment connections
+  // Prefer paper environment connections; live requires ALLOW_LIVE_TRADING=1.
   const conn =
     connections.find((c) => c.environment === "paper") ?? connections[0];
 
-  if (conn.environment === "live") {
-    log.error("Refusing to start engine with live broker connection");
+  if (conn.environment === "live" && !isLiveTradingAllowed()) {
+    log.error(
+      { userId, connectionId: conn.id },
+      "Refusing to start engine on LIVE broker — set ALLOW_LIVE_TRADING=1 to unlock"
+    );
+    void writeAudit({
+      actor: { userId, email: null, role: null },
+      action: AuditAction.ENGINE_LIVE_BLOCKED,
+      resourceType: "broker_connection",
+      resourceId: conn.id,
+      metadata: { reason: "ALLOW_LIVE_TRADING_not_set", broker: conn.broker },
+    });
     return null;
+  }
+
+  if (conn.environment === "live") {
+    log.warn(
+      { userId, connectionId: conn.id, broker: conn.broker },
+      "Engine starting against LIVE broker connection — real money at risk"
+    );
   }
 
   let apiKey: string;
@@ -608,7 +762,7 @@ async function resolveBrokerClient(
 
   const client = createBrokerClient(conn.broker, apiKey, apiSecret, conn.environment);
 
-  return { client, connectionId: conn.id };
+  return { client, connectionId: conn.id, environment: conn.environment as "paper" | "live" };
 }
 
 // ─── Latest Optimizer Results ────────────────────────────────────────────────
@@ -798,8 +952,19 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
         try {
           await cancelPendingOrdersForSymbol(client, symbol);
           const exitOrder = await client.placeOrder({ symbol, qty: String(pos.qty), side: "sell", type: "market", timeInForce: "day" });
+          recordOrderPlacement(engine, "sell", 0);
           const pnl = (currentPrice - pos.entryPrice) * pos.qty;
           engine.dailyLoss += pnl < 0 ? pnl : 0;
+          // Phase 3: track consecutive losses; halt if threshold tripped.
+          {
+            const riskLimitsForLoss = await loadRiskLimits(engine.userId!);
+            if (recordTradeResult(engine, pnl, riskLimitsForLoss.maxConsecutiveLosses)) {
+              tripSafeguardHalt(engine, "consecutive_losses", {
+                consecutiveLosses: engine.consecutiveLosses,
+                threshold: riskLimitsForLoss.maxConsecutiveLosses,
+              });
+            }
+          }
 
           await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "FILLED", pnl, exitReason, exitOrder.id, null, engine.userId);
           positionMap.delete(symbol);
@@ -1141,6 +1306,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   const today = getETDateString();
   if (engine.dailyLossDate !== today) {
     engine.dailyLoss = 0;
+    engine.dailyNotional = 0; // reset daily notional cap window in lockstep
     engine.dailyLossDate = today;
     if (engine.halted) {
       log.info({ userId: engine.userId }, "New trading day — clearing daily-loss halt");
@@ -1276,7 +1442,20 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
         if (qty <= 0) continue;
 
         const limitPrice = (quote.price * 1.001).toFixed(2);
+        const buyNotional = qty * parseFloat(limitPrice);
+        const gate = canPlaceBuyOrder(engine, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        if (!gate.ok) {
+          log.warn({ symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Tactical BUY blocked");
+          void writeAudit({
+            actor: { userId: engine.userId, email: null, role: null },
+            action: AuditAction.ORDER_REJECTED,
+            resourceType: "order",
+            metadata: { symbol, side: "buy", qty, notional: buyNotional, reason: gate.reason, source: "engine_tactical", ...gate.details },
+          });
+          continue;
+        }
         const tentryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        recordOrderPlacement(engine, "buy", buyNotional);
         await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "FILLED", null, "Tactical entry: SPY above SMA", tentryOrder.id, null, engine.userId);
 
         positionMap.set(symbol, {
@@ -1317,6 +1496,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   const today = getETDateString();
   if (engine.dailyLossDate !== today) {
     engine.dailyLoss = 0;
+    engine.dailyNotional = 0; // reset daily notional cap window in lockstep
     engine.dailyLossDate = today;
     if (engine.halted) {
       log.info({ userId: engine.userId }, "New trading day — clearing daily-loss halt");
@@ -1488,7 +1668,20 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 
       try {
         const limitPrice = (price * 1.001).toFixed(2);
+        const buyNotional = qty * parseFloat(limitPrice);
+        const gate = canPlaceBuyOrder(engine, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        if (!gate.ok) {
+          log.warn({ symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Smart BUY blocked");
+          void writeAudit({
+            actor: { userId: engine.userId, email: null, role: null },
+            action: AuditAction.ORDER_REJECTED,
+            resourceType: "order",
+            metadata: { symbol, side: "buy", qty, notional: buyNotional, reason: gate.reason, source: "engine_tactical_smart", ...gate.details },
+          });
+          continue;
+        }
         const tsEntryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        recordOrderPlacement(engine, "buy", buyNotional);
         await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Smart: momentum + signal + invVol weighted", tsEntryOrder.id, null, engine.userId);
         tradesThisScan++;
         positionMap.set(symbol, {
@@ -1593,7 +1786,20 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 
       try {
         const limitPrice = (replacement.price * 1.001).toFixed(2);
+        const buyNotional = qty * parseFloat(limitPrice);
+        const gate = canPlaceBuyOrder(engine, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        if (!gate.ok) {
+          log.warn({ symbol: replacement.symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Swap BUY blocked");
+          void writeAudit({
+            actor: { userId: engine.userId, email: null, role: null },
+            action: AuditAction.ORDER_REJECTED,
+            resourceType: "order",
+            metadata: { symbol: replacement.symbol, side: "buy", qty, notional: buyNotional, reason: gate.reason, source: "engine_swap", ...gate.details },
+          });
+          continue;
+        }
         const swapBuyOrder = await client.placeOrder({ symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        recordOrderPlacement(engine, "buy", buyNotional);
         await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "FILLED", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`, swapBuyOrder.id, null, engine.userId);
         tradesThisScan++;
         positionMap.set(replacement.symbol, {
@@ -1627,7 +1833,20 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
+        const buyNotional = qty * parseFloat(limitPrice);
+        const gate = canPlaceBuyOrder(engine, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        if (!gate.ok) {
+          log.warn({ symbol: cand.symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Add BUY blocked");
+          void writeAudit({
+            actor: { userId: engine.userId, email: null, role: null },
+            action: AuditAction.ORDER_REJECTED,
+            resourceType: "order",
+            metadata: { symbol: cand.symbol, side: "buy", qty, notional: buyNotional, reason: gate.reason, source: "engine_add", ...gate.details },
+          });
+          continue;
+        }
         const addOrder = await client.placeOrder({ symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        recordOrderPlacement(engine, "buy", buyNotional);
         await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "FILLED", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`, addOrder.id, null, engine.userId);
         tradesThisScan++;
         positionMap.set(cand.symbol, {
@@ -1718,6 +1937,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   const today = getETDateString();
   if (engine.dailyLossDate !== today) {
     engine.dailyLoss = 0;
+    engine.dailyNotional = 0; // reset daily notional cap window in lockstep
     engine.dailyLossDate = today;
     if (engine.halted) {
       log.info({ userId: engine.userId }, "New trading day — clearing daily-loss halt");
@@ -1798,7 +2018,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   const optSignalParams = engine.mode === "optimized" ? await getOptimizedSignalParams() : null;
   const hybridOpts = optSignalParams ? { signalParams: optSignalParams } : undefined;
 
-  // 4. Get current broker positions
+  // 4. Get current broker positions + run live-trading safeguard checks
   let brokerPositions: Awaited<ReturnType<BrokerClient["getPositions"]>> = [];
   try {
     brokerPositions = await client.getPositions();
@@ -1808,14 +2028,52 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     setBrokerPositionCache(engine.userId!, brokerPositions);
   } catch (err) {
     engine.consecutiveBrokerFailures++;
-    if (engine.consecutiveBrokerFailures >= 5) {
-      engine.brokerConnected = false;
-      log.error({ failures: engine.consecutiveBrokerFailures }, "Broker unreachable — 5+ consecutive failures");
-    }
     log.warn(
       { err: err instanceof Error ? err.message : "unknown", failures: engine.consecutiveBrokerFailures },
       "Failed to fetch broker positions"
     );
+    if (engine.consecutiveBrokerFailures >= BROKER_FAILURE_HALT_THRESHOLD) {
+      engine.brokerConnected = false;
+      tripSafeguardHalt(engine, "broker_unreachable", {
+        consecutiveFailures: engine.consecutiveBrokerFailures,
+        lastContact: engine.lastBrokerContact?.toISOString() ?? null,
+      });
+      return;
+    }
+  }
+
+  // Account-switch detection: compare current account to boot snapshot.
+  // Catches "wrong key pasted in", "production key pointed at sandbox", or
+  // a connection update mid-session pointing at a different account.
+  if (engine.boot && engine.brokerConnected) {
+    try {
+      const currentAccount = await client.getAccount();
+      // Account number changed → halt immediately (definite mismatch)
+      if (
+        engine.boot.accountNumber &&
+        currentAccount.accountNumber &&
+        currentAccount.accountNumber !== engine.boot.accountNumber
+      ) {
+        tripSafeguardHalt(engine, "account_mismatch", {
+          bootAccountNumber: engine.boot.accountNumber,
+          currentAccountNumber: currentAccount.accountNumber,
+        });
+        return;
+      }
+      // Equity collapsed beyond reasonable mark-to-market — halt for human review.
+      const equityDrop = (engine.boot.equity - currentAccount.equity) / engine.boot.equity;
+      if (equityDrop > ACCOUNT_SWITCH_EQUITY_DROP_PCT) {
+        tripSafeguardHalt(engine, "equity_collapse", {
+          bootEquity: engine.boot.equity,
+          currentEquity: currentAccount.equity,
+          dropPct: equityDrop,
+          threshold: ACCOUNT_SWITCH_EQUITY_DROP_PCT,
+        });
+        return;
+      }
+    } catch {
+      // Account fetch failure — already counted as a broker failure above; don't double-count.
+    }
   }
 
   const positionMap = getPositionMap(engine?.userId ?? engineUserId);
@@ -1969,6 +2227,14 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
               (currentPrice - heldPosition.entryPrice) * heldPosition.qty;
             realizedPnlThisScan += pnl;
             engine.dailyLoss += pnl < 0 ? pnl : 0;
+            recordOrderPlacement(engine, "sell", 0);
+            // Phase 3: track consecutive losses for auto-halt
+            if (recordTradeResult(engine, pnl, riskLimits.maxConsecutiveLosses)) {
+              tripSafeguardHalt(engine, "consecutive_losses", {
+                consecutiveLosses: engine.consecutiveLosses,
+                threshold: riskLimits.maxConsecutiveLosses,
+              });
+            }
             tradesThisScan++;
 
             await logTrade(
@@ -2118,6 +2384,33 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           "Placing bracket order"
         );
 
+        // Phase 3 safeguards: notional cap + rate limit gate before submission
+        const buyNotional = qty * limitPrice;
+        const bootEquity = engine.boot?.equity ?? equity;
+        const gate = canPlaceBuyOrder(engine, buyNotional, riskLimits, bootEquity);
+        if (!gate.ok) {
+          log.warn(
+            { symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details },
+            "BUY blocked by safeguard"
+          );
+          pushError(engine, `BUY blocked (${gate.reason}) on ${symbol}`);
+          void writeAudit({
+            actor: { userId: engine.userId, email: null, role: null },
+            action: AuditAction.ORDER_REJECTED,
+            resourceType: "order",
+            metadata: {
+              symbol,
+              side: "buy",
+              qty,
+              notional: buyNotional,
+              reason: gate.reason,
+              source: "engine_scan",
+              ...gate.details,
+            },
+          });
+          continue;
+        }
+
         try {
           // Place limit buy order — stop-loss and take-profit are managed
           // internally by the engine's exit logic (trailing stop, hold period)
@@ -2129,6 +2422,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             timeInForce: "day",
             limitPrice: String(limitPrice),
           });
+          recordOrderPlacement(engine, "buy", buyNotional);
 
           tradesThisScan++;
 
@@ -2264,18 +2558,42 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     return { ok: false, error: "Engine is already running" };
   }
 
-  // Verify broker connection exists and is paper mode
+  // Verify broker connection exists and is allowed in current environment.
   const resolved = await resolveBrokerClient(userId);
   if (!resolved) {
+    // Check whether the user has a live connection that's blocked by the env gate
+    // — give them a specific actionable error rather than a generic "no connection".
+    try {
+      const liveOnly = await db
+        .select({ id: brokerConnections.id })
+        .from(brokerConnections)
+        .where(
+          and(
+            eq(brokerConnections.userId, userId),
+            eq(brokerConnections.isActive, true),
+            eq(brokerConnections.environment, "live")
+          )
+        );
+      if (liveOnly.length > 0 && !isLiveTradingAllowed()) {
+        return {
+          ok: false,
+          error:
+            "Live broker connection is blocked. Set ALLOW_LIVE_TRADING=1 in the server environment and restart the app to enable live trading.",
+        };
+      }
+    } catch {
+      /* fall through to generic error */
+    }
     return {
       ok: false,
-      error: "No active paper broker connection found. Connect a broker in paper mode first.",
+      error: "No active broker connection found. Add a paper or live broker in Settings.",
     };
   }
 
-  // Verify the connection works
+  // Verify the connection works AND capture boot snapshot for switch detection.
+  let bootAccount: BrokerAccount;
   try {
-    await resolved.client.getAccount();
+    bootAccount = await resolved.client.getAccount();
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unknown";
     return { ok: false, error: `Broker connection test failed: ${msg}` };
@@ -2297,6 +2615,16 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   engine.errors = [];
   engine.dailyLoss = 0;
   engine.dailyLossDate = getETDateString();
+  // Phase 3 — live-trading safeguards: capture environment + boot snapshot,
+  // reset daily safeguard counters, clear rate-limit window.
+  engine.environment = resolved.environment;
+  engine.boot = {
+    equity: bootAccount.equity,
+    accountNumber: bootAccount.accountNumber || null,
+  };
+  engine.dailyNotional = 0;
+  engine.consecutiveLosses = 0;
+  engine.recentOrderTimestamps = [];
 
   // Clear halted flag in database so UI stops showing "Trading Halted"
   const today = getETDateString();
@@ -2934,6 +3262,13 @@ export function getEngineStatus(userId?: string): {
   userId: string | null;
   brokerConnected: boolean;
   lastBrokerContact: string | null;
+  // Phase 3 — live-trading safeguards
+  environment: "paper" | "live" | null;
+  bootEquity: number | null;
+  bootAccountNumber: string | null;
+  dailyNotional: number;
+  consecutiveLosses: number;
+  liveTradingAllowed: boolean;
 } {
   const engine = userId ? getEngine(userId) : getEngine();
   return {
@@ -2949,6 +3284,12 @@ export function getEngineStatus(userId?: string): {
     userId: engine.userId,
     brokerConnected: engine.brokerConnected,
     lastBrokerContact: engine.lastBrokerContact?.toISOString() ?? null,
+    environment: engine.environment,
+    bootEquity: engine.boot?.equity ?? null,
+    bootAccountNumber: engine.boot?.accountNumber ?? null,
+    dailyNotional: engine.dailyNotional,
+    consecutiveLosses: engine.consecutiveLosses,
+    liveTradingAllowed: isLiveTradingAllowed(),
   };
 }
 
