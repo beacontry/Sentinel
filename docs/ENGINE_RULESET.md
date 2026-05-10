@@ -533,5 +533,75 @@ All fields are optional/nullable. Empty fields mean "engine decides" — the eng
 | Max Exposure | $25,000 | maxExposure | Total portfolio exposure cap |
 | Account Size | (from broker) | accountSize | Overrides broker-reported balance |
 | Max Drawdown % | (none) | maxDrawdownPct | Optional circuit breaker |
+| Max Daily Notional % | 100% | maxDailyNotionalPct | Phase 3 circuit breaker — gross BUY notional / day as fraction of bootEquity |
+| Max Consecutive Losses | 5 | maxConsecutiveLosses | Phase 3 circuit breaker — halt after N losing trades in a row (resets on any winner) |
 
 Updated on every scan cycle — changes take effect within 15 minutes.
+
+---
+
+## Live Trading Mode
+
+The engine code is **100% identical between paper and live**. The only environment-specific code is the Alpaca client constructor (picking the base URL), the boot-time env gate, and the UI banner. Signal generation, order construction, stop calculation, and all five circuit breakers (below) operate identically in both environments.
+
+**Boot gate.** At `startEngine()` the engine resolves the active broker connection. If `environment="live"` and `ALLOW_LIVE_TRADING !== "1"`, the engine refuses to start, emits an `engine.live_blocked` audit row, and returns a clear error to the UI naming the env var. When unlocked, every live boot fires a warn-level log, captures `metadata.environment="live"` on the `engine.started` audit row, and the Trader UI shows a persistent red **LIVE** banner with last-4 of the broker account number.
+
+**Paper vs live outcomes.** Same code, different broker reality. Live will have lower fill rates on limit BUYs (paper fills aggressively), real slippage on market sells (paper compresses to zero), partial fills on larger orders, more rejections (PDT, buying-power strictness, wash-sale flags, halted symbols), T+1 settlement timing, real 18% stop slippage on volatile names, and PDT lock risk on accounts under $25k. Paper trading is a faithful test of signal quality and risk-profile sizing; it is **not** a test of fill quality, slippage, or PDT survival.
+
+## Capital Circuit Breakers (Phase 3)
+
+Five auto-halt or auto-block conditions layered on top of the existing safety systems. All operate identically in paper and live. Each emits a distinct audit reason so the audit viewer can filter cause.
+
+| # | Breaker | Trigger | Effect | Audit reason |
+|---|---------|---------|--------|--------------|
+| 1 | **Daily notional cap** | Gross BUY notional / day > `maxDailyNotionalPct × bootEquity` | Block BUY | `daily_notional_cap_exceeded` |
+| 2 | **Order rate limit** | 30 orders within 60s sliding window | Block order | `order_rate_limit_exceeded` |
+| 3 | **Broker auto-halt** | 5 consecutive `getPositions()` failures | Halt engine (Stop+Start to clear) | `engine.halted` reason=`broker_unreachable` |
+| 4 | **Account-switch detection** | Different `account_number` OR equity drop > 50% from boot snapshot | Halt engine | `engine.halted` reason=`account_mismatch` or `equity_collapse` |
+| 5 | **Consecutive-loss halt** | N losing trades in a row (default 5, configurable) | Halt engine | `engine.halted` reason=`consecutive_losses` |
+
+**Gate ordering inside `canPlaceBuyOrder()`**: wash-sale → PDT → daily notional → rate limit. Cheapest checks fire first; the first reason found is what's logged. **SELLs (exits) are never blocked** — exiting a position takes priority over any safeguard.
+
+## Tax & PDT Protections (Phase 5)
+
+Three personalized protections that vary by account state and user election.
+
+**§475(f) MTM toggle** — Trader page renders a "Tax election" card with a single checkbox. Writes to `user_tax_status` table via `PUT /api/tax-status`. Engine reads at `startEngine()` via `loadTaxStatus(userId)`. Unchecked = wash-sale protection ON. Checked = OFF (MTM traders are exempt from §1091). Self-attestation only — Sentinel does not file or validate with the IRS.
+
+**Wash-sale protection** — When MTM is unchecked, the engine blocks BUYs on any symbol with a losing exit (`action IN ('SELL','manual_close') AND pnl < 0`) in the last **31 calendar days** (one day past IRS for safety). One batched DISTINCT query per scan, cached on engine state for 5 min, O(1) lookup per BUY. Symbol-level (not lot-level) — partial losing close blocks the whole ticker for 31 days. Does NOT catch: manual buys via Alpaca's UI (not visible at order time), "substantially identical" ETFs (SPY ↔ IVV), different share classes. Audit reason: `wash_sale_protection`.
+
+**PDT protection** — Auto-detected from `account.equity < $25,000`. Three behaviors:
+
+1. **Boot mode-refusal**: refuses to start `intraday` mode when PDT-vulnerable. Other modes allowed.
+2. **Mid-session re-evaluation**: every scan calls `evaluatePdtState()` against live equity + `daytradeCount`. Transition not-vulnerable → vulnerable emits one `engine.pdt_vulnerable` informational audit row (no halt) and flips the UI warning.
+3. **Buy-block**: `pdtVulnerable && daytradeCount >= 3` (one shy of the 4-trade flag) blocks all new BUYs. SELLs always allowed.
+
+## Audit Log (Phase 2)
+
+Append-only, hash-chained record of every privileged action. Schema in `drizzle/0016_audit_log.sql`; helper in `src/lib/audit.ts`; admin viewer at `/dashboard/admin/audit`.
+
+**Hash chain**: each row's `hash = sha256(prev_hash || created_at || actor_user_id || action || resource_type || resource_id || canonical_json(metadata))`, joined by NUL byte separator (impossible to occur in UTF-8 fields, prevents field-confusion/length-extension). Canonical-JSON sorts keys at every depth so equivalent objects hash identically. Genesis row's `prev_hash` is the literal `"GENESIS"`.
+
+**Write path**: `writeAudit()` opens a Postgres transaction, takes `pg_advisory_xact_lock(8493920100)` (auto-released on commit), reads the tail row's hash, computes the new hash, inserts. Concurrent writers serialize on the lock so the chain can't fork. The helper **never throws** — failures log and return null. Audit problems must not cascade into request failures.
+
+**What's logged**: `auth.login_success` / `login_failed` (attacker IP captured via X-Forwarded-For); `auth.user_registered`; `invite.sent` / `invite.consumed`; `broker.connection.created` / `.updated` / `.deleted` (rotated secrets flagged in metadata, never logged in plaintext); `engine.started` / `.stopped` / `.halted` / `.mode_switched`; `engine.live_blocked`; `engine.pdt_vulnerable`; `order.placed` / `.rejected` (with safeguard reason); `risk_profile.updated` (field-level diff).
+
+**Verification**: `/dashboard/admin/audit` has a "Verify chain" button that calls `POST /api/admin/audit/verify`. Walks every row in id order, recomputes each hash. Returns "intact" or the first row where the chain breaks. ~2s per 100k rows.
+
+## Going Live & Rollback
+
+**Going live**:
+
+1. Tighten risk profile (Trader page → Risk Settings). For $5k cash-only: `maxPositionPct=25-33%`, `maxDailyLossPct=2%`, `maxDailyNotionalPct=0.5`, `maxConsecutiveLosses=3`.
+2. Add live broker connection (Settings → Add Broker). Environment=Live, type "LIVE" to confirm, Test, Save.
+3. Deactivate paper connection (`isActive=false`).
+4. Flip env-gate on droplet — `ALLOW_LIVE_TRADING=1` in `/opt/apps/sentinel/.env`, then `podman stop && rm && run` (restart does NOT re-read env-file).
+5. Start engine in a swing mode (not `intraday` — engine refuses at <$25k).
+
+**Rollback** (cheapest first):
+
+- **A. Env-only**: clear `ALLOW_LIVE_TRADING`, recreate container. Engine refuses live; live broker row stays for re-enable later.
+- **B. Code revert**: `git revert` phase commits in reverse order (4 → 3 → 2). Migrations stay. **Do not revert Phase 1** — it would re-introduce the silent-plaintext decrypt fallback.
+- **C. Migration drop**: `DROP TABLE audit_log` and/or `ALTER TABLE user_risk_profiles DROP COLUMN ...`. Almost never needed. **Must pair with code revert** or `loadRiskLimits()` crashes. For audit_log: `TRUNCATE` is the clean reset (next write becomes genesis). Do NOT `DELETE WHERE id < N` — breaks the chain forever.
+
+See `engine-ruleset.html` (sections 16-20) and `CLAUDE.md` § Live Trading for full detail.
