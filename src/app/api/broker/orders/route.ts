@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { placeBrokerOrderSchema } from "@/lib/validators";
 import { createBrokerClient, BrokerError } from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
+import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("broker-orders");
@@ -142,6 +143,26 @@ export async function POST(request: Request) {
       stopPrice: parsed.data.stopPrice,
     });
 
+    await writeAudit({
+      actor: { userId: auth.userId, email: auth.email, role: auth.role },
+      action: AuditAction.ORDER_PLACED,
+      resourceType: "order",
+      resourceId: order.id,
+      metadata: {
+        symbol: parsed.data.symbol,
+        side: parsed.data.side,
+        qty: parsed.data.qty,
+        type: parsed.data.type,
+        timeInForce: parsed.data.timeInForce,
+        limitPrice: parsed.data.limitPrice ?? null,
+        stopPrice: parsed.data.stopPrice ?? null,
+        broker: connection.broker,
+        environment: connection.environment,
+        source: "manual_ui",
+      },
+      request,
+    });
+
     return NextResponse.json(
       {
         order: {
@@ -160,13 +181,27 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    await writeAudit({
+      actor: { userId: auth.userId, email: auth.email, role: auth.role },
+      action: AuditAction.ORDER_REJECTED,
+      resourceType: "order",
+      metadata: {
+        symbol: parsed.data.symbol,
+        side: parsed.data.side,
+        qty: parsed.data.qty,
+        type: parsed.data.type,
+        error: message.slice(0, 200),
+        source: "manual_ui",
+      },
+      request,
+    });
     if (err instanceof BrokerError) {
       return NextResponse.json(
         { error: err.userMessage },
         { status: err.statusCode }
       );
     }
-    const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Broker order error");
     return NextResponse.json({ error: "Failed to place order" }, { status: 500 });
   }

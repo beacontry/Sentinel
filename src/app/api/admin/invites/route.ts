@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { invites, users } from "@/lib/db/schema";
 import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
@@ -96,6 +97,15 @@ export async function POST(request: Request) {
     const emailResult = await sendInviteEmail(email, signupUrl);
 
     log.info({ email, inviteId: invite.id, emailSent: emailResult.success }, "Invite created");
+
+    await writeAudit({
+      actor: { userId: auth.userId, email: auth.email, role: auth.role },
+      action: AuditAction.INVITE_SENT,
+      resourceType: "invite",
+      resourceId: invite.id,
+      metadata: { email, emailSent: emailResult.success, expiresAt: invite.expiresAt.toISOString() },
+      request,
+    });
 
     return NextResponse.json({
       invite,
