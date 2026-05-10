@@ -6,6 +6,7 @@ import {
   ArrowRight,
   BookmarkCheck,
   BookMarked,
+  Brain,
   Calculator as CalculatorIcon,
   Check,
   Clock,
@@ -143,10 +144,20 @@ export default function EducationPage() {
       {/* ─── Glossary ──────────────────────────────────────────────── */}
       <TabPanel active={hubTab === "glossary"}>
         <div className="space-y-6">
-          <SearchInput
-            onSearch={setGlossarySearch}
-            placeholder="Search terms, definitions..."
-          />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <SearchInput
+              onSearch={setGlossarySearch}
+              placeholder="Search terms, definitions..."
+            />
+            <Link
+              href="/dashboard/education/review"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-bg-elevated px-3 py-2 text-xs font-medium text-text-secondary hover:border-accent/40 hover:text-accent transition-colors whitespace-nowrap"
+            >
+              <Brain className="h-3.5 w-3.5" />
+              Spaced Review
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
           <Tabs
             tabs={glossaryTabs}
             activeTab={glossaryCat}

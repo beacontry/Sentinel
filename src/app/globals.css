@@ -268,3 +268,62 @@ input, textarea, select, button { font-family: var(--font-body); }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ──────────── Print / PDF Export Styles ────────────
+ * Activated by the Print button on guide pages (window.print()).
+ * Hides navigation, ensures legible black-on-white output regardless of theme.
+ */
+@media print {
+  html, body {
+    background: white !important;
+    color: black !important;
+  }
+
+  nav,
+  aside,
+  [data-print-hide],
+  .print\:hidden {
+    display: none !important;
+  }
+
+  main, article {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  section, h1, h2, h3, h4 {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  p, li, td, th, dd, dt {
+    color: black !important;
+    background: transparent !important;
+  }
+
+  /* Show URLs after links so the printout is self-contained */
+  a[href^="http"]::after,
+  a[href^="/"]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    color: #666;
+  }
+
+  /* Disclaimer becomes prominent on print */
+  [data-print-disclaimer] {
+    border: 2px solid black !important;
+    padding: 12px !important;
+    margin: 16px 0 !important;
+    background: #fffbe5 !important;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  table, th, td {
+    border: 1px solid #888 !important;
+    padding: 6px 8px;
+  }
+}

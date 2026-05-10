@@ -1,6 +1,10 @@
 "use client";
 
 import { Info, AlertTriangle, Lightbulb, ShieldAlert } from "lucide-react";
+import {
+  GlossaryAwareText,
+  GlossaryTooltipProvider,
+} from "@/components/education/glossary-aware-text";
 import type {
   Guide,
   GuideBlock,
@@ -62,7 +66,7 @@ function CalloutBlock({ block }: { block: GuideCallout }) {
             </p>
           )}
           <p className="text-sm leading-relaxed text-text-secondary">
-            {block.body}
+            <GlossaryAwareText text={block.body} />
           </p>
         </div>
       </div>
@@ -139,7 +143,7 @@ function Block({ block }: { block: GuideBlock }) {
     case "paragraph":
       return (
         <p className="text-sm leading-relaxed text-text-secondary">
-          {block.text}
+          <GlossaryAwareText text={block.text} />
         </p>
       );
 
@@ -164,7 +168,7 @@ function Block({ block }: { block: GuideBlock }) {
         <ol className={`${cls} list-decimal`}>
           {block.items.map((item, i) => (
             <li key={i} className={itemCls}>
-              {item}
+              <GlossaryAwareText text={item} />
             </li>
           ))}
         </ol>
@@ -172,7 +176,7 @@ function Block({ block }: { block: GuideBlock }) {
         <ul className={`${cls} list-disc`}>
           {block.items.map((item, i) => (
             <li key={i} className={itemCls}>
-              {item}
+              <GlossaryAwareText text={item} />
             </li>
           ))}
         </ul>
@@ -254,6 +258,7 @@ function Block({ block }: { block: GuideBlock }) {
 
 export function GuideRenderer({ guide }: { guide: Guide }) {
   return (
+    <GlossaryTooltipProvider>
     <article className="space-y-8">
       {/* Key facts strip */}
       {guide.keyFacts.length > 0 && (
@@ -290,6 +295,7 @@ export function GuideRenderer({ guide }: { guide: Guide }) {
         </section>
       ))}
     </article>
+    </GlossaryTooltipProvider>
   );
 }
 

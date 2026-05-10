@@ -30,6 +30,7 @@ import {
   Shield,
 } from "lucide-react";
 import { PRESET_LABELS } from "@/lib/strategy-presets";
+import { TraderTaxCallouts } from "@/components/trader/tax-callouts";
 
 const ENGINE_MODES = [
   "conservative", "moderate", "optimized", "aggressive",
@@ -556,6 +557,9 @@ export default function TraderPage() {
           </div>
         </Card>
       )}
+
+      {/* Tax-aware trading callouts */}
+      <TraderTaxCallouts />
 
       {/* Open positions */}
       <Card>

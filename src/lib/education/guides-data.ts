@@ -2579,6 +2579,598 @@ const estatePlanningBasics: Guide = {
   ],
 };
 
+// ─── Roth Conversion Ladder ──────────────────────────────────────────────
+
+const rothConversionLadder: Guide = {
+  slug: "roth-conversion-ladder",
+  title: "The Roth Conversion Ladder for Early Retirement",
+  topic: "retirement",
+  difficulty: "advanced",
+  summary:
+    "The strategy that lets early retirees access traditional retirement money before 59½ — without penalties.",
+  readingMinutes: 11,
+  lastReviewed: "2026-05-01",
+  keyFacts: [
+    { label: "Conversion 5-Year Clock", value: "Each conversion has its own" },
+    { label: "Early Access Age", value: "55+ (with 5-year ladder lead)" },
+    { label: "Tax Owed at Conversion", value: "Ordinary income on converted amount" },
+    { label: "Best Filling Years", value: "Low-income gap years" },
+    { label: "Bracket-Fill Target", value: "Top of 12% / 22% bracket" },
+    { label: "Pairs With", value: "Brokerage bridge + delayed Soc Sec" },
+  ],
+  sections: [
+    {
+      id: "the-problem",
+      heading: "The early-retirement bridge problem",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "If you've been a diligent retirement saver, by your 50s most of your wealth is locked in pre-tax 401(k) and IRA accounts. Pulling from them before 59½ triggers a 10% penalty plus ordinary income tax. If you want to retire at 50, you have a 9.5-year gap to bridge.",
+        },
+        {
+          type: "paragraph",
+          text: "The Roth Conversion Ladder solves this elegantly: it lets you 'pre-pay' tax on chunks of your traditional retirement money during low-income years, and after a 5-year clock the converted principal becomes available penalty-free.",
+        },
+      ],
+    },
+    {
+      id: "the-mechanics",
+      heading: "The mechanics",
+      blocks: [
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "In your first low-income year (often the year after you stop working), convert a chunk of your Traditional IRA to a Roth IRA. Pay ordinary income tax on the converted amount.",
+            "Repeat each year, sized to fill up your low brackets.",
+            "After 5 calendar years, the FIRST conversion's principal becomes withdrawable from the Roth — penalty-free, regardless of age.",
+            "Each subsequent year unlocks the conversion you did 5 years prior.",
+            "The earnings on those converted dollars stay locked until 59½ + the standard Roth 5-year rule for tax-free earnings.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "Why &apos;ladder&apos;",
+          body: "Each year's conversion is a rung. The bottom rung (year 1's conversion) becomes available 5 years later, then year 2's becomes available year 6, and so on. By staggering them you build a continuous income stream of penalty-free withdrawals.",
+        },
+      ],
+    },
+    {
+      id: "worked-example",
+      heading: "Worked example",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Sarah retires at 50 with $1.5M in a Traditional IRA and $300K in a taxable brokerage. She wants to retire fully but needs $60K/yr to live on.",
+        },
+        {
+          type: "table",
+          caption: "Sarah's 10-year ladder",
+          headers: ["Year", "Age", "Spending Source", "Roth Conversion", "Roth Withdrawal"],
+          rows: [
+            ["2026", "50", "Brokerage", "$60K (fills 12% bracket)", "—"],
+            ["2027", "51", "Brokerage", "$60K", "—"],
+            ["2028", "52", "Brokerage", "$60K", "—"],
+            ["2029", "53", "Brokerage", "$60K", "—"],
+            ["2030", "54", "Brokerage", "$60K", "—"],
+            ["2031", "55", "Roth withdrawal", "$60K", "$60K (2026 conversion)"],
+            ["2032", "56", "Roth withdrawal", "$60K", "$60K (2027 conversion)"],
+            ["2033", "57", "Roth withdrawal", "$60K", "$60K (2028 conversion)"],
+            ["2034", "58", "Roth withdrawal", "$60K", "$60K (2029 conversion)"],
+            ["2035", "59½", "Bridge to age 60", "$60K", "$60K (2030 conversion)"],
+            ["2036+", "60+", "Anything (after 59½)", "—", "—"],
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "The brokerage funds Sarah's first 5 years (low capital-gains rates due to low income). Starting year 6, the converted principal flows out tax-free as Roth withdrawals. By year 11, she's past 59½ and can withdraw freely from any account.",
+        },
+      ],
+    },
+    {
+      id: "tax-on-conversions",
+      heading: "Tax on the conversions",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Each conversion is taxable income in the year you make it. The whole point of the strategy is that you do conversions during YEARS WHERE YOUR OTHER INCOME IS LOW — so the conversion fills up the low brackets, not the high ones.",
+        },
+        {
+          type: "table",
+          caption: "Strategic bracket-fill targets (2026 single filer)",
+          headers: ["Bracket", "Top of Bracket", "Common Strategy"],
+          rows: [
+            ["12%", "$48,475", "Aggressive low-bracket fill — convert until you hit the top"],
+            ["22%", "$103,350", "Moderate fill if your spending requires more income"],
+            ["24%", "$197,300", "Defensive — only if you'd otherwise hit IRMAA later"],
+            ["32%", "$250,525", "Generally too expensive; let the IRA continue compounding"],
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Don&apos;t miss the 0% LTCG bracket",
+          body: "If your only income is conversions + a bit of taxable-brokerage capital gains, gains up to ~$48K (single) are taxed at 0%. Coordinating conversions with brokerage withdrawals can produce stretches of effectively 0% federal tax. This is the FIRE community&apos;s favorite trick.",
+        },
+      ],
+    },
+    {
+      id: "calculator",
+      heading: "Run your numbers",
+      blocks: [
+        {
+          type: "calculator",
+          calculator: "fire-number",
+          caption: "Project the bridge: see how long taxable + Roth principal can fund early retirement",
+        },
+      ],
+    },
+    {
+      id: "rule-72t-alternative",
+      heading: "Rule 72(t) — the alternative path",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "If you can&apos;t afford a 5-year delay, IRC §72(t) lets you take Substantially Equal Periodic Payments (SEPP) from a Traditional IRA before 59½ without the 10% penalty. You commit to a fixed annual amount (calculated by IRS formula) for at least 5 years OR until 59½, whichever is later.",
+        },
+        {
+          type: "list",
+          items: [
+            "Locks you in: stopping or modifying the schedule retroactively imposes the 10% penalty on all prior payments.",
+            "Calculation methods: required minimum distribution method (lowest), fixed amortization, fixed annuitization. Most flexible: switch from amortization to RMD method once.",
+            "Better than the ladder when: you can&apos;t afford the 5-year wait, your taxable balance is too small to bridge, or you have only IRAs (no brokerage).",
+            "Worse when: you have flexibility — the ladder gives more control over annual amounts.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "common-pitfalls",
+      heading: "Common pitfalls",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Forgetting the 5-year clock starts JANUARY 1 of the conversion year, regardless of when in the year you converted.",
+            "Pro-rata trap: if you have non-deductible basis in the IRA, conversions are partially tax-free. Track via Form 8606.",
+            "ACA subsidies: conversions count as income and can blow up your subsidy. Coordinate carefully if you&apos;re using ACA marketplace insurance.",
+            "IRMAA: large conversions in your 60s can trigger Medicare surcharges 2 years later (Part B/D).",
+            "State tax: most states tax conversions; some (PA) don&apos;t. Plan accordingly.",
+            "Sequence risk: a market crash in year 1 of retirement amplifies — converting at depressed values is good (tax less), but withdrawing converted principal at depressed values is bad.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "when-it-fits",
+      heading: "When this strategy fits",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "FIRE retirees with mostly traditional retirement money and 5+ years to bridge.",
+            "Anyone retiring before 59½ with substantial pre-tax balances.",
+            "People expecting low-income years (sabbatical, education, business pivot).",
+            "Households planning to delay Social Security to 70 — conversions through age 70 fill low brackets cheaply.",
+            "Estate planners — Roth assets pass to heirs tax-free; conversions reduce future estate tax exposure.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "when-it-doesnt",
+      heading: "When NOT to use it",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Retirees who&apos;ll consistently be in a HIGHER bracket post-retirement — pay the tax later instead.",
+            "People expecting to relocate to a no-income-tax state — wait until you move.",
+            "Anyone with health-event-driven medical deductions in the conversion year — those would shelter ordinary income better than conversion would utilize.",
+            "Already in your 60s with no real bridge problem — just take traditional withdrawals.",
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+// ─── Asset Location ──────────────────────────────────────────────────────
+
+const assetLocation: Guide = {
+  slug: "asset-location-strategy",
+  title: "Asset Location: Putting the Right Asset in the Right Account",
+  topic: "tax",
+  difficulty: "intermediate",
+  summary:
+    "Same portfolio, different tax outcomes — placing tax-inefficient assets in tax-advantaged accounts can boost after-tax returns by 30-100 bps/year.",
+  readingMinutes: 9,
+  lastReviewed: "2026-05-01",
+  keyFacts: [
+    { label: "Annual Tax Drag Saved", value: "30–100 bps typical" },
+    { label: "Best Spot for Bonds", value: "Traditional 401(k) / IRA" },
+    { label: "Best Spot for High-Growth", value: "Roth IRA" },
+    { label: "Best Spot for Index Funds", value: "Taxable brokerage" },
+    { label: "REITs", value: "Tax-deferred (high ordinary div)" },
+    { label: "Active / High-Turnover", value: "Tax-deferred" },
+  ],
+  sections: [
+    {
+      id: "the-idea",
+      heading: "The idea in one paragraph",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Different account types tax different income streams differently. Bonds yield ordinary-income interest. Index funds throw off mostly qualified dividends and long-term gains. REITs pay non-qualified dividends. By matching each asset class to its tax-optimal account, you keep more of the same gross return.",
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "Asset allocation vs asset location",
+          body: "Allocation = how much of each asset class you hold. Location = which account each asset class lives in. They&apos;re separate decisions, both worth optimizing.",
+        },
+      ],
+    },
+    {
+      id: "the-three-buckets",
+      heading: "The three account types",
+      blocks: [
+        {
+          type: "table",
+          headers: ["Account", "Tax Treatment", "What Goes Here"],
+          rows: [
+            [
+              "Tax-deferred (Traditional 401(k), IRA)",
+              "Withdrawals taxed as ordinary income",
+              "Bonds, REITs, high-turnover funds, active managers",
+            ],
+            [
+              "Tax-free (Roth IRA, Roth 401(k))",
+              "All future growth is tax-free",
+              "Highest expected-return assets — small caps, emerging markets, aggressive growth",
+            ],
+            [
+              "Taxable brokerage",
+              "Dividends and gains taxed annually",
+              "Tax-efficient broad index ETFs (VTI, VXUS), municipal bonds, individual stocks held long-term",
+            ],
+          ],
+        },
+      ],
+    },
+    {
+      id: "why-bonds-tax-deferred",
+      heading: "Why bonds belong in tax-deferred",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "A 5%-yielding bond fund in a taxable account is taxed at your ordinary rate — say 24%. That&apos;s a 1.2 percentage point annual tax drag. The same bond in a Traditional IRA is tax-free until withdrawal, and even then taxed at your retirement bracket (likely lower).",
+        },
+        {
+          type: "key-value",
+          caption: "Bond drag comparison ($100K @ 5% yield)",
+          pairs: [
+            { label: "Bonds in taxable (24% bracket)", value: "$5,000 yield → $1,200 tax = $3,800 after-tax" },
+            { label: "Bonds in Traditional IRA (24% future)", value: "$5,000 yield deferred. After 20 years compounded, withdraw — tax on much smaller per-year basis" },
+            { label: "Bonds in Roth IRA", value: "$5,000 yield tax-free forever — but Roth space is precious; better assets exist for it" },
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "But what if your portfolio is mostly taxable?",
+          body: "If you have $1M taxable + $50K IRA, you can&apos;t fit your bond allocation in the IRA. In that case use municipal bonds in taxable (federally tax-free) — they yield less but the after-tax math is often comparable.",
+        },
+      ],
+    },
+    {
+      id: "why-growth-in-roth",
+      heading: "Why high-growth assets belong in Roth",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Roth space is the most valuable real estate in your portfolio — every dollar of growth there is tax-free forever, with no RMDs. Put your highest-expected-return assets there to maximize that value.",
+        },
+        {
+          type: "list",
+          items: [
+            "Small-cap stocks (higher long-run expected return, more volatile).",
+            "Emerging markets (higher expected return, FX volatility).",
+            "Aggressive growth tilts (factor: small/value).",
+            "Avoid: bonds in Roth — wastes the tax-free wrapper on a low-return asset.",
+            "Avoid: REITs in Roth — dividends are non-qualified anyway, so Roth&apos;s tax-free dividend benefit doesn&apos;t add much.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "why-indexes-taxable",
+      heading: "Why broad index funds belong in taxable",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Broad index funds (VTI, VXUS, VOO) are inherently tax-efficient: low turnover means few capital-gains distributions, dividends are mostly qualified (15-20% rate), and step-up basis at death wipes out embedded gains.",
+        },
+        {
+          type: "list",
+          items: [
+            "VTI distributes ~1.5% in qualified dividends annually — taxed at 15% = ~22 bps drag.",
+            "Same VTI in Traditional IRA: dividend is tax-deferred, but withdrawal is at ordinary income rates (24%+) — net WORSE outcome long-term for low-yield index funds.",
+            "Step-up basis means you can hold appreciated VTI for life, leave it to heirs, basis resets, never paid the capital gains.",
+            "Tax-loss harvesting opportunities exist in taxable but not in IRAs.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "the-math",
+      heading: "The math: what asset location is worth",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Studies (Vanguard, Morningstar) put the after-tax benefit of optimal asset location at 30–100 basis points per year for typical investors. Compounded over 30 years, that&apos;s the difference between $1M and $1.4M.",
+        },
+        {
+          type: "table",
+          caption: "Typical drag improvement from asset location",
+          headers: ["Asset Mix", "Wrong Location Drag", "Optimal Location Drag", "30-yr Effect on $500K"],
+          rows: [
+            ["80/20 stocks/bonds", "1.2% / yr", "0.4% / yr", "+$280K"],
+            ["60/40 with REITs", "1.5% / yr", "0.5% / yr", "+$345K"],
+            ["High-yield bonds heavy", "2.0% / yr", "0.6% / yr", "+$430K"],
+          ],
+        },
+      ],
+    },
+    {
+      id: "execution",
+      heading: "How to actually execute",
+      blocks: [
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "Set total target asset allocation across all accounts combined (e.g., 80% stocks / 20% bonds).",
+            "List your accounts by tax type: tax-deferred, Roth, taxable.",
+            "Place tax-INefficient holdings (bonds, REITs) FIRST in tax-deferred accounts until they&apos;re full.",
+            "Place highest-expected-return holdings in Roth (growth, small-cap, emerging markets).",
+            "Fill the remaining tax-deferred space with whatever&apos;s left.",
+            "Use broad index ETFs for taxable.",
+            "Rebalance ACROSS ACCOUNTS, not within — sell overweighted in tax-deferred (no tax hit) instead of triggering capital gains in taxable.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Don&apos;t let tax tail wag investment dog",
+          body: "If your asset location forces you into a portfolio you wouldn&apos;t otherwise hold (e.g., 100% bonds in tax-deferred just because it fits), you&apos;ve over-optimized. Allocation comes first; location is a refinement, not a constraint.",
+        },
+      ],
+    },
+    {
+      id: "edge-cases",
+      heading: "Edge cases",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Mostly Roth (high earner with mega-backdoor): the asset-location benefit shrinks because tax differences disappear. Just pick a sensible allocation.",
+            "Inherited IRA: pulls 10-year withdrawal requirement; preferentially hold lower-growth assets to minimize forced taxable withdrawals.",
+            "Annuities: fixed annuities resemble bonds; same tax-deferral analysis, different fee structure.",
+            "Crypto: taxable brokerage analog if held in self-custody. Roth crypto IRA exists but high fees usually defeat the tax benefit.",
+            "Direct real estate (rental property): substantial depreciation deductions; inherently tax-advantaged; doesn&apos;t benefit from being in a tax-deferred account.",
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+// ─── Social Security Claiming Strategies ───────────────────────────────
+
+const socialSecurityClaiming: Guide = {
+  slug: "social-security-claiming-strategies",
+  title: "Social Security Claiming Strategies",
+  topic: "retirement",
+  difficulty: "intermediate",
+  summary:
+    "When to claim, why 70 is usually right, spousal and survivor benefits, and how taxes interact with conversions.",
+  readingMinutes: 11,
+  lastReviewed: "2026-05-01",
+  keyFacts: [
+    { label: "Earliest Claiming Age", value: "62" },
+    { label: "Full Retirement Age (FRA)", value: "67 (born 1960+)" },
+    { label: "Latest Claiming Age", value: "70" },
+    { label: "Delayed Credit", value: "+8% / year past FRA" },
+    { label: "Early-Claiming Reduction", value: "−6.67% / yr first 3, −5% after" },
+    { label: "Break-Even Age", value: "~80 (claiming 70 vs 62)" },
+  ],
+  sections: [
+    {
+      id: "the-basics",
+      heading: "The basics",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Social Security pays benefits based on your top 35 years of earnings. Your Primary Insurance Amount (PIA) is the benefit you&apos;d receive at your Full Retirement Age (FRA). Claiming before FRA reduces it; claiming after increases it.",
+        },
+        {
+          type: "table",
+          caption: "Benefit amounts as a percentage of your PIA",
+          headers: ["Claim Age", "% of PIA", "Notes"],
+          rows: [
+            ["62", "70%", "Earliest possible — 30% reduction"],
+            ["63", "75%", "Reduced"],
+            ["64", "80%", "Reduced"],
+            ["65", "86.7%", "Reduced"],
+            ["66", "93.3%", "Reduced"],
+            ["67 (FRA)", "100%", "Full benefit"],
+            ["68", "108%", "Delayed credit (+8%/yr)"],
+            ["69", "116%", "Delayed credit"],
+            ["70", "124%", "Maximum benefit — no further increase"],
+          ],
+        },
+      ],
+    },
+    {
+      id: "why-70",
+      heading: "Why claiming at 70 usually wins",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "The +8% per year delayed credit between 67 and 70 is GUARANTEED, COLA-adjusted, and lasts your lifetime. There&apos;s no other risk-free 8% return available. For anyone with reasonable longevity expectations and the means to delay, 70 is mathematically optimal.",
+        },
+        {
+          type: "list",
+          items: [
+            "Break-even age (cumulative benefits at 70 catch up to those who claimed at 62): ~age 80.",
+            "Average life expectancy at 65: 84 (men) / 87 (women) — both well past 80.",
+            "Spousal survivor benefits inherit the higher earner&apos;s benefit — delaying helps the surviving spouse too.",
+            "Inflation-adjusted (COLA) — protects against decades of inflation that fixed pensions don&apos;t.",
+            "Tax-advantaged — only 50–85% of SS is taxable depending on other income.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Think of it as longevity insurance",
+          body: "Social Security at 70 is the cheapest insurance against living to 95 you can buy. The downside (claim at 70, die at 72) costs your heirs nothing — they get nothing either way. The upside (live to 95, get 33 years of inflation-adjusted income) is enormous.",
+        },
+      ],
+    },
+    {
+      id: "when-to-claim-early",
+      heading: "When to claim early (62)",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "You need the income immediately and have no other source.",
+            "Serious health issue with reduced life expectancy — claim early, capture more total benefits before death.",
+            "You qualify for spousal benefits and your spouse has already filed — coordinate claiming.",
+            "You&apos;re a low-earner spouse and waiting won&apos;t materially increase your survivor benefit.",
+            "Specific scenario: your higher-earner spouse already claimed early, and you can claim a spousal benefit now to provide income while letting your own benefit grow.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Earnings test if claiming before FRA",
+          body: "If you claim before FRA and continue earning above ~$23K/yr (2026), benefits are reduced $1 for every $2 over the limit. The reduction is recouped after FRA, but cash-flow impact is real.",
+        },
+      ],
+    },
+    {
+      id: "spousal-survivor",
+      heading: "Spousal & survivor benefits",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "The lower-earning spouse can claim 50% of the higher earner&apos;s PIA at FRA (less if claiming before). This is a separate benefit — the lower earner can also claim their own benefit if larger.",
+        },
+        {
+          type: "list",
+          items: [
+            "Spousal benefit caps at 50% of partner&apos;s PIA — delaying past FRA does NOT increase spousal benefits.",
+            "Survivor benefit is the FULL amount the deceased was receiving (or would have received). Includes delayed credits.",
+            "Strategy implication: in mixed-age couples, the higher-earner often delays to 70 to maximize the survivor benefit, while the lower-earner claims earlier.",
+            "Divorced spouses (10+ year marriage, currently unmarried) qualify for spousal benefit on ex&apos;s record — doesn&apos;t reduce ex&apos;s benefit.",
+            "Children under 18 (or 19 if still in HS) of a retiring or deceased worker may qualify for child benefits.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "tax-interaction",
+      heading: "Taxes & coordinating with retirement income",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Up to 85% of SS benefits are taxable depending on your &apos;combined income&apos; (AGI + tax-exempt interest + 50% of SS). High-income retirees pay tax on the maximum 85% of SS regardless of source.",
+        },
+        {
+          type: "table",
+          caption: "Combined income thresholds (2026, single filer)",
+          headers: ["Combined Income", "% of SS Taxable"],
+          rows: [
+            ["< $25,000", "0%"],
+            ["$25,000 – $34,000", "Up to 50%"],
+            ["> $34,000", "Up to 85%"],
+          ],
+          align: ["right", "right"],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "The Roth conversion synergy",
+          body: "Roth withdrawals are NOT included in combined income for SS taxation. Doing Roth conversions BEFORE claiming Social Security (typically ages 60–69) lets you fill low brackets cheaply AND reduces future SS taxation.",
+        },
+      ],
+    },
+    {
+      id: "irmaa",
+      heading: "IRMAA — the Medicare surcharge no one warns you about",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Medicare premiums (Part B + Part D) are means-tested. Above certain MAGI thresholds, you pay surcharges called IRMAA — sometimes 3–5× the base premium. The lookback is 2 years, so 2026 IRMAA depends on 2024 MAGI.",
+        },
+        {
+          type: "key-value",
+          caption: "2026 IRMAA thresholds (single filer, illustrative)",
+          pairs: [
+            { label: "MAGI ≤ $103K", value: "Standard Part B premium" },
+            { label: "$103K – $129K", value: "+$70/month surcharge" },
+            { label: "$129K – $161K", value: "+$176/month" },
+            { label: "$161K – $193K", value: "+$281/month" },
+            { label: "> $500K", value: "+$447/month" },
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "Implication: a single Roth conversion that pushes 2024 MAGI just over a threshold costs you ~$1,000+/yr in 2026 Medicare premiums. Plan around the brackets when converting. Special Form SSA-44 lets you appeal IRMAA after a life event (retirement, work stoppage, divorce, death of spouse).",
+        },
+      ],
+    },
+    {
+      id: "common-pitfalls",
+      heading: "Common pitfalls",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Claiming early because &apos;Social Security might run out&apos; — projections show even worst-case scenarios pay 75-80% of benefits indefinitely.",
+            "Not coordinating between spouses — leaves money on the table.",
+            "Missing the divorced-spouse benefit (10+ year marriage required).",
+            "Failing to suspend benefits at FRA when earning above the limit (incurs penalty).",
+            "Triggering IRMAA via uncoordinated Roth conversions — cost can exceed conversion savings.",
+            "Believing &apos;you can&apos;t take it with you&apos; for retirees who can comfortably delay — you&apos;re leaving INFLATION-ADJUSTED LIFETIME income on the table for a likely 10+ years of higher payments.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "decision-framework",
+      heading: "Quick decision framework",
+      blocks: [
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "Are you in poor health? → Claim early (62-FRA). Otherwise continue.",
+            "Need the income to pay bills? → Claim when needed. Otherwise continue.",
+            "Single, healthy, decent longevity expectation? → Delay to 70.",
+            "Married, you are higher earner? → Delay to 70 (maximizes survivor benefit).",
+            "Married, you are lower earner? → File for spousal at FRA (or earlier if needed); your own benefit doesn&apos;t need to delay past FRA.",
+            "Doing Roth conversions? → Convert ages 60-69 to fill low brackets, then claim SS at 70.",
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 // ─── Registry ────────────────────────────────────────────────────────────
 
 export const GUIDES: Guide[] = [
@@ -2593,6 +3185,9 @@ export const GUIDES: Guide[] = [
   washSaleDeepDive,
   quarterlyEstimatedTaxes,
   estatePlanningBasics,
+  rothConversionLadder,
+  assetLocation,
+  socialSecurityClaiming,
 ];
 
 export function getGuideBySlug(slug: string): Guide | undefined {

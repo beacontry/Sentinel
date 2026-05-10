@@ -110,6 +110,22 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     defaultSize: "sm",
     component: "portfolio-widget",
   },
+  {
+    id: "net-worth",
+    name: "Net Worth",
+    description: "Aggregated value across paper portfolios + live broker positions",
+    category: "trading",
+    defaultSize: "sm",
+    component: "net-worth-widget",
+  },
+  {
+    id: "continue-reading",
+    name: "Continue Reading",
+    description: "Next education guide to pick up where you left off",
+    category: "research",
+    defaultSize: "sm",
+    component: "continue-reading-widget",
+  },
 ];
 
 export const WIDGET_MAP = new Map(

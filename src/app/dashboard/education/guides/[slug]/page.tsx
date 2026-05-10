@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { EducationalDisclaimer } from "@/components/education/educational-disclaimer";
 import { GuideProgressTracker } from "@/components/education/guide-progress-tracker";
 import { GuideQuiz } from "@/components/education/guide-quiz";
+import { PrintButton } from "@/components/education/print-button";
 import {
   GuideRenderer,
   GuideTableOfContents,
@@ -82,7 +83,10 @@ export default async function GuidePage({
               Updated {guide.lastReviewed}
             </span>
           </div>
-          <GuideProgressTracker slug={guide.slug} />
+          <div className="flex items-center gap-2">
+            <PrintButton />
+            <GuideProgressTracker slug={guide.slug} />
+          </div>
         </div>
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text-primary">
           {guide.title}
