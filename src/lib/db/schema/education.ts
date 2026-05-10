@@ -36,3 +36,23 @@ export const educationProgress = pgTable("education_progress", {
   index("education_progress_term_idx").on(t.termId),
   uniqueIndex("education_progress_user_term_idx").on(t.userId, t.termId),
 ]);
+
+/**
+ * Per-user view tracking for long-form education guides.
+ *
+ * Guides are authored as TS data (src/lib/education/guides-data.ts), not in the
+ * DB — so we identify them by slug rather than a foreign key. One row per
+ * (user, slug). View count and last-viewed timestamp are bumped on each visit.
+ */
+export const educationGuideViews = pgTable("education_guide_views", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  slug: text("slug").notNull(),
+  firstViewedAt: timestamp("first_viewed_at", { withTimezone: true }).defaultNow().notNull(),
+  lastViewedAt: timestamp("last_viewed_at", { withTimezone: true }).defaultNow().notNull(),
+  viewCount: integer("view_count").notNull().default(1),
+  bookmarked: boolean("bookmarked").notNull().default(false),
+}, (t) => [
+  index("education_guide_views_user_idx").on(t.userId),
+  uniqueIndex("education_guide_views_user_slug_idx").on(t.userId, t.slug),
+]);

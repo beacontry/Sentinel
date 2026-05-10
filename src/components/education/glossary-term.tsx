@@ -6,12 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { ChevronDown } from "lucide-react";
 import type { GlossaryCategory } from "@/lib/glossary-data";
 
-const CATEGORY_VARIANTS: Record<GlossaryCategory, { variant: "default" | "bullish" | "bearish" | "warning" | "neutral"; label: string }> = {
+const CATEGORY_VARIANTS: Record<GlossaryCategory, { variant: "default" | "bullish" | "bearish" | "warning" | "neutral" | "accent"; label: string }> = {
   basics: { variant: "default", label: "Basics" },
   technical: { variant: "bullish", label: "Technical" },
   fundamental: { variant: "warning", label: "Fundamental" },
   options: { variant: "bearish", label: "Options" },
   risk: { variant: "neutral", label: "Risk" },
+  wealth: { variant: "accent", label: "Wealth" },
 };
 
 interface GlossaryTermProps {
