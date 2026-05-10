@@ -152,6 +152,7 @@ export function getPageMeta(pathname: string) {
 export const SUB_NAV: Record<string, SubNavTab[]> = {
   admin: [
     { href: "/dashboard/admin", label: "Users" },
+    { href: "/dashboard/admin/audit", label: "Audit Log" },
     { href: "/dashboard/settings", label: "Settings" },
   ],
   analysis: [
