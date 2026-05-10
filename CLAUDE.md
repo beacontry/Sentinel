@@ -249,14 +249,14 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 - Error display: `text-sm text-bearish`
 - Empty state: EmptyState component or inline centered block with muted icon
 
-## Dashboard Pages (46 total)
+## Dashboard Pages (47 total)
 Located at `src/app/dashboard/*/page.tsx`:
 
 **Core:** alerts, analysis, calculator, chat, screener, settings, trader
 **Analysis & Market:** breadth, correlation, heatmap, multi-timeframe, relative-strength, risk-correlation, sector-rotation, unusual-activity
 **Trading Tools:** backtest, replay, risk-simulator, strategies, strategy-builder, watchlists
 **Journal & Analytics:** drawdown, journal, performance, pnl-calendar, reports
-**Research:** articles, education, filings, insights, news, sentiment
+**Research:** articles, education, education/guides, education/guides/[slug], education/review, filings, insights, news, sentiment
 **Macro:** calendar, currency, earnings, policy
 **Community:** feed, forum, posts
 **Admin:** admin, paper-trading, portfolio, tax, tax-center
@@ -266,6 +266,63 @@ Located at `src/app/dashboard/*/page.tsx`:
 - `/api/breadth` — market breadth: advance/decline, % above SMA 50/200, avg RSI, sector breakdown
 - `/api/sector-rotation` — rolling 1w/1m/3m sector performance with rotation phase classification (leading/weakening/lagging/improving)
 - `/api/unusual-activity` — volume spike detection (2x+ 20-day avg) across tracked symbols
+- `/api/education/progress` — per-user guide view + bookmark + quiz state (returns empty for anonymous)
+- `/api/education/guides/[slug]/view` — POST upserts a view, bumps view_count
+- `/api/education/guides/[slug]/bookmark` — POST/DELETE toggles bookmark
+- `/api/education/guides/[slug]/quiz` — POST records quiz attempt; sets quiz_passed_at on first ≥80%
+- `/api/education/review` — GET due-cards queue, POST a review with quality 0–5 (SM-2)
+- `/api/tax-status` — GET/PUT user's self-attested Trader Tax Status + §475(f) MTM declaration
+- `/api/portfolio/summary` — net-worth aggregation across paper portfolios + live broker positions
+
+## Education Section
+
+Located at `/dashboard/education` with three top-level tabs (Glossary | Guides | Calculators) plus dedicated routes for guides and spaced-repetition review.
+
+### Content (all authored as typed TS data, not in DB)
+- `src/lib/glossary-data.ts` — 95 glossary terms across 6 categories (`basics`, `technical`, `fundamental`, `options`, `risk`, `wealth`). Adding a term: append to `GLOSSARY_TERMS` array.
+- `src/lib/education/guides-data.ts` — 14 long-form guides typed as `Guide` objects with `keyFacts` and `sections[]` of typed `GuideBlock`s (paragraph, heading, list, table, callout, key-value, calculator). Adding a guide: define a new `Guide` const, append to `GUIDES` array — slug becomes the route automatically.
+- `src/lib/education/quizzes-data.ts` — 5-question quizzes per guide keyed by slug. Pass = ≥80%. Adding a quiz: add entry to `QUIZZES` map.
+- `src/lib/education/spaced-repetition.ts` — pure SM-2 algorithm (`applyReview`, `initialState`); no I/O.
+- `src/lib/education/guide-search.ts` — in-memory inverted index over guides for AI chat RAG (TF-IDF + query-term boosts; de-dupes by guide).
+
+### Calculators (8)
+Live in `src/components/education/calculators/*.tsx`. Registered in:
+1. `GuideCalculator` union in `guides-data.ts`
+2. `Block` switch in `src/components/education/guide-renderer.tsx`
+3. The Calculators tab in `src/app/dashboard/education/page.tsx`
+
+Adding a calculator: drop the component, then add to all three places.
+
+### Cross-feature integrations
+- **Tax Center** (`/dashboard/tax-center`) — `PersonalizedTaxEducation` ranks education links based on user data (harvestable losses, trade count, estimated tax, mixed gains). `TaxStatusCard` lets users self-attest §475(f) MTM via `/api/tax-status`.
+- **Trader page** (`/dashboard/trader`) — `TraderTaxCallouts` reads `/api/portfolio/summary` + `/api/tax-status` to surface harvestable unrealized losses with MTM-aware messaging (no wash-sale concern under MTM).
+- **AI Chat** (`/api/chat`) — `gatherChatContext()` calls `searchGuides(query, 3)` to inject relevant guide snippets into the system prompt with citation links (`/dashboard/education/guides/<slug>#<sectionId>`).
+- **Dashboard widgets** — `NetWorthWidget` (aggregates portfolios + broker cache), `ContinueReadingWidget` (next education action via `useEducationProgress()`). Both registered in `src/lib/widget-registry.ts`.
+- **Guide bodies** — `<GlossaryAwareText>` auto-wraps known terms in tooltip definitions inside paragraph/list/callout text. Multi-word terms match first; per-paragraph dedup.
+
+### Database (3 tables, all in `src/lib/db/schema/education.ts`)
+- `glossary_terms` + `education_progress` — legacy schema, kept for FK stability but unused by the v1+ routes
+- `education_guide_views` — `(user_id, slug)` unique. View count, bookmark state, quiz state (`quiz_score`, `quiz_total`, `quiz_passed_at`, `quiz_attempts`). Slug is text — no FK to a guides table since guides live in TS.
+- `glossary_review_state` — SM-2 per `(user_id, term_id)`. `ease_factor` stored as integer ×100.
+- `user_tax_status` — one row per user. Self-attested TTS + MTM election year + free-form notes. Pure record-keeping; Sentinel does not file or validate.
+
+### Migrations
+- `0013_education_guide_views.sql` — guide view tracking
+- `0014_education_guide_quiz.sql` — adds 4 quiz columns to `education_guide_views`
+- `0015_education_review_and_tax_status.sql` — adds spaced-rep + tax-status tables
+
+All idempotent (`IF NOT EXISTS`). Apply on prod as `postgres`:
+```bash
+scp drizzle/0015_*.sql deploy@<host>:/tmp/
+ssh deploy@<host> "sudo -u postgres psql sentinel_db -v ON_ERROR_STOP=1 -f /tmp/0015_*.sql"
+```
+
+### Disclaimers
+`<EducationalDisclaimer />` (full + compact variants) is on every guide top + footer, every calculator, the hub page, and the guides index. Tagged with `data-print-disclaimer` so it renders prominently in printed/PDF output. Tax Status modal also carries a strong "self-attestation only" warning.
+
+### Tests
+- `tests/unit/guide-search.test.ts` (13 tests) — RAG indexer
+- `tests/unit/spaced-repetition.test.ts` (11 tests) — SM-2 algorithm
 
 ### Backtest Page
 - **Strategy presets** are filtered to the 7 engine-runnable modes (`conservative`, `moderate`, `aggressive`, `optimized`, `intraday`, `tactical`, `tactical-smart`) plus `custom` and `auto` — backtest and Live Trader share the same preset universe so what you tune is what you can deploy.
@@ -276,7 +333,7 @@ Pages are organized under sidebar nav items via `SUB_NAV` in `nav-config.ts`:
 - **Analysis:** Analysis, Multi-TF, Heatmap, Breadth, Correlation, Risk, Relative Strength, Sector Rotation, Unusual Activity
 - **Trader:** Live Trader, Strategies, Builder, Backtest, Replay, Optimizer, Alerts, Watchlists, Risk Sim, Calculator
 - **Journal:** Journal, Performance, Reports, Drawdown, P&L Calendar, Tax Center, Tax Report
-- **Research:** News, Sentiment, Articles, Filings, Insights, Education
+- **Research:** News, Sentiment, Articles, Filings, Insights, Education (hub with Glossary | Guides | Calculators tabs; Guides index at `/education/guides`, individual guide at `/education/guides/[slug]`, Spaced Review at `/education/review`)
 - **Macro:** Calendar, Earnings, Currency, Policy
 
 ## Detailed Design Reference
