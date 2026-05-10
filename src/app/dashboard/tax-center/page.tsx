@@ -22,6 +22,7 @@ import {
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
+import { TaxStatusCard } from "@/components/education/tax-status-card";
 
 interface TaxSummary {
   shortTermGains: number;
@@ -322,6 +323,9 @@ export default function TaxCenterPage() {
         </Card>
       )}
 
+      {/* Tax Status — TTS / MTM declaration */}
+      <TaxStatusCard />
+
       {/* Tax-Loss Harvesting */}
       <Card>
         <CardHeader>
@@ -417,73 +421,144 @@ export default function TaxCenterPage() {
         )}
       </Card>
 
-      {/* Education footer — surface relevant guides */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-accent" />
-            Tax Education
-          </CardTitle>
-        </CardHeader>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Link
-            href="/dashboard/education/guides/wash-sale-rules-deep-dive"
-            className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
-          >
-            <BookOpen className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-text-primary">
-                Wash Sale Rules: A Deep Dive
-              </p>
-              <p className="text-xs text-text-muted mt-0.5">
-                Cross-account traps, IRA disasters, ETF swap pairs that work.
-              </p>
-            </div>
-          </Link>
-          <Link
-            href="/dashboard/education/guides/trader-tax-status-and-mtm-election"
-            className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
-          >
-            <BookOpen className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-text-primary">
-                Trader Tax Status & §475(f) MTM
-              </p>
-              <p className="text-xs text-text-muted mt-0.5">
-                Who qualifies, what it does, and the irreversible commitment.
-              </p>
-            </div>
-          </Link>
-          <Link
-            href="/dashboard/education/guides/quarterly-estimated-taxes-for-traders"
-            className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
-          >
-            <BookOpen className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-text-primary">
-                Quarterly Estimated Taxes
-              </p>
-              <p className="text-xs text-text-muted mt-0.5">
-                Safe harbors, deadlines, and the withholding hack.
-              </p>
-            </div>
-          </Link>
-          <Link
-            href="/dashboard/education#calculators"
-            className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
-          >
-            <DollarSign className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-text-primary">
-                Tax-Loss Harvesting Calculator
-              </p>
-              <p className="text-xs text-text-muted mt-0.5">
-                Estimate this year&apos;s tax savings from realized losses.
-              </p>
-            </div>
-          </Link>
-        </div>
-      </Card>
+      {/* Education footer — data-driven ranking based on user state */}
+      <PersonalizedTaxEducation
+        summary={summary}
+        suggestionsCount={suggestions.length}
+      />
     </div>
+  );
+}
+
+// ─── Personalized Education Footer ──────────────────────────────────────
+
+interface EducationLink {
+  href: string;
+  title: string;
+  blurb: string;
+  /** Higher score = more prominent (sorted desc). */
+  score: number;
+  icon: typeof BookOpen;
+}
+
+function PersonalizedTaxEducation({
+  summary,
+  suggestionsCount,
+}: {
+  summary: TaxSummary | null;
+  suggestionsCount: number;
+}) {
+  // Score education links based on user state. Each adds its baseline score
+  // plus context-specific bumps; we surface the top 4.
+  const links: EducationLink[] = [];
+
+  // Wash sale guide — bumped if user has any harvesting opportunities (most
+  // common reason wash sales become relevant).
+  links.push({
+    href: "/dashboard/education/guides/wash-sale-rules-deep-dive",
+    title: "Wash Sale Rules: A Deep Dive",
+    blurb: suggestionsCount > 0
+      ? `You have ${suggestionsCount} harvesting candidate${suggestionsCount === 1 ? "" : "s"} — read this BEFORE selling`
+      : "Cross-account traps, IRA disasters, ETF swap pairs that work",
+    score: 50 + (suggestionsCount > 0 ? 30 : 0),
+    icon: BookOpen,
+  });
+
+  // TLH calculator — directly actionable when there are opportunities
+  links.push({
+    href: "/dashboard/education#calculators",
+    title: "Tax-Loss Harvesting Calculator",
+    blurb: suggestionsCount > 0
+      ? "Estimate this year's tax savings from your harvestable losses"
+      : "Run hypothetical numbers — no opportunities yet",
+    score: 40 + (suggestionsCount > 0 ? 25 : 0),
+    icon: DollarSign,
+  });
+
+  // MTM guide — bumped for users who appear to be active traders (proxied by
+  // high trade count or substantial short-term gains)
+  const looksLikeActiveTrader =
+    !!summary &&
+    (summary.tradeCount > 50 || summary.shortTermGains > 50_000);
+  links.push({
+    href: "/dashboard/education/guides/trader-tax-status-and-mtm-election",
+    title: "Trader Tax Status & §475(f) MTM",
+    blurb: looksLikeActiveTrader
+      ? "You look like an active trader — MTM election may apply"
+      : "Who qualifies, what it does, and the irreversible commitment",
+    score: 30 + (looksLikeActiveTrader ? 35 : 0),
+    icon: BookOpen,
+  });
+
+  // Quarterly estimates — bumped when estimated tax > $1,000 (the trigger
+  // threshold per IRS rules)
+  const owesEstimates = !!summary && summary.estimatedTax > 1_000;
+  links.push({
+    href: "/dashboard/education/guides/quarterly-estimated-taxes-for-traders",
+    title: "Quarterly Estimated Taxes",
+    blurb: owesEstimates
+      ? `Estimated tax: ${formatCurrency(summary.estimatedTax)} — you likely owe quarterly`
+      : "Safe harbors, deadlines, and the withholding hack",
+    score: 25 + (owesEstimates ? 35 : 0),
+    icon: BookOpen,
+  });
+
+  // Asset location — bumped when there are mixed gain/loss patterns
+  const hasMixedGains =
+    !!summary && summary.shortTermGains > 0 && summary.longTermGains > 0;
+  links.push({
+    href: "/dashboard/education/guides/asset-location-strategy",
+    title: "Asset Location Strategy",
+    blurb: hasMixedGains
+      ? "Mixed S/T and L/T gains — placing assets in the right account saves 30-100 bps/yr"
+      : "Putting the right asset in the right account",
+    score: 20 + (hasMixedGains ? 15 : 0),
+    icon: BookOpen,
+  });
+
+  // Estate planning — always present at low priority
+  links.push({
+    href: "/dashboard/education/guides/estate-planning-basics",
+    title: "Estate Planning Basics",
+    blurb: "Wills, beneficiary designations, the step-up trick",
+    score: 10,
+    icon: BookOpen,
+  });
+
+  links.sort((a, b) => b.score - a.score);
+  const top = links.slice(0, 4);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-accent" />
+          Tax Education
+        </CardTitle>
+        <span className="text-[11px] text-text-muted">
+          Personalized to your data
+        </span>
+      </CardHeader>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {top.map((link) => {
+          const Icon = link.icon;
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
+            >
+              <Icon className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">
+                  {link.title}
+                </p>
+                <p className="text-xs text-text-muted mt-0.5">{link.blurb}</p>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </Card>
   );
 }

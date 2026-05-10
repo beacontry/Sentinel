@@ -35,6 +35,7 @@ export function EducationalDisclaimer({
     <div
       role="note"
       aria-label="Educational disclaimer"
+      data-print-disclaimer
       className={`rounded-xl border border-warning/20 bg-warning/10 p-4 ${className}`}
     >
       <div className="flex items-start gap-3">

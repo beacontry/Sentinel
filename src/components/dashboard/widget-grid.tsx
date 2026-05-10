@@ -31,6 +31,8 @@ import { HeatmapMiniWidget } from "./widgets/heatmap-mini-widget";
 import { PerformanceWidget } from "./widgets/performance-widget";
 import { EarningsWidget } from "./widgets/earnings-widget";
 import { PortfolioWidget } from "./widgets/portfolio-widget";
+import { NetWorthWidget } from "./widgets/net-worth-widget";
+import { ContinueReadingWidget } from "./widgets/continue-reading-widget";
 
 // Map widget IDs to their React components
 const WIDGET_COMPONENTS: Record<string, React.ComponentType> = {
@@ -46,6 +48,8 @@ const WIDGET_COMPONENTS: Record<string, React.ComponentType> = {
   "performance-widget": PerformanceWidget,
   "earnings-widget": EarningsWidget,
   "portfolio-widget": PortfolioWidget,
+  "net-worth-widget": NetWorthWidget,
+  "continue-reading-widget": ContinueReadingWidget,
 };
 
 const CATEGORY_LABELS: Record<WidgetCategory, string> = {

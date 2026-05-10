@@ -731,6 +731,199 @@ export const QUIZZES: Record<string, QuizQuestion[]> = {
         "§2035 lookback. To avoid: have the ILIT PURCHASE a new policy from day one, never transfer an existing one in unless you have certainty of 3+ years.",
     },
   ],
+
+  // ─── Roth Conversion Ladder ─────────────────────────────────────────
+  "roth-conversion-ladder": [
+    {
+      question: "What does the Roth Conversion Ladder solve?",
+      options: [
+        "Eliminates RMDs entirely",
+        "Lets early retirees access traditional retirement money before 59½ without the 10% penalty",
+        "Removes income limits on Roth contributions",
+        "Doubles the contribution limit",
+      ],
+      correctIndex: 1,
+      explanation:
+        "The ladder converts traditional IRA money to Roth in low-income years; after a 5-year clock per conversion, the principal becomes withdrawable penalty-free regardless of age. Bridges the pre-59½ gap.",
+    },
+    {
+      question: "How long is the wait between converting and being able to withdraw the principal penalty-free?",
+      options: [
+        "1 year",
+        "3 years",
+        "5 years (per individual conversion)",
+        "10 years",
+      ],
+      correctIndex: 2,
+      explanation:
+        "Each conversion has its own independent 5-year clock starting January 1 of the conversion year. By staggering conversions, you build a continuous stream of penalty-free withdrawals.",
+    },
+    {
+      question: "Which year is best for doing a large Roth conversion?",
+      options: [
+        "Your highest-income year — when you can afford the tax",
+        "Your lowest-income year (gap year, sabbatical, year after retiring)",
+        "The year you turn 59½",
+        "Conversions are taxed the same regardless of timing",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Conversions fill brackets from your existing income upward. Doing them in low-income years means they fill the 10%/12% brackets cheaply. High-income years would put them in 24%+ brackets — defeats the purpose.",
+    },
+    {
+      question: "What's a major hidden cost of large conversions in your 60s?",
+      options: [
+        "Wash sale violations",
+        "IRMAA (Medicare surcharges) triggered 2 years later by elevated MAGI",
+        "Loss of Social Security entirely",
+        "Mandatory state tax doubling",
+      ],
+      correctIndex: 1,
+      explanation:
+        "IRMAA looks at MAGI from 2 years ago. A conversion that pushes 2024 MAGI past a threshold can cost $1,000+/yr in 2026 Medicare premiums. Plan conversions around the IRMAA brackets.",
+    },
+    {
+      question: "When is Rule 72(t) (SEPP) a better choice than the Roth Ladder?",
+      options: [
+        "When you have plenty of taxable savings to bridge",
+        "When you can&apos;t afford the 5-year wait or have only IRAs (no taxable balance)",
+        "When you want to maximize estate tax savings",
+        "When you live in a no-income-tax state",
+      ],
+      correctIndex: 1,
+      explanation:
+        "72(t) penalty-free SEPP requires committing to fixed payments for 5 years OR until 59½. It locks you in but works without a brokerage bridge. The ladder is more flexible if you can afford the 5-year wait.",
+    },
+  ],
+
+  // ─── Asset Location ─────────────────────────────────────────────────
+  "asset-location-strategy": [
+    {
+      question: "What's the difference between asset allocation and asset location?",
+      options: [
+        "They&apos;re the same thing",
+        "Allocation = how much of each asset class; location = which account each lives in",
+        "Allocation is for stocks, location is for bonds",
+        "Location is the brokerage&apos;s headquarters",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Allocation decides ratio (e.g., 80/20 stocks/bonds). Location decides which account holds each piece. They&apos;re independent decisions and both matter.",
+    },
+    {
+      question: "Which asset class belongs in tax-deferred accounts?",
+      options: [
+        "Broad market index funds (low turnover, qualified dividends)",
+        "Bonds (yield is taxed as ordinary income — biggest tax drag)",
+        "Cash",
+        "Individual stocks held long-term",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Bond interest is taxed as ordinary income — same rate as wages. Sheltering it in a Traditional IRA / 401(k) defers the tax. Index funds are inherently tax-efficient and fit better in taxable.",
+    },
+    {
+      question: "Why prioritize highest-growth assets in Roth?",
+      options: [
+        "Roth has higher contribution limits",
+        "Roth growth is tax-free forever; maximize the value of that wrapper with assets that compound aggressively",
+        "It&apos;s legally required",
+        "Roth distributions count toward RMDs",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Every dollar of growth in a Roth is tax-free forever. Putting low-return bonds there wastes the most valuable real estate in your portfolio. Reserve it for high-expected-return assets like small caps or aggressive growth.",
+    },
+    {
+      question: "Approximately how much can optimal asset location add to after-tax returns annually?",
+      options: [
+        "0–5 bps",
+        "30–100 bps (compounds to 6-figure differences over 30 years)",
+        "200–500 bps",
+        "It always reduces returns",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Studies estimate 30-100 basis points of annual after-tax improvement from optimal location. Compounded over decades, that&apos;s the difference between $1M and $1.4M on the same $500K starting balance.",
+    },
+    {
+      question:
+        "What rebalancing approach minimizes tax cost?",
+      options: [
+        "Sell appreciated holdings in taxable to buy underweight assets",
+        "Rebalance ACROSS accounts: sell overweighted assets in tax-deferred (no tax) instead of triggering capital gains in taxable",
+        "Don&apos;t rebalance",
+        "Rebalance only at year-end",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Cross-account rebalancing leverages the fact that sells inside a Traditional IRA / 401(k) are tax-free (deferred). Save the taxable account for new contributions and avoid triggering capital gains.",
+    },
+  ],
+
+  // ─── Social Security Claiming Strategies ────────────────────────────
+  "social-security-claiming-strategies": [
+    {
+      question: "What's the maximum age you can delay claiming Social Security and still get bigger benefits?",
+      options: [
+        "65",
+        "Full Retirement Age (67)",
+        "70 — no further increases past 70",
+        "75",
+      ],
+      correctIndex: 2,
+      explanation:
+        "Delayed retirement credits accrue at +8%/yr from FRA to age 70, then stop. Claiming past 70 gives you no extra benefit — file by 70.",
+    },
+    {
+      question: "Why does delaying to 70 usually win mathematically?",
+      options: [
+        "It&apos;s required by law",
+        "You get a guaranteed +8%/yr inflation-adjusted boost — no other risk-free 8% return exists, and break-even is ~age 80 (well before average life expectancy)",
+        "Lower taxes on benefits",
+        "Higher employer match",
+      ],
+      correctIndex: 1,
+      explanation:
+        "+8%/yr COLA-adjusted is unmatched anywhere else. With break-even ~80 and life expectancy 84-87 from age 65, the math favors delay for anyone with reasonable longevity.",
+    },
+    {
+      question: "How do spousal vs survivor benefits differ?",
+      options: [
+        "They&apos;re the same thing",
+        "Spousal = up to 50% of partner&apos;s PIA at FRA (capped); survivor = full benefit deceased was receiving (including any delayed credits)",
+        "Spousal is always larger",
+        "Survivor only applies to remarried widows",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Spousal caps at 50% of partner&apos;s PIA — delaying spousal past FRA does NOT increase it. Survivor benefits inherit the full amount including delayed credits — which is why the higher earner often delays to maximize the survivor benefit.",
+    },
+    {
+      question: "What's the Roth conversion / Social Security synergy?",
+      options: [
+        "Roth conversions increase your SS benefit",
+        "Roth withdrawals don&apos;t count toward 'combined income' for SS taxation, so doing conversions BEFORE claiming reduces future SS taxation and uses low brackets cheaply",
+        "Conversions reduce SS premiums",
+        "There&apos;s no relationship",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Combined income (used to determine SS taxability) excludes Roth withdrawals. Pre-claim Roth conversions in your 60s fill low brackets AND reduce post-claim SS taxation. Powerful pairing.",
+    },
+    {
+      question: "What's IRMAA?",
+      options: [
+        "An IRS form",
+        "Means-tested Medicare surcharge based on MAGI from 2 years prior — can add $70-$447/month to Part B premiums",
+        "A tax-free retirement account",
+        "Insurance for early retirees",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Income-Related Monthly Adjustment Amount. Tier-based surcharges on Medicare Part B/D premiums kicked in by income. Lookback is 2 years — a single Roth conversion that pushes MAGI past a threshold can cost $1,000+/yr in higher premiums.",
+    },
+  ],
 };
 
 /** Lookup helper — returns undefined for guides without a quiz. */
