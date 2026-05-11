@@ -8,6 +8,7 @@ import { CommandPalette } from "@/components/ui/command-palette";
 import { CsrfInit } from "@/components/csrf-init";
 import { SessionGuard } from "@/components/session-guard";
 import { PinSetupBanner } from "@/components/pin-setup-banner";
+import { SafeguardsOnboardingModal } from "@/components/safeguards-onboarding-modal";
 
 export default function DashboardLayout({
   children,
@@ -25,6 +26,7 @@ export default function DashboardLayout({
           <CommandPalette />
           <CsrfInit />
           <SessionGuard />
+          <SafeguardsOnboardingModal />
         </AiProvider>
       </ToastProvider>
     </TooltipProvider>

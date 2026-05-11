@@ -3449,6 +3449,44 @@ export async function shutdownAllEngines(): Promise<void> {
   await Promise.allSettled(userIds.map(uid => stopEngine(uid)));
 }
 
+/**
+ * Peek at the engine state for a user WITHOUT auto-creating one. Returns
+ * null when the user has no engine instance yet (never started). Useful
+ * for admin overviews that iterate over all users and don't want to
+ * pollute the engine Map with empty entries.
+ */
+export function peekEngineStatus(userId: string): {
+  running: boolean;
+  halted: boolean;
+  mode: EngineMode;
+  lastScanAt: string | null;
+  scanCount: number;
+  positionCount: number;
+  dailyLoss: number;
+  environment: "paper" | "live" | null;
+  brokerConnected: boolean;
+  errors: string[];
+} | null {
+  const map = (globalThis as typeof globalThis & {
+    __tradingEngines?: Map<string, EngineState>;
+  }).__tradingEngines;
+  if (!map) return null;
+  const engine = map.get(userId);
+  if (!engine) return null;
+  return {
+    running: engine.running,
+    halted: engine.halted,
+    mode: engine.mode,
+    lastScanAt: engine.lastScanAt?.toISOString() ?? null,
+    scanCount: engine.scanCount,
+    positionCount: engine.positionCount,
+    dailyLoss: engine.dailyLoss,
+    environment: engine.environment,
+    brokerConnected: engine.brokerConnected,
+    errors: engine.errors.slice(-5),
+  };
+}
+
 export function getEngineStatus(userId?: string): {
   running: boolean;
   halted: boolean;

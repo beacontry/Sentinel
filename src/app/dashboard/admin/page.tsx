@@ -15,7 +15,7 @@ import {
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw } from "lucide-react";
 
 interface User {
   id: string;
@@ -23,6 +23,28 @@ interface User {
   email: string;
   role: string;
   createdAt: string;
+}
+
+interface UserEngineRow {
+  user: { id: string; name: string; email: string; role: string };
+  engine: {
+    running: boolean;
+    halted: boolean;
+    mode: string;
+    lastScanAt: string | null;
+    scanCount: number;
+    positionCount: number;
+    dailyLoss: number;
+    environment: "paper" | "live" | null;
+    brokerConnected: boolean;
+    errors: string[];
+  } | null;
+  connection: {
+    label: string;
+    broker: string;
+    environment: string;
+    lastConnectedAt: string | null;
+  } | null;
 }
 
 interface Invite {
@@ -100,10 +122,62 @@ export default function AdminPage() {
     } catch { /* ignore — invites are secondary */ }
   }, []);
 
+  // Phase 6a — admin engine override
+  const [engineRows, setEngineRows] = useState<UserEngineRow[]>([]);
+  const [engineCmdUserId, setEngineCmdUserId] = useState<string | null>(null);
+  const [engineCmdError, setEngineCmdError] = useState("");
+
+  const loadEngines = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/engine");
+      if (res.ok) {
+        const data = await res.json();
+        setEngineRows(data.rows ?? []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  async function adminEngineAction(
+    targetUserId: string,
+    action: "start" | "stop" | "halt",
+    mode?: string
+  ) {
+    if (action === "halt") {
+      const target = engineRows.find((r) => r.user.id === targetUserId);
+      const label = target ? `${target.user.name} (${target.user.email})` : "this user";
+      if (!confirm(`EMERGENCY HALT for ${label}? Closes ALL their open positions at market.`)) return;
+    }
+    setEngineCmdUserId(targetUserId);
+    setEngineCmdError("");
+    try {
+      const res = await fetch("/api/admin/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId, action, mode: mode ?? "optimized" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Unknown" }));
+        setEngineCmdError(data.error ?? "Action failed");
+      }
+      await loadEngines();
+    } catch {
+      setEngineCmdError("Network error");
+    } finally {
+      setEngineCmdUserId(null);
+    }
+  }
+
   useEffect(() => {
     loadUsers();
     loadInvites();
-  }, [loadUsers, loadInvites]);
+    loadEngines();
+  }, [loadUsers, loadInvites, loadEngines]);
+
+  // Refresh engine rows every 30s so admin sees state changes
+  useEffect(() => {
+    const t = setInterval(loadEngines, 30_000);
+    return () => clearInterval(t);
+  }, [loadEngines]);
 
   async function handleSendInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -387,6 +461,154 @@ export default function AdminPage() {
           </div>
         )}
       </Card>
+
+      {/* ── User Engines (admin override) ── */}
+      <div className="pt-4">
+        <h2 className="text-lg font-semibold text-text-primary mb-2 flex items-center gap-2">
+          <Play className="w-5 h-5 text-accent" />
+          User Engines
+        </h2>
+        <p className="text-xs text-text-muted mb-4">
+          Start, stop, or emergency-halt any user&apos;s trading engine on their behalf. Every action is audited with you as
+          actor and the target user&apos;s id + email captured in metadata. Use sparingly — these are the user&apos;s own
+          positions and capital.
+        </p>
+        {engineCmdError && <p className="text-sm text-bearish mb-3">{engineCmdError}</p>}
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-text-muted text-left">
+                  <th className="pb-3 pr-4 font-medium">User</th>
+                  <th className="pb-3 pr-4 font-medium">Connection</th>
+                  <th className="pb-3 pr-4 font-medium">Engine</th>
+                  <th className="pb-3 pr-4 font-medium text-right">Positions</th>
+                  <th className="pb-3 pr-4 font-medium text-right">Daily P&amp;L</th>
+                  <th className="pb-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {engineRows.map((r) => {
+                  const e = r.engine;
+                  const busy = engineCmdUserId === r.user.id;
+                  const stateLabel = !e
+                    ? "Never started"
+                    : e.halted
+                    ? "Halted"
+                    : e.running
+                    ? `Running (${e.mode})`
+                    : "Stopped";
+                  const stateVariant: "bullish" | "bearish" | "warning" | "neutral" = !e
+                    ? "neutral"
+                    : e.halted
+                    ? "bearish"
+                    : e.running
+                    ? "bullish"
+                    : "neutral";
+                  return (
+                    <tr key={r.user.id} className="border-b border-border/50 hover:bg-bg-elevated/50 transition-colors">
+                      <td className="py-3 pr-4">
+                        <div className="text-text-primary">{r.user.name}</div>
+                        <div className="text-xs text-text-muted">{r.user.email}</div>
+                      </td>
+                      <td className="py-3 pr-4">
+                        {r.connection ? (
+                          <div className="text-xs">
+                            <div className="text-text-secondary">{r.connection.broker} · {r.connection.label}</div>
+                            <Badge
+                              variant={r.connection.environment === "live" ? "bearish" : "neutral"}
+                              className="mt-1"
+                            >
+                              {r.connection.environment}
+                            </Badge>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-text-muted">No connection</span>
+                        )}
+                      </td>
+                      <td className="py-3 pr-4">
+                        <Badge variant={stateVariant}>{stateLabel}</Badge>
+                        {e?.lastScanAt && (
+                          <div className="text-[10px] text-text-muted mt-1 font-mono">
+                            last: {new Date(e.lastScanAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 pr-4 text-right font-mono">{e?.positionCount ?? "—"}</td>
+                      <td className="py-3 pr-4 text-right font-mono">
+                        {e ? (
+                          <span className={e.dailyLoss < 0 ? "text-bearish" : e.dailyLoss > 0 ? "text-bullish" : ""}>
+                            {e.dailyLoss === 0 ? "$0" : (e.dailyLoss < 0 ? "-" : "+") + "$" + Math.abs(e.dailyLoss).toFixed(0)}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="py-3 text-right">
+                        <div className="inline-flex gap-1">
+                          {(!e || !e.running) && r.connection && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => adminEngineAction(r.user.id, "start")}
+                              disabled={busy}
+                              aria-label={`Start engine for ${r.user.email}`}
+                              title="Start"
+                            >
+                              <Play className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                          {e?.running && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => adminEngineAction(r.user.id, "stop")}
+                              disabled={busy}
+                              aria-label={`Stop engine for ${r.user.email}`}
+                              title="Stop"
+                            >
+                              <Square className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                          {e?.running && (
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => adminEngineAction(r.user.id, "halt")}
+                              disabled={busy}
+                              aria-label={`Halt engine for ${r.user.email}`}
+                              title="Halt (closes all positions)"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={loadEngines}
+                            disabled={busy}
+                            aria-label="Refresh"
+                            title="Refresh"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {engineRows.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-6 text-center text-sm text-text-muted">
+                      No users with engines yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
 
       {/* ── Invites Section ── */}
       <div className="pt-4">
