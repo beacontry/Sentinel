@@ -19,6 +19,8 @@ export const users = pgTable("users", {
   emailNotifications: boolean("email_notifications").default(false),
   notificationEmail: text("notification_email"),
   timezone: text("timezone"),
+  // Phase 6b — onboarding: NULL = first-time user, modal shown on next login.
+  safeguardsAcknowledgedAt: timestamp("safeguards_acknowledged_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
