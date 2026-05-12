@@ -43,6 +43,10 @@ export const traderTrades = pgTable("trader_trades", {
   limitPrice: real("limit_price"),
   stopPrice: real("stop_price"),
   fillPrice: real("fill_price"),
+  // Phase 16 — engine's expected fill price at submission. fillPrice gets
+  // updated by the Phase 11 reconciler with actual broker fill; placeholder
+  // preserves the original so slippage = fillPrice - placeholderFillPrice.
+  placeholderFillPrice: real("placeholder_fill_price"),
   fillTime: timestamp("fill_time", { withTimezone: true }),
   status: text("status").notNull().default("PENDING"),
   pnl: real("pnl"),

@@ -15,7 +15,7 @@ import {
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw, AlertTriangle } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw, AlertTriangle, BarChart3 } from "lucide-react";
 
 interface User {
   id: string;
@@ -33,6 +33,21 @@ interface DriftRow {
   diff: number;
   buys: number;
   sells: number;
+}
+
+interface SlippageRow {
+  symbol: string;
+  orders: number;
+  totalShares: number;
+  totalCostDollars: number;
+  avgSlippagePerShare: number;
+  worstSlippage: number;
+}
+interface UserSlippage {
+  user: { id: string; name: string; email: string };
+  totalOrders: number;
+  totalCost: number;
+  bySymbol: SlippageRow[];
 }
 
 interface UserDrift {
@@ -139,6 +154,24 @@ export default function AdminPage() {
       }
     } catch { /* ignore — invites are secondary */ }
   }, []);
+
+  // Phase 16 — slippage report
+  const [slippageUsers, setSlippageUsers] = useState<UserSlippage[]>([]);
+  const [slippageLoading, setSlippageLoading] = useState(false);
+  const [slippageNote, setSlippageNote] = useState<string>("");
+  const [slippageDays, setSlippageDays] = useState(30);
+
+  const loadSlippage = useCallback(async () => {
+    setSlippageLoading(true);
+    try {
+      const res = await fetch(`/api/admin/slippage-report?days=${slippageDays}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSlippageUsers(data.users ?? []);
+        setSlippageNote(data.note ?? "");
+      }
+    } catch { /* ignore */ } finally { setSlippageLoading(false); }
+  }, [slippageDays]);
 
   // Phase 12 — position drift audit
   const [driftUsers, setDriftUsers] = useState<UserDrift[]>([]);
@@ -525,6 +558,93 @@ export default function AdminPage() {
           </div>
         )}
       </Card>
+
+      {/* ── Phase 16: Slippage Report ── */}
+      <div className="pt-4">
+        <h2 className="text-lg font-semibold text-text-primary mb-2 flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-accent" />
+          Slippage Report
+        </h2>
+        <p className="text-xs text-text-muted mb-4">
+          Compares each FILLED order&apos;s placeholder fill (quote at submission) with the broker&apos;s actual fill.
+          Negative cost = lost to slippage. The &quot;paper-to-live tax&quot; — runs after the Phase 11 reconciler updates fill prices.
+        </p>
+        <div className="flex items-center gap-2 mb-3">
+          <Select
+            label=""
+            options={[
+              { value: "7", label: "Last 7 days" },
+              { value: "30", label: "Last 30 days" },
+              { value: "90", label: "Last 90 days" },
+              { value: "365", label: "Last year" },
+            ]}
+            value={String(slippageDays)}
+            onChange={(v) => setSlippageDays(parseInt(v, 10))}
+          />
+          <Button onClick={loadSlippage} loading={slippageLoading} variant="secondary">
+            <RefreshCw className="w-3.5 h-3.5" />
+            {slippageUsers.length === 0 ? "Run report" : "Refresh"}
+          </Button>
+        </div>
+        {slippageNote && (
+          <p className="text-xs text-text-muted italic mb-3">{slippageNote}</p>
+        )}
+        {slippageUsers.length > 0 && (
+          <div className="space-y-3">
+            {slippageUsers.map((u) => (
+              <Card key={u.user.id}>
+                <div className="mb-2 flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-medium text-text-primary">{u.user.name}</span>
+                    <span className="text-xs text-text-muted ml-2">{u.user.email}</span>
+                  </div>
+                  <div className="text-xs font-mono">
+                    <span className="text-text-muted mr-2">{u.totalOrders} orders</span>
+                    <span className={u.totalCost < 0 ? "text-bearish" : "text-bullish"}>
+                      {u.totalCost < 0 ? "-" : "+"}${Math.abs(u.totalCost).toFixed(2)} total
+                    </span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs font-mono">
+                    <thead>
+                      <tr className="text-text-muted border-b border-border/30">
+                        <th className="pb-1 pr-3 text-left font-medium">Symbol</th>
+                        <th className="pb-1 pr-3 text-right font-medium">Orders</th>
+                        <th className="pb-1 pr-3 text-right font-medium">Shares</th>
+                        <th className="pb-1 pr-3 text-right font-medium">Avg /share</th>
+                        <th className="pb-1 pr-3 text-right font-medium">Worst</th>
+                        <th className="pb-1 pr-3 text-right font-medium">Total cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {u.bySymbol.slice(0, 10).map((s) => (
+                        <tr key={s.symbol} className="border-b border-border/20">
+                          <td className="py-1.5 pr-3 text-text-primary">{s.symbol}</td>
+                          <td className="py-1.5 pr-3 text-right">{s.orders}</td>
+                          <td className="py-1.5 pr-3 text-right">{s.totalShares}</td>
+                          <td className={`py-1.5 pr-3 text-right ${s.avgSlippagePerShare < 0 ? "text-bearish" : "text-bullish"}`}>
+                            {s.avgSlippagePerShare >= 0 ? "+" : ""}${s.avgSlippagePerShare.toFixed(4)}
+                          </td>
+                          <td className={`py-1.5 pr-3 text-right ${s.worstSlippage < 0 ? "text-bearish" : "text-text-muted"}`}>
+                            ${s.worstSlippage.toFixed(2)}
+                          </td>
+                          <td className={`py-1.5 pr-3 text-right ${s.totalCostDollars < 0 ? "text-bearish" : "text-bullish"}`}>
+                            {s.totalCostDollars >= 0 ? "+" : ""}${s.totalCostDollars.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                      {u.bySymbol.length > 10 && (
+                        <tr><td colSpan={6} className="py-2 text-center text-text-muted">+ {u.bySymbol.length - 10} more symbols</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ── Phase 12: Position Drift Audit ── */}
       <div className="pt-4">
