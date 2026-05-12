@@ -92,8 +92,8 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Community",
     description: "Signal feed, discussion forum, and quick takes.",
     icon: MessageSquare,
-    matchPaths: ["/dashboard/forum", "/dashboard/posts", "/dashboard/leaderboard"],
-    keywords: ["feed", "forum", "posts", "social"],
+    matchPaths: ["/dashboard/forum", "/dashboard/posts", "/dashboard/leaderboard", "/dashboard/messages"],
+    keywords: ["feed", "forum", "posts", "social", "dms", "messages", "direct"],
   },
   {
     href: "/dashboard/admin",
@@ -207,5 +207,6 @@ export const SUB_NAV: Record<string, SubNavTab[]> = {
     { href: "/dashboard/forum", label: "Forum" },
     { href: "/dashboard/posts", label: "Posts" },
     { href: "/dashboard/leaderboard", label: "Leaderboard" },
+    { href: "/dashboard/messages", label: "Messages" },
   ],
 };
