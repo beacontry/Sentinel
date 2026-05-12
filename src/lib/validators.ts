@@ -31,6 +31,29 @@ export const removeSymbolSchema = z.object({
   symbol: z.string().min(1),
 });
 
+// ─── Multi-Watchlist (Phase A) ─────────────────────────────────────
+
+export const createWatchlistSchema = z.object({
+  name: z.string().min(1, "Name is required").max(60).trim(),
+  symbols: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(10)
+        .transform((s) => s.toUpperCase().trim())
+    )
+    .max(200, "Maximum 200 symbols per list")
+    .default([]),
+  setDefault: z.boolean().optional(),
+});
+
+export const renameWatchlistSchema = z.object({
+  name: z.string().min(1).max(60).trim(),
+});
+
+export type CreateWatchlistInput = z.infer<typeof createWatchlistSchema>;
+
 // ─── Discord Webhooks ─────────────────────────────────────────────
 
 export const createWebhookSchema = z.object({

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db, withTimeout, isStatementTimeout } from "@/lib/db";
+import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { watchlistItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getFinnhubClient, type FinnhubNewsArticle } from "@/lib/finnhub";
 import { createRouteLogger } from "@/lib/logger";
+import { resolveActiveWatchlistId } from "@/lib/watchlists";
 
 const log = createRouteLogger("news-feed");
 
@@ -17,14 +18,28 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const limit = Math.min(50, Math.max(10, Number(searchParams.get("limit")) || 20));
+  // Phase A — allow scoping to a specific list. Without it, fall back to
+  // the user's default list (matches /api/watchlist GET semantics).
+  const watchlistIdHint = searchParams.get("watchlistId");
 
   try {
-    // Get user's watchlist symbols
+    const activeListId = await resolveActiveWatchlistId(
+      session.userId as string,
+      watchlistIdHint
+    );
+    if (!activeListId) {
+      return NextResponse.json(
+        { articles: [], page, totalPages: 0, hasWatchlist: false },
+        { headers: { "Cache-Control": "private, no-store" } }
+      );
+    }
+
+    // Get the scoped list's symbols
     const watchlist = await withTimeout(3000, async (tx) => {
       return tx
         .select({ symbol: watchlistItems.symbol })
         .from(watchlistItems)
-        .where(eq(watchlistItems.userId, session.userId as string));
+        .where(eq(watchlistItems.watchlistId, activeListId));
     });
 
     if (watchlist.length === 0) {
