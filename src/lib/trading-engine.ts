@@ -1434,7 +1434,8 @@ export function getBrokerPositionCache(userId: string): CachedBrokerPositions | 
 async function syncPositionMapFromBroker(
   brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number }[],
   positionMap: Map<string, TrackedPosition>,
-  userId: string
+  userId: string,
+  client?: BrokerClient
 ): Promise<void> {
   // Engine is long-only. If a short shows up on the broker (manual order, external tool),
   // ignore it entirely — long-only stop/exit logic is wrong-direction for shorts.
@@ -1449,11 +1450,9 @@ async function syncPositionMapFromBroker(
   const brokerSymbols = new Set(longBrokerPositions.map(p => p.symbol));
 
   // Remove positions that no longer exist on broker (or flipped to short).
-  // Phase 7 — emit an audit event when a tracked position disappears WITHOUT
-  // the engine initiating the exit. This is almost always a broker-side stop
-  // firing; surfaces it to the admin audit log so realized-P&L
-  // reconciliation in trader_trades is at least traceable. Full automatic
-  // trader_trades insert deferred to Phase 7.5 (needs broker client passed in).
+  // Phase 7 audits the disappearance; Phase 7.5 calls
+  // reconcileBrokerSideExit to query the broker for the actual fill and INSERT
+  // a trader_trades row so realized P&L stays correct without manual cleanup.
   for (const [symbol, pos] of positionMap) {
     if (!brokerSymbols.has(symbol)) {
       log.info({ symbol, userId, expectedQty: pos.qty, entryPrice: pos.entryPrice }, "Position no longer on broker — removing (likely broker-side stop fired)");
@@ -1470,6 +1469,13 @@ async function syncPositionMapFromBroker(
           likelyCause: "broker_side_stop_fired",
         },
       });
+      // Phase 7.5 — auto-reconcile broker-side exits into trader_trades.
+      // Best-effort: failure logs + continues so a transient broker hiccup
+      // doesn't block position cleanup. Idempotent via the
+      // (user_id, broker_order_id) unique index — re-running can't double-log.
+      if (client) {
+        void reconcileBrokerSideExit(client, symbol, pos, userId);
+      }
       positionMap.delete(symbol);
     }
   }
@@ -1501,6 +1507,115 @@ async function syncPositionMapFromBroker(
       });
       log.info({ symbol: bp.symbol, qty: bp.qty, entry: bp.avgEntryPrice }, "New position discovered on broker — tracking");
     }
+  }
+}
+
+/**
+ * Phase 7.5 — Broker-side exit reconciliation.
+ *
+ * When a position vanishes from the broker without engine action (broker-side
+ * stop fired, manual sell, etc.), the engine previously never logged the
+ * exit to trader_trades. Realized P&L would silently understate losses.
+ *
+ * This helper, called from syncPositionMapFromBroker right before a position
+ * is removed, queries Alpaca for recent closed orders matching the symbol +
+ * qty, finds the most recent SELL fill in the last hour, computes P&L from
+ * the in-memory entryPrice we still have, and inserts a trader_trades row.
+ *
+ * Idempotent — relies on the (user_id, broker_order_id) unique index in
+ * trader_trades. If the row already exists (engine logged it earlier or a
+ * concurrent sync raced us), the INSERT silently no-ops.
+ *
+ * Never throws — failures are logged but don't propagate, so a transient
+ * broker hiccup doesn't block positionMap cleanup.
+ */
+async function reconcileBrokerSideExit(
+  client: BrokerClient,
+  symbol: string,
+  expectedPos: TrackedPosition,
+  userId: string
+): Promise<void> {
+  try {
+    const closedOrders = await client.getOrders(50, "closed");
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+
+    // Find the most recent filled SELL for this symbol that matches qty and
+    // filled within the last hour. We match on qty because a position can
+    // have multiple historical sells across days; we want only the one that
+    // just closed our tracked position.
+    const candidate = closedOrders
+      .filter((o) =>
+        o.symbol === symbol &&
+        o.side === "sell" &&
+        o.status === "filled" &&
+        Number(o.filledQty) === expectedPos.qty &&
+        o.filledAt &&
+        new Date(o.filledAt).getTime() > oneHourAgo
+      )
+      .sort((a, b) => new Date(b.filledAt!).getTime() - new Date(a.filledAt!).getTime())[0];
+
+    if (!candidate) {
+      log.warn(
+        { symbol, userId, expectedQty: expectedPos.qty },
+        "Reconciliation: position disappeared but no matching broker fill found in last hour — trader_trades not updated, manual investigation may be needed"
+      );
+      return;
+    }
+
+    // Idempotence check: skip if we've already logged this broker_order_id
+    const existing = await db
+      .select({ id: traderTrades.id })
+      .from(traderTrades)
+      .where(and(eq(traderTrades.userId, userId), eq(traderTrades.brokerOrderId, candidate.id)))
+      .limit(1);
+
+    if (existing.length > 0) {
+      log.debug({ symbol, brokerOrderId: candidate.id }, "Reconciliation: broker fill already logged, skipping");
+      return;
+    }
+
+    const fillPrice = candidate.filledPrice ?? 0;
+    if (fillPrice === 0) {
+      log.warn({ symbol, brokerOrderId: candidate.id }, "Reconciliation: filled order missing filledPrice — cannot compute P&L");
+      return;
+    }
+
+    const pnl = (fillPrice - expectedPos.entryPrice) * expectedPos.qty;
+    // Map order type to a useful signal name for the trader_trades log
+    const signal =
+      candidate.type === "stop" || candidate.type === "stop_limit"
+        ? "trailing_stop_hit"
+        : "broker_side_exit";
+
+    await db.insert(traderTrades).values({
+      userId,
+      brokerOrderId: candidate.id,
+      symbol,
+      signal,
+      action: "SELL",
+      quantity: expectedPos.qty,
+      orderType: candidate.type || "stop",
+      stopPrice: candidate.stopPrice ? parseFloat(candidate.stopPrice) : null,
+      fillPrice,
+      fillTime: new Date(candidate.filledAt!),
+      status: "FILLED",
+      pnl,
+      notes: `Auto-reconciled: broker-side ${candidate.type || "exit"} fired at $${fillPrice.toFixed(4)} (entry $${expectedPos.entryPrice.toFixed(2)}). Engine missed logging — Phase 7.5 reconciliation inserted this row.`,
+      traderTimestamp: new Date(candidate.filledAt!),
+    });
+
+    log.info(
+      { symbol, userId, fillPrice, pnl: pnl.toFixed(2), brokerOrderId: candidate.id, signal },
+      "Reconciled broker-side exit into trader_trades"
+    );
+  } catch (err) {
+    // Unique-constraint violation = idempotency race (someone else just logged it). Safe to swallow.
+    const msg = err instanceof Error ? err.message : "unknown";
+    if (msg.includes("trader_trades_user_broker_order_idx") || msg.includes("duplicate key")) {
+      log.debug({ symbol, err: msg }, "Reconciliation: trade already logged (race)");
+      return;
+    }
+    log.error({ symbol, userId, err: msg }, "Reconciliation failed — trader_trades not updated");
   }
 }
 
@@ -1594,7 +1709,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
     pushError(engine, `Broker getPositions failed: ${msg}`);
     return;
   }
-  await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!);
+  await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
   engine.positionCount = positionMap.size;
 
   // Pending limit buys count as "invested" — without this, a re-scan before
@@ -1775,7 +1890,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
     pushError(engine, `Broker getPositions failed: ${msg}`);
     return;
   }
-  await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!);
+  await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
   engine.positionCount = positionMap.size;
 
   // Track for daily PnL: limit-order buys may not show in getPositions() yet
@@ -2365,7 +2480,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   const positionMap = getPositionMap(engine?.userId ?? engineUserId);
 
   // Sync position map with broker — handles manual sells/buys on Alpaca
-  await syncPositionMapFromBroker(brokerPositions, positionMap, engine.userId!);
+  await syncPositionMapFromBroker(brokerPositions, positionMap, engine.userId!, client);
   engine.positionCount = positionMap.size;
 
   // Fetch open orders to avoid conflicts (duplicate buys, stale stops).
@@ -3507,7 +3622,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
       log.info({ positions: positions.length, userId, mode: lastMode, attempt }, "Open positions detected — auto-starting engine with last mode");
 
       const positionMap = getPositionMap(userId);
-      await syncPositionMapFromBroker(positions, positionMap, userId);
+      await syncPositionMapFromBroker(positions, positionMap, userId, resolved.client);
       log.info({ synced: positionMap.size }, "Synced broker positions into engine");
 
       await startEngine(userId, lastMode);
