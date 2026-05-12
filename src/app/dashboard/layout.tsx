@@ -9,6 +9,7 @@ import { CsrfInit } from "@/components/csrf-init";
 import { SessionGuard } from "@/components/session-guard";
 import { PinSetupBanner } from "@/components/pin-setup-banner";
 import { SafeguardsOnboardingModal } from "@/components/safeguards-onboarding-modal";
+import { DisplayPrefsProvider } from "@/components/display-prefs-provider";
 
 export default function DashboardLayout({
   children,
@@ -18,16 +19,18 @@ export default function DashboardLayout({
   return (
     <TooltipProvider>
       <ToastProvider>
-        <AiProvider>
-          <AppShell>
-            <PinSetupBanner />
-            {children}
-          </AppShell>
-          <CommandPalette />
-          <CsrfInit />
-          <SessionGuard />
-          <SafeguardsOnboardingModal />
-        </AiProvider>
+        <DisplayPrefsProvider>
+          <AiProvider>
+            <AppShell>
+              <PinSetupBanner />
+              {children}
+            </AppShell>
+            <CommandPalette />
+            <CsrfInit />
+            <SessionGuard />
+            <SafeguardsOnboardingModal />
+          </AiProvider>
+        </DisplayPrefsProvider>
       </ToastProvider>
     </TooltipProvider>
   );

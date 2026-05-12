@@ -19,6 +19,7 @@ import {
 import { useAi } from "@/components/ai/ai-provider";
 import { useTheme } from "@/components/theme-provider";
 import { BrokerSwitcher } from "./broker-switcher";
+import { PnlFormatToggle } from "./pnl-format-toggle";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -126,6 +127,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 {theme === "dark" ? <Sun style={{ width: 16, height: 16 }} /> : <Moon style={{ width: 16, height: 16 }} />}
                 {theme === "dark" ? "Light Mode" : "Dark Mode"}
               </button>
+              <PnlFormatToggle />
               <button
                 type="button"
                 onClick={toggleChat}
