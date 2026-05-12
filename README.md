@@ -38,43 +38,73 @@ Dashboard → monitors positions, P&L, risk in real-time
 ```
 src/
 ├── app/
-│   ├── api/                    # 60+ API routes
+│   ├── api/                    # 90+ API routes
 │   │   ├── trader/             # Engine control, dashboard, signals
 │   │   ├── optimize/           # GA optimizer, compare modes, save preset
-│   │   ├── broker/             # Alpaca/IBKR/Tradier connections
+│   │   ├── broker/             # Alpaca/IBKR/Tradier connections (+ /[id]/activate switcher)
 │   │   ├── screener/           # Market scanner
 │   │   ├── analyze/[symbol]/   # Technical analysis
-│   │   ├── backtest/[symbol]/  # Strategy backtesting
+│   │   ├── backtest/[symbol]/  # Strategy backtesting (Sharpe + Sortino + Calmar + MAR)
+│   │   ├── watchlists/         # Multi-watchlist CRUD + share tokens
+│   │   ├── dashboard/layouts/  # Multi-layout CRUD with named layouts
+│   │   ├── support/tickets/    # Customer support tickets + messages
+│   │   ├── dm/threads/         # Private user-to-user DMs
+│   │   ├── congress/           # Federal Periodic Transaction Reports
+│   │   ├── transcripts/        # Earnings call metadata listing
+│   │   ├── performance/attribution/  # Per-symbol realized P&L
+│   │   ├── me/                 # Per-user prefs (terms, digest-email)
+│   │   ├── public/watchlist/   # Public share-token reads (no auth)
 │   │   └── ...
 │   ├── dashboard/
 │   │   ├── trader/             # Live trading with engine controls
-│   │   ├── optimizer/          # GA runs, mode comparison, save preset
-│   │   ├── strategies/         # Strategy assignments per symbol
+│   │   ├── trade/[symbol]/     # Manual order ticket (engine-gated)
+│   │   ├── analysis/           # Technical analysis cockpit + TradingView toggle
+│   │   ├── watchlists/         # Multi-watchlist management with share buttons
+│   │   ├── congress/           # Politician trade tracker
+│   │   ├── messages/           # DM inbox + threads
+│   │   ├── support/            # Customer support inbox + threads
+│   │   ├── pnl-calendar/       # P&L heatmap with clickable day drill-down
+│   │   ├── performance/        # Signal accuracy + P&L attribution
 │   │   ├── backtest/           # Strategy backtesting lab
-│   │   ├── analysis/           # Technical analysis cockpit
-│   │   ├── screener/           # Market scanner
-│   │   ├── calendar/           # Economic calendar
 │   │   └── ...
+│   ├── terms/                  # Public ToS page
+│   ├── risk/                   # Public Risk Disclosure page
+│   ├── w/[token]/              # Public shared-watchlist viewer
 │   ├── login/
 │   └── register/
 ├── components/
-│   ├── ui/                     # Design system (Button, Card, Badge, etc.)
+│   ├── ui/                     # Design system (Button, Card, Badge, SymbolLink, etc.)
 │   ├── dashboard/              # Page-specific components
-│   └── layout/                 # Shell, nav, sub-nav
+│   │   ├── tradingview-chart.tsx           # TradingView Advanced Chart embed
+│   │   ├── position-detail-sheet.tsx       # Click-position-row drawer
+│   │   ├── layout-switcher.tsx             # Named dashboard-layout dropdown
+│   │   ├── cockpit-watchlist.tsx           # Analysis page watchlist + switcher
+│   │   └── ...
+│   ├── display-prefs-provider.tsx          # Global P&L/time/palette prefs
+│   ├── terms-acceptance-modal.tsx          # Click-through ToS+Risk acceptance
+│   └── layout/                 # Shell, nav, broker-switcher, keyboard-shortcuts
 ├── lib/
 │   ├── trading-engine.ts       # Automated trading engine
 │   ├── signal-eval.ts          # Shared signal evaluator (optimizer + mode comparison)
 │   ├── optimizer.ts            # Genetic algorithm optimizer
-│   ├── brokers.ts              # Alpaca/IBKR/Tradier broker clients
-│   ├── backtester.ts           # Strategy backtesting engine
+│   ├── brokers.ts              # Alpaca/IBKR/Tradier broker clients (qty + notional)
+│   ├── backtester.ts           # Strategy backtesting + Sortino/Calmar/MAR
 │   ├── market-data.ts          # Yahoo/Finnhub data providers
 │   ├── screener.ts             # Market scanner with auto-scheduling
 │   ├── trader-client.ts        # Screener → Engine signal bridge
+│   ├── watchlists.ts           # Multi-watchlist resolver helpers
+│   ├── headline-sentiment.ts   # Keyword-based per-headline sentiment
+│   ├── audit.ts                # Hash-chained audit log
+│   ├── terms-version.ts        # ToS version (bumping re-prompts users)
 │   ├── indicators/             # 10+ technical indicators
 │   ├── strategy-presets.ts     # 9 preset strategies
 │   ├── sp500.ts                # S&P 500 universe (auto-updates from Wikipedia)
-│   ├── db/                     # Drizzle schema + connection
+│   ├── db/                     # Drizzle schema (28 migrations) + connection
 │   └── ...
+├── hooks/
+│   ├── usePolling.ts           # Shared polling with Page Visibility pause
+│   ├── use-recently-viewed.ts  # Recently-clicked symbols (localStorage)
+│   └── use-education-progress.ts
 └── types/
 ```
 
@@ -143,10 +173,17 @@ trail = 2% + (base - 2%) × e^(-3 × profitPct)
 
 ### Safety Features
 
-- **Paper mode only** — engine refuses to start with live broker connections
+- **Per-user live trading gate** — global `ALLOW_LIVE_TRADING=1` env var + per-user `live_trading_enabled` DB flag must both be true; otherwise the engine refuses to start on a live broker connection (logs `engine.live_blocked` audit row)
 - **Broker-side stop orders** — placed on Alpaca when engine stops/crashes
 - **Auto-restart with position sync** — detects open positions after deploy, syncs broker positions into memory, resumes with last mode (all 7 modes supported)
 - **Daily loss auto-halt** — stops trading if losses exceed configured % of equity
+- **Account-switch detection** — halts if `account_number` changes mid-session OR equity drops > 50% from boot snapshot
+- **Order rate limit** — 30 orders / 60s sliding window per engine
+- **Daily notional cap** — rejects BUYs exceeding `maxDailyNotionalPct × bootEquity` across the day
+- **Consecutive-loss halt** — tracks losing trades since last winner; halts at threshold
+- **MTM-aware wash-sale protection** — blocks BUYs on symbols with a losing exit within 31 calendar days (turned off when user attests §475(f) MTM via Trader page)
+- **PDT protection** — auto-detects equity < $25k; refuses to start intraday mode, blocks new BUYs at 3+ daytrades
+- **Engine-gated manual operations** — manual orders + broker switching refused while engine runs (UI banner + API 409 `ENGINE_RUNNING`) to prevent position-map drift
 - **SPY trend filter** — blocks all buys when SPY below 20-day SMA
 - **Signal cooldown** — 2.5 hours between same-symbol buys
 - **STRONG_BUY overflow** — BUY signals respect maxPositions; STRONG_BUY can exceed by up to 50%
@@ -155,6 +192,7 @@ trail = 2% + (base - 2%) × e^(-3 × profitPct)
 - **Intraday flatten** — closes all positions at 3:00 PM ET
 - **Risk overrides from DB** — all fields optional; empty = engine defaults. Only user-set fields impose limits
 - **Dashboard always shows broker data** — account balance and positions fetched live from Alpaca regardless of engine state
+- **Hash-chained audit log** — every privileged action recorded with `prev_hash → hash` linkage. Tamper-evident `/dashboard/admin/audit` page with one-click verify
 
 ## Strategy Optimizer
 
@@ -281,15 +319,36 @@ All brokers support: `getAccount()`, `getPositions()`, `getOrders()`, `placeOrde
 
 | Section | Pages | Purpose |
 |---------|-------|---------|
-| **Dashboard** | Home | Command center with watchlist, signals, P&L |
-| **Analysis** | Analysis, Heatmap, Correlation, Relative Strength | Chart structure and market views |
+| **Dashboard** | Home (multi-layout, resizable widgets) | Command center with watchlist, signals, P&L |
+| **Analysis** | Analysis, Heatmap, Correlation, Relative Strength, Multi-TF, Breadth, Sector Rotation, Unusual Activity, Risk | Chart structure and market views. Toggle between engine view (with signal markers) and TradingView Advanced Chart |
 | **Screener** | Screener | Scan market for setups, feeds signals to engine |
-| **Trader** | Live Trader, Strategies, Backtest, Optimizer, Alerts, Calculator | Execution and strategy management |
-| **Journal** | Journal, Performance, P&L Calendar, Tax Center | Trade review and tracking |
-| **Research** | News, Articles, Filings, Insights, Education (14 guides + 8 calculators + 95 glossary terms + spaced-repetition review) | Market research and personal-finance education |
-| **Macro** | Calendar, Currency, Policy | Economic events and FX |
-| **Community** | Feed, Forum, Posts | Social trading |
-| **Admin** | Admin, Settings | User management and configuration |
+| **Trader** | Live Trader, Strategies, Backtest, Optimizer, Alerts, Calculator, Replay, Risk Sim, **Trade ticket** (`/trade/[symbol]`) | Execution and strategy management. Manual order ticket supports market/limit/stop/stop-limit/bracket + fractional shares (dollar-based buys) — engine-gated so the in-memory position map can't drift |
+| **Journal** | Journal, Performance (now with P&L attribution by symbol), P&L Calendar (clickable days with trade drill-down), Tax Center, Tax Report, Drawdown, Reports | Trade review and tracking |
+| **Research** | News (per-headline sentiment badges), Articles, Filings, Insights, **Congress** (federal Periodic Transaction Reports), Education (14 guides + 8 calculators + 95 glossary terms + spaced-repetition review) | Market research and personal-finance education |
+| **Macro** | Calendar, Earnings, Currency, Policy | Economic events and FX |
+| **Community** | Feed, Forum, Posts, Leaderboard, **Messages** (private DMs) | Social trading |
+| **Help** | **Support** (ticketed customer support with admin reply view) | Bug reports, questions, requests |
+| **Admin** | Admin, Settings (Display preferences: P&L $/%, time format, color-blind palette, default landing page, daily-digest email opt-in) | User management and configuration |
+| **Public** | `/terms`, `/risk` (ToS + Risk Disclosure), `/w/[token]` (shared watchlists) | Click-through legal + public surfaces |
+
+### Watchlists
+
+Multiple named lists per user, DB-backed (replaces the old localStorage workspaces). Each list can be marked default; the default is what every other widget/page sees as "your watchlist." Lists can be shared publicly via `/w/[token]` (revocable per list).
+
+### Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Cmd`/`Ctrl` + `K` | Command palette — fuzzy nav + symbol jump (type a ticker → Open chart / Trade) |
+| `T` | Trader |
+| `A` | Analysis |
+| `S` | Screener |
+| `W` | Watchlists |
+| `J` | Journal |
+| `N` | News |
+| `?` | Show the keyboard-shortcuts help modal |
+
+Single-key shortcuts only fire when no modifier is held AND the user isn't typing in an input.
 
 ## Setup
 
@@ -309,14 +368,34 @@ Required:
 ```
 DATABASE_URL=postgres://user:pass@localhost:5432/sentinel
 JWT_SECRET=your-secret-here
+ENCRYPTION_KEY=32-bytes-base64       # AES-256-GCM for broker API keys at rest
 ```
 
 Optional:
 ```
-FINNHUB_API_KEY=           # Fallback market data
-ANTHROPIC_API_KEY=         # AI chat analysis
+FINNHUB_API_KEY=           # Fallback market data + Congress trades + earnings transcript metadata
+ANTHROPIC_API_KEY=         # AI chat analysis + daily market digest
 NEXT_TELEMETRY_DISABLED=1
+CRON_SECRET=               # Shared secret for /api/cron/* routes
+
+# Live trading gate — engine refuses to start on live broker connections without this set.
+# Per-user `live_trading_enabled` DB flag is a second gate above this.
+ALLOW_LIVE_TRADING=        # set to 1 to enable live; leave unset for paper-only
+
+# Outbound email (Resend) — required for invite emails, support replies,
+# daily digest emails (opt-in), and engine alert emails to send.
+# Without these, /api/admin/invites still creates the invite row and returns a copyable
+# signup link, but no email is delivered.
+RESEND_API_KEY=
+EMAIL_FROM=Sentinel <noreply@guardcybersolutionsllc.com>
+
+# Push notifications (web-push protocol)
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:admin@example.com
 ```
+
+> **Invite emails:** Sentinel's registration is invite-only. Admins create invites at `/dashboard/admin` → an email with a signup link is sent via Resend. The `EMAIL_FROM` domain must be Resend-verified — for prod that's the shared GuardCyber apex (see GuardCyber `README.md` § Email Infrastructure for the DNS setup).
 
 ### Install & Run
 

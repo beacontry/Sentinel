@@ -7,7 +7,7 @@
 - Anthropic SDK for AI chat analysis
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
-- Vitest for testing (199 tests across indicators, analyzer, validators, signal translator, rate-limiter, db-timeout, crypto, audit, engine-safeguards incl. wash-sale + PDT)
+- Vitest for testing (267 tests across indicators, analyzer, validators, signal translator, rate-limiter, db-timeout, crypto, audit, engine-safeguards incl. wash-sale + PDT, guide-search, spaced-repetition)
 - Alpaca Markets API for paper/live trading
 
 ## Architecture: Multi-Tenant Trading Engine
@@ -448,16 +448,19 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 - Error display: `text-sm text-bearish`
 - Empty state: EmptyState component or inline centered block with muted icon
 
-## Dashboard Pages (47 total)
+## Dashboard Pages (54 total)
 Located at `src/app/dashboard/*/page.tsx`:
 
 **Core:** alerts, analysis, calculator, chat, screener, settings, trader
 **Analysis & Market:** breadth, correlation, heatmap, multi-timeframe, relative-strength, risk-correlation, sector-rotation, unusual-activity
-**Trading Tools:** backtest, replay, risk-simulator, strategies, strategy-builder, watchlists
+**Trading Tools:** backtest, replay, risk-simulator, strategies, strategy-builder, watchlists, **trade/[symbol]** (manual order ticket)
 **Journal & Analytics:** drawdown, journal, performance, pnl-calendar, reports
-**Research:** articles, education, education/guides, education/guides/[slug], education/review, filings, insights, news, sentiment
+**Research:** articles, education, education/guides, education/guides/[slug], education/review, filings, insights, news, sentiment, **congress**
 **Macro:** calendar, currency, earnings, policy
-**Community:** feed, forum, posts
+**Community:** feed, forum, posts, leaderboard, **messages**, **messages/[id]**
+**Help:** **support**, **support/[id]**
+**Public (no auth):** `/terms`, `/risk`, `/w/[token]` (shared watchlist), `/dashboard/messages`
+
 **Admin:** admin, paper-trading, portfolio, tax, tax-center
 
 ### New API Routes
@@ -472,6 +475,27 @@ Located at `src/app/dashboard/*/page.tsx`:
 - `/api/education/review` — GET due-cards queue, POST a review with quality 0–5 (SM-2)
 - `/api/tax-status` — GET/PUT user's self-attested Trader Tax Status + §475(f) MTM declaration
 - `/api/portfolio/summary` — net-worth aggregation across paper portfolios + live broker positions
+
+### 2026-05-12 — New API Routes (multi-watchlist + QoL + community)
+- `/api/watchlists` (plural) — GET list, POST create. Multi-list CRUD on top of legacy `/api/watchlist` (which remains as the "act on default list" surface)
+- `/api/watchlists/[id]` — GET fetch, PATCH rename/setDefault, DELETE (refuses last-list deletion, auto-promotes oldest survivor on default-delete)
+- `/api/watchlists/[id]/items` — POST/DELETE symbols on a specific list
+- `/api/watchlists/[id]/share` — POST generate/rotate token, DELETE revoke
+- `/api/public/watchlist/[token]` — public read endpoint (no auth) backing `/w/[token]`
+- `/api/dashboard/layout` — single default layout (Phase 20)
+- `/api/dashboard/layouts` — multi-layout CRUD with rename/setDefault/delete
+- `/api/dashboard/layouts/[id]` — GET fetch, PATCH update, DELETE
+- `/api/broker/connections/[id]/activate` — atomic broker switcher, refuses while engine runs
+- `/api/congress` — Congressional Periodic Transaction Reports (filings), optional `?symbol=`
+- `/api/transcripts/[symbol]` — earnings-call metadata listing (paid-tier text deferred)
+- `/api/performance/attribution` — realized $ P&L by symbol from `trader_trades`
+- `/api/alerts/history` (DELETE) — bulk-clear caller's alert history
+- `/api/me/digest-email` — GET/PATCH opt-in for daily digest email
+- `/api/me/terms` — GET state, POST accept the current TERMS_VERSION
+- `/api/support/tickets` — GET list, POST open new ticket
+- `/api/support/tickets/[id]` — GET thread, POST reply, PATCH status/priority
+- `/api/dm/threads` — GET list, POST start new
+- `/api/dm/threads/[id]` — GET thread + auto-mark-read, POST reply
 
 ## Education Section
 
@@ -532,8 +556,154 @@ Pages are organized under sidebar nav items via `SUB_NAV` in `nav-config.ts`:
 - **Analysis:** Analysis, Multi-TF, Heatmap, Breadth, Correlation, Risk, Relative Strength, Sector Rotation, Unusual Activity
 - **Trader:** Live Trader, Strategies, Builder, Backtest, Replay, Optimizer, Alerts, Watchlists, Risk Sim, Calculator
 - **Journal:** Journal, Performance, Reports, Drawdown, P&L Calendar, Tax Center, Tax Report
-- **Research:** News, Sentiment, Articles, Filings, Insights, Education (hub with Glossary | Guides | Calculators tabs; Guides index at `/education/guides`, individual guide at `/education/guides/[slug]`, Spaced Review at `/education/review`)
+- **Research:** News, Sentiment, Articles, Filings, Insights, Congress, Education (hub with Glossary | Guides | Calculators tabs; Guides index at `/education/guides`, individual guide at `/education/guides/[slug]`, Spaced Review at `/education/review`)
 - **Macro:** Calendar, Earnings, Currency, Policy
+- **Community:** Feed, Forum, Posts, Leaderboard, Messages
+
+---
+
+## 2026-05-12 — Multi-watchlist + Dashboard layouts (Phase 20 + A/B)
+
+### Multi-watchlist (DB-backed, replaces localStorage workspaces)
+Users can own multiple named watchlists. Migration `0023_multi_watchlist.sql` adds a `watchlists` table (one row per named list, `isDefault` flag) and a `watchlistId` FK on `watchlist_items`. Default-invariant enforced both by a partial unique index (`watchlists_user_default_uniq`) and by every CREATE/PATCH transaction (demote prior default first).
+
+**Shared helpers in `src/lib/watchlists.ts`:**
+- `getOrCreateDefaultWatchlistId(userId)` — race-safe; mutating callers use this
+- `resolveActiveWatchlistId(userId, hint?)` — read-only resolver, falls back to user's default
+
+**Legacy `/api/watchlist`** still works as the "default list" surface — every existing widget, page, and consumer keeps working unchanged. New code that needs to scope to a specific list uses `/api/watchlists/[id]/items`.
+
+**Sharing:** Migration `0025` adds `watchlists.share_token`. POST `/api/watchlists/[id]/share` generates a 24-byte hex token; `/w/[token]` renders a public read-only view (no auth).
+
+### Dashboard widget layouts (Phase 20)
+`dashboard_layouts` table already supported `name + isDefault`. Phase 20 extended `layout_data.widgets` from `string[]` (legacy) to `{id, size?}[]` so each widget can override its size (sm/md/lg/full). Backward-compat: legacy arrays are coerced on read.
+
+Endpoints: singular `/api/dashboard/layout` (default list) + plural `/api/dashboard/layouts` for multi-layout CRUD. LayoutSwitcher in the dashboard header lets users save / rename / delete / switch.
+
+---
+
+## 2026-05-12 — Manual trading + broker switching
+
+### Manual order ticket (`/dashboard/trade/[symbol]`)
+- BUY/SELL toggle, market/limit/stop/stop-limit types, day/gtc/ioc/fok TIF
+- **Bracket orders** (atomic entry + stop-loss + take-profit) — share-mode + BUY only
+- **Fractional shares / dollar-based buys** — `notional` mode (Alpaca only; Tradier/IBKR reject with a clear BrokerError). Constrained to market + day/ioc by the validator
+- **Engine-gated**: refused while the user's engine is running (both UI banner + API 409 `ENGINE_RUNNING`). Prevents the engine's in-memory position map from drifting from the broker
+- **Live-account confirmation**: `confirm()` prompt before submission when the active connection is `environment="live"`
+- Reachable from the Analysis page sidebar (Trade button alongside Refresh) and via Cmd+K (typing a ticker shows "Trade {SYM}")
+
+### Broker switcher (sidebar)
+- Sits below the sidebar logo on both desktop + mobile
+- Single-connection users see a static label (broker + env); multi-connection users see a dropdown
+- Switching is atomic (`POST /api/broker/connections/[id]/activate` — demote others + promote one in one transaction)
+- **Engine-gated**: refused while engine running (same rationale as manual ticket); UI surfaces a yellow banner inside the dropdown
+- LIVE option shows a confirm() prompt with the broker name
+
+### PlaceOrderParams (`src/lib/brokers.ts`)
+- `qty` and `notional` are now both optional (exactly one required)
+- Alpaca client: routes to `notional` payload when `params.notional` is set, else `qty`
+- Tradier + IBKR: throw `BrokerError("not supported")` if `notional` is passed
+- Bracket params (`orderClass: "bracket"`, `takeProfitPrice`, `stopLossPrice`) flow through `placeBrokerOrderSchema`
+
+---
+
+## 2026-05-12 — Display preferences (DisplayPrefsProvider)
+
+Client-side, localStorage-backed preferences applied across the app. Cross-tab sync via the `storage` event. Mounted in `/dashboard/layout.tsx`.
+
+**Provider state:**
+- `pnlFormat: "dollar" | "percent" | "both"` — sidebar button cycles. Use `formatPnl(amount, basis, format)` helper everywhere a P&L is displayed
+- `timeFormat: "12h" | "24h"` — `formatTime` / `formatDateTime` helpers
+- `colorBlindMode: boolean` — toggles `html.colorblind` class. globals.css overrides `--color-bullish` / `--color-bearish` to a Wong-palette blue/orange when set
+- `landingPage` — which dashboard route to land on after login. Login page reads directly from localStorage (it's outside the provider tree)
+
+Settings page has a "Display preferences" card exposing all four toggles + the daily-digest email opt-in.
+
+---
+
+## 2026-05-12 — News, performance, charting, congress
+
+### News sentiment badges
+`src/lib/headline-sentiment.ts` exports a keyword-based `scoreHeadline()` (50 bullish terms + 55 bearish, including multi-word phrases). `/api/news/feed` tags each article with `sentiment: "bullish" | "bearish" | "neutral"`. News page shows a colored ▲ Bullish / ▼ Bearish badge inline — not a substitute for the hybrid sentiment-layer (which feeds signal math), just a fast directional hint.
+
+### Performance attribution
+`/api/performance/attribution` aggregates filled SELL + manual_close `trader_trades` rows per symbol. Performance page renders top-10 contributors with proportional bars + per-symbol $ + % of total. Different from the bySymbol accuracy table — answers "where did my dollars come from?"
+
+### TradingView Advanced Chart
+`src/components/dashboard/tradingview-chart.tsx` wraps TradingView's free embedded widget. Analysis page toggles between "Engine view" (lightweight-charts with signal/earnings markers) and "TradingView" (full widget with drawing tools). Choice persists per-device in `sentinel-chart-mode` localStorage key. CSP allows `s3.tradingview.com` script-src + `*.tradingview.com` img/connect + `frame-src` for the iframe.
+
+### Congress trading page (`/dashboard/congress`)
+Federal Periodic Transaction Reports from Finnhub's `/stock/congressional-trading`. Free Finnhub tier covers this. Page: filters by ticker (server query), member name (client filter), chamber, direction. Each row links to `/dashboard/analysis` + `/dashboard/trade/[symbol]`.
+
+### Earnings call transcripts (`/api/transcripts/[symbol]`)
+Listing endpoint only (year/quarter/date/Finnhub id) — full transcript text + AI summarization are gated behind Finnhub's paid alternative-data tier (parked in `docs/future-ideas.md`). Surfaced as the "Calls" tab on Analysis intelligence.
+
+---
+
+## 2026-05-12 — Backtest metrics (Sortino / Calmar / MAR)
+
+`src/lib/backtester.ts` now computes three additional risk-adjusted return metrics alongside the existing Sharpe + max drawdown:
+- **sortinoRatio** = excess return ÷ stdev(negative-only returns) × √252
+- **calmarRatio** = annualizedReturn ÷ maxDrawdown
+- **marRatio** = totalReturn ÷ maxDrawdown (whole window, no annualization)
+
+Sharpe penalizes upside volatility the same as downside, which is silly for trading strategies — Sortino/Calmar/MAR give a more honest read on "how painful was this to hold." Backtest UI shows them in a second 3-tile row below the original 6-tile grid with a one-line legend.
+
+---
+
+## 2026-05-12 — Customer support + ToS click-through + DMs
+
+### Customer support ticketing (`/dashboard/support`)
+Tables: `support_tickets`, `support_messages` (migration `0027`). Users open tickets; admins reply. Status flow: open → responded → resolved → closed. Admins see all tickets; users see only their own. Email notifications via Resend on every message (admin notified on new ticket + user reply; user notified on admin reply).
+
+### Terms of Service + Risk Disclosure
+Click-through acceptance modal blocks the dashboard until the user agrees. `TERMS_VERSION` in `src/lib/terms-version.ts` is a date-stamp string ("2026-05-12") — bumping it forces every user to re-accept on next dashboard load. Public pages at `/terms` and `/risk`. Migration `0026` adds `users.terms_accepted_at` + `users.terms_accepted_version`. Each acceptance writes a tamper-evident audit row (`USER_PROFILE_UPDATED`) with the version.
+
+### Private DMs (`/dashboard/messages`)
+Tables: `dm_threads` (sorted user pair, unique index), `dm_messages` (migration `0028`). Per-side `a_last_seen_at` / `b_last_seen_at` powers the unread badge without a separate read-state table. Inbox + chat-style threaded conversation. Enter sends; Shift+Enter for newline.
+
+---
+
+## 2026-05-12 — Daily digest email (opt-in)
+
+The market-digest cron has been generating an AI summary and fanning out to Discord + PWA push since Phase 9. Email delivery added as a third channel, strictly opt-in. Migration `0024` adds `users.digest_email_opt_in` (default false). `/api/me/digest-email` exposes GET/PATCH; toggle lives on the Settings → Display preferences card. Delivery address is `notification_email` when set, else `email`.
+
+---
+
+## 2026-05-12 — Engine-gated operations
+
+Two operations are now refused while the engine is running, with a 409 `ENGINE_RUNNING` API response + matching UI banner:
+1. Manual order placement (`POST /api/broker/orders`)
+2. Broker connection switching (`POST /api/broker/connections/[id]/activate`)
+
+Both checks call `peekEngineStatus(userId)`. Rationale: the engine maintains an in-memory `positionMap` that lags the broker by up to one scan interval. Concurrent manual orders or broker switches can silently drift state.
+
+---
+
+## 2026-05-12 — Component library additions
+
+- `<SymbolLink symbol="AAPL" to?="analysis"|"trade" />` — single source of truth for clickable tickers. Replaces 100+ scattered `<span className="font-mono">{symbol}</span>` spots
+- `<PositionDetailSheet symbol position signals engineRunning onClose onClosePosition />` — right-anchored slide-in drawer for position drill-down (entry, current, P&L, signal history, Chart/Trade/Close actions)
+- `<DisplayPrefsProvider>` + `useDisplayPrefs()` — global formatting context
+- `<TermsAcceptanceModal>` — non-dismissible click-through, mounted in dashboard layout
+- `<BrokerSwitcher>` + `<PnlFormatToggle>` — sidebar controls
+- `<TradingViewChart symbol interval height>` — embedded widget
+- `<KeyboardShortcuts>` — global single-key shortcuts (T/A/S/W/J/N + ? for help)
+
+---
+
+## 2026-05-12 — Migrations summary (0023–0028)
+
+All idempotent. Apply on prod as `postgres` (chmod-700 droplet means app user can't `ALTER TABLE`).
+
+| # | File | What |
+|---|------|------|
+| 0023 | `multi_watchlist.sql` | `watchlists` table + `watchlist_items.watchlist_id` FK + backfill + partial unique on default |
+| 0024 | `digest_email_opt_in.sql` | `users.digest_email_opt_in` |
+| 0025 | `watchlist_share_token.sql` | `watchlists.share_token` + partial unique |
+| 0026 | `terms_acceptance.sql` | `users.terms_accepted_at` + `users.terms_accepted_version` |
+| 0027 | `support_tickets.sql` | `support_tickets` + `support_messages` |
+| 0028 | `direct_messages.sql` | `dm_threads` (sorted pair, CHECK constraint) + `dm_messages` |
 
 ## Detailed Design Reference
 For exhaustive design tokens, component APIs, and page templates, see `.claude/skills/sentinel-redesign/references/`:
