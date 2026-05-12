@@ -887,6 +887,9 @@ export default function SettingsPage() {
               aria-label="Toggle color-blind palette"
             />
           </div>
+
+          {/* Daily digest email */}
+          <DigestEmailToggle />
         </div>
       </Card>
 
@@ -1092,6 +1095,76 @@ function LeaderboardSettings() {
         {saved && <span className="text-xs text-bullish">✓ Saved</span>}
         {error && <span className="text-xs text-bearish">{error}</span>}
       </div>
+    </div>
+  );
+}
+
+// Inline daily-digest opt-in toggle. Lives inside the SettingsPage's
+// Preferences card. Fetches current state from /api/me/digest-email on
+// mount, persists via PATCH on toggle. Shows the delivery address so
+// users know where the email would land.
+function DigestEmailToggle() {
+  const [optIn, setOptIn] = useState(false);
+  const [delivery, setDelivery] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/me/digest-email")
+      .then(async (res) => {
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        setOptIn(data.optIn === true);
+        setDelivery(data.deliveryAddress ?? null);
+      })
+      .catch(() => {
+        /* non-critical */
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function toggle(next: boolean) {
+    setOptIn(next);
+    try {
+      const res = await fetch("/api/me/digest-email", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ optIn: next }),
+      });
+      if (!res.ok) {
+        setOptIn(!next); // revert
+      }
+    } catch {
+      setOptIn(!next);
+    }
+  }
+
+  return (
+    <div className="sm:col-span-2 flex items-start justify-between gap-3 rounded-lg border border-border bg-bg-secondary p-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-text-primary">Daily market digest email</div>
+        <p className="text-xs text-text-muted mt-0.5">
+          AI-generated summary of the market close — top movers, your watchlist
+          news, signal highlights. Sent every weekday after the close. Push
+          notifications + Discord delivery happen regardless of this setting.
+        </p>
+        {loaded && delivery && (
+          <p className="text-[11px] text-text-muted mt-1">
+            Would send to <span className="font-mono">{delivery}</span>
+          </p>
+        )}
+      </div>
+      <Toggle
+        checked={optIn}
+        onCheckedChange={toggle}
+        disabled={!loaded}
+        aria-label="Toggle daily digest email"
+      />
     </div>
   );
 }
