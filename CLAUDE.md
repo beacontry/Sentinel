@@ -804,6 +804,15 @@ Migration `0029` adds 3 columns to `user_risk_profiles`. `RiskLimits` expanded w
 
 If anything regresses, individual phase commits revert cleanly.
 
+## Static HTML docs (served by Next.js public/)
+
+User-facing HTML documentation lives in **`public/docs/`** (not the repo-root `docs/` folder which holds markdown):
+
+- `public/docs/engine-ruleset.html` — trading engine internals (kept in sync with `docs/ENGINE_RULESET.md`)
+- `public/docs/sentinel-features.html` — per-page/per-feature user training reference
+
+These render as static assets at `/docs/engine-ruleset.html` and `/docs/sentinel-features.html` on any deployment (Next.js auto-serves everything under `public/`). The repo-root `docs/` folder holds markdown source: `docs/ENGINE_RULESET.md`, `docs/future-ideas.md`. **When editing the engine ruleset, change both `docs/ENGINE_RULESET.md` AND `public/docs/engine-ruleset.html` in the same commit** — they're intentionally mirrored.
+
 ## Detailed Design Reference
 For exhaustive design tokens, component APIs, and page templates, see `.claude/skills/sentinel-redesign/references/`:
 - `design-tokens.md` — every color, font, spacing, shadow, animation value
