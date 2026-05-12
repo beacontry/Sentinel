@@ -98,6 +98,8 @@ export interface EngineState {
   boot: { equity: number; accountNumber: string | null } | null;
   /** Sum of gross BUY notional placed today (USD). Resets in lockstep with dailyLoss/dailyLossDate. */
   dailyNotional: number;
+  /** Date string (ET) when bootEquity was last snapshotted. Re-snapshotted at every market-open boundary so the 50% equity-collapse tripwire stays calibrated as the account grows over months. */
+  bootEquitySnapshotDate: string;
   /** Number of consecutive losing trades (resets on any winner). */
   consecutiveLosses: number;
   /** Sliding-window timestamps (ms) of recent order placements for rate limiting. */
@@ -148,6 +150,7 @@ function createDefaultEngine(): EngineState {
     environment: null,
     boot: null,
     dailyNotional: 0,
+    bootEquitySnapshotDate: "",
     consecutiveLosses: 0,
     recentOrderTimestamps: [],
     mtmElected: false,
@@ -507,16 +510,41 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
  *  - daily notional cap (gross BUY notional vs equity)
  *  - global order rate limit (sliding 60s window, 30 orders max)
  *
+ * Phase 1 (UI-lie audit fix):
+ * Before the wash-sale + PDT checks, refresh the relevant state if it's
+ * stale. Previously these were updated only at scan boundaries (~15 min
+ * apart), so a fresh losing close + immediate re-entry could slip past
+ * wash-sale protection, and a 2nd day-trade in a 15-min window could
+ * slip past the PDT block. Pass `account` to enable the live PDT refresh
+ * — callers who don't have a fresh account snapshot can omit it (the
+ * existing in-memory state is used as fallback).
+ *
  * Returns { ok: false, reason } if blocked, { ok: true } otherwise.
  * Caller must call recordOrderPlacement() AFTER a successful placeOrder.
  */
-function canPlaceBuyOrder(
+async function canPlaceBuyOrder(
   engine: EngineState,
   symbol: string,
   notionalUsd: number,
   riskLimits: RiskLimits,
-  bootEquity: number
-): { ok: true } | { ok: false; reason: string; details: Record<string, unknown> } {
+  bootEquity: number,
+  account?: BrokerAccount
+): Promise<{ ok: true } | { ok: false; reason: string; details: Record<string, unknown> }> {
+  // Refresh wash-sale set if stale. The helper has its own age check
+  // (WASH_SALE_REFRESH_MS) so this is cheap when the cache is hot. When
+  // a losing trade was just closed in the prior decision in this scan,
+  // we need an even fresher read — but that's a corner case; the 5-min
+  // refresh window catches the common scenario.
+  await maybeRefreshWashSaleSet(engine);
+
+  // Re-evaluate PDT state from the live account snapshot if provided.
+  // Without this, a 2nd day-trade made within a 15-min scan window
+  // evaluates against stale PDT count and gets allowed even when the
+  // user has just hit the threshold.
+  if (account) {
+    evaluatePdtState(engine, account);
+  }
+
   // Wash-sale: block re-entry on symbols with a losing close in the last 31 days
   if (engine.washSaleProtectionEnabled && engine.washSaleBlockedSymbols.has(symbol)) {
     return {
@@ -617,6 +645,16 @@ function tripSafeguardHalt(engine: EngineState, reason: string, details: Record<
     resourceType: "engine",
     resourceId: engine.userId,
     metadata: { reason, automatic: true, ...details },
+  });
+  // Phase 1 (UI-lie audit fix): write halted=true to today's daily P&L row
+  // immediately so the dashboard reflects the halt on the next fetch.
+  // Previously the dashboard read `halted` from DB (via todayPnl) which
+  // only updated on the next scan boundary — up to ~15 min lag while
+  // the user thought the engine was still running and might try to
+  // place manual orders that got mysterious rejections.
+  // Fire-and-forget — same pattern as audit write above.
+  void upsertDailyPnl(getETDateString(), 0, 0, 0, true, reason, engine.userId).catch(() => {
+    /* DB write failure non-blocking; in-memory halted is already true */
   });
 }
 
@@ -1866,6 +1904,25 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
     return;
   }
 
+  // Phase 1 (UI-lie audit fix): re-snapshot bootEquity at every new trading
+  // day so the 50% equity-collapse tripwire stays calibrated as the
+  // account organically grows over weeks/months. Without this, a 5%
+  // drawdown against an old high-water-mark bootEquity could trip the
+  // tripwire on a perfectly healthy account.
+  if (engine.boot && engine.bootEquitySnapshotDate !== today) {
+    log.info(
+      {
+        userId: engine.userId,
+        oldBootEquity: engine.boot.equity,
+        newBootEquity: account.equity,
+        date: today,
+      },
+      "Re-snapshotting bootEquity at new-trading-day boundary"
+    );
+    engine.boot.equity = account.equity;
+    engine.bootEquitySnapshotDate = today;
+  }
+
   const equity = account.equity;
   const provider = getMarketDataProvider();
   const positionMap = getPositionMap(engine?.userId ?? engineUserId);
@@ -1992,7 +2049,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
         }
         const limitPrice = (quote.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, account);
         if (!gate.ok) {
           log.warn({ symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Tactical BUY blocked");
           void writeAudit({
@@ -2073,6 +2130,12 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   } catch (err) {
     pushError(engine, `Broker connection failed: ${err instanceof Error ? err.message : "unknown"}`);
     return;
+  }
+
+  // Phase 1 — re-snapshot bootEquity at every new trading day
+  if (engine.boot && engine.bootEquitySnapshotDate !== today) {
+    engine.boot.equity = account.equity;
+    engine.bootEquitySnapshotDate = today;
   }
 
   const equity = account.equity;
@@ -2245,7 +2308,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const limitPrice = (price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, account);
         if (!gate.ok) {
           log.warn({ symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Smart BUY blocked");
           void writeAudit({
@@ -2395,7 +2458,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const limitPrice = (replacement.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = canPlaceBuyOrder(engine, replacement.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = await canPlaceBuyOrder(engine, replacement.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, account);
         if (!gate.ok) {
           log.warn({ symbol: replacement.symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Swap BUY blocked");
           void writeAudit({
@@ -2454,7 +2517,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = canPlaceBuyOrder(engine, cand.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = await canPlaceBuyOrder(engine, cand.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, account);
         if (!gate.ok) {
           log.warn({ symbol: cand.symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Add BUY blocked");
           void writeAudit({
@@ -2603,6 +2666,13 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     log.warn({ equity }, "Account equity is zero or negative");
     pushError(engine, "Account equity is zero or negative");
     return;
+  }
+
+  // Phase 1 — re-snapshot bootEquity at every new trading day so the
+  // 50% equity-collapse tripwire stays calibrated as the account grows.
+  if (engine.boot && engine.bootEquitySnapshotDate !== today) {
+    engine.boot.equity = account.equity;
+    engine.bootEquitySnapshotDate = today;
   }
 
   // Load dynamic risk limits from user's Risk Profile
@@ -3042,7 +3112,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           log.info({ symbol }, "Main-scan BUY skipped — active buy already pending on broker");
           continue;
         }
-        const gate = canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity);
+        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity, account);
         if (!gate.ok) {
           log.warn(
             { symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details },
@@ -3289,6 +3359,7 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     equity: bootAccount.equity,
     accountNumber: bootAccount.accountNumber || null,
   };
+  engine.bootEquitySnapshotDate = getETDateString();
   engine.dailyNotional = 0;
   engine.consecutiveLosses = 0;
   engine.recentOrderTimestamps = [];

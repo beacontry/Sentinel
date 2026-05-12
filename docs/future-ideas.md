@@ -275,19 +275,22 @@ Removed: "Path to Live Trading — Today / This Week" — referenced specific st
 
 ---
 
-## 2026-05-12 — UI-lie bug audit (25 findings)
+## 2026-05-12 — UI-lie bug audit
 
 Catalog of bugs where the UI shows a frozen / stale / drifted value while the real source-of-truth has been updating correctly. Triaged after fixing the original case (Trader page Stop column displaying the entry-time disaster stop while the real trailing stop was correctly ratcheting up on Alpaca — commit `00131db`).
 
-### Money / safeguard bugs (high priority)
+### ~~Money / safeguard bugs~~ ✅ SHIPPED — Phase 1
 
-1. **`__brokerPositionCache` 15-min stale lag.** Dashboard reads from a cache that's only refreshed during engine scans (every 15 min). If the user manually closes a position on Alpaca, the dashboard shows it as still open for up to 15 minutes. Fix: invalidate-on-fetch OR a 60s TTL on the cache.
-2. **`engine.pdtDayTradeCount` frozen between scans.** A second day-trade made within a 15-min window evaluates against stale PDT state and gets allowed even when it shouldn't. Fix: re-call `evaluatePdtState()` on every position exit, not just main-scan boundaries.
-3. **`engine.dailyNotional` doesn't reset at midnight if engine stops + restarts the next day.** Yesterday's notional accumulates into today's cap. Fix: compare ET date at scan start, reset on date change. Schedule a guaranteed midnight reset.
-4. **`engine.bootEquity` (Phase 3 50% equity-collapse tripwire) captured at engine start, never refreshed.** Over weeks/months of organic account growth, a normal drawdown could fire the tripwire. Fix: re-snapshot at every market-open boundary.
-5. **`washSaleBlockedSymbols` only refreshed once per full scan.** Closing a losing trade and re-entering within the same scan window won't be blocked. Fix: refresh-if-older-than-5-min on every BUY decision, not just scan boundary.
-6. **`engine.halted` state may not appear in UI until next DB heartbeat.** User sees engine running for up to ~5s after a real halt fires; could try to manually close positions during that gap and get mysterious failures. Fix: synchronous DB update on halt before returning from handler.
-7. **Two incompatible P&L sources mixed in dashboard.** When broker connected uses `unrealizedIntradayPnl`; when not connected uses DB `unrealizedPnl`. The two fields measure different things. Fix: never fall through if broker is unavailable — show "—" with a stale indicator instead.
+Fixed in the Phase 1 batch (commit details below):
+- Wash-sale set now refreshed on every BUY decision via `canPlaceBuyOrder()` instead of only at scan boundaries — closes the gap where a fresh losing close + immediate re-entry within the same scan would slip past protection.
+- PDT state re-evaluated from a live account snapshot inside every BUY decision instead of only at scan start — a 2nd day-trade in a 15-min window now sees current state.
+- `bootEquity` re-snapshot at every new trading day boundary (`bootEquitySnapshotDate` field) — the 50% equity-collapse tripwire stays calibrated as the account organically grows.
+- `engine.halted` halt path now fires a synchronous (but fire-and-forget) `upsertDailyPnl(halted=true, reason)` so the dashboard reflects the halt on the next fetch instead of waiting for the next scan boundary.
+- Dashboard `todayPnl` response now carries `source` (`"broker_intraday"` | `"broker_total"` | `"db_snapshot"`) + `staleSeconds` so the UI can distinguish "live broker P&L" from "DB snapshot from last scan." No more silent mixing of `unrealizedIntradayPnl` vs DB `unrealizedPnl`.
+
+Bugs from the original list that turned out to already be mitigated and were NOT fixed (verified during the audit pass):
+- `dailyNotional` does reset at midnight — every scan's date check (`engine.dailyLossDate !== today`) handles it. False positive in the original audit.
+- `__brokerPositionCache` 15-min stale lag — already mitigated because the dashboard route fetches fresh broker data on every request and falls back to the cache only when broker is unreachable. `positionsStale` + `positionsAgeSeconds` already surface staleness when fallback happens.
 
 ### Frozen-value bugs (medium priority)
 
