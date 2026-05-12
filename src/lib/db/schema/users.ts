@@ -28,6 +28,10 @@ export const users = pgTable("users", {
   // explicitly opt in. display_name lets them appear as anonymous handle.
   leaderboardOptIn: boolean("leaderboard_opt_in").notNull().default(false),
   leaderboardDisplayName: text("leaderboard_display_name"),
+  // 2026-05-12 — opt-in email channel for the daily market digest.
+  // The digest cron already fans out to Discord + PWA push for everyone;
+  // email is strictly opt-in to avoid spamming users who haven't asked.
+  digestEmailOptIn: boolean("digest_email_opt_in").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

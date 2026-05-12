@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { marketDigests, users, discordWebhooks } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
+import { sendAlertEmail } from "@/lib/email";
 
 const log = createRouteLogger("cron-market-digest");
 
@@ -84,8 +85,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Push notifications
-    const allUsers = await db.select({ id: users.id }).from(users);
+    // Push notifications + email (per-user opt-in for email; push goes to
+    // everyone with a subscription). Each channel is best-effort; one
+    // failure shouldn't block the others.
+    const allUsers = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        notificationEmail: users.notificationEmail,
+        digestEmailOptIn: users.digestEmailOptIn,
+      })
+      .from(users);
+
+    let emailed = 0;
     for (const user of allUsers) {
       try {
         const { sendPushToUser } = await import("@/lib/push");
@@ -97,6 +109,23 @@ export async function GET(request: NextRequest) {
       } catch {
         // Push module may not be available
       }
+
+      // Email — only opted-in users. Prefer notificationEmail (so trade
+      // alerts and the digest can route to different inboxes), fall back
+      // to login email.
+      if (user.digestEmailOptIn) {
+        const recipient = user.notificationEmail ?? user.email;
+        try {
+          const sent = await sendAlertEmail(
+            recipient,
+            `Daily Market Digest — ${today}`,
+            result.summary
+          );
+          if (sent.success) emailed++;
+        } catch {
+          // Per-user failure shouldn't block others
+        }
+      }
     }
 
     return NextResponse.json({
@@ -104,6 +133,7 @@ export async function GET(request: NextRequest) {
       date: today,
       tokensUsed: result.tokensUsed,
       notifiedWebhooks: notified,
+      emailed,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
