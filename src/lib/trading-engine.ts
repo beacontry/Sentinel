@@ -2992,6 +2992,14 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   let realizedPnlThisScan = 0;
   let tradesThisScan = 0;
 
+  // Build sector-exposure context once before the loop (was previously
+  // rebuilt per-symbol — Phase 4 audit caught the regression).
+  // The position-map snapshot is fine for the full scan because BUYs
+  // placed mid-scan don't get reflected on the broker until the next
+  // sync anyway; checking against a slightly-stale view is acceptable
+  // and saves a Map rebuild per symbol.
+  const scanSectorCtx = buildSectorExposureContext(engine.userId!, equity);
+
   // 5. Scan each symbol
   for (const symbol of symbols) {
     try {
@@ -3279,8 +3287,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           log.info({ symbol }, "Main-scan BUY skipped — active buy already pending on broker");
           continue;
         }
-        const sectorCtx = buildSectorExposureContext(engine.userId!, equity);
-        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity, account, sectorCtx ?? undefined);
+        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity, account, scanSectorCtx ?? undefined);
         if (!gate.ok) {
           log.warn(
             { symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details },
