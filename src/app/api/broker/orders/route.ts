@@ -8,6 +8,7 @@ import { createBrokerClient, BrokerError } from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
+import { peekEngineStatus } from "@/lib/trading-engine";
 
 const log = createRouteLogger("broker-orders");
 
@@ -117,6 +118,22 @@ export async function POST(request: Request) {
     );
   }
 
+  // Engine-running gate. Manual orders while the engine is also placing
+  // orders create a position-map drift bug: the engine's in-memory map
+  // doesn't know about the user's manual trade until the next scan
+  // reconciles, during which it may have already placed a conflicting one
+  // (e.g. a stop sized for a position that's now double the assumed size).
+  const status = peekEngineStatus(auth.userId);
+  if (status?.running) {
+    return NextResponse.json(
+      {
+        error: "Stop the engine before placing manual orders.",
+        code: "ENGINE_RUNNING",
+      },
+      { status: 409 }
+    );
+  }
+
   try {
     const connection = await getActiveConnection(auth.userId);
     if (!connection) {
@@ -137,10 +154,14 @@ export async function POST(request: Request) {
       symbol: parsed.data.symbol,
       side: parsed.data.side as "buy" | "sell",
       qty: parsed.data.qty,
+      notional: parsed.data.notional,
       type: parsed.data.type as "market" | "limit" | "stop" | "stop_limit",
       timeInForce: parsed.data.timeInForce,
       limitPrice: parsed.data.limitPrice,
       stopPrice: parsed.data.stopPrice,
+      orderClass: parsed.data.orderClass,
+      takeProfitPrice: parsed.data.takeProfitPrice,
+      stopLossPrice: parsed.data.stopLossPrice,
     });
 
     await writeAudit({
@@ -151,11 +172,15 @@ export async function POST(request: Request) {
       metadata: {
         symbol: parsed.data.symbol,
         side: parsed.data.side,
-        qty: parsed.data.qty,
+        qty: parsed.data.qty ?? null,
+        notional: parsed.data.notional ?? null,
         type: parsed.data.type,
         timeInForce: parsed.data.timeInForce,
         limitPrice: parsed.data.limitPrice ?? null,
         stopPrice: parsed.data.stopPrice ?? null,
+        orderClass: parsed.data.orderClass ?? "simple",
+        takeProfitPrice: parsed.data.takeProfitPrice ?? null,
+        stopLossPrice: parsed.data.stopLossPrice ?? null,
         broker: connection.broker,
         environment: connection.environment,
         source: "manual_ui",
@@ -189,7 +214,8 @@ export async function POST(request: Request) {
       metadata: {
         symbol: parsed.data.symbol,
         side: parsed.data.side,
-        qty: parsed.data.qty,
+        qty: parsed.data.qty ?? null,
+        notional: parsed.data.notional ?? null,
         type: parsed.data.type,
         error: message.slice(0, 200),
         source: "manual_ui",
