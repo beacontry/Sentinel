@@ -32,6 +32,11 @@ export const users = pgTable("users", {
   // The digest cron already fans out to Discord + PWA push for everyone;
   // email is strictly opt-in to avoid spamming users who haven't asked.
   digestEmailOptIn: boolean("digest_email_opt_in").notNull().default(false),
+  // 2026-05-12 — click-through acceptance of ToS + risk disclosure.
+  // NULL = never accepted. termsAcceptedVersion stores which version
+  // they agreed to — bumping TERMS_VERSION in code forces re-prompt.
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  termsAcceptedVersion: text("terms_accepted_version"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

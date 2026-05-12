@@ -271,6 +271,8 @@ export const AuditAction = {
   ORDER_CANCELLED: "order.cancelled",
   // Risk
   RISK_PROFILE_UPDATED: "risk_profile.updated",
+  // Account / user — used for ToS acceptance + future user-profile mutations
+  USER_PROFILE_UPDATED: "user.profile_updated",
 } as const;
 
 export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];
