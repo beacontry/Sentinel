@@ -638,6 +638,33 @@ export default function BacktestPage() {
             />
           </div>
 
+          {/* Extended risk-adjusted metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <StatCard
+              label="Sortino Ratio"
+              value={result.sortinoRatio.toFixed(2)}
+              color={result.sortinoRatio > 1 ? "text-bullish" : "text-warning"}
+              icon={BarChart3}
+            />
+            <StatCard
+              label="Calmar Ratio (annual)"
+              value={result.calmarRatio.toFixed(2)}
+              color={result.calmarRatio > 1 ? "text-bullish" : "text-warning"}
+              icon={BarChart3}
+            />
+            <StatCard
+              label="MAR (whole window)"
+              value={result.marRatio.toFixed(2)}
+              color={result.marRatio > 1 ? "text-bullish" : "text-warning"}
+              icon={BarChart3}
+            />
+          </div>
+          <p className="text-[11px] text-text-muted -mt-1">
+            Sortino punishes only downside volatility. Calmar = annualized return ÷ max drawdown.
+            MAR = total return ÷ max drawdown over the full window.
+            All three &gt; 1.0 is good; &gt; 3.0 is excellent.
+          </p>
+
           {/* Equity Curve */}
           <Card>
             <CardHeader className="p-0 pb-3">
