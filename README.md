@@ -30,7 +30,7 @@ Dashboard → monitors positions, P&L, risk in real-time
 | Charting | Lightweight Charts (TradingView) |
 | Broker | Alpaca (paper + live), IBKR, Tradier |
 | Market Data | Yahoo Finance (primary), Finnhub (fallback) |
-| AI | Anthropic Claude SDK |
+| AI | Groq (`llama-3.3-70b-versatile`) — Insights, Quick Insight, hybrid AI scoring, sentiment, filings chat, market digest, AI chat, Recent Trades AI summaries. Rotate via `/dashboard/admin/system-config` (encrypted at rest) |
 | Deployment | Docker/Podman, GitHub Actions CI/CD |
 
 ## Project Structure
@@ -181,8 +181,11 @@ trail = 2% + (base - 2%) × e^(-3 × profitPct)
 - **Order rate limit** — 30 orders / 60s sliding window per engine
 - **Daily notional cap** — rejects BUYs exceeding `maxDailyNotionalPct × bootEquity` across the day
 - **Consecutive-loss halt** — tracks losing trades since last winner; halts at threshold
-- **MTM-aware wash-sale protection** — blocks BUYs on symbols with a losing exit within 31 calendar days (turned off when user attests §475(f) MTM via Trader page)
-- **PDT protection** — auto-detects equity < $25k; refuses to start intraday mode, blocks new BUYs at 3+ daytrades
+- **Sector exposure cap** (Phase 4) — refuses BUYs that would push any sector over `maxSectorExposurePct × equity`. Reads live position market values from broker; in-memory check, no extra DB hit
+- **Earnings blackout** (Phase 4) — skips BUYs within N trading days of a symbol's earnings release when `earningsBlackoutDays` is set on the risk profile
+- **MTM-aware wash-sale protection** — blocks BUYs on symbols with a losing exit within 31 calendar days (turned off when user attests §475(f) MTM via Trader page). Refresh runs inside every BUY decision, not just at scan start (Phase 1)
+- **PDT protection** — auto-detects equity < $25k; refuses to start intraday mode, blocks new BUYs at 3+ daytrades. Live `daytradeCount` re-evaluated inside every BUY decision (Phase 1)
+- **bootEquity day-boundary re-snapshot** (Phase 1) — the 50% equity-collapse tripwire stays calibrated as the account grows; all 3 scan paths refresh at trading-day boundary
 - **Engine-gated manual operations** — manual orders + broker switching refused while engine runs (UI banner + API 409 `ENGINE_RUNNING`) to prevent position-map drift
 - **SPY trend filter** — blocks all buys when SPY below 20-day SMA
 - **Signal cooldown** — 2.5 hours between same-symbol buys
@@ -322,13 +325,14 @@ All brokers support: `getAccount()`, `getPositions()`, `getOrders()`, `placeOrde
 | **Dashboard** | Home (multi-layout, resizable widgets) | Command center with watchlist, signals, P&L |
 | **Analysis** | Analysis, Heatmap, Correlation, Relative Strength, Multi-TF, Breadth, Sector Rotation, Unusual Activity, Risk | Chart structure and market views. Toggle between engine view (with signal markers) and TradingView Advanced Chart |
 | **Screener** | Screener | Scan market for setups, feeds signals to engine |
-| **Trader** | Live Trader, Strategies, Backtest, Optimizer, Alerts, Calculator, Replay, Risk Sim, **Trade ticket** (`/trade/[symbol]`) | Execution and strategy management. Manual order ticket supports market/limit/stop/stop-limit/bracket + fractional shares (dollar-based buys) — engine-gated so the in-memory position map can't drift |
+| **Trader** | Live Trader, Strategies, Backtest, **Compare** (`/backtest/compare`), Optimizer, Alerts, Calculator, Replay, Risk Sim, **Trade ticket** (`/trade/[symbol]`) | Execution and strategy management. Manual order ticket supports market/limit/stop/stop-limit/bracket + fractional shares (dollar-based buys) — engine-gated so the in-memory position map can't drift. **AI ✨** button on every Recent Trades row generates a Groq-powered plain-English journal summary, cached on the row |
 | **Journal** | Journal, Performance (now with P&L attribution by symbol), P&L Calendar (clickable days with trade drill-down), Tax Center, Tax Report, Drawdown, Reports | Trade review and tracking |
 | **Research** | News (per-headline sentiment badges), Articles, Filings, Insights, **Congress** (federal Periodic Transaction Reports), Education (14 guides + 8 calculators + 95 glossary terms + spaced-repetition review) | Market research and personal-finance education |
 | **Macro** | Calendar, Earnings, Currency, Policy | Economic events and FX |
 | **Community** | Feed, Forum, Posts, Leaderboard, **Messages** (private DMs) | Social trading |
 | **Help** | **Support** (ticketed customer support with admin reply view) | Bug reports, questions, requests |
-| **Admin** | Admin, Settings (Display preferences: P&L $/%, time format, color-blind palette, default landing page, daily-digest email opt-in) | User management and configuration |
+| **Admin** | Admin (Users, Invites), Audit Log (hash-chained), **System Configuration** (`/dashboard/admin/system-config` — encrypted server-wide API keys: Groq, Finnhub, Anthropic; Test-before-save flow; rotate without SSH), Settings (Display preferences: P&L $/%, time format, color-blind palette, default landing page, daily-digest email opt-in) | User management, audit, server-wide config |
+| **Portfolio** | `/dashboard/portfolio` overview | Aggregates paper portfolios + live broker positions with sector allocation + winners/losers |
 | **Public** | `/terms`, `/risk` (ToS + Risk Disclosure), `/w/[token]` (shared watchlists) | Click-through legal + public surfaces |
 
 ### Watchlists

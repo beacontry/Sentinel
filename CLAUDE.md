@@ -462,7 +462,7 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 - Error display: `text-sm text-bearish`
 - Empty state: EmptyState component or inline centered block with muted icon
 
-## Dashboard Pages (54 total)
+## Dashboard Pages (62 total)
 Located at `src/app/dashboard/*/page.tsx`:
 
 **Core:** alerts, analysis, calculator, chat, screener, settings, trader
@@ -475,7 +475,7 @@ Located at `src/app/dashboard/*/page.tsx`:
 **Help:** **support**, **support/[id]**
 **Public (no auth):** `/terms`, `/risk`, `/w/[token]` (shared watchlist), `/dashboard/messages`
 
-**Admin:** admin, paper-trading, portfolio, tax, tax-center
+**Admin:** admin, **admin/audit**, **admin/system-config**, paper-trading, portfolio, tax, tax-center
 
 ### New API Routes
 - `/api/multi-timeframe` — dual-timeframe (5m + 1d) analysis with confluence scoring
