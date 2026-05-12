@@ -272,6 +272,11 @@ export async function GET() {
         // is Alpaca's "today only" intraday P&L — change since prev close.
         // Falls back to total unrealizedPnl when intraday is unavailable
         // (IBKR / Tradier — neither exposes intraday).
+        //
+        // Phase 1 (UI-lie audit fix): include `source` + `staleSeconds` so
+        // the UI can render a "stale" indicator when we fell through to
+        // the DB cache. The two fields previously got silently mixed —
+        // users couldn't tell whether the number was live or hours old.
         if (brokerConnected && brokerPositions.length > 0) {
           const hasIntraday = brokerPositions.some((p) => p.unrealizedIntradayPnl !== 0);
           const unrealized = hasIntraday
@@ -284,15 +289,23 @@ export async function GET() {
             totalPnl: realized + unrealized,
             tradesCount: todayPnl?.tradesCount ?? brokerPositions.length,
             halted: todayPnl?.halted ?? false,
+            source: hasIntraday ? "broker_intraday" : "broker_total",
+            staleSeconds: 0,
           };
         }
         if (todayPnl) {
+          const rowDate = todayPnl.date ? new Date(`${todayPnl.date}T00:00:00`) : null;
+          const staleSeconds = rowDate
+            ? Math.max(0, Math.floor((Date.now() - rowDate.getTime()) / 1000))
+            : 0;
           return {
             realizedPnl: todayPnl.realizedPnl,
             unrealizedPnl: todayPnl.unrealizedPnl,
             totalPnl: todayPnl.realizedPnl + todayPnl.unrealizedPnl,
             tradesCount: todayPnl.tradesCount,
             halted: todayPnl.halted,
+            source: "db_snapshot",
+            staleSeconds,
           };
         }
         return null;
