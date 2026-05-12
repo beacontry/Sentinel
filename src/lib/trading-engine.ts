@@ -1604,12 +1604,48 @@ async function syncPositionMapFromBroker(
   for (const bp of longBrokerPositions) {
     const existing = positionMap.get(bp.symbol);
     if (existing) {
-      // Update qty and currentPrice if broker differs
+      // Phase 2 (UI-lie audit fix): if qty dropped meaningfully (partial
+      // close on broker), reset peakPrice to currentPrice. The dynamic
+      // trail % is anchored to peakPrice; a stale peak from the larger
+      // position would make the trail too loose for the remaining qty.
+      // Threshold 5% — small enough to catch genuine partial closes,
+      // big enough to not flap on rebalancing oddities.
+      const qtyDroppedMaterially =
+        existing.qty > 0 && bp.qty > 0 && bp.qty / existing.qty < 0.95;
       if (existing.qty !== bp.qty) {
         log.info({ symbol: bp.symbol, oldQty: existing.qty, newQty: bp.qty }, "Position qty changed on broker");
         existing.qty = bp.qty;
+        if (qtyDroppedMaterially) {
+          log.info(
+            { symbol: bp.symbol, oldPeak: existing.peakPrice, newPeak: bp.currentPrice },
+            "Resetting peakPrice — qty dropped >5%, trail recalibrating from current price"
+          );
+          existing.peakPrice = bp.currentPrice;
+        }
       }
-      // Update peak price tracking
+      // Phase 2 (UI-lie audit fix): re-resolve strategy params each sync
+      // so strategy edits (trailingStopPct, takeProfitPct) propagate to
+      // existing positions instead of being frozen at entry-time values.
+      try {
+        const strategy = await resolveStrategy(userId, bp.symbol);
+        if (existing.trailingStopPct !== strategy.trailingStopPct) {
+          log.debug(
+            { symbol: bp.symbol, old: existing.trailingStopPct, new: strategy.trailingStopPct },
+            "Refreshing trailingStopPct from current strategy"
+          );
+          existing.trailingStopPct = strategy.trailingStopPct;
+        }
+        // takeProfit is a fixed target (not trailing). When the strategy's
+        // takeProfitPct changes, recompute from entryPrice so existing
+        // positions reflect the new target.
+        const refreshedTakeProfit = existing.entryPrice * (1 + strategy.takeProfitPct);
+        if (Math.abs(existing.takeProfit - refreshedTakeProfit) > 0.01) {
+          existing.takeProfit = refreshedTakeProfit;
+        }
+      } catch {
+        // Strategy lookup failure non-blocking — keep the existing values
+      }
+      // Update peak price tracking (after potential reset)
       existing.peakPrice = Math.max(existing.peakPrice, bp.currentPrice);
     } else {
       // New position discovered on broker — add with conservative defaults
