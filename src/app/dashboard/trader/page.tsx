@@ -663,19 +663,29 @@ export default function TraderPage() {
       )}
 
       {/* P&L (lifetime realized + current unrealized) */}
-      {(lifetimePnl || todayPnl) && (
+      {(lifetimePnl || todayPnl) && (() => {
+        const totalPnlVal = lifetimePnl?.totalPnl ?? todayPnl?.totalPnl ?? 0;
+        const realizedVal = lifetimePnl?.realizedPnl ?? todayPnl?.realizedPnl ?? 0;
+        const unrealizedVal = lifetimePnl?.unrealizedPnl ?? todayPnl?.unrealizedPnl ?? 0;
+        // Use account equity as the basis for percent — gives a "X% of
+        // account" reading that's most intuitive for the headline cards.
+        const basis =
+          (data.brokerAccount?.equity ?? 0) > 0
+            ? (data.brokerAccount?.equity as number)
+            : Math.abs(totalPnlVal) || 1;
+        return (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card>
             <div className="flex items-center gap-2 mb-1">
               <DollarSign className="w-4 h-4 text-accent" />
               <span className="text-xs text-text-muted">Total P&L</span>
             </div>
-            <p className={`text-xl font-display font-bold ${(lifetimePnl?.totalPnl ?? todayPnl?.totalPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {(lifetimePnl?.totalPnl ?? todayPnl?.totalPnl ?? 0) >= 0 ? "+" : ""}${(lifetimePnl?.totalPnl ?? todayPnl?.totalPnl ?? 0).toFixed(2)}
+            <p className={`text-xl font-display font-bold ${totalPnlVal >= 0 ? "text-bullish" : "text-bearish"}`}>
+              {formatPnl(totalPnlVal, basis, pnlFormat)}
             </p>
             {lifetimePnl && todayPnl && (
               <p className="mt-0.5 text-[11px] text-text-muted font-mono">
-                Today: {(todayPnl.totalPnl ?? 0) >= 0 ? "+" : ""}${(todayPnl.totalPnl ?? 0).toFixed(2)}
+                Today: {formatPnl(todayPnl.totalPnl ?? 0, basis, pnlFormat)}
               </p>
             )}
           </Card>
@@ -684,12 +694,12 @@ export default function TraderPage() {
               <TrendingUp className="w-4 h-4 text-bullish" />
               <span className="text-xs text-text-muted">Realized</span>
             </div>
-            <p className={`text-xl font-display font-bold ${(lifetimePnl?.realizedPnl ?? todayPnl?.realizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {(lifetimePnl?.realizedPnl ?? todayPnl?.realizedPnl ?? 0) >= 0 ? "+" : ""}${(lifetimePnl?.realizedPnl ?? todayPnl?.realizedPnl ?? 0).toFixed(2)}
+            <p className={`text-xl font-display font-bold ${realizedVal >= 0 ? "text-bullish" : "text-bearish"}`}>
+              {formatPnl(realizedVal, basis, pnlFormat)}
             </p>
             {lifetimePnl && (
               <p className="mt-0.5 text-[11px] text-text-muted font-mono">
-                Today: {lifetimePnl.realizedPnlToday >= 0 ? "+" : ""}${lifetimePnl.realizedPnlToday.toFixed(2)}
+                Today: {formatPnl(lifetimePnl.realizedPnlToday, basis, pnlFormat)}
               </p>
             )}
           </Card>
@@ -698,8 +708,8 @@ export default function TraderPage() {
               <TrendingDown className="w-4 h-4 text-warning" />
               <span className="text-xs text-text-muted">Unrealized</span>
             </div>
-            <p className={`text-xl font-display font-bold ${(lifetimePnl?.unrealizedPnl ?? todayPnl?.unrealizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {(lifetimePnl?.unrealizedPnl ?? todayPnl?.unrealizedPnl ?? 0) >= 0 ? "+" : ""}${(lifetimePnl?.unrealizedPnl ?? todayPnl?.unrealizedPnl ?? 0).toFixed(2)}
+            <p className={`text-xl font-display font-bold ${unrealizedVal >= 0 ? "text-bullish" : "text-bearish"}`}>
+              {formatPnl(unrealizedVal, basis, pnlFormat)}
             </p>
           </Card>
           <Card>
@@ -710,7 +720,8 @@ export default function TraderPage() {
             <p className="text-xl font-display font-bold">{todayPnl?.tradesCount ?? 0}</p>
           </Card>
         </div>
-      )}
+        );
+      })()}
 
       {/* Performance Analytics */}
       {analytics && analytics.totalTrades > 0 && (
@@ -944,9 +955,13 @@ export default function TraderPage() {
                       : t.status === "REJECTED" ? "bearish"
                       : "neutral"
                     }>{t.status}</Badge>
-                    {(t.pnl ?? 0) != null && (
-                      <span className={`text-xs font-mono ml-auto ${(t.pnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-                        {(t.pnl ?? 0) >= 0 ? "+" : ""}${(t.pnl ?? 0).toFixed(2)}
+                    {t.pnl != null && (
+                      <span className={`text-xs font-mono ml-auto ${t.pnl >= 0 ? "text-bullish" : "text-bearish"}`}>
+                        {formatPnl(
+                          t.pnl,
+                          (t.fillPrice ?? 0) * t.quantity,
+                          pnlFormat
+                        )}
                       </span>
                     )}
                     <span className="text-xs text-text-muted">
