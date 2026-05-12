@@ -57,6 +57,7 @@ import { EarningsWidget } from "./widgets/earnings-widget";
 import { PortfolioWidget } from "./widgets/portfolio-widget";
 import { NetWorthWidget } from "./widgets/net-worth-widget";
 import { ContinueReadingWidget } from "./widgets/continue-reading-widget";
+import { PnlHeatmapWidget } from "./widgets/pnl-heatmap-widget";
 
 // Map widget IDs to their React components
 const WIDGET_COMPONENTS: Record<string, React.ComponentType> = {
@@ -74,6 +75,7 @@ const WIDGET_COMPONENTS: Record<string, React.ComponentType> = {
   "portfolio-widget": PortfolioWidget,
   "net-worth-widget": NetWorthWidget,
   "continue-reading-widget": ContinueReadingWidget,
+  "pnl-heatmap-widget": PnlHeatmapWidget,
 };
 
 const CATEGORY_LABELS: Record<WidgetCategory, string> = {

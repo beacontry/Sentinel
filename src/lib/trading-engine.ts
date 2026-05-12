@@ -17,6 +17,7 @@ import { analyzeHybrid } from "./hybrid/pipeline";
 import type { SignalParams } from "./indicators/analyzer";
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { SP500_SYMBOLS, getSP500Symbols } from "./sp500";
+import { getSymbolSector } from "./sectors";
 import { getFinnhubClient } from "./finnhub";
 
 /** Resolved at scan time via getSP500Symbols() — auto-updates daily */
@@ -465,6 +466,13 @@ interface RiskLimits {
   maxExposure: number;
   maxDailyNotionalPct: number;
   maxConsecutiveLosses: number;
+  // Phase 4 — engine intelligence
+  /** Max fraction of equity in any single sector. 0 = disabled. */
+  maxSectorExposurePct: number;
+  /** Auto-swap engine mode based on VIX + SPY regime. */
+  adaptiveModeEnabled: boolean;
+  /** Block BUYs within N trading days of earnings. 0 = disabled. */
+  earningsBlackoutDays: number;
 }
 
 async function loadRiskLimits(userId: string): Promise<RiskLimits> {
@@ -476,6 +484,9 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
     maxExposure: 0, // 0 = use account equity as cap (set below)
     maxDailyNotionalPct: DEFAULT_MAX_DAILY_NOTIONAL_PCT,
     maxConsecutiveLosses: DEFAULT_MAX_CONSECUTIVE_LOSSES,
+    maxSectorExposurePct: 0, // 0 = disabled
+    adaptiveModeEnabled: false,
+    earningsBlackoutDays: 0, // 0 = disabled
   };
 
   try {
@@ -495,6 +506,10 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
         profile.maxDailyNotionalPct != null ? profile.maxDailyNotionalPct : defaults.maxDailyNotionalPct;
       const maxConsecutiveLosses =
         profile.maxConsecutiveLosses != null ? profile.maxConsecutiveLosses : defaults.maxConsecutiveLosses;
+      // Phase 4 — engine intelligence
+      const maxSectorExposurePct = profile.maxSectorExposurePct ?? defaults.maxSectorExposurePct;
+      const adaptiveModeEnabled = profile.adaptiveModeEnabled ?? defaults.adaptiveModeEnabled;
+      const earningsBlackoutDays = profile.earningsBlackoutDays ?? defaults.earningsBlackoutDays;
 
       // maxExposure: use multiplier if set, else fallback to accountSize × drawdown, else 0 (engine uses 1.5× equity default)
       let maxExposure = defaults.maxExposure;
@@ -513,6 +528,9 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
         maxExposure,
         maxDailyNotionalPct,
         maxConsecutiveLosses,
+        maxSectorExposurePct,
+        adaptiveModeEnabled,
+        earningsBlackoutDays,
       };
     }
   } catch (err) {
@@ -523,6 +541,29 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
 }
 
 // ─── Live-Trading Safeguards (Phase 3) ───────────────────────────────────────
+
+/**
+ * Build the sector-exposure context from the engine's in-memory position
+ * map. Returns null when equity is 0 or the position map is empty. The
+ * caller passes this to canPlaceBuyOrder so the sector cap can sum
+ * existing exposure per sector without an extra broker round-trip.
+ */
+function buildSectorExposureContext(
+  userId: string,
+  equity: number
+): { positionMarketValues: Map<string, number>; equity: number } | null {
+  if (equity <= 0) return null;
+  const positionMap = getPositionMap(userId);
+  if (positionMap.size === 0) return { positionMarketValues: new Map(), equity };
+  const positionMarketValues = new Map<string, number>();
+  for (const [sym, pos] of positionMap) {
+    // Fall back to entry × qty if currentPrice not yet synced (e.g. first
+    // scan after restart). Marginal — sector cap is approximate anyway.
+    const mv = pos.marketValue ?? (pos.currentPrice ?? pos.entryPrice) * pos.qty;
+    positionMarketValues.set(sym, mv);
+  }
+  return { positionMarketValues, equity };
+}
 
 /**
  * Gate every BUY before it's submitted. Checks (in order, cheapest first):
@@ -549,21 +590,72 @@ async function canPlaceBuyOrder(
   notionalUsd: number,
   riskLimits: RiskLimits,
   bootEquity: number,
-  account?: BrokerAccount
+  account?: BrokerAccount,
+  /** Phase 4 — sector cap needs the live position map (symbol → market value) to sum exposure */
+  sectorExposureContext?: { positionMarketValues: Map<string, number>; equity: number }
 ): Promise<{ ok: true } | { ok: false; reason: string; details: Record<string, unknown> }> {
   // Refresh wash-sale set if stale. The helper has its own age check
-  // (WASH_SALE_REFRESH_MS) so this is cheap when the cache is hot. When
-  // a losing trade was just closed in the prior decision in this scan,
-  // we need an even fresher read — but that's a corner case; the 5-min
-  // refresh window catches the common scenario.
+  // (WASH_SALE_REFRESH_MS) so this is cheap when the cache is hot.
   await maybeRefreshWashSaleSet(engine);
 
   // Re-evaluate PDT state from the live account snapshot if provided.
-  // Without this, a 2nd day-trade made within a 15-min scan window
-  // evaluates against stale PDT count and gets allowed even when the
-  // user has just hit the threshold.
   if (account) {
     evaluatePdtState(engine, account);
+  }
+
+  // Phase 4 — earnings blackout. Refuses BUYs if this symbol has an
+  // earnings release within `earningsBlackoutDays` calendar days.
+  // Skipped when earningsBlackoutDays = 0 (disabled) or the cache lookup
+  // fails (best-effort; we don't want to block trades on a cache miss).
+  if (riskLimits.earningsBlackoutDays > 0) {
+    try {
+      const inBlackout = await isInEarningsBlackout(symbol);
+      if (inBlackout) {
+        return {
+          ok: false,
+          reason: "earnings_blackout",
+          details: {
+            symbol,
+            blackoutDays: riskLimits.earningsBlackoutDays,
+          },
+        };
+      }
+    } catch {
+      // Best-effort — earnings cache lookup failures shouldn't block trading
+    }
+  }
+
+  // Phase 4 — sector exposure cap. Refuses BUYs that would push any
+  // sector over `maxSectorExposurePct` of equity. Requires the live
+  // position map so we can sum existing exposure per sector.
+  if (
+    riskLimits.maxSectorExposurePct > 0 &&
+    sectorExposureContext &&
+    sectorExposureContext.equity > 0
+  ) {
+    const newSector = getSymbolSector(symbol);
+    // Sum existing market value in the same sector
+    let sectorMv = 0;
+    for (const [posSymbol, mv] of sectorExposureContext.positionMarketValues) {
+      if (getSymbolSector(posSymbol) === newSector) sectorMv += mv;
+    }
+    const totalAfter = sectorMv + notionalUsd;
+    const sectorPct = totalAfter / sectorExposureContext.equity;
+    if (sectorPct > riskLimits.maxSectorExposurePct) {
+      return {
+        ok: false,
+        reason: "sector_exposure_cap",
+        details: {
+          symbol,
+          sector: newSector,
+          existingSectorMv: sectorMv,
+          attemptedNotional: notionalUsd,
+          equity: sectorExposureContext.equity,
+          sectorPctAfter: sectorPct,
+          cap: riskLimits.maxSectorExposurePct,
+        },
+      };
+    }
   }
 
   // Wash-sale: block re-entry on symbols with a losing close in the last 31 days
@@ -1527,6 +1619,9 @@ interface TrackedPosition {
   trailingStopPct: number;
   entryDate: Date;
   holdPeriod: number;
+  /** Phase 4 — last-known live price + marketValue from the most recent sync. Used for sector-exposure math without an extra broker call per BUY decision. */
+  currentPrice?: number;
+  marketValue?: number;
 }
 
 const g2 = globalThis as typeof globalThis & {
@@ -1573,7 +1668,7 @@ export function getBrokerPositionCache(userId: string): CachedBrokerPositions | 
  * - No DB writes — broker is the source of truth
  */
 async function syncPositionMapFromBroker(
-  brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number }[],
+  brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number; marketValue?: number }[],
   positionMap: Map<string, TrackedPosition>,
   userId: string,
   client?: BrokerClient
@@ -1668,6 +1763,10 @@ async function syncPositionMapFromBroker(
       }
       // Update peak price tracking (after potential reset)
       existing.peakPrice = Math.max(existing.peakPrice, bp.currentPrice);
+      // Phase 4 — keep last-known live price + market value for the sector
+      // exposure cap so we don't need an extra broker call per BUY decision.
+      existing.currentPrice = bp.currentPrice;
+      existing.marketValue = bp.marketValue;
     } else {
       // New position discovered on broker — add with conservative defaults
       const strategy = await resolveStrategy(userId, bp.symbol);
@@ -1676,6 +1775,8 @@ async function syncPositionMapFromBroker(
         qty: bp.qty,
         entryPrice: bp.avgEntryPrice,
         peakPrice: Math.max(bp.currentPrice, bp.avgEntryPrice),
+        currentPrice: bp.currentPrice,
+        marketValue: bp.marketValue,
         stopLoss: bp.avgEntryPrice * (1 - strategy.stopLossPct),
         takeProfit: bp.avgEntryPrice * (1 + strategy.takeProfitPct),
         trailingStopPct: strategy.trailingStopPct,
@@ -3178,7 +3279,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           log.info({ symbol }, "Main-scan BUY skipped — active buy already pending on broker");
           continue;
         }
-        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity, account);
+        const sectorCtx = buildSectorExposureContext(engine.userId!, equity);
+        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity, account, sectorCtx ?? undefined);
         if (!gate.ok) {
           log.warn(
             { symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details },

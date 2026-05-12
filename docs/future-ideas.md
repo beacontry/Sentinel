@@ -102,34 +102,25 @@ Every market close (4:30 PM ET cron), summary email per user: today's realized +
 
 ---
 
-## Engine intelligence
+## Engine intelligence — 3 of 5 shipped (Phase 4)
 
-### Per-symbol P&L heatmap
-Dashboard widget: for each symbol you've traded, total realized P&L over selectable window (30d / 90d / YTD / all-time). Color-coded heatmap, sortable. Shows which names work for your strategy and which don't — actionable input for watchlist tuning. Reads `trader_trades`. ~120 LOC.
+Shipped in commit (this batch):
+- **Sector exposure cap** ✅ — `risk_profile.max_sector_exposure_pct` column. `canPlaceBuyOrder` sums position market values per sector via `buildSectorExposureContext()` and refuses BUYs that would push a sector over the cap. Migration 0029. Wired into main scan; tactical / smart / swap / add paths inherit the basic gates but not the sector cap (would need same context threading).
+- **News/earnings blackout** ✅ — `risk_profile.earnings_blackout_days`. `canPlaceBuyOrder` calls `isInEarningsBlackout()` when the cap is set. Migration 0029.
+- **Per-symbol P&L heatmap widget** ✅ — new `pnl-heatmap-widget` registered in the widget registry. Reads `/api/performance/attribution`. Top-5 contributors with proportional bars; full attribution on `/dashboard/performance` for the long-form view.
 
-**Why:** AAPL profitable, AMD not, etc. Trims the universe to what actually works.
+### Still pending — adaptive mode + dry-run
 
-### Adaptive mode switching
-Auto-switch engine mode based on market regime indicators (VIX level, SPY breadth, SPY vs SMA50, sector rotation phase). Defined rules:
-- VIX < 18 + SPY > SMA50: `optimized` (aggressive)
-- VIX 18-25: `tactical-smart`
-- VIX > 25 OR SPY < SMA50 for 3+ days: `conservative`
+**Adaptive mode switching** — `risk_profile.adaptive_mode_enabled` column shipped (migration 0029) but no consumer wired. Need:
+- Read VIX + SPY/SMA50 state at scan start (already computed elsewhere — see breadth API)
+- Define mode-suggestion rules (VIX < 18 + SPY > SMA50 → optimized; etc.)
+- Either auto-switch (risky — surprises the user) or just surface a "regime suggests X mode" UI nudge
+- Defer until the engine has 60 days of clean paper data to validate the regime classifications
 
-Opt-in per-user via new `adaptive_mode_enabled` column. Engine reads market state at scan start and switches before placing orders. ~100 LOC + migration.
-
-**Why:** strategy-mode mismatch with regime is the #1 source of drawdown. Automating the switch removes the human's tendency to keep an aggressive strategy on too long.
-
-### Sector exposure cap
-Refuse new BUYs if any sector would exceed N% of equity (default 25%). Uses the existing sector classification in `src/lib/sectors.ts`. New field on risk profile: `max_sector_exposure_pct`. ~80 LOC + migration.
-
-**Why:** prevents the engine from accidentally loading up on 8 tech names in a hot week. Surfaces concentration risk before it becomes a drawdown event.
-
-### News/earnings blackout
-No new entries 24h before a position's earnings release. Uses Finnhub's earnings calendar (already integrated). Tracks blocked symbols per scan in a new field on engine state, audit `order.rejected` with reason `earnings_blackout`. ~80 LOC.
-
-**Why:** earnings moves are dominated by guidance/macro factors that the technical engine has zero edge on. Skipping these days is +EV.
+**Engine dry-run mode** — needs a `dryRun: boolean` on `EngineState` + a gate at `placeEngineOrder` that logs would-be orders to `trader_trades` with `status='DRY_RUN'` instead of calling the broker. Lets users test strategy code changes against live signals without risk. ~150 LOC. Worth doing before any major engine refactor; for now defer until there's a specific change to dry-test.
 
 ### Mean reversion strategy
+
 Adds an `oversold-bounce` mode alongside momentum-only modes. RSI < 30 + price > SMA200 + above-avg volume → buy. Exits on RSI > 55 OR time-stop 10 days. Diversifies engine edge. ~250 LOC, biggest engine change — defer until momentum-only is profitable in paper.
 
 **Why:** momentum strategies underperform in choppy markets; mean reversion thrives there. Running both modes with capital allocation across them smooths the return curve.

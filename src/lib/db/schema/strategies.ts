@@ -58,6 +58,13 @@ export const userRiskProfiles = pgTable("user_risk_profiles", {
   // Live-trading safeguards (Phase 3)
   maxDailyNotionalPct: real("max_daily_notional_pct"), // fraction (0.5 = 50% of equity)
   maxConsecutiveLosses: integer("max_consecutive_losses"),
+  // Phase 4 — engine intelligence (2026-05-12)
+  /** Max % of equity in any single sector. NULL = disabled. e.g. 0.25 → refuse BUYs when sector >25% of equity. */
+  maxSectorExposurePct: real("max_sector_exposure_pct"),
+  /** Auto-swap engine mode based on VIX + SPY trend. Defaults false. */
+  adaptiveModeEnabled: boolean("adaptive_mode_enabled").notNull().default(false),
+  /** Block BUYs within N trading days of a symbol's earnings release. NULL = disabled. */
+  earningsBlackoutDays: integer("earnings_blackout_days"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

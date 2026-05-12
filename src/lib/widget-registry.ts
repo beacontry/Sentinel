@@ -126,6 +126,14 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     defaultSize: "sm",
     component: "continue-reading-widget",
   },
+  {
+    id: "pnl-heatmap",
+    name: "P&L by Symbol",
+    description: "Top symbols driving your realized P&L — lifetime",
+    category: "trading",
+    defaultSize: "md",
+    component: "pnl-heatmap-widget",
+  },
 ];
 
 export const WIDGET_MAP = new Map(
