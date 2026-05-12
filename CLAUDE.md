@@ -732,7 +732,7 @@ function InnerComponent() {
 
 ---
 
-## 2026-05-12 — Migrations summary (0023–0028)
+## 2026-05-12 — Migrations summary (0023–0029)
 
 All idempotent. Apply on prod as `postgres` (chmod-700 droplet means app user can't `ALTER TABLE`).
 
@@ -744,6 +744,51 @@ All idempotent. Apply on prod as `postgres` (chmod-700 droplet means app user ca
 | 0026 | `terms_acceptance.sql` | `users.terms_accepted_at` + `users.terms_accepted_version` |
 | 0027 | `support_tickets.sql` | `support_tickets` + `support_messages` |
 | 0028 | `direct_messages.sql` | `dm_threads` (sorted pair, CHECK constraint) + `dm_messages` |
+| 0029 | `engine_intelligence.sql` | `user_risk_profiles.max_sector_exposure_pct` + `adaptive_mode_enabled` + `earnings_blackout_days` |
+
+---
+
+## 2026-05-12 (final) — 6-phase marathon retrospective
+
+Worked through the parked items from the UI-lie audit + QoL bigger asks across 6 phases. Net shipped:
+
+**Phase 1 — Money bugs from UI-lie audit (commit `2775f7e`).**
+- `canPlaceBuyOrder()` is now async + takes a fresh `account` snapshot. Awaits `maybeRefreshWashSaleSet()` before the wash-sale check; re-runs `evaluatePdtState(engine, account)` before the PDT check. A 2nd day-trade in a 15-min window or a same-scan losing-close-then-re-entry now correctly evaluates against live state.
+- `bootEquity` re-snapshots at every new trading day across all 3 scan paths (intraday, tactical, main). 50% equity-collapse tripwire stays calibrated as the account grows organically.
+- `tripSafeguardHalt()` writes `halted=true` to `trader_daily_pnl` immediately (fire-and-forget) so the dashboard reflects halts on the next fetch instead of waiting for the next scan boundary.
+- Dashboard `todayPnl` response carries `source: "broker_intraday" | "broker_total" | "db_snapshot"` + `staleSeconds` so the UI can render a "stale" indicator instead of silently mixing broker intraday with DB snapshot.
+
+**Phase 2 — Frozen-value cleanup (commit `4baa731`).**
+`syncPositionMapFromBroker()` now resets `pos.peakPrice = currentPrice` when broker qty drops > 5% (partial close — trail recalibrates from the post-close size). Re-resolves `pos.trailingStopPct` and `pos.takeProfit` from the current strategy on every sync, so Strategies-page edits propagate to existing positions.
+
+**Phase 3 — Cache invalidation (commit `cd8cd86`).**
+- `FILTER_CACHE_TTL_MS = 6h` added on top of the existing day-string check for earnings + sentiment caches. Server-boot-at-3am-ET no longer means 20+ hours of stale data.
+- Screener cache adds `scanStartedAt: Date | null`. `/api/screener` exposes both `scannedAt` (completed) and `scanStartedAt` (in-flight). Same field added to `EngineState` and surfaced through `peekEngineStatus()`.
+
+**Phase 4 — Engine intelligence, 3 of 5 (commit `1019071`).**
+Migration `0029` adds 3 columns to `user_risk_profiles`. `RiskLimits` expanded with `maxSectorExposurePct` / `adaptiveModeEnabled` / `earningsBlackoutDays`.
+- **Sector exposure cap** — `canPlaceBuyOrder` takes optional `sectorExposureContext` (live position market values keyed by symbol) and refuses BUYs that would push a sector over cap × equity. New `buildSectorExposureContext()` helper. `TrackedPosition` now carries `currentPrice` + `marketValue` synced from broker so the cap check is in-memory.
+- **Earnings blackout** — calls the existing `isInEarningsBlackout()` when the column is set.
+- **P&L heatmap widget** — new `pnl-heatmap-widget` registered. Reads `/api/performance/attribution` (already exists). Top-5 contributors with proportional bars.
+- Adaptive mode + dry-run mode deferred (need 60-day paper validation + dedicated design respectively).
+
+**Phase 5 — Compare strategies (commit `1b8652d`).**
+- `/dashboard/backtest/compare?ids=…` — pick up to 5 saved strategies (URL-driven for shareability), see stats columns (Return / Win Rate / Trades / Max DD / Sharpe / Sortino / Calmar / MAR) and an inline SVG equity-curve overlay (normalized to start = 100 so different starting balances are visually comparable).
+- New `/api/backtest/compare?ids=…` endpoint.
+- "Compare strategies" button on the existing Saved Strategies card (appears when 2+ saved).
+- Mean reversion + divergence tracker deferred.
+
+**Phase 6 — Frontend bigger asks, 4 of 5 (commit `190ea92`).**
+- `/dashboard/portfolio` is no longer a redirect — full overview page aggregating manual + broker positions, sector allocation bars, top winners/losers.
+- `/api/quotes?symbols=…` batch endpoint — last price + intraday change in one round-trip, 100-symbol cap, 60s response cache.
+- Trader page Open Positions + Open Orders wrap in `grid-cols-1 2xl:grid-cols-2` for wide-screen 2-col layout.
+- Cross-device recently-viewed sync deferred (localStorage is fine until multi-device usage picks up).
+
+### Total churn this marathon
+
+6 phases × ~1 commit each + the docs commit = ~7 commits, ~3 hours real time. All 6 phases ship behind feature flags or are additive (no behavior changes to existing flows except where bugs were fixed). The pending items in each phase are documented in `docs/future-ideas.md` with retrospective notes pointing to commit SHAs.
+
+If anything regresses, individual phase commits revert cleanly.
 
 ## Detailed Design Reference
 For exhaustive design tokens, component APIs, and page templates, see `.claude/skills/sentinel-redesign/references/`:
