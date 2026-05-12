@@ -42,6 +42,11 @@ export async function GET() {
       {
         results: cache.results,
         scannedAt: everScanned ? cache.scannedAt.toISOString() : null,
+        // Phase 3 — when a scan is in flight, surface its start time so
+        // the UI can render "scan in progress, started X ago" instead of
+        // "last scanned X ago" (which during a long scan misleads —
+        // says "45m ago" the whole time, then jumps to "now").
+        scanStartedAt: cache.scanStartedAt ? cache.scanStartedAt.toISOString() : null,
         scanning: cache.scanning,
         stale: hasData ? stale : true,
         count: cache.results.length,

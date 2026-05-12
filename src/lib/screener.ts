@@ -44,6 +44,10 @@ export interface ScreenerFilter {
 export interface ScreenerCache {
   results: ScreenerResult[];
   scannedAt: Date;
+  /** Phase 3 — when the current scan started. Null while idle. UI uses
+   * this to render "scanning, started X ago" instead of "last scanned X
+   * ago" which was misleading during a 30+ minute scan. */
+  scanStartedAt: Date | null;
   scanning: boolean;
   scanInFlight: Promise<ScreenerResult[]> | null;
   traderPushResults: TraderPushResult[];
@@ -56,7 +60,7 @@ const g = globalThis as typeof globalThis & {
   __screenerScheduler?: ReturnType<typeof setInterval> | null;
   __screenerSchedulerStarted?: boolean;
 };
-g.__screenerCache ??= { results: [], scannedAt: new Date(0), scanning: false, scanInFlight: null, traderPushResults: [] };
+g.__screenerCache ??= { results: [], scannedAt: new Date(0), scanStartedAt: null, scanning: false, scanInFlight: null, traderPushResults: [] };
 
 export function getScreenerCache(): ScreenerCache {
   return g.__screenerCache!;
@@ -167,6 +171,7 @@ export async function scanAllSymbols(): Promise<ScreenerResult[]> {
   }
 
   cache.scanning = true;
+  cache.scanStartedAt = new Date();
   const scanPromise = runScanInternal();
   cache.scanInFlight = scanPromise;
   try {
@@ -174,6 +179,7 @@ export async function scanAllSymbols(): Promise<ScreenerResult[]> {
   } finally {
     cache.scanning = false;
     cache.scanInFlight = null;
+    cache.scanStartedAt = null; // cleared on completion; scannedAt now reflects completion time
   }
 }
 
@@ -276,6 +282,7 @@ export async function scanAllSymbolsIntraday(): Promise<ScreenerResult[]> {
   }
 
   cache.scanning = true;
+  cache.scanStartedAt = new Date();
   const scanPromise = runIntradayScanInternal();
   cache.scanInFlight = scanPromise;
   try {
@@ -283,6 +290,7 @@ export async function scanAllSymbolsIntraday(): Promise<ScreenerResult[]> {
   } finally {
     cache.scanning = false;
     cache.scanInFlight = null;
+    cache.scanStartedAt = null;
   }
 }
 
