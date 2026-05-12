@@ -1,8 +1,30 @@
 "use client";
 
+// Phase B.2 — split panel: top half = your watchlist (with a switcher to
+// pick which named list), bottom half = recently-viewed symbols (a
+// navigation aid persisted in localStorage, not tied to the watchlist).
+//
+// "Signals" no longer renders here — that panel lives in `signal-feed.tsx`
+// and is now sourced from /api/screener (global market signals), not from
+// projecting the watchlist through the analyzer.
+
+import { useState } from "react";
 import { Badge } from "../ui/badge";
 import { Skeleton } from "../ui/skeleton";
-import { Clock, Eye, X } from "lucide-react";
+import { Clock, Eye, X, ChevronDown, Check } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+
+export interface WatchlistOption {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  itemCount: number;
+}
+
+interface RecentEntry {
+  symbol: string;
+  at: number; // unix ms
+}
 
 interface CockpitWatchlistProps {
   symbols: string[];
@@ -11,6 +33,16 @@ interface CockpitWatchlistProps {
   onRemoveSymbol: (symbol: string) => void;
   analyses: Record<string, { signal: string; confidence: number; timestamp: string }>;
   loading: boolean;
+
+  // Phase B.2 additions
+  /** All of the user's watchlists, for the switcher dropdown. */
+  watchlistOptions: WatchlistOption[];
+  /** The id of the currently-selected list, or null when none exist yet. */
+  activeWatchlistId: string | null;
+  /** Called when the user picks a different list from the switcher. */
+  onSwitchWatchlist: (id: string) => void;
+  /** Recently-viewed symbols, newest first. Pure navigation aid, not tied to watchlist. */
+  recentEntries: RecentEntry[];
 }
 
 const signalBadgeVariant: Record<string, "bullish" | "bearish" | "neutral"> = {
@@ -21,8 +53,8 @@ const signalBadgeVariant: Record<string, "bullish" | "bearish" | "neutral"> = {
   STRONG_SELL: "bearish",
 };
 
-function timeAgo(isoStr: string): string {
-  const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+function timeAgo(ms: number): string {
+  const diff = Math.floor((Date.now() - ms) / 1000);
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
@@ -36,28 +68,33 @@ export function CockpitWatchlist({
   onRemoveSymbol,
   analyses,
   loading,
+  watchlistOptions,
+  activeWatchlistId,
+  onSwitchWatchlist,
+  recentEntries,
 }: CockpitWatchlistProps) {
-  const recentActivity = symbols
-    .filter((s) => analyses[s])
-    .map((s) => ({
-      symbol: s,
-      signal: analyses[s].signal,
-      confidence: analyses[s].confidence,
-      time: analyses[s].timestamp,
-    }))
-    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-    .slice(0, 6);
+  const activeList = watchlistOptions.find((w) => w.id === activeWatchlistId);
+  const showSwitcher = watchlistOptions.length > 1;
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between border-b border-border px-4 py-4">
-        <div className="flex items-center gap-2">
-          <Eye className="w-3.5 h-3.5 text-accent" />
-          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
-            Watchlist
-          </span>
+      {/* Header — name of active list + switcher when there's more than one */}
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Eye className="w-3.5 h-3.5 text-accent shrink-0" />
+          {showSwitcher ? (
+            <WatchlistSwitcher
+              options={watchlistOptions}
+              activeId={activeWatchlistId}
+              onSwitch={onSwitchWatchlist}
+            />
+          ) : (
+            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary truncate">
+              {activeList?.name ?? "Watchlist"}
+            </span>
+          )}
         </div>
-        <Badge variant="default" className="font-mono">
+        <Badge variant="default" className="font-mono shrink-0">
           {symbols.length}
         </Badge>
       </div>
@@ -71,7 +108,7 @@ export function CockpitWatchlist({
           </div>
         ) : symbols.length === 0 ? (
           <div className="px-4 py-4 text-center">
-            <p className="text-[10px] text-text-muted">No symbols</p>
+            <p className="text-[10px] text-text-muted">No symbols in this list</p>
           </div>
         ) : (
           <div className="space-y-1 p-2">
@@ -117,25 +154,28 @@ export function CockpitWatchlist({
           </div>
         )}
 
-        {recentActivity.length > 0 && (
+        {/* Recently-viewed — distinct from the watchlist. Even if the same
+            symbol is in the active list, clicking it from here is a normal
+            navigation, not a watchlist mutation. */}
+        {recentEntries.length > 0 && (
           <div className="border-t border-border">
             <div className="flex items-center gap-2 px-4 py-2">
               <Clock className="w-3 h-3 text-text-muted" />
               <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-                Recent
+                Recently viewed
               </span>
             </div>
             <div className="space-y-1 px-2 pb-2">
-              {recentActivity.map((item) => (
+              {recentEntries.map((item) => (
                 <button
-                  key={item.symbol + item.time}
+                  key={item.symbol}
                   onClick={() => onSelectSymbol(item.symbol)}
                   className="flex min-h-[34px] w-full items-center justify-between rounded-[14px] px-2.5 py-1 text-[10px] transition-colors hover:bg-bg-elevated"
                 >
                   <span className="font-mono text-text-secondary">
                     {item.symbol}
                   </span>
-                  <span className="text-text-muted">{timeAgo(item.time)}</span>
+                  <span className="text-text-muted">{timeAgo(item.at)}</span>
                 </button>
               ))}
             </div>
@@ -143,5 +183,77 @@ export function CockpitWatchlist({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Compact dropdown in the watchlist header. Shows current list name; clicking
+ * reveals every list the user owns with the active one ticked. Picking another
+ * list switches the analysis page to it.
+ */
+function WatchlistSwitcher({
+  options,
+  activeId,
+  onSwitch,
+}: {
+  options: WatchlistOption[];
+  activeId: string | null;
+  onSwitch: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = options.find((o) => o.id === activeId);
+
+  return (
+    <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+      <DropdownMenu.Trigger asChild>
+        <button
+          className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary hover:text-text-primary transition-colors min-w-0"
+          aria-label="Switch watchlist"
+          title="Switch watchlist"
+        >
+          <span className="truncate">{active?.name ?? "Watchlist"}</span>
+          <ChevronDown className="w-3 h-3 text-text-muted shrink-0" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="start"
+          sideOffset={6}
+          className="z-50 min-w-[220px] max-w-[280px] rounded-lg border border-border bg-bg-elevated p-1 animate-scale-in shadow-lg"
+        >
+          {options.map((o) => (
+            <DropdownMenu.Item
+              key={o.id}
+              onSelect={() => onSwitch(o.id)}
+              className="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm
+                text-text-secondary hover:bg-bg-hover hover:text-text-primary
+                focus:bg-bg-hover focus:text-text-primary cursor-pointer outline-none"
+            >
+              <span className="flex items-center gap-2 min-w-0 flex-1">
+                <Check
+                  className={`h-3.5 w-3.5 shrink-0 ${o.id === activeId ? "text-accent" : "text-transparent"}`}
+                />
+                <span className="truncate">{o.name}</span>
+                {o.isDefault && (
+                  <Badge variant="default" className="text-[9px] px-1 py-0">DEFAULT</Badge>
+                )}
+              </span>
+              <span className="text-[10px] font-mono text-text-muted shrink-0">
+                {o.itemCount}
+              </span>
+            </DropdownMenu.Item>
+          ))}
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <DropdownMenu.Item
+            onSelect={() => {
+              window.location.href = "/dashboard/watchlists";
+            }}
+            className="rounded-md px-3 py-2 text-xs text-accent hover:bg-accent/10 focus:bg-accent/10 cursor-pointer outline-none"
+          >
+            Manage watchlists…
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }

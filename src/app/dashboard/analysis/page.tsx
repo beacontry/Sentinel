@@ -1,17 +1,42 @@
 "use client";
 
+// Phase B.2 — Analysis Cockpit panels now mean three different things:
+//
+//   Signals    = top-conviction signals from the global market screener
+//                (/api/screener). Symbols you might NOT be watching yet.
+//                Independent of your watchlist.
+//
+//   Watchlist  = your personal saved symbols. Multi-list-aware: a switcher
+//                in the panel header picks which named list is active, and
+//                add/remove acts on that list. Defaults to your "default"
+//                list if you have one, otherwise the first list.
+//
+//   Recent     = symbols you've clicked recently (any source). Stored in
+//                localStorage by useRecentlyViewed. Pure nav aid, never
+//                writes to a watchlist.
+//
+// Click flow:
+//   - Click a Signal → analyzes the symbol, doesn't add to watchlist.
+//   - Click a Watchlist row → analyzes and selects.
+//   - Click a Recent row → analyzes and selects (same as watchlist click).
+//   - Every click also pushes the symbol onto Recently Viewed.
+
 import { useState, useEffect, useCallback } from "react";
 import type { AnalysisResult } from "@/types";
 import { SignalFeed, type SignalFeedItem } from "@/components/dashboard/signal-feed";
 import { SignalDetails } from "@/components/dashboard/signal-details";
 import { PriceChart, type ChartEvent } from "@/components/dashboard/price-chart";
 import { IntelligenceTabs } from "@/components/dashboard/intelligence-tabs";
-import { CockpitWatchlist } from "@/components/dashboard/cockpit-watchlist";
+import {
+  CockpitWatchlist,
+  type WatchlistOption,
+} from "@/components/dashboard/cockpit-watchlist";
 import { PageIntro } from "@/components/layout/page-intro";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
+import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
 import {
   Activity,
   Plus,
@@ -23,38 +48,159 @@ import {
 
 const POPULAR_SYMBOLS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"];
 
+// Min confidence to surface a signal in the panel. Lower noise, focus on
+// conviction. The screener may have hundreds of low-confidence HOLDs that
+// would drown out the signal.
+const SIGNAL_PANEL_MIN_CONFIDENCE = 0.6;
+const SIGNAL_PANEL_MAX = 8;
+
+// Screener result shape (subset of the wire format).
+interface ScreenerCacheItem {
+  symbol: string;
+  signal: SignalFeedItem["signal"];
+  confidence: number;
+  price: number;
+  indicators?: { sma_20?: number | null };
+}
+
 export default function AnalysisCockpit() {
   const [symbols, setSymbols] = useState<string[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, AnalysisResult>>({});
-  const [analyzingSymbols, setAnalyzingSymbols] = useState<Set<string>>(
-    new Set()
-  );
+  const [analyzingSymbols, setAnalyzingSymbols] = useState<Set<string>>(new Set());
   const [initialLoad, setInitialLoad] = useState(true);
   const [chartEvents, setChartEvents] = useState<ChartEvent[]>([]);
   const [newSymbol, setNewSymbol] = useState("");
   const [showAddInput, setShowAddInput] = useState(false);
 
-  // Load watchlist on mount
+  // Phase A — multi-watchlist state. The dropdown in the Watchlist panel
+  // header lets the user switch between their named lists; activeWatchlistId
+  // is the one whose contents drive `symbols`.
+  const [watchlistOptions, setWatchlistOptions] = useState<WatchlistOption[]>([]);
+  const [activeWatchlistId, setActiveWatchlistId] = useState<string | null>(null);
+
+  // Phase B.2 — Signals panel pulled from screener cache, not the watchlist
+  const [signalItems, setSignalItems] = useState<SignalFeedItem[]>([]);
+  const [signalsLoading, setSignalsLoading] = useState(true);
+
+  // Phase B.1 — Recently viewed (localStorage-backed)
+  const { entries: recentEntries, push: pushRecent } = useRecentlyViewed();
+
+  // ─── Watchlist boot: list all the user's lists, then load the active one ─
   useEffect(() => {
+    let cancelled = false;
+    async function boot() {
+      try {
+        const res = await fetch("/api/watchlists");
+        if (!res.ok) {
+          if (!cancelled) setInitialLoad(false);
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        const lists: WatchlistOption[] = data.watchlists ?? [];
+        setWatchlistOptions(lists);
+
+        // Pick the default list, or the first one. If the user has no lists
+        // yet (brand new account), we leave activeWatchlistId null and the
+        // empty-state will guide them to add a symbol — adding will create a
+        // "Default" list on the fly via the legacy POST /api/watchlist path.
+        const initial = lists.find((l) => l.isDefault)?.id ?? lists[0]?.id ?? null;
+        setActiveWatchlistId(initial);
+
+        if (!initial) {
+          if (!cancelled) setInitialLoad(false);
+          return;
+        }
+
+        // Load the active list's symbols
+        const detailRes = await fetch(`/api/watchlists/${initial}`);
+        if (!detailRes.ok) {
+          if (!cancelled) setInitialLoad(false);
+          return;
+        }
+        const detail = await detailRes.json();
+        if (cancelled) return;
+        setSymbols(detail.symbols ?? []);
+      } catch {
+        // Non-critical
+      } finally {
+        if (!cancelled) setInitialLoad(false);
+      }
+    }
+    boot();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ─── Switch handler: load a different list's symbols ────────────
+  const switchToList = useCallback(async (id: string) => {
+    if (id === activeWatchlistId) return;
+    setActiveWatchlistId(id);
+    setAnalyses({});
+    setSelectedSymbol(null);
+    try {
+      const res = await fetch(`/api/watchlists/${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setSymbols(data.symbols ?? []);
+    } catch {
+      // Ignore
+    }
+  }, [activeWatchlistId]);
+
+  // ─── Pull screener cache for the Signals panel ──────────────────
+  useEffect(() => {
+    let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/watchlist");
-        if (res.ok) {
-          const data = await res.json();
-          const syms: string[] = data.symbols ?? [];
-          setSymbols(syms);
+        const res = await fetch("/api/screener");
+        if (!res.ok || cancelled) {
+          setSignalsLoading(false);
+          return;
         }
+        const data = await res.json();
+        const results: ScreenerCacheItem[] = data.results ?? [];
+        // Filter to non-HOLD signals with non-trivial conviction, then take
+        // the top N by confidence. The screener may have hundreds of results.
+        const filtered = results
+          .filter(
+            (r) =>
+              r.signal !== "HOLD" &&
+              r.confidence >= SIGNAL_PANEL_MIN_CONFIDENCE
+          )
+          .sort((a, b) => b.confidence - a.confidence)
+          .slice(0, SIGNAL_PANEL_MAX)
+          .map((r): SignalFeedItem => ({
+            symbol: r.symbol,
+            signal: r.signal,
+            confidence: r.confidence,
+            price: r.price,
+            change:
+              r.indicators?.sma_20 != null
+                ? ((r.price - r.indicators.sma_20) / r.indicators.sma_20) * 100
+                : undefined,
+          }));
+        if (!cancelled) setSignalItems(filtered);
       } catch {
-        // Watchlist empty on first load
+        // Non-critical — empty signals just means screener hasn't scanned yet
       } finally {
-        setInitialLoad(false);
+        if (!cancelled) setSignalsLoading(false);
       }
     }
     load();
+    // Refresh every 30s — the screener cache TTL is 5min so we won't see
+    // changes more often than that, but the cheap GET keeps stale data
+    // from hanging around if a fresh scan completes.
+    const interval = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
-  // Analyze a single symbol
+  // ─── Analyze a single symbol ────────────────────────────────────
   const analyzeSymbol = useCallback(async (symbol: string) => {
     setAnalyzingSymbols((prev) => new Set(prev).add(symbol));
     try {
@@ -74,18 +220,15 @@ export default function AnalysisCockpit() {
     }
   }, []);
 
-  // Analyze all watchlist symbols on load
+  // Analyze all watchlist symbols whenever the active list changes
   useEffect(() => {
     if (!initialLoad && symbols.length > 0) {
       for (const sym of symbols) {
-        if (!analyses[sym]) {
-          analyzeSymbol(sym);
-        }
+        if (!analyses[sym]) analyzeSymbol(sym);
       }
     }
-    // Only run when initialLoad changes to false
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialLoad]);
+  }, [initialLoad, symbols]);
 
   // Auto-select first symbol once analyses are available
   useEffect(() => {
@@ -102,23 +245,19 @@ export default function AnalysisCockpit() {
     }
     async function fetchEarnings() {
       try {
-        const res = await fetch(
-          `/api/earnings?symbols=${encodeURIComponent(selectedSymbol!)}`
-        );
+        const res = await fetch(`/api/earnings?symbols=${encodeURIComponent(selectedSymbol!)}`);
         if (!res.ok) return;
         const data = await res.json();
         if (data.earnings?.length > 0) {
           setChartEvents(
-            data.earnings.map(
-              (e: { date: string; hour: string }) => ({
-                date:
-                  e.date +
-                  "T" +
-                  (e.hour === "bmo" ? "09:30:00" : "16:00:00"),
-                type: "earnings" as const,
-                label: `Earnings ${e.hour === "bmo" ? "(Pre)" : e.hour === "amc" ? "(Post)" : ""}`,
-              })
-            )
+            data.earnings.map((e: { date: string; hour: string }) => ({
+              date:
+                e.date +
+                "T" +
+                (e.hour === "bmo" ? "09:30:00" : "16:00:00"),
+              type: "earnings" as const,
+              label: `Earnings ${e.hour === "bmo" ? "(Pre)" : e.hour === "amc" ? "(Post)" : ""}`,
+            }))
           );
         } else {
           setChartEvents([]);
@@ -130,25 +269,7 @@ export default function AnalysisCockpit() {
     fetchEarnings();
   }, [selectedSymbol]);
 
-  // Build signal feed items from analyses
-  const signalItems: SignalFeedItem[] = symbols
-    .filter((sym) => analyses[sym])
-    .map((sym) => {
-      const a = analyses[sym];
-      const priceChange =
-        a.indicators.sma_20 !== null
-          ? ((a.price - a.indicators.sma_20) / a.indicators.sma_20) * 100
-          : undefined;
-      return {
-        symbol: a.symbol,
-        signal: a.signal,
-        confidence: a.confidence,
-        price: a.price,
-        change: priceChange,
-      };
-    });
-
-  // Build watchlist analysis lookup for CockpitWatchlist
+  // Watchlist-analysis lookup for the panel's confidence badges
   const watchlistAnalyses: Record<string, { signal: string; confidence: number; timestamp: string }> = {};
   for (const sym of symbols) {
     if (analyses[sym]) {
@@ -160,32 +281,46 @@ export default function AnalysisCockpit() {
     }
   }
 
-  const selectedAnalysis = selectedSymbol
-    ? analyses[selectedSymbol] ?? null
-    : null;
-  const isSelectedLoading = selectedSymbol
-    ? analyzingSymbols.has(selectedSymbol)
-    : false;
+  const selectedAnalysis = selectedSymbol ? analyses[selectedSymbol] ?? null : null;
+  const isSelectedLoading = selectedSymbol ? analyzingSymbols.has(selectedSymbol) : false;
   const isAnyLoading = analyzingSymbols.size > 0;
 
+  // ─── Symbol mutations on the ACTIVE list ────────────────────────
   async function handleAddSymbol(symbol: string) {
     const sym = symbol.trim().toUpperCase();
     if (!sym || symbols.includes(sym)) return;
 
     setSymbols((prev) => [...prev, sym]);
     setSelectedSymbol(sym);
+    pushRecent(sym);
     setShowAddInput(false);
     setNewSymbol("");
 
     try {
-      const res = await fetch("/api/watchlist", {
+      // If we have an active list, use the per-list endpoint. Otherwise the
+      // legacy /api/watchlist endpoint creates a "Default" list on the fly.
+      const endpoint = activeWatchlistId
+        ? `/api/watchlists/${activeWatchlistId}/items`
+        : "/api/watchlist";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: sym }),
       });
       if (!res.ok) throw new Error("Failed to save");
+
+      // If we just created a list via the legacy path, refetch list metadata
+      // so the switcher has an option to point at.
+      if (!activeWatchlistId) {
+        const listsRes = await fetch("/api/watchlists");
+        if (listsRes.ok) {
+          const data = await listsRes.json();
+          const lists: WatchlistOption[] = data.watchlists ?? [];
+          setWatchlistOptions(lists);
+          setActiveWatchlistId(lists.find((l) => l.isDefault)?.id ?? lists[0]?.id ?? null);
+        }
+      }
     } catch {
-      // Revert on failure
       setSymbols((prev) => prev.filter((s) => s !== sym));
       setSelectedSymbol((prev) => (prev === sym ? symbols[0] ?? null : prev));
       return;
@@ -210,25 +345,29 @@ export default function AnalysisCockpit() {
     }
 
     try {
-      const res = await fetch("/api/watchlist", {
+      const endpoint = activeWatchlistId
+        ? `/api/watchlists/${activeWatchlistId}/items`
+        : "/api/watchlist";
+      const res = await fetch(endpoint, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol }),
       });
       if (!res.ok) throw new Error("Failed to remove");
     } catch {
-      // Revert on failure
       setSymbols(prevSymbols);
       setAnalyses(prevAnalyses);
       setSelectedSymbol(prevSelected);
     }
   }
 
+  // Selecting a symbol from any panel just analyzes + selects it. NEVER
+  // mutates the watchlist — that's intentional, so clicking a screener
+  // signal is low-friction.
   function handleSelectSignal(symbol: string) {
     setSelectedSymbol(symbol);
-    if (!analyses[symbol]) {
-      analyzeSymbol(symbol);
-    }
+    pushRecent(symbol);
+    if (!analyses[symbol]) analyzeSymbol(symbol);
   }
 
   if (initialLoad) {
@@ -245,68 +384,46 @@ export default function AnalysisCockpit() {
       <PageIntro
         eyebrow="Research Desk"
         title="Analysis Cockpit"
-        description="A tighter read on chart structure, signal conviction, and the qualitative context around every symbol in play."
+        description="Top signals from the market screener, your personal watchlist, and a clickable history. Each panel pulls from a different source."
         stats={[
-          { label: "Watchlist", value: symbols.length },
-          { label: "Loaded Analyses", value: Object.keys(analyses).length },
-          { label: "Active Symbol", value: selectedSymbol ?? "None", tone: selectedSymbol ? "brand" : "neutral" },
+          { label: "Active List", value: watchlistOptions.find((w) => w.id === activeWatchlistId)?.name ?? "—", tone: "brand" },
+          { label: "Symbols", value: symbols.length },
+          { label: "Market Signals", value: signalItems.length },
           { label: "Desk Tempo", value: isAnyLoading ? "Refreshing" : "Stable", tone: isAnyLoading ? "brand" : "bullish" },
         ]}
       />
 
       <div className="min-h-[760px] flex-1 overflow-hidden rounded-xl border border-border bg-bg-surface shadow-2xl">
+        {/* ─── Mobile ─── */}
         <div className="flex flex-col lg:hidden flex-1 min-h-0 overflow-y-auto">
           <div className="shrink-0 border-b border-border bg-bg-secondary">
             <div className="flex items-center gap-2 overflow-x-auto px-4 py-3">
               <span className="text-[10px] uppercase tracking-wider text-text-muted shrink-0">
-                Signals
+                Market Signals
               </span>
-              {isAnyLoading && signalItems.length === 0 ? (
+              {signalsLoading && signalItems.length === 0 ? (
                 <div className="flex gap-2">
                   {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton
-                      key={i}
-                      width="80px"
-                      height="32px"
-                      rounded="lg"
-                    />
+                    <Skeleton key={i} width="80px" height="32px" rounded="lg" />
                   ))}
                 </div>
               ) : signalItems.length === 0 ? (
-                <span className="text-xs text-text-muted">
-                  No signals -- add symbols below
-                </span>
+                <span className="text-xs text-text-muted">No signals yet — screener still scanning</span>
               ) : (
                 signalItems.map((item) => {
                   const isSelected = selectedSymbol === item.symbol;
-                  const isBull =
-                    item.signal === "BUY" || item.signal === "STRONG_BUY";
-                  const isBear =
-                    item.signal === "SELL" || item.signal === "STRONG_SELL";
+                  const isBull = item.signal === "BUY" || item.signal === "STRONG_BUY";
+                  const isBear = item.signal === "SELL" || item.signal === "STRONG_SELL";
                   return (
                     <button
                       key={item.symbol}
                       onClick={() => handleSelectSignal(item.symbol)}
                       className={`shrink-0 flex min-h-[38px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-mono transition-all
-                        ${
-                          isSelected
-                            ? "bg-accent/15 text-accent border-accent/30"
-                            : "bg-bg-secondary text-text-secondary border-border hover:border-border-hover"
-                        }`}
+                        ${isSelected ? "bg-accent/15 text-accent border-accent/30" : "bg-bg-secondary text-text-secondary border-border hover:border-border-hover"}`}
                     >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          isBull
-                            ? "bg-bullish"
-                            : isBear
-                              ? "bg-bearish"
-                              : "bg-warning"
-                        }`}
-                      />
+                      <span className={`w-1.5 h-1.5 rounded-full ${isBull ? "bg-bullish" : isBear ? "bg-bearish" : "bg-warning"}`} />
                       {item.symbol}
-                      <span className="text-[10px] text-text-muted">
-                        {Math.round(item.confidence * 100)}%
-                      </span>
+                      <span className="text-[10px] text-text-muted">{Math.round(item.confidence * 100)}%</span>
                     </button>
                   );
                 })
@@ -328,10 +445,8 @@ export default function AnalysisCockpit() {
                     type="text"
                     value={newSymbol}
                     onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleAddSymbol(newSymbol);
-                    }}
-                    placeholder="Symbol..."
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAddSymbol(newSymbol); }}
+                    placeholder="Add to watchlist..."
                     maxLength={10}
                     autoFocus
                     className="w-full rounded-lg border border-border bg-bg-elevated pl-10 pr-3 py-2
@@ -343,10 +458,7 @@ export default function AnalysisCockpit() {
                   Add
                 </Button>
                 <button
-                  onClick={() => {
-                    setShowAddInput(false);
-                    setNewSymbol("");
-                  }}
+                  onClick={() => { setShowAddInput(false); setNewSymbol(""); }}
                   className="rounded-[14px] p-2 text-text-muted hover:bg-bg-elevated hover:text-text-primary"
                 >
                   <X className="w-4 h-4" />
@@ -357,40 +469,28 @@ export default function AnalysisCockpit() {
 
           <div className="shrink-0 border-b border-border p-3">
             {selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
-              <PriceChart
-                analysis={selectedAnalysis}
-                height={280}
-                events={chartEvents}
-              />
+              <PriceChart analysis={selectedAnalysis} height={280} events={chartEvents} />
             ) : isSelectedLoading ? (
               <div className="flex items-center justify-center h-[280px]">
                 <div className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
               </div>
             ) : (
-              <MobileEmptyState
-                hasSymbols={symbols.length > 0}
-                onAddSymbol={handleAddSymbol}
-              />
+              <MobileEmptyState hasSymbols={symbols.length > 0} onAddSymbol={handleAddSymbol} />
             )}
           </div>
 
           {selectedSymbol && (
             <div className="shrink-0 h-[300px] border-b border-border">
-              <IntelligenceTabs
-                symbol={selectedSymbol}
-                analysis={selectedAnalysis}
-              />
+              <IntelligenceTabs symbol={selectedSymbol} analysis={selectedAnalysis} />
             </div>
           )}
 
           <div className="flex-1">
-            <SignalDetails
-              analysis={selectedAnalysis}
-              loading={isSelectedLoading}
-            />
+            <SignalDetails analysis={selectedAnalysis} loading={isSelectedLoading} />
           </div>
         </div>
 
+        {/* ─── Desktop 3-column ─── */}
         <div
           className="hidden lg:grid flex-1 min-h-0"
           style={{
@@ -405,11 +505,11 @@ export default function AnalysisCockpit() {
                 signals={signalItems}
                 selectedSymbol={selectedSymbol}
                 onSelectSignal={handleSelectSignal}
-                loading={isAnyLoading}
+                loading={signalsLoading}
               />
             </div>
 
-            <div className="flex shrink-0 flex-col overflow-hidden" style={{ maxHeight: "45%" }}>
+            <div className="flex shrink-0 flex-col overflow-hidden" style={{ maxHeight: "55%" }}>
               <div className="flex-1 min-h-0 overflow-hidden">
                 <CockpitWatchlist
                   symbols={symbols}
@@ -418,6 +518,10 @@ export default function AnalysisCockpit() {
                   onRemoveSymbol={handleRemoveSymbol}
                   analyses={watchlistAnalyses}
                   loading={isAnyLoading}
+                  watchlistOptions={watchlistOptions}
+                  activeWatchlistId={activeWatchlistId}
+                  onSwitchWatchlist={switchToList}
+                  recentEntries={recentEntries}
                 />
               </div>
 
@@ -435,7 +539,7 @@ export default function AnalysisCockpit() {
                       type="text"
                       value={newSymbol}
                       onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-                      placeholder="Add..."
+                      placeholder="Add to watchlist..."
                       maxLength={10}
                       className="w-full rounded-lg border border-border bg-bg-elevated pl-9 pr-3 py-1.5
                         text-xs text-text-primary placeholder:text-text-muted font-mono
@@ -478,9 +582,7 @@ export default function AnalysisCockpit() {
                       border border-border px-3 py-1.5 text-xs text-text-muted transition-colors
                       hover:border-accent/30 hover:text-accent disabled:opacity-30"
                   >
-                    <RefreshCw
-                      className={`w-3 h-3 ${isSelectedLoading ? "animate-spin" : ""}`}
-                    />
+                    <RefreshCw className={`w-3 h-3 ${isSelectedLoading ? "animate-spin" : ""}`} />
                     Refresh
                   </button>
                 )}
@@ -498,18 +600,12 @@ export default function AnalysisCockpit() {
           >
             <div className="min-h-0 overflow-hidden p-3">
               {selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
-                <PriceChart
-                  analysis={selectedAnalysis}
-                  height={undefined}
-                  events={chartEvents}
-                />
+                <PriceChart analysis={selectedAnalysis} height={undefined} events={chartEvents} />
               ) : isSelectedLoading ? (
                 <div className="flex h-full items-center justify-center rounded-xl border border-border bg-bg-secondary">
                   <div className="text-center">
                     <div className="mx-auto mb-3 h-8 w-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
-                    <p className="text-sm text-text-secondary">
-                      Analyzing {selectedSymbol}...
-                    </p>
+                    <p className="text-sm text-text-secondary">Analyzing {selectedSymbol}...</p>
                   </div>
                 </div>
               ) : (
@@ -522,18 +618,12 @@ export default function AnalysisCockpit() {
             </div>
 
             <div className="min-h-0 overflow-hidden">
-              <IntelligenceTabs
-                symbol={selectedSymbol}
-                analysis={selectedAnalysis}
-              />
+              <IntelligenceTabs symbol={selectedSymbol} analysis={selectedAnalysis} />
             </div>
           </div>
 
           <div className="min-h-0 overflow-y-auto border-l border-border bg-bg-secondary">
-            <SignalDetails
-              analysis={selectedAnalysis}
-              loading={isSelectedLoading}
-            />
+            <SignalDetails analysis={selectedAnalysis} loading={isSelectedLoading} />
           </div>
         </div>
       </div>
@@ -569,12 +659,9 @@ function DesktopEmptyState({
     <div className="flex items-center justify-center h-full rounded-lg border border-border bg-bg-surface">
       <div className="text-center max-w-sm">
         <Crosshair className="w-12 h-12 text-text-muted mx-auto mb-4" />
-        <h3 className="font-display text-lg font-semibold mb-2">
-          Trading Cockpit
-        </h3>
+        <h3 className="font-display text-lg font-semibold mb-2">Trading Cockpit</h3>
         <p className="text-sm text-text-secondary mb-6">
-          Add symbols to your watchlist and Sentinel will run technical analysis
-          automatically. Click a signal to view the chart and details.
+          Click a market signal to analyze it, or build your own watchlist for personalized tracking.
         </p>
         {!hasSymbols && (
           <div className="flex flex-wrap gap-2 justify-center">
@@ -607,12 +694,12 @@ function MobileEmptyState({
     <div className="flex flex-col items-center justify-center h-[280px] text-center px-4">
       <Crosshair className="w-10 h-10 text-text-muted mb-3" />
       <p className="text-sm font-medium text-text-secondary mb-1">
-        {hasSymbols ? "Select a signal" : "Add symbols to get started"}
+        {hasSymbols ? "Select a signal" : "Tap a market signal or add symbols"}
       </p>
       <p className="text-xs text-text-muted mb-4">
         {hasSymbols
           ? "Tap a signal above to view analysis"
-          : "Sentinel will analyze each symbol automatically"}
+          : "Market signals come from the screener; your watchlist is yours to curate"}
       </p>
       {!hasSymbols && (
         <div className="flex flex-wrap gap-1.5 justify-center">
