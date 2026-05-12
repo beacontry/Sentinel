@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { SymbolLink } from "@/components/ui/symbol-link";
 import { Eye, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
@@ -68,9 +69,9 @@ export function WatchlistWidget() {
           className="flex items-center justify-between rounded-[10px] px-2.5 py-1.5
             bg-bg-elevated hover:bg-bg-hover transition-colors"
         >
-          <span className="font-mono text-[13px] font-medium text-text-primary">
+          <SymbolLink symbol={sym} className="text-[13px] font-medium">
             {sym}
-          </span>
+          </SymbolLink>
           <Badge variant="neutral">Watching</Badge>
         </div>
       ))}

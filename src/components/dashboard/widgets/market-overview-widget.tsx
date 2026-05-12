@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SymbolLink } from "@/components/ui/symbol-link";
 import { TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
@@ -96,9 +97,9 @@ export function MarketOverviewWidget() {
                 className="flex items-center justify-between rounded-[8px] px-2 py-1
                   bg-bullish/5 hover:bg-bullish/10 transition-colors"
               >
-                <span className="font-mono text-[12px] font-medium text-text-primary">
+                <SymbolLink symbol={g.symbol} className="text-[12px] font-medium">
                   {g.symbol}
-                </span>
+                </SymbolLink>
                 <div className="flex items-center gap-1">
                   <div
                     className="h-1.5 rounded-full bg-bullish"
@@ -126,9 +127,9 @@ export function MarketOverviewWidget() {
                 className="flex items-center justify-between rounded-[8px] px-2 py-1
                   bg-bearish/5 hover:bg-bearish/10 transition-colors"
               >
-                <span className="font-mono text-[12px] font-medium text-text-primary">
+                <SymbolLink symbol={l.symbol} className="text-[12px] font-medium">
                   {l.symbol}
-                </span>
+                </SymbolLink>
                 <div className="flex items-center gap-1">
                   <div
                     className="h-1.5 rounded-full bg-bearish"

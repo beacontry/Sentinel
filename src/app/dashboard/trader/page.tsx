@@ -6,6 +6,7 @@ import { POLLING_INTERVALS } from "@/lib/config";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SignalBadge } from "@/components/ui/signal-badge";
+import { SymbolLink } from "@/components/ui/symbol-link";
 import type { SignalType } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -766,7 +767,9 @@ export default function TraderPage() {
               <tbody className="font-mono">
                 {positions.map((p) => (
                   <tr key={p.symbol} className="border-b border-border/50">
-                    <td className="py-2 pr-4 font-medium">{p.symbol}</td>
+                    <td className="py-2 pr-4 font-medium">
+                      <SymbolLink symbol={p.symbol} className="font-medium" />
+                    </td>
                     <td className="py-2 pr-4 text-right">{p.quantity ?? 0}</td>
                     <td className="py-2 pr-4 text-right">${(p.entryPrice ?? 0).toFixed(2)}</td>
                     <td className="py-2 pr-4 text-right">${(p.currentPrice ?? 0).toFixed(2)}</td>
@@ -824,13 +827,16 @@ export default function TraderPage() {
                   <th className="pb-2 font-medium text-right">Qty</th>
                   <th className="pb-2 font-medium text-right">Price</th>
                   <th className="pb-2 pr-4 font-medium">TIF</th>
-                  <th className="pb-2 font-medium">Status</th>
+                  <th className="pb-2 pr-4 font-medium">Status</th>
+                  <th className="pb-2 font-medium">Age</th>
                 </tr>
               </thead>
               <tbody className="font-mono">
                 {openOrders.map((o) => (
                   <tr key={o.id} className="border-b border-border/50">
-                    <td className="py-2 pr-4 font-medium text-text-primary">{o.symbol}</td>
+                    <td className="py-2 pr-4 font-medium text-text-primary">
+                      <SymbolLink symbol={o.symbol} className="font-medium" />
+                    </td>
                     <td className={`py-2 pr-4 ${o.side === "buy" ? "text-bullish" : "text-bearish"}`}>
                       {o.side.toUpperCase()}
                     </td>
@@ -845,10 +851,13 @@ export default function TraderPage() {
                       {o.stopPrice ? `$${Number(o.stopPrice).toFixed(2)}` : o.limitPrice ? `$${Number(o.limitPrice).toFixed(2)}` : "\u2014"}
                     </td>
                     <td className="py-2 pr-4 text-text-muted uppercase text-xs">{o.timeInForce}</td>
-                    <td className="py-2">
+                    <td className="py-2 pr-4">
                       <Badge variant={o.filledQty > 0 ? "warning" : "neutral"}>
                         {o.filledQty > 0 ? `Partial ${o.filledQty}/${o.qty}` : o.status}
                       </Badge>
+                    </td>
+                    <td className="py-2 text-text-muted text-xs whitespace-nowrap" title={o.submittedAt}>
+                      {timeAgo(o.submittedAt)}
                     </td>
                   </tr>
                 ))}
@@ -874,7 +883,7 @@ export default function TraderPage() {
                   className="flex items-center gap-3 p-2 rounded-lg bg-bg-elevated"
                 >
                   <SignalBadge signal={s.signal as SignalType} size="sm" />
-                  <span className="text-sm font-mono font-medium">{s.symbol}</span>
+                  <SymbolLink symbol={s.symbol} className="text-sm font-medium" />
                   <span className="text-xs font-mono text-text-muted">${(s.price ?? 0).toFixed(2)}</span>
                   {s.actedOn && <Badge variant="bullish">Acted</Badge>}
                   <span className="text-xs text-text-muted ml-auto">
@@ -899,7 +908,7 @@ export default function TraderPage() {
                 <div key={t.id} className="rounded-lg bg-bg-elevated">
                   <div className="flex items-center gap-3 p-2">
                     <Badge variant={t.action === "BUY" ? "bullish" : "bearish"}>{t.action}</Badge>
-                    <span className="text-sm font-mono font-medium">{t.symbol}</span>
+                    <SymbolLink symbol={t.symbol} className="text-sm font-medium" />
                     <span className="text-xs font-mono text-text-muted">{t.quantity} shares</span>
                     <Badge variant={
                       t.status === "FILLED" ? "bullish"
