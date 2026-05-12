@@ -281,11 +281,30 @@ export default function AlertsPage() {
 
       {/* Alert history */}
       <Card>
-        <CardHeader className="p-0 pb-3">
+        <CardHeader className="p-0 pb-3 flex flex-row items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-accent" />
             Alert History
           </CardTitle>
+          {history.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                if (!confirm(`Clear all ${history.length} alert history entries?`)) return;
+                try {
+                  const res = await fetch("/api/alerts/history", { method: "DELETE" });
+                  if (res.ok) {
+                    setHistory([]);
+                  }
+                } catch {
+                  /* silent */
+                }
+              }}
+            >
+              Clear all
+            </Button>
+          )}
         </CardHeader>
         {history.length === 0 ? (
           <p className="text-sm text-text-muted py-4 text-center">
