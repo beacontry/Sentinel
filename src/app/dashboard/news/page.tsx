@@ -26,6 +26,8 @@ interface NewsArticle {
   symbol: string;
   url: string;
   image: string;
+  // 2026-05-12 — keyword-based per-headline sentiment from the news/feed route
+  sentiment?: "bullish" | "bearish" | "neutral";
 }
 
 function relativeTime(unixTimestamp: number): string {
@@ -145,6 +147,16 @@ export default function NewsPage() {
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
                         <Badge variant="default">{article.symbol}</Badge>
                         <Badge variant="neutral">{article.source}</Badge>
+                        {article.sentiment && article.sentiment !== "neutral" && (
+                          <span title="Headline sentiment from keyword classifier — not financial advice">
+                            <Badge
+                              variant={article.sentiment === "bullish" ? "bullish" : "bearish"}
+                              className="text-[10px] uppercase tracking-wider"
+                            >
+                              {article.sentiment === "bullish" ? "▲ Bullish" : "▼ Bearish"}
+                            </Badge>
+                          </span>
+                        )}
                         <span className="flex items-center gap-1 text-xs text-text-muted">
                           <Clock className="w-3 h-3" />
                           {relativeTime(article.datetime)}

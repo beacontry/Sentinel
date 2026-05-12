@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { getFinnhubClient, type FinnhubNewsArticle } from "@/lib/finnhub";
 import { createRouteLogger } from "@/lib/logger";
 import { resolveActiveWatchlistId } from "@/lib/watchlists";
+import { scoreHeadline } from "@/lib/headline-sentiment";
 
 const log = createRouteLogger("news-feed");
 
@@ -95,6 +96,9 @@ export async function GET(request: NextRequest) {
       symbol: a.symbol,
       url: a.url,
       image: a.image,
+      // Per-headline sentiment classification — cheap keyword heuristic,
+      // not the full hybrid layer. Surfaced as a colored badge by the UI.
+      sentiment: scoreHeadline(a.headline),
     }));
 
     return NextResponse.json(
