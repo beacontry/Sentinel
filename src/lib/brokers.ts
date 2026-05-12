@@ -64,6 +64,14 @@ export interface PlaceOrderParams {
   orderClass?: "simple" | "bracket" | "oco" | "oto";
   takeProfitPrice?: string;
   stopLossPrice?: string;
+  /**
+   * Phase 8 — broker-side naked-position prevention.
+   * - "buy_to_open"  → fails if it would close a short (engine is long-only)
+   * - "sell_to_close" → fails if no long position to close (prevents naked shorts)
+   * Engine code defaults all entries to buy_to_open and all exits to sell_to_close.
+   * Alpaca rejects the order at the broker layer rather than letting it create a phantom position.
+   */
+  positionIntent?: "buy_to_open" | "buy_to_close" | "sell_to_open" | "sell_to_close";
 }
 
 export interface BrokerClient {
@@ -291,6 +299,12 @@ class AlpacaClient implements BrokerClient {
       time_in_force: params.timeInForce,
     };
     if (params.limitPrice) payload.limit_price = params.limitPrice;
+
+    // Phase 8 — broker-side naked-position guard. Alpaca rejects if intent
+    // mismatches reality (e.g., sell_to_close with no long position).
+    if (params.positionIntent) {
+      payload.position_intent = params.positionIntent;
+    }
 
     // Bracket orders: entry + stop-loss + take-profit as one atomic order
     if (params.orderClass === "bracket") {

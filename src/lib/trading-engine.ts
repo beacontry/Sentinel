@@ -10,7 +10,7 @@
 
 import type { Bar } from "@/types";
 import { createBrokerClient } from "./brokers";
-import type { BrokerClient, BrokerAccount, BrokerPosition } from "./brokers";
+import type { BrokerClient, BrokerAccount, BrokerPosition, BrokerOrder, PlaceOrderParams } from "./brokers";
 import { decrypt } from "./crypto";
 import { getMarketDataProvider } from "./market-data";
 import { analyzeHybrid } from "./hybrid/pipeline";
@@ -624,6 +624,33 @@ export function isLiveTradingAllowed(): boolean {
   return process.env.ALLOW_LIVE_TRADING === "1";
 }
 
+/**
+ * Phase 8 — naked-position prevention at the broker layer.
+ *
+ * Every engine-initiated order routes through this helper. It tags the order
+ * with Alpaca's position_intent field:
+ *   - "buy_to_open"   for buys → Alpaca rejects if it would close a short
+ *   - "sell_to_close" for sells → Alpaca rejects if there's no long position
+ *
+ * The engine is strictly long-only. If the broker disagrees with our
+ * in-memory state (stale positionMap, race with a broker-side stop, manual
+ * trade outside the engine), Alpaca rejects the order rather than silently
+ * creating a short.
+ *
+ * Caller does not need to set positionIntent on params — this helper applies
+ * the long-only default automatically. To opt out (e.g., admin flatten where
+ * intent is implicit, or testing), call client.placeOrder() directly.
+ */
+async function placeEngineOrder(
+  client: BrokerClient,
+  params: Omit<PlaceOrderParams, "positionIntent">
+): Promise<BrokerOrder> {
+  return client.placeOrder({
+    ...params,
+    positionIntent: params.side === "buy" ? "buy_to_open" : "sell_to_close",
+  });
+}
+
 // ─── Phase 5: MTM / Wash-Sale / PDT helpers ───────────────────────────────────
 
 /**
@@ -1118,7 +1145,7 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
         engine.pendingExits.add(symbol);
         try {
           await cancelPendingOrdersForSymbol(client, symbol);
-          const exitOrder = await client.placeOrder({ symbol, qty: String(pos.qty), side: "sell", type: "market", timeInForce: "day" });
+          const exitOrder = await placeEngineOrder(client, { symbol, qty: String(pos.qty), side: "sell", type: "market", timeInForce: "day" });
           recordOrderPlacement(engine, "sell", 0);
           const pnl = (currentPrice - pos.entryPrice) * pos.qty;
           engine.dailyLoss += pnl < 0 ? pnl : 0;
@@ -1602,7 +1629,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
     for (const pos of currentPositions) {
       if (pos.qty <= 0) continue;
       try {
-        const texitOrder = await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
+        const texitOrder = await placeEngineOrder(client, { symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
         await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical exit: SPY below SMA", texitOrder.id, null, engine.userId);
         positionMap.delete(pos.symbol);
       } catch (err) {
@@ -1647,7 +1674,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
           });
           continue;
         }
-        const tentryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        const tentryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
         pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "FILLED", null, "Tactical entry: SPY above SMA", tentryOrder.id, null, engine.userId);
@@ -1792,7 +1819,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
     for (const pos of currentPositions) {
       if (pos.qty <= 0) continue;
       try {
-        const tsExitOrder = await client.placeOrder({ symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
+        const tsExitOrder = await placeEngineOrder(client, { symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
         await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical Smart exit", tsExitOrder.id, null, engine.userId);
         realizedPnlThisScan += pos.unrealizedPnl;
         tradesThisScan++;
@@ -1888,7 +1915,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
           });
           continue;
         }
-        const tsEntryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        const tsEntryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
         pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Smart: momentum + signal + invVol weighted", tsEntryOrder.id, null, engine.userId);
@@ -2005,7 +2032,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 
       // Sell the weak position
       try {
-        const swapSellOrder = await client.placeOrder({ symbol: weak.symbol, side: "sell", qty: String(bp.qty), type: "market", timeInForce: "day" });
+        const swapSellOrder = await placeEngineOrder(client, { symbol: weak.symbol, side: "sell", qty: String(bp.qty), type: "market", timeInForce: "day" });
         pendingSellSymbols.add(weak.symbol); // mark immediately so subsequent iterations in this scan don't re-fire
         await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "FILLED", bp.unrealizedPnl, `Swap out: ${weak.signal}`, swapSellOrder.id, null, engine.userId);
         realizedPnlThisScan += bp.unrealizedPnl;
@@ -2037,7 +2064,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
           });
           continue;
         }
-        const swapBuyOrder = await client.placeOrder({ symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        const swapBuyOrder = await placeEngineOrder(client, { symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
         pendingBuySymbols.add(replacement.symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "FILLED", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`, swapBuyOrder.id, null, engine.userId);
@@ -2096,7 +2123,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
           });
           continue;
         }
-        const addOrder = await client.placeOrder({ symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        const addOrder = await placeEngineOrder(client, { symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
         pendingBuySymbols.add(cand.symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "FILLED", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`, addOrder.id, null, engine.userId);
@@ -2169,7 +2196,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           try {
             const resolved = await resolveBrokerClient(engine.userId);
             if (resolved) {
-              const flattenOrder = await resolved.client.placeOrder({ symbol: sym, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
+              const flattenOrder = await placeEngineOrder(resolved.client, { symbol: sym, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
               await logTrade(sym, "flatten", "SELL", pos.qty, pos.entryPrice, "FILLED", null, "EOD flatten", flattenOrder.id, null, engine.userId);
             }
             positionMap.delete(sym);
@@ -2483,7 +2510,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
               ? brokerPos.qty
               : heldPosition.qty;
 
-            const sellOrder = await client.placeOrder({
+            const sellOrder = await placeEngineOrder(client, {
               symbol,
               side: "sell",
               qty: String(sellQty),
@@ -2688,7 +2715,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         try {
           // Place limit buy order — stop-loss and take-profit are managed
           // internally by the engine's exit logic (trailing stop, hold period)
-          const buyOrder = await client.placeOrder({
+          const buyOrder = await placeEngineOrder(client, {
             symbol,
             side: "buy",
             qty: String(qty),
@@ -3107,7 +3134,7 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
       // Place one now so the position has protection if the server crashes.
       if (!existing) {
         try {
-          await client.placeOrder({
+          await placeEngineOrder(client, {
             symbol, side: "sell", qty: String(pos.qty),
             type: "stop", timeInForce: "gtc", stopPrice: targetStop.toFixed(2),
           });
@@ -3220,7 +3247,7 @@ async function placeDisasterStops(userId: string | null): Promise<void> {
       const stopPrice = Math.max(disasterStop, trailStop, fixedStop).toFixed(2);
 
       try {
-        await resolved.client.placeOrder({
+        await placeEngineOrder(resolved.client, {
           symbol: pos.symbol, side: "sell", qty: String(pos.qty),
           type: "stop", timeInForce: "gtc", stopPrice,
         });
@@ -3262,7 +3289,7 @@ async function placeSafetyStops(userId: string | null): Promise<void> {
       const stopPrice = (pos.avgEntryPrice * (1 - strategy.stopLossPct)).toFixed(2);
 
       try {
-        await client.placeOrder({
+        await placeEngineOrder(client, {
           symbol: pos.symbol, side: "sell", qty: String(pos.qty),
           type: "stop", timeInForce: "gtc", stopPrice,
         });
@@ -3322,7 +3349,7 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
             continue;
           }
           try {
-            const haltOrder = await resolved.client.placeOrder({
+            const haltOrder = await placeEngineOrder(resolved.client, {
               symbol: pos.symbol,
               side: "sell",
               qty: String(pos.qty),
