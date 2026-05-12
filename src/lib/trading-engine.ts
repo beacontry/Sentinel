@@ -2040,6 +2040,14 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   if (!engine.userId || !engine.running || engine.halted) return;
   if (!isMarketOpen()) return;
 
+  // Phase 14 — scan latency instrumentation. The 2026-05-11 TGT incident
+  // happened because a scan started before 4 PM ET but was still placing
+  // market orders at 4:10 PM. Track key phases so we can spot a slow scan
+  // before Phase 10's per-order isMarketOpen guard catches it.
+  const scanStartedAt = Date.now();
+  const phases: Record<string, number> = {};
+  const phase = (name: string) => { phases[name] = Date.now() - scanStartedAt; };
+
   const today = getETDateString();
   if (engine.dailyLossDate !== today) {
     engine.dailyLoss = 0;
@@ -2092,6 +2100,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   }
   const confirmedBelow = belowCount >= 3;
 
+  phase("spyAnalysis");
   let currentPositions: BrokerPosition[];
   try {
     currentPositions = await client.getPositions();
@@ -2101,8 +2110,10 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
     pushError(engine, `Broker getPositions failed: ${msg}`);
     return;
   }
+  phase("getPositions");
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
   await reconcilePendingTrades(client, engine.userId!);
+  phase("syncAndReconcile");
   engine.positionCount = positionMap.size;
 
   // Track for daily PnL: limit-order buys may not show in getPositions() yet
@@ -2259,6 +2270,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
     }
     engine.positionCount = positionMap.size;
     log.info({ positions: positionMap.size, candidates: scored.length }, "Tactical Smart buy-in complete");
+    phase("initialBuyIn");
 
   } else if (isInvested && !confirmedBelow) {
     // ── ACTIVE MANAGEMENT: scan for swaps and additions while holding ──
@@ -2470,6 +2482,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
     engine.positionCount = positionMap.size;
     if (swapCount > 0 || addCount > 0) {
       log.info({ swaps: swapCount, adds: addCount, positions: positionMap.size, weakFound: weakHeld.length, strongCandidates: candidates.length + swapCount + addCount }, "Tactical Smart active management");
+      phase("activeManagement");
     }
   }
 
@@ -2486,6 +2499,16 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   engine.lastScanAt = new Date();
   engine.scanCount++;
   await updateHeartbeat([...positionMap.keys()], engine.userId);
+
+  // Phase 14 — emit total scan duration. If totalMs >> 60s, the scan is at
+  // risk of crossing market-close boundary on a 15-min cadence. Log warn so
+  // the operator notices.
+  const totalMs = Date.now() - scanStartedAt;
+  if (totalMs > 60_000) {
+    log.warn({ totalMs, phases }, "Tactical-smart scan took >60s — investigate broker API latency or signal compute time");
+  } else {
+    log.debug({ totalMs, phases }, "Tactical-smart scan timing");
+  }
 }
 
 // ─── Standard Signal-Based Scan ─────────────────────────────────────────────
