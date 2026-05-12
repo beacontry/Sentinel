@@ -4,17 +4,21 @@ import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DollarSign, ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 
 interface TodayPnl {
   realizedPnl: number;
   unrealizedPnl: number;
   totalPnl: number;
   tradesCount: number;
+  // Optional — server may include for proper percent calculation
+  startEquity?: number;
 }
 interface LifetimePnl {
   realizedPnl: number;
   unrealizedPnl: number;
   totalPnl: number;
+  costBasis?: number;
 }
 
 export function PnlWidget() {
@@ -22,6 +26,7 @@ export function PnlWidget() {
   const [lifetimePnl, setLifetimePnl] = useState<LifetimePnl | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const { pnlFormat } = useDisplayPrefs();
 
   useEffect(() => {
     async function load() {
@@ -80,6 +85,10 @@ export function PnlWidget() {
   const isPositive = todayPnl.totalPnl >= 0;
   const realized = lifetimePnl?.realizedPnl ?? todayPnl.realizedPnl;
   const unrealized = lifetimePnl?.unrealizedPnl ?? todayPnl.unrealizedPnl;
+  // Use start-of-day equity if server provides it; otherwise fall back to
+  // the total P&L delta — at least the dollar value is always correct.
+  const todayBasis = todayPnl.startEquity ?? Math.abs(todayPnl.totalPnl);
+  const lifetimeBasis = lifetimePnl?.costBasis ?? Math.abs(realized + unrealized);
 
   return (
     <div>
@@ -89,7 +98,7 @@ export function PnlWidget() {
             isPositive ? "text-bullish" : "text-bearish"
           }`}
         >
-          {isPositive ? "+" : ""}${todayPnl.totalPnl.toFixed(2)}
+          {formatPnl(todayPnl.totalPnl, todayBasis, pnlFormat)}
         </p>
         <p className="mt-1 text-[10px] uppercase tracking-[0.08em] text-text-muted">
           Today&apos;s P&L
@@ -104,7 +113,7 @@ export function PnlWidget() {
               realized >= 0 ? "text-bullish" : "text-bearish"
             }`}
           >
-            {realized >= 0 ? "+" : "-"}${Math.abs(realized).toFixed(2)}
+            {formatPnl(realized, lifetimeBasis, pnlFormat)}
           </p>
           <p className="text-[9px] uppercase tracking-[0.12em] text-text-muted/70 mt-0.5">lifetime</p>
         </div>
@@ -115,7 +124,7 @@ export function PnlWidget() {
               unrealized >= 0 ? "text-bullish" : "text-bearish"
             }`}
           >
-            {unrealized >= 0 ? "+" : "-"}${Math.abs(unrealized).toFixed(2)}
+            {formatPnl(unrealized, lifetimeBasis, pnlFormat)}
           </p>
           <p className="text-[9px] uppercase tracking-[0.12em] text-text-muted/70 mt-0.5">open positions</p>
         </div>

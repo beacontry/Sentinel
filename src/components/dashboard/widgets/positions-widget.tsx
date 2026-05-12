@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { SymbolLink } from "@/components/ui/symbol-link";
 import { Briefcase, ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 
 interface Position {
   symbol: string;
@@ -19,6 +20,7 @@ export function PositionsWidget() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const { pnlFormat } = useDisplayPrefs();
 
   useEffect(() => {
     async function load() {
@@ -92,8 +94,13 @@ export function PositionsWidget() {
                 className={`text-sm font-mono font-medium ${
                   isPositive ? "text-bullish" : "text-bearish"
                 }`}
+                title={`Entry $${pos.averageCost.toFixed(2)} → Now $${pos.marketPrice.toFixed(2)}`}
               >
-                {isPositive ? "+" : ""}${pos.unrealizedPnl.toFixed(2)}
+                {formatPnl(
+                  pos.unrealizedPnl,
+                  pos.averageCost * pos.quantity,
+                  pnlFormat
+                )}
               </span>
             </div>
           );

@@ -7,6 +7,8 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SignalBadge } from "@/components/ui/signal-badge";
 import { SymbolLink } from "@/components/ui/symbol-link";
+import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
+import { PositionDetailSheet } from "@/components/dashboard/position-detail-sheet";
 import type { SignalType } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -188,12 +190,16 @@ interface TaxStatus {
 }
 
 export default function TraderPage() {
+  const { pnlFormat } = useDisplayPrefs();
   const [data, setData] = useState<TraderData | null>(null);
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [cmdLoading, setCmdLoading] = useState<string | null>(null);
   const [engineMode, setEngineMode] = useState<string>("optimized");
   const [showRisk, setShowRisk] = useState(false);
+  // Batch 2 — position detail side-sheet. Stores the symbol currently
+  // open (or null). Click on any position row to populate.
+  const [detailSymbol, setDetailSymbol] = useState<string | null>(null);
   const [riskForm, setRiskForm] = useState<Record<string, string>>({
     accountSize: "",
     maxDailyLossPct: "",
@@ -766,9 +772,17 @@ export default function TraderPage() {
               </thead>
               <tbody className="font-mono">
                 {positions.map((p) => (
-                  <tr key={p.symbol} className="border-b border-border/50">
+                  <tr
+                    key={p.symbol}
+                    className="border-b border-border/50 hover:bg-bg-hover cursor-pointer transition-colors"
+                    onClick={() => setDetailSymbol(p.symbol)}
+                  >
                     <td className="py-2 pr-4 font-medium">
-                      <SymbolLink symbol={p.symbol} className="font-medium" />
+                      <SymbolLink
+                        symbol={p.symbol}
+                        className="font-medium"
+                        stopPropagation
+                      />
                     </td>
                     <td className="py-2 pr-4 text-right">{p.quantity ?? 0}</td>
                     <td className="py-2 pr-4 text-right">${(p.entryPrice ?? 0).toFixed(2)}</td>
@@ -777,13 +791,18 @@ export default function TraderPage() {
                       {p.stopPrice ? `$${p.stopPrice.toFixed(2)}` : "\u2014"}
                     </td>
                     <td className={`py-2 pr-4 text-right ${(p.unrealizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-                      {(p.unrealizedPnl ?? 0) >= 0 ? "+" : ""}${(p.unrealizedPnl ?? 0).toFixed(2)}
+                      {formatPnl(
+                        p.unrealizedPnl ?? 0,
+                        (p.entryPrice ?? 0) * (p.quantity ?? 0),
+                        pnlFormat
+                      )}
                     </td>
-                    <td className="py-2 text-right">
+                    <td className="py-2 text-right" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={async () => {
+                        onClick={async (e) => {
+                          e.stopPropagation();
                           if (!confirm(`Sell all ${p.quantity} shares of ${p.symbol} at market?`)) return;
                           setCmdLoading("flatten");
                           const result = await sendCommand("flatten", { symbol: p.symbol });
@@ -1070,6 +1089,34 @@ export default function TraderPage() {
           </div>
         )}
       </Card>
+
+      <PositionDetailSheet
+        symbol={detailSymbol}
+        position={
+          detailSymbol
+            ? positions.find((p) => p.symbol === detailSymbol) ?? null
+            : null
+        }
+        signals={signals}
+        engineRunning={engine?.running === true}
+        onClose={() => setDetailSymbol(null)}
+        onClosePosition={async (sym) => {
+          if (!confirm(`Sell all shares of ${sym} at market?`)) return;
+          setCmdLoading("flatten");
+          const result = await sendCommand("flatten", { symbol: sym });
+          setCmdLoading(null);
+          if (result.error) {
+            alert(`Failed: ${result.error}`);
+            return;
+          }
+          try {
+            const res = await fetch("/api/trader/dashboard");
+            if (res.ok) setData(await res.json());
+          } catch {
+            // Refresh failure is non-fatal
+          }
+        }}
+      />
 
     </div>
   );
