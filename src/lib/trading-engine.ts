@@ -641,10 +641,57 @@ export function isLiveTradingAllowed(): boolean {
  * the long-only default automatically. To opt out (e.g., admin flatten where
  * intent is implicit, or testing), call client.placeOrder() directly.
  */
+/**
+ * Phase 10 — market-close guard on market orders.
+ *
+ * Each scan loop checks `isMarketOpen()` at its top, but the loop body
+ * can take 5-10+ minutes (slow broker API, swap iteration). The
+ * 2026-05-11 TGT incident was caused by a tactical-smart scan that
+ * started before 4:00 PM ET and was still firing market sells at
+ * 4:10 PM and 4:51 PM — outside market hours.
+ *
+ * After-hours market orders queue and execute at the NEXT session's open
+ * price (unpredictable). Limit and stop orders are fine to queue —
+ * limits enforce price discipline; stops are GTC and only fire when
+ * triggered.
+ *
+ * Throwing here propagates up through the engine's existing per-order
+ * try/catch, which logs the failure and continues to the next iteration.
+ */
+export class MarketClosedError extends Error {
+  constructor(public readonly symbol: string, public readonly side: string) {
+    super(`Market is closed — refusing to submit market order for ${side} ${symbol}`);
+    this.name = "MarketClosedError";
+  }
+}
+
 async function placeEngineOrder(
   client: BrokerClient,
   params: Omit<PlaceOrderParams, "positionIntent">
 ): Promise<BrokerOrder> {
+  // Phase 10 — refuse market orders when market is closed. Limit/stop orders
+  // are allowed (limits expire at close with TIF=day; stops are GTC).
+  if (params.type === "market" && !isMarketOpen()) {
+    log.warn(
+      { symbol: params.symbol, side: params.side, type: params.type, qty: params.qty },
+      "Market order refused — market is closed (Phase 10 guard)"
+    );
+    void writeAudit({
+      actor: { userId: null, email: null, role: null },
+      action: AuditAction.ORDER_REJECTED,
+      resourceType: "order",
+      metadata: {
+        symbol: params.symbol,
+        side: params.side,
+        qty: params.qty,
+        type: params.type,
+        reason: "market_closed",
+        source: "engine_market_close_guard",
+      },
+    });
+    throw new MarketClosedError(params.symbol, params.side);
+  }
+
   return client.placeOrder({
     ...params,
     positionIntent: params.side === "buy" ? "buy_to_open" : "sell_to_close",
