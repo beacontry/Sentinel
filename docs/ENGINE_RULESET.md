@@ -584,7 +584,7 @@ Append-only, hash-chained record of every privileged action. Schema in `drizzle/
 
 **Write path**: `writeAudit()` opens a Postgres transaction, takes `pg_advisory_xact_lock(8493920100)` (auto-released on commit), reads the tail row's hash, computes the new hash, inserts. Concurrent writers serialize on the lock so the chain can't fork. The helper **never throws** — failures log and return null. Audit problems must not cascade into request failures.
 
-**What's logged**: `auth.login_success` / `login_failed` (attacker IP captured via X-Forwarded-For); `auth.user_registered`; `invite.sent` / `invite.consumed`; `broker.connection.created` / `.updated` / `.deleted` (rotated secrets flagged in metadata, never logged in plaintext); `engine.started` / `.stopped` / `.halted` / `.mode_switched`; `engine.live_blocked`; `engine.pdt_vulnerable`; `order.placed` / `.rejected` (with safeguard reason); `risk_profile.updated` (field-level diff).
+**What's logged**: `auth.login_success` / `login_failed` (attacker IP captured via X-Forwarded-For); `auth.user_registered`; `invite.sent` / `invite.consumed`; `broker.connection.created` / `.updated` / `.deleted` (rotated secrets flagged in metadata, never logged in plaintext); `engine.started` / `.stopped` / `.halted` / `.mode_switched`; `engine.live_blocked`; `engine.pdt_vulnerable`; `order.placed` / `.rejected` (with safeguard reason); `risk_profile.updated` (field-level diff); `system_config.updated` (key name + actor + whether prior value existed — never the value itself); `user.profile_updated` (ToS acceptance, future user-profile mutations).
 
 **Verification**: `/dashboard/admin/audit` has a "Verify chain" button that calls `POST /api/admin/audit/verify`. Walks every row in id order, recomputes each hash. Returns "intact" or the first row where the chain breaks. ~2s per 100k rows.
 
@@ -605,3 +605,57 @@ Append-only, hash-chained record of every privileged action. Schema in `drizzle/
 - **C. Migration drop**: `DROP TABLE audit_log` and/or `ALTER TABLE user_risk_profiles DROP COLUMN ...`. Almost never needed. **Must pair with code revert** or `loadRiskLimits()` crashes. For audit_log: `TRUNCATE` is the clean reset (next write becomes genesis). Do NOT `DELETE WHERE id < N` — breaks the chain forever.
 
 See `engine-ruleset.html` (sections 16-20) and `CLAUDE.md` § Live Trading for full detail.
+
+## AI Provider & System Configuration
+
+**Every AI flow in Sentinel runs on Groq** (`llama-3.3-70b-versatile`). That includes: Insights page, Quick Insight widget, hybrid AI scoring layer (`hybrid/ai-scoring-layer.ts`), sentiment layer, filings chat, daily market digest cron, AI chat panel, and the Recent Trades **AI ✨** trade-summary button. The `@anthropic-ai/sdk` dependency was removed in commit `0b2ef7e` after the lone Anthropic callsite (`summarize-trade`) was migrated. `CLAUDE_CONFIG` in `src/lib/config.ts` is still the source of truth for `.model` + `.maxTokens` constants but no longer reads `.apiKey` directly — all key resolution goes through `getLlmApiKey()` in `src/lib/system-config.ts`.
+
+**System Configuration table** (`system_config`, migration `0030`): encrypted server-wide secrets that admins can rotate from `/dashboard/admin/system-config` without touching the droplet. Schema is just `(key TEXT PRIMARY KEY, value_encrypted TEXT, updated_by UUID, updated_at TIMESTAMPTZ)`. Values are AES-256-GCM ciphertext via `src/lib/crypto.ts` (no plaintext fallback). Allow-list of known keys is enforced in code: `GROQ_API_KEY`, `FINNHUB_API_KEY`, `ANTHROPIC_API_KEY` — admins can't silently overwrite arbitrary env vars from the UI.
+
+**Resolution order** at runtime: 60s in-memory cache → DB row (decrypted) → `process.env[<key>]` fallback → null. The env fallback exists so the app boots cleanly on fresh installs before the admin has populated the DB.
+
+**Admin UI** (`/dashboard/admin/system-config`):
+- Lists each known key with a last-4-char mask, source badge (`DB` / `ENV fallback` / `Not set`), updated-by and updated-at metadata
+- **[Test]** button hits the live provider with a 1-token ping using the candidate key (Groq `/chat/completions`, Finnhub `/quote?symbol=AAPL`, Anthropic `/messages`). Value is not persisted
+- **[Replace]** modal accepts a paste, runs Test-before-save, then Save (encrypts + upserts + writes hash-chained `SYSTEM_CONFIG_UPDATED` audit row)
+- Plaintext values are **never** returned by any API or displayed in the UI after save
+
+**Caveats:**
+- The Finnhub client (`src/lib/finnhub.ts`) is a singleton that reads its API key field once at process boot. Rotating `FINNHUB_API_KEY` via the admin UI requires an app restart for the trading engine + per-symbol routes (news, sentiment, recommendations, fundamentals) to pick up the new value. The LLM path (`getLlmApiKey()`) is fully async and refreshes within the 60s cache window.
+- API key store is **server-wide** — one Groq key serves every user. Per-user overrides are documented as a deferred design in `future-ideas.md`.
+
+## Marathon Updates (2026-05-12, Phases 1–4)
+
+Post-launch hardening pass. Items here augment the relevant sections above; cross-referencing CLAUDE.md's 6-phase retrospective for commit SHAs.
+
+### Phase 1 — Money bugs from UI-lie audit
+
+- **`canPlaceBuyOrder()` is async + takes a fresh `account` snapshot.** Refreshes the wash-sale symbol set (`maybeRefreshWashSaleSet()`) before the wash-sale check; re-runs `evaluatePdtState(engine, account)` before the PDT check. A 2nd day-trade in a 15-min window or a same-scan losing-close-then-re-entry now correctly evaluates against live state instead of scan-boundary state.
+- **Gate ordering inside `canPlaceBuyOrder()`:** wash-sale → PDT → sector exposure → earnings blackout → notional → rate-limit. Cheapest checks first; the first reason found is what gets logged.
+- **`bootEquity` re-snapshots at every new trading day** across all 3 scan paths (intraday, tactical, main). The 50% equity-collapse tripwire stays calibrated as the account grows organically.
+- **`tripSafeguardHalt()` writes `halted=true` to `trader_daily_pnl` immediately** (fire-and-forget) so the dashboard reflects halts on the next fetch instead of waiting for the next scan boundary.
+- **Dashboard `todayPnl` response carries `source` + `staleSeconds`** (`"broker_intraday" | "broker_total" | "db_snapshot"`) so the UI can render staleness honestly instead of silently mixing broker intraday with DB snapshot.
+
+### Phase 2 — Frozen-value cleanup
+
+- **`syncPositionMapFromBroker()` resets `pos.peakPrice = currentPrice`** when broker qty drops > 5% (partial close — trail recalibrates from post-close size).
+- **Re-resolves `pos.trailingStopPct` and `pos.takeProfit`** from the current strategy on every sync, so Strategies-page edits propagate to existing positions.
+- **`syncBrokerStops()` writes `pos.stopLoss = targetStop`** after every successful broker place/replace. Dashboard route reads `Math.max(broker, tracked.stopLoss)` defensively. Closes the UI-lie where the Stop column displayed entry-time disaster value while the broker stop was correctly ratcheting up.
+
+### Phase 3 — Cache invalidation
+
+- **`FILTER_CACHE_TTL_MS = 6h`** added on top of the existing day-string check for earnings + sentiment caches. Server-boot-at-3am-ET no longer means 20+ hours of stale data.
+- **Screener cache adds `scanStartedAt: Date | null`.** `/api/screener` exposes both `scannedAt` (completed) and `scanStartedAt` (in-flight). Same field added to `EngineState` and surfaced through `peekEngineStatus()`.
+
+### Phase 4 — Engine intelligence
+
+Migration `0029_engine_intelligence.sql` added three columns to `user_risk_profiles`. `RiskLimits` expanded with `maxSectorExposurePct` / `adaptiveModeEnabled` / `earningsBlackoutDays`.
+
+- **Sector exposure cap.** `canPlaceBuyOrder` takes optional `sectorExposureContext` (live position market values keyed by symbol) and refuses BUYs that would push a sector over `cap × equity`. New `buildSectorExposureContext()` helper. `TrackedPosition` now carries `currentPrice` + `marketValue` synced from broker so the cap check is in-memory.
+- **Earnings blackout.** Calls existing `isInEarningsBlackout()` when `earningsBlackoutDays` is set on the risk profile.
+- **P&L heatmap widget.** New `pnl-heatmap-widget` registered. Reads `/api/performance/attribution`. Top-5 symbols by realized $ with proportional bars.
+- **Deferred:** adaptive mode auto-switching (column shipped, no consumer wired yet); engine dry-run mode.
+
+See `engine-ruleset.html` (web view of this doc) for the same content in HTML form. Both files are intentionally kept in sync — edit one, mirror to the other.
+
+**Last revised:** 2026-05-12 (post-marathon doc sweep).

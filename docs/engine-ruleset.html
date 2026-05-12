@@ -558,6 +558,8 @@
       <a href="#tax-pdt" data-num="18">Tax &amp; PDT Protections</a>
       <a href="#audit-log" data-num="19">Audit Log</a>
       <a href="#going-live" data-num="20">Going Live &amp; Rollback</a>
+      <a href="#ai-provider" data-num="21">AI Provider &amp; System Config</a>
+      <a href="#marathon" data-num="22">Marathon Updates (2026-05-12)</a>
     </div>
   </nav>
 
@@ -1608,10 +1610,89 @@ sudo podman run -d --name sentinel-app --network=host \
     </ul>
   </section>
 
+  <!-- ===== 21 · AI PROVIDER ===== -->
+  <section class="section" id="ai-provider">
+    <div class="section-header">
+      <div class="section-num">21</div>
+      <h2>AI Provider &amp; System Configuration</h2>
+    </div>
+
+    <p>Every AI flow in Sentinel runs on <strong>Groq</strong> (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">llama-3.3-70b-versatile</code>): Insights page, Quick Insight widget, hybrid AI scoring layer, sentiment layer, filings chat, daily market digest cron, AI chat panel, and the Recent Trades <strong>AI &#x2728;</strong> trade-summary button. The <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">@anthropic-ai/sdk</code> dependency was removed in commit <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">0b2ef7e</code> once the lone Anthropic callsite (summarize-trade) was migrated. <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">CLAUDE_CONFIG</code> in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">src/lib/config.ts</code> remains the source of truth for <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.model</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.maxTokens</code> constants but no longer reads <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.apiKey</code>. All key resolution goes through <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getLlmApiKey()</code> in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">src/lib/system-config.ts</code>.</p>
+
+    <h3>System Configuration table (migration 0030)</h3>
+    <p>Encrypted server-wide secrets that admins can rotate from <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/dashboard/admin/system-config</code> without touching the droplet. Schema is just <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">(key TEXT PRIMARY KEY, value_encrypted TEXT, updated_by UUID, updated_at TIMESTAMPTZ)</code>. Values are AES-256-GCM ciphertext via <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">src/lib/crypto.ts</code> (no plaintext fallback). Allow-list of known keys enforced in code: <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">GROQ_API_KEY</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">FINNHUB_API_KEY</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">ANTHROPIC_API_KEY</code> &mdash; admins cannot silently overwrite arbitrary env vars from the UI.</p>
+
+    <h3>Resolution order at runtime</h3>
+    <ol>
+      <li>60s in-memory cache</li>
+      <li>DB row (decrypted)</li>
+      <li><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">process.env[&lt;key&gt;]</code> fallback &mdash; preserves "works locally without DB row"</li>
+      <li>null</li>
+    </ol>
+
+    <h3>Admin UI behaviors</h3>
+    <ul>
+      <li>Each known key shows a last-4-char mask, source badge (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">DB</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">ENV fallback</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">Not set</code>), updated-by and updated-at metadata.</li>
+      <li><strong>[Test]</strong> button hits the live provider with a 1-token ping using the candidate key (Groq <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/chat/completions</code>, Finnhub <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/quote?symbol=AAPL</code>, Anthropic <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/messages</code>). Candidate value is not persisted.</li>
+      <li><strong>[Replace]</strong> modal accepts a paste, runs Test-before-save, then Save (encrypts + upserts + writes hash-chained <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">SYSTEM_CONFIG_UPDATED</code> audit row with metadata <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">{key, hadOldValue, valueLength}</code> &mdash; never the value itself).</li>
+      <li>Plaintext values are <strong>never</strong> returned by any API or displayed in the UI after save.</li>
+    </ul>
+
+    <h3>Caveats</h3>
+    <ul>
+      <li>The Finnhub client (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">src/lib/finnhub.ts</code>) is a singleton that reads its API key field once at process boot. Rotating <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">FINNHUB_API_KEY</code> via the admin UI requires an app restart for the trading engine + per-symbol routes (news, sentiment, recommendations, fundamentals) to pick up the new value. The LLM path is fully async and refreshes within the 60s cache window.</li>
+      <li>API key store is <strong>server-wide</strong> &mdash; one Groq key serves every user. Per-user overrides are deferred design in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">docs/future-ideas.md</code>.</li>
+    </ul>
+  </section>
+
+  <!-- ===== 22 · MARATHON UPDATES ===== -->
+  <section class="section" id="marathon">
+    <div class="section-header">
+      <div class="section-num">22</div>
+      <h2>Marathon Updates (2026-05-12, Phases 1&ndash;4)</h2>
+    </div>
+
+    <p>Post-launch hardening pass. Items here augment relevant sections above; cross-references CLAUDE.md's 6-phase retrospective for commit SHAs.</p>
+
+    <h3>Phase 1 &mdash; Money bugs from UI-lie audit</h3>
+    <ul>
+      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder()</code> is async + takes a fresh <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">account</code> snapshot.</strong> Refreshes the wash-sale symbol set (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">maybeRefreshWashSaleSet()</code>) before the wash-sale check; re-runs <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">evaluatePdtState(engine, account)</code> before the PDT check. A 2nd day-trade in a 15-min window or a same-scan losing-close-then-re-entry now correctly evaluates against live state instead of scan-boundary state.</li>
+      <li><strong>Gate ordering inside <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder()</code>:</strong> wash-sale &rarr; PDT &rarr; sector exposure &rarr; earnings blackout &rarr; notional &rarr; rate-limit. Cheapest checks first; the first reason found is what gets logged.</li>
+      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">bootEquity</code> re-snapshots at every new trading day</strong> across all 3 scan paths (intraday, tactical, main). The 50% equity-collapse tripwire stays calibrated as the account grows organically.</li>
+      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">tripSafeguardHalt()</code> writes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">halted=true</code> to <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">trader_daily_pnl</code> immediately</strong> (fire-and-forget) so the dashboard reflects halts on the next fetch instead of waiting for the next scan boundary.</li>
+      <li><strong>Dashboard <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">todayPnl</code> response carries <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">source</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">staleSeconds</code></strong> (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">"broker_intraday" | "broker_total" | "db_snapshot"</code>) so the UI can render staleness honestly instead of silently mixing broker intraday with DB snapshot.</li>
+    </ul>
+
+    <h3>Phase 2 &mdash; Frozen-value cleanup</h3>
+    <ul>
+      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">syncPositionMapFromBroker()</code> resets <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.peakPrice = currentPrice</code></strong> when broker qty drops &gt; 5% (partial close &mdash; trail recalibrates from post-close size).</li>
+      <li><strong>Re-resolves <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.trailingStopPct</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.takeProfit</code></strong> from the current strategy on every sync, so Strategies-page edits propagate to existing positions.</li>
+      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">syncBrokerStops()</code> writes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.stopLoss = targetStop</code></strong> after every successful broker place/replace. Dashboard route reads <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">Math.max(broker, tracked.stopLoss)</code> defensively. Closes the UI-lie where the Stop column displayed entry-time disaster value while the broker stop was correctly ratcheting up.</li>
+    </ul>
+
+    <h3>Phase 3 &mdash; Cache invalidation</h3>
+    <ul>
+      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">FILTER_CACHE_TTL_MS = 6h</code></strong> added on top of the existing day-string check for earnings + sentiment caches. Server-boot-at-3am-ET no longer means 20+ hours of stale data.</li>
+      <li><strong>Screener cache adds <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scanStartedAt: Date | null</code>.</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/api/screener</code> exposes both <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scannedAt</code> (completed) and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scanStartedAt</code> (in-flight). Same field added to <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">EngineState</code> and surfaced through <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">peekEngineStatus()</code>.</li>
+    </ul>
+
+    <h3>Phase 4 &mdash; Engine intelligence (migration 0029)</h3>
+    <p>Three columns added to <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">user_risk_profiles</code>: <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">max_sector_exposure_pct</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">adaptive_mode_enabled</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">earnings_blackout_days</code>.</p>
+    <ul>
+      <li><strong>Sector exposure cap.</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder</code> takes optional <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">sectorExposureContext</code> (live position market values keyed by symbol) and refuses BUYs that would push a sector over <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">cap &times; equity</code>. New <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">buildSectorExposureContext()</code> helper. <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">TrackedPosition</code> carries <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">currentPrice</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">marketValue</code> synced from broker so the cap check is in-memory.</li>
+      <li><strong>Earnings blackout.</strong> Calls existing <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">isInEarningsBlackout()</code> when <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">earningsBlackoutDays</code> is set on the risk profile.</li>
+      <li><strong>P&amp;L heatmap widget.</strong> New <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pnl-heatmap-widget</code> registered. Reads <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/api/performance/attribution</code>. Top-5 symbols by realized $ with proportional bars.</li>
+      <li><strong>Deferred:</strong> adaptive mode auto-switching (column shipped, no consumer wired yet); engine dry-run mode.</li>
+    </ul>
+
+    <p style="margin-top:24px;color:var(--text-muted);font-size:0.9rem">Mirror file: <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">docs/ENGINE_RULESET.md</code>. Both intentionally kept in sync &mdash; edit one, mirror to the other.</p>
+  </section>
+
   <!-- ===== FOOTER ===== -->
   <footer class="footer">
     <p><span class="brand">Sentinel</span> &mdash; Trading Intelligence Platform &middot; v2 Pre-Live Hardening</p>
-    <p style="margin-top:4px">All rules enforced programmatically. Hash-chained audit on every privileged action. Five capital circuit breakers. Tax + PDT protections layered on every BUY.</p>
+    <p style="margin-top:4px">All rules enforced programmatically. Hash-chained audit on every privileged action. Five capital circuit breakers. Tax + PDT protections layered on every BUY. AI: Groq-only.</p>
+    <p style="margin-top:4px;color:var(--text-muted);font-size:0.85rem">Last revised: 2026-05-12 (post-marathon doc sweep)</p>
   </footer>
 
 </div>

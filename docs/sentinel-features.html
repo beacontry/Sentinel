@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentinel — Platform Reference (Every Page & Feature)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  :root {
+    --bg-root:     oklch(8% 0.01 165);
+    --bg-primary:  oklch(10% 0.01 165);
+    --bg-surface:  oklch(14% 0.012 165);
+    --bg-elevated: oklch(18% 0.014 165);
+    --bg-hover:    oklch(22% 0.015 165);
+
+    --text-primary:   oklch(96% 0.005 165);
+    --text-secondary: oklch(68% 0.01 165);
+    --text-muted:     oklch(48% 0.01 165);
+
+    --border:       oklch(24% 0.015 165);
+    --border-hover: oklch(32% 0.02 165);
+
+    --accent:       oklch(72% 0.17 165);
+    --accent-dim:   oklch(60% 0.12 165);
+    --accent-bg:    oklch(72% 0.17 165 / 0.08);
+    --accent-bg-md: oklch(72% 0.17 165 / 0.14);
+
+    --bullish:    oklch(75% 0.18 150);
+    --bullish-bg: oklch(75% 0.18 150 / 0.1);
+    --bearish:    oklch(68% 0.2 25);
+    --bearish-bg: oklch(68% 0.2 25 / 0.1);
+    --warning:    oklch(78% 0.16 80);
+    --warning-bg: oklch(78% 0.16 80 / 0.1);
+    --info:       oklch(72% 0.12 240);
+    --info-bg:    oklch(72% 0.12 240 / 0.1);
+
+    --radius-lg: 12px;
+    --radius-md: 8px;
+    --radius-sm: 6px;
+    --radius-full: 9999px;
+  }
+
+  html { font-size: 16px; scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg-root);
+    color: var(--text-primary);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  code, .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; }
+  code {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+  }
+
+  /* ---- layout ---- */
+  .page-wrap { max-width: 960px; margin: 0 auto; padding: 48px 24px 96px; }
+  @media (max-width: 640px) { .page-wrap { padding: 24px 16px 64px; } }
+
+  /* ---- hero ---- */
+  .hero { text-align: center; padding: 64px 0 48px; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--accent); background: var(--accent-bg);
+    border: 1px solid oklch(72% 0.17 165 / 0.2);
+    padding: 6px 14px; border-radius: var(--radius-full); margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 16px;
+  }
+  .hero p { font-size: 1.05rem; color: var(--text-secondary); max-width: 640px; margin: 0 auto; }
+  .hero-meta {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;
+    color: var(--text-muted); margin-top: 20px;
+  }
+
+  /* ---- toc ---- */
+  .toc {
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 24px 28px; margin-bottom: 48px;
+  }
+  .toc-group { margin-bottom: 22px; }
+  .toc-group:last-child { margin-bottom: 0; }
+  .toc-title {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 12px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .toc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 4px 24px;
+  }
+  .toc a {
+    color: var(--text-secondary); text-decoration: none;
+    font-size: 0.86rem; padding: 3px 0; transition: color 0.15s;
+  }
+  .toc a:hover { color: var(--accent); }
+  .toc a code { font-size: 0.72rem; color: var(--text-muted); padding: 0 4px; }
+
+  /* ---- sections ---- */
+  .section { margin-bottom: 56px; scroll-margin-top: 32px; }
+  .section-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 24px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 600;
+    color: var(--accent); background: var(--accent-bg);
+    padding: 5px 9px; border-radius: var(--radius-sm); flex-shrink: 0;
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .section h2 {
+    font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em;
+  }
+  .section h3 {
+    font-size: 1.02rem; font-weight: 600; margin: 28px 0 8px;
+    color: var(--text-primary);
+  }
+  .section h3 .route {
+    font-family: 'JetBrains Mono', monospace; font-weight: 500;
+    color: var(--text-muted); font-size: 0.85rem; margin-left: 8px;
+  }
+  .section p, .section li {
+    color: var(--text-secondary); font-size: 0.92rem; line-height: 1.65;
+  }
+  .section ul, .section ol { padding-left: 20px; margin: 6px 0 14px; }
+  .section li { margin-bottom: 4px; }
+  .section li::marker { color: var(--accent-dim); }
+
+  /* ---- page card (one per page surface) ---- */
+  .page-card {
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 18px 22px; margin-bottom: 14px;
+    transition: border-color 0.2s;
+  }
+  .page-card:hover { border-color: var(--border-hover); }
+  .page-card-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+    margin-bottom: 6px;
+  }
+  .page-name {
+    font-size: 0.98rem; font-weight: 700; color: var(--text-primary);
+  }
+  .page-route {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;
+    color: var(--accent); background: var(--accent-bg);
+    padding: 1px 7px; border-radius: var(--radius-sm);
+  }
+  .page-purpose { color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 10px; }
+  .page-card h4 {
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-muted); margin-top: 12px; margin-bottom: 4px;
+  }
+  .page-card ul { margin: 4px 0; }
+  .page-card li { font-size: 0.86rem; }
+
+  /* ---- gotcha callout ---- */
+  .gotcha {
+    background: var(--warning-bg); border-left: 3px solid var(--warning);
+    padding: 8px 12px; border-radius: var(--radius-sm);
+    margin-top: 8px; font-size: 0.85rem; color: var(--text-secondary);
+  }
+  .gotcha strong { color: var(--warning); }
+
+  /* ---- shortcut kbd ---- */
+  kbd {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: var(--radius-sm);
+    padding: 1px 8px; color: var(--text-primary);
+    display: inline-block; line-height: 1.4;
+  }
+
+  /* ---- tables ---- */
+  table {
+    width: 100%; border-collapse: collapse; margin: 12px 0;
+    font-size: 0.88rem; color: var(--text-secondary);
+  }
+  th {
+    text-align: left; font-weight: 600; color: var(--text-primary);
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-size: 0.82rem; letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  tr:hover td { background: var(--bg-surface); }
+  td code, td .mono { font-size: 0.82rem; }
+
+  /* ---- concept callouts ---- */
+  .concept {
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 12px;
+  }
+  .concept-title {
+    font-weight: 700; color: var(--text-primary); margin-bottom: 6px;
+  }
+
+  /* ---- footer ---- */
+  .footer {
+    text-align: center; margin-top: 80px; padding: 40px 24px 0;
+    border-top: 1px solid var(--border); color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  .footer .brand { color: var(--accent); font-weight: 600; }
+  .footer a { color: var(--accent); text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- ===== HERO ===== -->
+  <header class="hero">
+    <span class="hero-badge">User Reference &middot; v1</span>
+    <h1>Sentinel Platform Reference</h1>
+    <p>Every page, every button, every feature in Sentinel — what it does, when to use it, and what to watch out for. This is the user-facing companion to <a href="engine-ruleset.html" style="color:var(--accent)">engine-ruleset.html</a> (which covers the trading engine internals).</p>
+    <p class="hero-meta">Last revised 2026-05-12 &middot; 62 dashboard pages &middot; 15 widgets &middot; 8 shortcuts</p>
+  </header>
+
+  <!-- ===== TOC ===== -->
+  <nav class="toc">
+    <div class="toc-group">
+      <div class="toc-title">Start here</div>
+      <div class="toc-grid">
+        <a href="#concepts">Core concepts</a>
+        <a href="#shortcuts">Keyboard shortcuts</a>
+        <a href="#widgets">Dashboard widgets</a>
+        <a href="#glossary">Glossary</a>
+      </div>
+    </div>
+    <div class="toc-group">
+      <div class="toc-title">Dashboard</div>
+      <div class="toc-grid">
+        <a href="#dashboard-home">Home (multi-layout)</a>
+      </div>
+    </div>
+    <div class="toc-group">
+      <div class="toc-title">Analysis</div>
+      <div class="toc-grid">
+        <a href="#page-analysis">Analysis</a>
+        <a href="#page-multi-timeframe">Multi-Timeframe</a>
+        <a href="#page-heatmap">Heatmap</a>
+        <a href="#page-breadth">Breadth</a>
+        <a href="#page-correlation">Correlation</a>
+        <a href="#page-risk-correlation">Risk Correlation</a>
+        <a href="#page-relative-strength">Relative Strength</a>
+        <a href="#page-sector-rotation">Sector Rotation</a>
+        <a href="#page-unusual-activity">Unusual Activity</a>
+      </div>
+    </div>
+    <div class="toc-group">
+      <div class="toc-title">Screener &amp; Trader</div>
+      <div class="toc-grid">
+        <a href="#page-screener">Screener</a>
+        <a href="#page-trader">Live Trader</a>
+        <a href="#page-strategies">Strategies</a>
+        <a href="#page-strategy-builder">Strategy Builder</a>
+        <a href="#page-backtest">Backtest</a>
+        <a href="#page-backtest-compare">Backtest Compare</a>
+        <a href="#page-replay">Replay</a>
+        <a href="#page-optimizer">Optimizer</a>
+        <a href="#page-alerts">Alerts</a>
+        <a href="#page-watchlists">Watchlists</a>
+        <a href="#page-risk-simulator">Risk Simulator</a>
+        <a href="#page-calculator">Calculator</a>
+        <a href="#page-trade-ticket">Manual Trade Ticket</a>
+      </div>
+    </div>
+    <div class="toc-group">
+      <div class="toc-title">Journal</div>
+      <div class="toc-grid">
+        <a href="#page-journal">Journal</a>
+        <a href="#page-performance">Performance</a>
+        <a href="#page-reports">Reports</a>
+        <a href="#page-drawdown">Drawdown</a>
+        <a href="#page-pnl-calendar">P&amp;L Calendar</a>
+        <a href="#page-tax-center">Tax Center</a>
+        <a href="#page-tax">Tax Report</a>
+      </div>
+    </div>
+    <div class="toc-group">
+      <div class="toc-title">Research</div>
+      <div class="toc-grid">
+        <a href="#page-news">News</a>
+        <a href="#page-sentiment">Sentiment</a>
+        <a href="#page-articles">Articles</a>
+        <a href="#page-filings">Filings</a>
+        <a href="#page-insights">Insights</a>
+        <a href="#page-congress">Congress</a>
+        <a href="#page-education">Education hub</a>
+        <a href="#page-education-guides">Education guides</a>
+        <a href="#page-education-review">Spaced repetition review</a>
+      </div>
+    </div>
+    <div class="toc-group">
+      <div class="toc-title">Macro</div>
+      <div class="toc-grid">
+        <a href="#page-calendar">Calendar</a>
+        <a href="#page-earnings">Earnings</a>
+        <a href="#page-currency">Currency</a>
+        <a href="#page-policy">Policy</a>
+      </div>
+    </div>
+    <div class="toc-group">
+      <div class="toc-title">Community</div>
+      <div class="toc-grid">
+        <a href="#page-feed">Feed</a>
+        <a href="#page-forum">Forum</a>
+        <a href="#page-posts">Posts</a>
+        <a href="#page-leaderboard">Leaderboard</a>
+        <a href="#page-messages">Messages (DMs)</a>
+      </div>
+    </div>
+    <div class="toc-group">
+      <div class="toc-title">Help &amp; Personal</div>
+      <div class="toc-grid">
+        <a href="#page-support">Support</a>
+        <a href="#page-portfolio">Portfolio overview</a>
+        <a href="#page-chat">AI Chat</a>
+        <a href="#page-settings">Settings</a>
+      </div>
+    </div>
+    <div class="toc-group">
+      <div class="toc-title">Admin</div>
+      <div class="toc-grid">
+        <a href="#page-admin">Admin (Users &amp; Invites)</a>
+        <a href="#page-admin-audit">Audit Log</a>
+        <a href="#page-admin-system-config">System Configuration</a>
+      </div>
+    </div>
+    <div class="toc-group">
+      <div class="toc-title">Public surfaces</div>
+      <div class="toc-grid">
+        <a href="#page-login">Login</a>
+        <a href="#page-register">Register</a>
+        <a href="#page-terms">Terms</a>
+        <a href="#page-risk">Risk Disclosure</a>
+        <a href="#page-shared-watchlist">Shared Watchlist</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ===== CORE CONCEPTS ===== -->
+  <section class="section" id="concepts">
+    <div class="section-header">
+      <div class="section-num">CORE</div>
+      <h2>Concepts to learn first</h2>
+    </div>
+
+    <p>Read these before drilling into any page — they explain language used everywhere else in the platform.</p>
+
+    <h3>Engine modes</h3>
+    <p>The trading engine has 7 modes, each with different signal logic and risk profile. Switch on the Live Trader page.</p>
+    <ul>
+      <li><code>conservative</code> — small positions, strict filters, swing horizon</li>
+      <li><code>moderate</code> — default starting mode, balanced filters</li>
+      <li><code>optimized</code> — uses GA-tuned signal params (EMA fast/slow, RSI thresholds) from the optimizer</li>
+      <li><code>aggressive</code> — looser filters, more positions, momentum-tilted</li>
+      <li><code>intraday</code> — 5m bars, flattens at 3:00 PM ET. Engine refuses to start in this mode at &lt;$25k equity (PDT)</li>
+      <li><code>tactical</code> — market-wide on/off (SPY-driven). Full in / full out, no per-symbol gates</li>
+      <li><code>tactical-smart</code> — scored basket with active swapping. Re-ranks weekly</li>
+    </ul>
+
+    <h3>Risk profile (single source of truth)</h3>
+    <p>Risk settings live on the <strong>Trader page</strong>. They drive: position sizing, max position count, exposure caps, daily-loss halt, sector exposure cap, earnings blackout, wash-sale protection, PDT protection, and consecutive-loss halt. Settings page <em>display preferences</em> are separate from risk.</p>
+
+    <h3>Signals vs watchlist vs screener</h3>
+    <ul>
+      <li><strong>Watchlist</strong> — your manual list of symbols. Multiple named lists per user. Default list is what every widget defaults to.</li>
+      <li><strong>Screener</strong> — server-side market scanner. Runs over the full S&amp;P 500 every 5 minutes. Pushes high-confidence BUY/STRONG_BUY signals to the engine.</li>
+      <li><strong>Signal</strong> — output of the analyzer (<code>BUY</code> / <code>STRONG_BUY</code> / <code>HOLD</code> / <code>SELL</code> / <code>STRONG_SELL</code>) with a confidence 0–1. Combined technical + sentiment + options-flow + analyst + AI scoring.</li>
+    </ul>
+
+    <h3>Broker as source of truth</h3>
+    <p>Open positions and account equity come from <strong>Alpaca</strong>, not the database. The engine syncs its in-memory position map from broker data on every scan. If the broker is unreachable, the dashboard falls back to a cached snapshot tagged with how stale it is.</p>
+
+    <h3>Engine-gated operations</h3>
+    <p>While the engine is running, two operations are refused (API returns 409 <code>ENGINE_RUNNING</code>, UI shows a yellow banner): manual orders via <code>/trade/[symbol]</code>, and broker connection switching. Stop the engine first. This prevents the in-memory position map from drifting from the broker.</p>
+
+    <h3>Position detail sheet</h3>
+    <p>Click any row in Open Positions on the Trader page (or anywhere a <code>&lt;SymbolLink&gt;</code> appears) to slide in a detail drawer with entry/current/P&amp;L, recent signal history, and quick actions (View Chart, Manual Trade, Close Position).</p>
+
+    <h3>P&amp;L $/% toggle</h3>
+    <p>Every monetary display respects your preference (Dollar / Percent / Both). Toggle from the sidebar P&amp;L button or Settings → Display Preferences. Setting is per-device (localStorage), syncs across tabs via the <code>storage</code> event.</p>
+
+    <h3>Display preferences</h3>
+    <p>Settings → Display Preferences card covers: P&amp;L format, time format (12h/24h), color-blind palette (Wong blue/orange instead of green/red), default landing page after login, daily-digest email opt-in. All localStorage-backed, cross-tab synced.</p>
+
+    <h3>AI is on Groq</h3>
+    <p>Every AI feature (Insights, Quick Insight widget, hybrid signal scoring, sentiment, filings chat, market digest, AI chat, the Recent Trades <strong>AI ✨</strong> button) runs on Groq (<code>llama-3.3-70b-versatile</code>). Admins rotate the key at <a href="#page-admin-system-config" style="color:var(--accent)">System Configuration</a> — no SSH required. AI keys are server-wide.</p>
+
+    <h3>Hash-chained audit log</h3>
+    <p>Every privileged action (logins, order placements, halts, config changes, role changes) writes an append-only row whose hash links to the previous row. <a href="#page-admin-audit" style="color:var(--accent)">Audit Log</a> page has a "Verify chain" button that walks the entire log and reports any break. Tamper-evident.</p>
+  </section>
+
+  <!-- ===== KEYBOARD SHORTCUTS ===== -->
+  <section class="section" id="shortcuts">
+    <div class="section-header">
+      <div class="section-num">KEYS</div>
+      <h2>Keyboard shortcuts</h2>
+    </div>
+    <p>Single-key shortcuts fire only when no modifier is held AND you're not typing in an input. Press <kbd>?</kbd> any time for the in-app help modal.</p>
+
+    <table>
+      <thead><tr><th>Key</th><th>Action</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>K</kbd></td><td>Command palette</td><td>Fuzzy nav + symbol jump. Type a ticker → shows "Trade {SYM}" and "Analysis {SYM}" actions</td></tr>
+        <tr><td><kbd>T</kbd></td><td>Trader</td><td>/dashboard/trader</td></tr>
+        <tr><td><kbd>A</kbd></td><td>Analysis</td><td>/dashboard/analysis</td></tr>
+        <tr><td><kbd>S</kbd></td><td>Screener</td><td>/dashboard/screener</td></tr>
+        <tr><td><kbd>W</kbd></td><td>Watchlists</td><td>/dashboard/watchlists</td></tr>
+        <tr><td><kbd>J</kbd></td><td>Journal</td><td>/dashboard/journal</td></tr>
+        <tr><td><kbd>N</kbd></td><td>News</td><td>/dashboard/news</td></tr>
+        <tr><td><kbd>?</kbd></td><td>Help modal</td><td>Lists all shortcuts</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ===== DASHBOARD HOME ===== -->
+  <section class="section" id="dashboard-home">
+    <div class="section-header">
+      <div class="section-num">HOME</div>
+      <h2>Dashboard Home</h2>
+    </div>
+
+    <div class="page-card">
+      <div class="page-card-head">
+        <span class="page-name">Home (command center)</span>
+        <span class="page-route">/dashboard</span>
+      </div>
+      <p class="page-purpose">Configurable command center with resizable widgets. Set up one or more named layouts for different contexts (e.g. "Pre-market", "Live trading", "End-of-day review").</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Layout switcher</strong> (top right) — dropdown of saved layouts. Switch instantly without leaving the page.</li>
+        <li><strong>Widget grid</strong> — resizable cells, drag to reorder, resize handle to change size (sm/md/lg/full).</li>
+        <li><strong>Add widget</strong> button — picks from the registry (15 widgets, see below).</li>
+        <li><strong>Save layout</strong> — name and save the current arrangement. Default layout loads on every fresh login.</li>
+      </ul>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Layout dropdown</strong> — Switch, Rename, Delete, Set as default. Refuses to delete the last remaining layout.</li>
+        <li><strong>Widget close (×)</strong> — removes from the current layout. Doesn't delete the underlying data.</li>
+        <li><strong>Widget resize handle</strong> — bottom-right corner of each widget. Drag to change size class.</li>
+      </ul>
+      <div class="gotcha"><strong>Gotcha:</strong> layouts are per-user but shared across devices. Resizing a widget on mobile changes its size on desktop too.</div>
+    </div>
+
+    <p>See <a href="#widgets" style="color:var(--accent)">Dashboard widgets</a> below for what each widget shows.</p>
+  </section>
+
+  <!-- ===== WIDGETS ===== -->
+  <section class="section" id="widgets">
+    <div class="section-header">
+      <div class="section-num">WIDGETS</div>
+      <h2>Dashboard widgets</h2>
+    </div>
+
+    <p>15 widgets registered. Each has a default size (small / medium / large / full-width) and a category (markets / trading / social / research). Add via the "+ Widget" button on the dashboard home.</p>
+
+    <table>
+      <thead><tr><th>Widget</th><th>Size</th><th>Shows</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Watchlist</strong></td><td>sm</td><td>Default watchlist symbols with last price + intraday change. Quick add/remove.</td></tr>
+        <tr><td><strong>Market Overview</strong></td><td>md</td><td>Top gainers and losers from the screener cache.</td></tr>
+        <tr><td><strong>Recent Signals</strong></td><td>md</td><td>Latest BUY/SELL signals from the screener. Linked to /dashboard/analysis.</td></tr>
+        <tr><td><strong>P&amp;L Summary</strong></td><td>sm</td><td>Today's realized + unrealized P&amp;L from the engine.</td></tr>
+        <tr><td><strong>News Feed</strong></td><td>md</td><td>Latest financial headlines with sentiment badges (bullish ▲ / bearish ▼ / neutral).</td></tr>
+        <tr><td><strong>Open Positions</strong></td><td>md</td><td>Current open positions from the live broker. Click row → position detail sheet.</td></tr>
+        <tr><td><strong>Quick Insight</strong></td><td>sm</td><td>AI-powered 2-3 sentence "why is this stock moving" for a chosen symbol. Cached 5min.</td></tr>
+        <tr><td><strong>Signal Feed</strong></td><td>md</td><td>Community shared signals (when social ships in volume).</td></tr>
+        <tr><td><strong>Sector Heatmap</strong></td><td>lg</td><td>Mini version of the full heatmap. Color-coded sector performance.</td></tr>
+        <tr><td><strong>Performance Stats</strong></td><td>sm</td><td>Win rate, accuracy, total trades.</td></tr>
+        <tr><td><strong>Upcoming Earnings</strong></td><td>sm</td><td>Next 5 earnings dates from your watchlist (Finnhub-sourced).</td></tr>
+        <tr><td><strong>Portfolio Summary</strong></td><td>sm</td><td>Paper portfolio value + daily change.</td></tr>
+        <tr><td><strong>Net Worth</strong></td><td>sm</td><td>Aggregated value across paper portfolios + live broker positions.</td></tr>
+        <tr><td><strong>Continue Reading</strong></td><td>sm</td><td>Next education guide to pick up where you left off.</td></tr>
+        <tr><td><strong>P&amp;L by Symbol</strong></td><td>md</td><td>Top symbols driving your lifetime realized P&amp;L. Proportional bars. Same data as /dashboard/performance.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ===== ANALYSIS ===== -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-num">A</div>
+      <h2>Analysis</h2>
+    </div>
+
+    <div class="page-card" id="page-analysis">
+      <div class="page-card-head"><span class="page-name">Analysis (technical cockpit)</span><span class="page-route">/dashboard/analysis</span></div>
+      <p class="page-purpose">Chart + signal evaluation for a single symbol. The deepest research surface for one ticker at a time.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Symbol selector</strong> — dropdown of recent + watchlist symbols. Or type a ticker into Cmd+K and jump.</li>
+        <li><strong>Chart toggle</strong> — switch between "Engine view" (lightweight-charts with BUY/SELL markers + earnings markers) and "TradingView Advanced Chart" (full drawing tools).</li>
+        <li><strong>Signal box</strong> — current SignalBadge (STRONG_BUY/BUY/HOLD/SELL/STRONG_SELL) + confidence % + indicator breakdown.</li>
+        <li><strong>Intelligence tabs</strong> — Technical, Options Flow, Earnings Calls, Analyst, AI Summary, Filings, Backtest.</li>
+        <li><strong>5-timeframe snapshot</strong> — 1m / 5m / 15m / 1h / 1d signals side-by-side.</li>
+      </ul>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Trade</strong> button (sidebar) — jumps to <code>/trade/{SYM}</code> with the symbol pre-filled.</li>
+        <li><strong>Refresh</strong> — re-runs the analyzer with fresh bars. Bypasses cache.</li>
+        <li><strong>Chart mode persists per-device</strong> in <code>sentinel-chart-mode</code> localStorage key.</li>
+      </ul>
+      <div class="gotcha"><strong>Gotcha:</strong> deep links like <code>?symbol=HPE</code> work — used by Cmd+K, congress page, performance attribution, and every <code>&lt;SymbolLink&gt;</code> in the app.</div>
+    </div>
+
+    <div class="page-card" id="page-multi-timeframe">
+      <div class="page-card-head"><span class="page-name">Multi-Timeframe</span><span class="page-route">/dashboard/multi-timeframe</span></div>
+      <p class="page-purpose">Dual 5m + 1d analysis with confluence scoring — surfaces setups where short-term momentum aligns with daily trend.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li>Table of symbols with 5m signal, 1d signal, confluence score, agreement direction.</li>
+        <li>Click symbol → Analysis page deep link.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-heatmap">
+      <div class="page-card-head"><span class="page-name">Heatmap</span><span class="page-route">/dashboard/heatmap</span></div>
+      <p class="page-purpose">Sector performance grid. Each sector tile is sized by market cap, colored by today's change.</p>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Timeframe</strong> — toggle between 1d / 1w / 1m view.</li>
+        <li>Click any symbol tile → /dashboard/analysis?symbol=...</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-breadth">
+      <div class="page-card-head"><span class="page-name">Breadth</span><span class="page-route">/dashboard/breadth</span></div>
+      <p class="page-purpose">Market-wide advance/decline, % above 50/200-day SMA, average RSI, sector distribution. The "is the market broadly healthy" view.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li>Headline cards: A/D ratio, % above SMA50, % above SMA200, avg RSI.</li>
+        <li>Sector breakdown table: count of advancing/declining stocks per sector.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-correlation">
+      <div class="page-card-head"><span class="page-name">Correlation</span><span class="page-route">/dashboard/correlation</span></div>
+      <p class="page-purpose">Pairwise return correlation matrix between symbols. Find diversifiers (low correlation) or risk concentrations (high correlation).</p>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Symbol picker</strong> — choose up to 10 symbols. Defaults to default watchlist.</li>
+        <li><strong>Window</strong> — 30d / 60d / 90d / 180d rolling window.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-risk-correlation">
+      <div class="page-card-head"><span class="page-name">Risk Correlation</span><span class="page-route">/dashboard/risk-correlation</span></div>
+      <p class="page-purpose">Beta, volatility, and correlation to SPY for each tracked symbol. Decompose where your market exposure actually comes from.</p>
+    </div>
+
+    <div class="page-card" id="page-relative-strength">
+      <div class="page-card-head"><span class="page-name">Relative Strength</span><span class="page-route">/dashboard/relative-strength</span></div>
+      <p class="page-purpose">60-day return rankings. Sort by RS to find momentum leaders (or laggards).</p>
+    </div>
+
+    <div class="page-card" id="page-sector-rotation">
+      <div class="page-card-head"><span class="page-name">Sector Rotation</span><span class="page-route">/dashboard/sector-rotation</span></div>
+      <p class="page-purpose">Rolling 1w / 1m / 3m sector performance with phase classification (leading / weakening / lagging / improving). Where is capital flowing?</p>
+    </div>
+
+    <div class="page-card" id="page-unusual-activity">
+      <div class="page-card-head"><span class="page-name">Unusual Activity</span><span class="page-route">/dashboard/unusual-activity</span></div>
+      <p class="page-purpose">Volume spike detection — symbols where today's volume is 2x+ the 20-day average. Surfaces "something is happening here" candidates for further research.</p>
+    </div>
+  </section>
+
+  <!-- ===== SCREENER & TRADER ===== -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-num">T</div>
+      <h2>Screener &amp; Trader</h2>
+    </div>
+
+    <div class="page-card" id="page-screener">
+      <div class="page-card-head"><span class="page-name">Screener</span><span class="page-route">/dashboard/screener</span></div>
+      <p class="page-purpose">Server-side market scanner. Runs over the full S&amp;P 500, returns symbols matching active filters with their current signal.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Filter chips</strong> — toggle signal type (STRONG_BUY only / BUY+/etc), min confidence, RSI bands, volume multipliers.</li>
+        <li><strong>Results table</strong> — symbol, signal, confidence, RSI, volume mult, change %.</li>
+        <li><strong>Scan status</strong> — "Last scanned X ago" or "Scan in progress, started X ago" if a fresh scan is running.</li>
+      </ul>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Scan Market</strong> — triggers a fresh full-universe scan. Concurrent triggers return the in-flight result instead of re-scanning.</li>
+      </ul>
+      <div class="gotcha"><strong>Shared resource:</strong> the screener cache is global across all users — not per-user. One scan serves everyone. Filters are applied client-side from the cached scan output.</div>
+    </div>
+
+    <div class="page-card" id="page-trader">
+      <div class="page-card-head"><span class="page-name">Live Trader</span><span class="page-route">/dashboard/trader</span></div>
+      <p class="page-purpose">Engine controls + live positions + risk profile. The most important page in Sentinel.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Status banner</strong> — engine running/stopped, mode, current P&amp;L. Red <strong>LIVE</strong> badge when running on a live connection.</li>
+        <li><strong>Headline P&amp;L cards</strong> — Today $, Today %, Unrealized $, Unrealized %. Format honors your P&amp;L preference.</li>
+        <li><strong>Open Positions table</strong> — Symbol, Entry, Current, P&amp;L $, P&amp;L %, Trail Stop, Signal. Click row → position detail sheet.</li>
+        <li><strong>Open Orders table</strong> — pending/working orders from the broker.</li>
+        <li><strong>Recent Trades list</strong> — date, symbol, side, qty, price, P&amp;L. Each row has an <strong>AI ✨</strong> button (see below).</li>
+        <li><strong>Signals list</strong> — latest from the screener or manual triggers.</li>
+        <li><strong>Risk Overrides panel</strong> — read-only by default. Click Settings icon to edit. Source of truth for max position size, daily loss halt, sector cap, earnings blackout, MTM election, consecutive-loss threshold.</li>
+        <li><strong>PDT warning panel</strong> (yellow) — appears when account equity &lt; $25k. Shows current day-trade count.</li>
+        <li><strong>Tax Status card</strong> — MTM election checkbox. Drives wash-sale protection on/off.</li>
+        <li><strong>Tax callouts</strong> — harvestable unrealized losses surfaced inline.</li>
+      </ul>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Start / Stop</strong> — toggles the engine. Refuses to start on a live connection unless <code>ALLOW_LIVE_TRADING=1</code> is set in env AND the user has live trading enabled.</li>
+        <li><strong>Mode selector</strong> — pick conservative / moderate / optimized / aggressive / intraday / tactical / tactical-smart.</li>
+        <li><strong>Halt</strong> — manual halt. Closes all positions at market, refuses new orders for the day.</li>
+        <li><strong>Flatten all</strong> — sells all positions immediately at market.</li>
+        <li><strong>AI ✨</strong> (each trade row) — generates a Groq-powered 1-2 sentence plain-English summary of the trade (entry reason → hold period → exit). Cached on the row after first click. Label flips to ↻ once cached. Costs ~$0.0001 per click.</li>
+      </ul>
+      <div class="gotcha"><strong>Engine-gated:</strong> while running, manual orders and broker switching are refused with a 409 <code>ENGINE_RUNNING</code> response. Stop the engine first.</div>
+    </div>
+
+    <div class="page-card" id="page-strategies">
+      <div class="page-card-head"><span class="page-name">Strategies</span><span class="page-route">/dashboard/strategies</span></div>
+      <p class="page-purpose">Library of saved strategies — each is a named bundle of 8 parameters (EMA fast/slow, RSI thresholds, stop %, take profit %, trail %, hold period).</p>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Create</strong> — opens the Strategy Builder wizard.</li>
+        <li><strong>Edit</strong> — adjust params, rename, re-save.</li>
+        <li><strong>Backtest</strong> — runs the current strategy against historical data and jumps to the result.</li>
+        <li><strong>Compare</strong> — appears when 2+ saved. Multi-select up to 5, opens /dashboard/backtest/compare.</li>
+        <li><strong>Deploy</strong> — marks the strategy as the engine's active config for the user's account.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-strategy-builder">
+      <div class="page-card-head"><span class="page-name">Strategy Builder</span><span class="page-route">/dashboard/strategy-builder</span></div>
+      <p class="page-purpose">Form wizard for tuning the 8 strategy parameters. Visual feedback on what each knob does. Recommended for users uncomfortable with the bare parameter list.</p>
+    </div>
+
+    <div class="page-card" id="page-backtest">
+      <div class="page-card-head"><span class="page-name">Backtest</span><span class="page-route">/dashboard/backtest</span></div>
+      <p class="page-purpose">Run a single strategy against historical data — see equity curve, win rate, drawdown, Sharpe/Sortino/Calmar/MAR.</p>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Symbol</strong> — single symbol or a watchlist.</li>
+        <li><strong>Strategy</strong> — pick one of the 7 engine modes, a saved strategy, custom (manual params), or auto (optimizer-picked).</li>
+        <li><strong>Date range</strong> — <code>days</code> back or <code>startDate</code>/<code>endDate</code> mode. Daily bars only (Yahoo intraday only retains ~60 days).</li>
+        <li><strong>Run</strong> — kicks off the backtest. Equity curve animates in as it processes.</li>
+      </ul>
+      <div class="gotcha"><strong>Long-range 5m backtests aren't possible</strong> without a paid intraday data feed. Daily bars are the supported window.</div>
+    </div>
+
+    <div class="page-card" id="page-backtest-compare">
+      <div class="page-card-head"><span class="page-name">Backtest Compare</span><span class="page-route">/dashboard/backtest/compare?ids=...</span></div>
+      <p class="page-purpose">Side-by-side comparison of up to 5 saved strategies — stats columns + an overlaid equity curve normalized to start = 100. URL-driven so links are shareable.</p>
+    </div>
+
+    <div class="page-card" id="page-replay">
+      <div class="page-card-head"><span class="page-name">Replay</span><span class="page-route">/dashboard/replay</span></div>
+      <p class="page-purpose">Step through historical trades bar-by-bar with simulated fills. Useful for studying entry/exit timing.</p>
+    </div>
+
+    <div class="page-card" id="page-optimizer">
+      <div class="page-card-head"><span class="page-name">Optimizer</span><span class="page-route">/dashboard/optimizer</span></div>
+      <p class="page-purpose">Genetic algorithm optimization across the 8 strategy parameters. Train on 5 years of S&amp;P 500 data, walk-forward validate.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li>Convergence chart — fitness vs generation.</li>
+        <li>Results table — top-N evolved strategies with returns, drawdown, walk-forward stability.</li>
+      </ul>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Population</strong> — 10–100 strategies per generation.</li>
+        <li><strong>Generations</strong> — 5–100 evolution rounds.</li>
+        <li><strong>Train/Test split</strong> — 40–80% walk-forward.</li>
+        <li><strong>Universe</strong> — Top 50 vs Full S&amp;P 500.</li>
+        <li><strong>Run</strong> — kicks off the GA. Admin-only.</li>
+      </ul>
+      <div class="gotcha"><strong>Admin-only:</strong> running optimization is gated to role=admin. Results are shared globally though — the "optimized" engine mode picks up the latest stable params for every user.</div>
+    </div>
+
+    <div class="page-card" id="page-alerts">
+      <div class="page-card-head"><span class="page-name">Alerts</span><span class="page-route">/dashboard/alerts</span></div>
+      <p class="page-purpose">Alert configuration + history. Symbol-level triggers (price crosses, signal flips, unusual volume).</p>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Channels</strong> — email, PWA push, Discord webhook. Per-alert routing.</li>
+        <li><strong>History → Clear all</strong> — bulk-delete alert history.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-watchlists">
+      <div class="page-card-head"><span class="page-name">Watchlists</span><span class="page-route">/dashboard/watchlists</span></div>
+      <p class="page-purpose">Multi-list management. Create, rename, delete, set default, share publicly via token.</p>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>New list</strong> — create a named list.</li>
+        <li><strong>Set as default</strong> — that list becomes what every widget defaults to.</li>
+        <li><strong>Delete</strong> — refuses to delete the last remaining list. On default delete, oldest survivor becomes default.</li>
+        <li><strong>Share</strong> — generates a 24-byte hex token at <code>/w/[token]</code> for public read-only access. Rotate or revoke any time.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-risk-simulator">
+      <div class="page-card-head"><span class="page-name">Risk Simulator</span><span class="page-route">/dashboard/risk-simulator</span></div>
+      <p class="page-purpose">What-if stress testing. Apply hypothetical shocks (SPY -10%, sector down, single-name drawdown) and see your portfolio P&amp;L impact.</p>
+    </div>
+
+    <div class="page-card" id="page-calculator">
+      <div class="page-card-head"><span class="page-name">Calculator</span><span class="page-route">/dashboard/calculator</span></div>
+      <p class="page-purpose">Multi-calculator hub: position sizing (Kelly + fixed-fractional), option P&amp;L, compound growth, etc.</p>
+    </div>
+
+    <div class="page-card" id="page-trade-ticket">
+      <div class="page-card-head"><span class="page-name">Manual Trade Ticket</span><span class="page-route">/dashboard/trade/[symbol]</span></div>
+      <p class="page-purpose">Place an order outside the engine. BUY/SELL × market/limit/stop/stop-limit × day/gtc/ioc/fok. Supports bracket orders and fractional shares.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Symbol header</strong> — current price + intraday change.</li>
+        <li><strong>Side toggle</strong> — BUY / SELL.</li>
+        <li><strong>Order type</strong> — Market / Limit / Stop / Stop-Limit.</li>
+        <li><strong>TIF</strong> — Day / GTC / IOC / FOK.</li>
+        <li><strong>Bracket toggle</strong> (BUY-only, share-mode only) — atomic entry + stop-loss + take-profit.</li>
+        <li><strong>Notional toggle</strong> (Alpaca only) — dollar-based buys, fractional shares. Market + day/ioc only.</li>
+      </ul>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Place order</strong> — confirms (with extra LIVE confirmation if the active connection is live). Submits to broker.</li>
+      </ul>
+      <div class="gotcha"><strong>Engine-gated:</strong> refused while the engine is running. UI banner + API 409. Stop the engine to place manual orders, or use a different broker connection that the engine isn't using.</div>
+    </div>
+  </section>
+
+  <!-- ===== JOURNAL ===== -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-num">J</div>
+      <h2>Journal</h2>
+    </div>
+
+    <div class="page-card" id="page-journal">
+      <div class="page-card-head"><span class="page-name">Journal</span><span class="page-route">/dashboard/journal</span></div>
+      <p class="page-purpose">Trade-by-trade notes, tags, screenshots. The "what was I thinking" record. Engine trades pre-populate; you add the narrative.</p>
+    </div>
+
+    <div class="page-card" id="page-performance">
+      <div class="page-card-head"><span class="page-name">Performance</span><span class="page-route">/dashboard/performance</span></div>
+      <p class="page-purpose">Signal accuracy (true/false positives), win rate, P&amp;L attribution by symbol.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Headline cards</strong> — total trades, win rate, average win/loss, profit factor.</li>
+        <li><strong>By-symbol accuracy table</strong> — true positives / false positives / false negatives per ticker.</li>
+        <li><strong>Top-10 contributors</strong> — proportional bars showing which symbols drove your realized P&amp;L.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-reports">
+      <div class="page-card-head"><span class="page-name">Reports</span><span class="page-route">/dashboard/reports</span></div>
+      <p class="page-purpose">Export trade history in CSV / PDF / XLS for tax filing or external analysis.</p>
+    </div>
+
+    <div class="page-card" id="page-drawdown">
+      <div class="page-card-head"><span class="page-name">Drawdown</span><span class="page-route">/dashboard/drawdown</span></div>
+      <p class="page-purpose">Historical peak-to-trough equity curves with dates and amounts. The "how painful was it" view.</p>
+    </div>
+
+    <div class="page-card" id="page-pnl-calendar">
+      <div class="page-card-head"><span class="page-name">P&amp;L Calendar</span><span class="page-route">/dashboard/pnl-calendar</span></div>
+      <p class="page-purpose">Daily P&amp;L as a green/red heatmap calendar. Click any day to drill into that day's trades.</p>
+    </div>
+
+    <div class="page-card" id="page-tax-center">
+      <div class="page-card-head"><span class="page-name">Tax Center</span><span class="page-route">/dashboard/tax-center</span></div>
+      <p class="page-purpose">Unified realized + unrealized P&amp;L across manual portfolios and live engine trades. Tax-loss harvesting candidates surfaced inline.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Year selector</strong> — calendar-year scope.</li>
+        <li><strong>Realized gains</strong> — short-term + long-term totals.</li>
+        <li><strong>Harvesting candidates</strong> — open positions with unrealized losses, sorted by loss magnitude.</li>
+        <li><strong>Tax Status card</strong> — self-attested Trader Tax Status + §475(f) MTM election. Same data as Trader page.</li>
+        <li><strong>Personalized education links</strong> — guides ranked by your actual situation (harvestable losses → tax-loss harvesting guide; mixed gains → tax basics; etc.).</li>
+      </ul>
+      <div class="gotcha"><strong>Self-attestation only:</strong> Sentinel does not file or validate your tax status. The MTM election checkbox is record-keeping. Talk to a CPA before claiming Trader Tax Status.</div>
+    </div>
+
+    <div class="page-card" id="page-tax">
+      <div class="page-card-head"><span class="page-name">Tax Report (Form 8949)</span><span class="page-route">/dashboard/tax</span></div>
+      <p class="page-purpose">IRS Form 8949-formatted realized gains export, from engine trades only. Tax Center is the unified view; this page is the strict 8949 generator.</p>
+    </div>
+  </section>
+
+  <!-- ===== RESEARCH ===== -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-num">R</div>
+      <h2>Research</h2>
+    </div>
+
+    <div class="page-card" id="page-news">
+      <div class="page-card-head"><span class="page-name">News</span><span class="page-route">/dashboard/news</span></div>
+      <p class="page-purpose">Sentiment-tagged financial headlines (general + per-symbol). Each article carries a ▲ Bullish / ▼ Bearish / ● Neutral badge from keyword scoring.</p>
+      <div class="gotcha"><strong>Not the hybrid sentiment layer.</strong> The badge is fast keyword-based directional hint, not the deeper Finnhub-sourced sentiment that feeds signal math.</div>
+    </div>
+
+    <div class="page-card" id="page-sentiment">
+      <div class="page-card-head"><span class="page-name">Sentiment</span><span class="page-route">/dashboard/sentiment</span></div>
+      <p class="page-purpose">Bullish/bearish percentage by symbol from Finnhub's social-sentiment endpoint, with trend arrows over time.</p>
+    </div>
+
+    <div class="page-card" id="page-articles">
+      <div class="page-card-head"><span class="page-name">Articles</span><span class="page-route">/dashboard/articles</span></div>
+      <p class="page-purpose">Curated longer-form trading + finance articles with reading progress tracking.</p>
+    </div>
+
+    <div class="page-card" id="page-filings">
+      <div class="page-card-head"><span class="page-name">Filings</span><span class="page-route">/dashboard/filings</span></div>
+      <p class="page-purpose">SEC filings (10-K, 10-Q, 8-K, S-1, etc.) by symbol from Finnhub. Click filing → AI-summarized via Groq.</p>
+    </div>
+
+    <div class="page-card" id="page-insights">
+      <div class="page-card-head"><span class="page-name">Insights</span><span class="page-route">/dashboard/insights</span></div>
+      <p class="page-purpose">AI-powered "why is this stock moving today" generated from current quote + recent news. Cached 5 minutes per symbol. Runs on Groq.</p>
+    </div>
+
+    <div class="page-card" id="page-congress">
+      <div class="page-card-head"><span class="page-name">Congress</span><span class="page-route">/dashboard/congress</span></div>
+      <p class="page-purpose">Federal Periodic Transaction Reports from Finnhub. Members of Congress are required to report trades within 45 days — Sentinel surfaces them filterable by ticker, member name, chamber, direction.</p>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Ticker filter</strong> — server-side query.</li>
+        <li><strong>Member name search</strong> — client-side filter.</li>
+        <li><strong>Chamber / Direction</strong> — radio toggles.</li>
+        <li>Click symbol → /dashboard/analysis or /dashboard/trade.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-education">
+      <div class="page-card-head"><span class="page-name">Education hub</span><span class="page-route">/dashboard/education</span></div>
+      <p class="page-purpose">Three-tab hub: Glossary (95 terms across 6 categories) | Guides (14 long-form) | Calculators (8 interactive).</p>
+    </div>
+
+    <div class="page-card" id="page-education-guides">
+      <div class="page-card-head"><span class="page-name">Education guides</span><span class="page-route">/dashboard/education/guides</span></div>
+      <p class="page-purpose">Index of 14 long-form guides: Roth IRA, 401k, backdoor Roth, §475(f) MTM, wash-sale, estate planning, trader tax status, etc.</p>
+      <h4>Per-guide page features</h4>
+      <ul>
+        <li><strong>Key facts</strong> sidebar — quick reference at top of each guide.</li>
+        <li><strong>Glossary-aware text</strong> — known terms auto-wrap into tooltips with definitions.</li>
+        <li><strong>Inline calculators</strong> — guides embed the relevant calculator (e.g. Roth IRA guide has the contribution-limit calculator).</li>
+        <li><strong>Quiz</strong> — 5-question check at the end. Pass at ≥80% to mark mastery.</li>
+        <li><strong>Bookmark</strong> button.</li>
+        <li><strong>Print / PDF</strong> — disclaimers tagged <code>data-print-disclaimer</code> render prominently.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-education-review">
+      <div class="page-card-head"><span class="page-name">Spaced Repetition Review</span><span class="page-route">/dashboard/education/review</span></div>
+      <p class="page-purpose">SM-2 algorithm for learning glossary terms. Surface due cards, rate recall 0–5, adaptive intervals based on quality.</p>
+    </div>
+  </section>
+
+  <!-- ===== MACRO ===== -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-num">M</div>
+      <h2>Macro</h2>
+    </div>
+
+    <div class="page-card" id="page-calendar">
+      <div class="page-card-head"><span class="page-name">Economic Calendar</span><span class="page-route">/dashboard/calendar</span></div>
+      <p class="page-purpose">Macro events with impact ratings — FOMC, CPI, jobs, GDP, consumer confidence, retail sales.</p>
+    </div>
+
+    <div class="page-card" id="page-earnings">
+      <div class="page-card-head"><span class="page-name">Earnings</span><span class="page-route">/dashboard/earnings</span></div>
+      <p class="page-purpose">Upcoming + recent earnings dates from watchlist symbols. Whisper number, consensus, surprise %.</p>
+    </div>
+
+    <div class="page-card" id="page-currency">
+      <div class="page-card-head"><span class="page-name">Currency</span><span class="page-route">/dashboard/currency</span></div>
+      <p class="page-purpose">FX pairs (USD majors) with current rate + trend indicators.</p>
+    </div>
+
+    <div class="page-card" id="page-policy">
+      <div class="page-card-head"><span class="page-name">Policy</span><span class="page-route">/dashboard/policy</span></div>
+      <p class="page-purpose">Fed policy changes, rate expectations, dot-plot summary.</p>
+    </div>
+  </section>
+
+  <!-- ===== COMMUNITY ===== -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-num">C</div>
+      <h2>Community</h2>
+    </div>
+
+    <div class="page-card" id="page-feed">
+      <div class="page-card-head"><span class="page-name">Feed</span><span class="page-route">/dashboard/feed</span></div>
+      <p class="page-purpose">Public signal feed — shared signals from other users (when social shipping ramps).</p>
+    </div>
+
+    <div class="page-card" id="page-forum">
+      <div class="page-card-head"><span class="page-name">Forum</span><span class="page-route">/dashboard/forum</span></div>
+      <p class="page-purpose">Threaded discussions by symbol or topic. Click thread → /dashboard/forum/[threadId].</p>
+    </div>
+
+    <div class="page-card" id="page-posts">
+      <div class="page-card-head"><span class="page-name">Posts</span><span class="page-route">/dashboard/posts</span></div>
+      <p class="page-purpose">Quick-take posts (trading notes, ideas, memes). Single-post detail at /dashboard/posts/[postId].</p>
+    </div>
+
+    <div class="page-card" id="page-leaderboard">
+      <div class="page-card-head"><span class="page-name">Leaderboard</span><span class="page-route">/dashboard/leaderboard</span></div>
+      <p class="page-purpose">Top traders by return / Sharpe / drawdown. Opt-in via Settings → Leaderboard opt-in.</p>
+    </div>
+
+    <div class="page-card" id="page-messages">
+      <div class="page-card-head"><span class="page-name">Messages (DMs)</span><span class="page-route">/dashboard/messages</span></div>
+      <p class="page-purpose">Private 1:1 direct messages. Inbox at /dashboard/messages, thread at /dashboard/messages/[id].</p>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>New message</strong> — start a thread with another user (email lookup).</li>
+        <li><strong>Enter</strong> sends, <strong>Shift+Enter</strong> newline.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ===== HELP & PERSONAL ===== -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-num">H</div>
+      <h2>Help &amp; Personal</h2>
+    </div>
+
+    <div class="page-card" id="page-support">
+      <div class="page-card-head"><span class="page-name">Support</span><span class="page-route">/dashboard/support</span></div>
+      <p class="page-purpose">Customer support ticketing. Users open tickets; admins reply. Status flows: open → responded → resolved → closed. Email notifications on every message via Resend.</p>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>New ticket</strong> — subject, description, priority.</li>
+        <li><strong>Reply</strong> — adds a message to the thread. Email notifies the other side.</li>
+        <li><strong>Status / Priority</strong> (admin only) — adjust ticket lifecycle state.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-portfolio">
+      <div class="page-card-head"><span class="page-name">Portfolio overview</span><span class="page-route">/dashboard/portfolio</span></div>
+      <p class="page-purpose">Aggregated view across paper portfolios + live broker positions. Sector allocation bars, top winners, top losers, full broker positions table.</p>
+    </div>
+
+    <div class="page-card" id="page-chat">
+      <div class="page-card-head"><span class="page-name">AI Chat</span><span class="page-route">/dashboard/chat</span></div>
+      <p class="page-purpose">Conversational market analysis with the Groq-powered assistant. Has access to current market context (news, signals, sectors) and the Sentinel education guides via RAG — every answer cites guide sections when relevant.</p>
+    </div>
+
+    <div class="page-card" id="page-settings">
+      <div class="page-card-head"><span class="page-name">Settings</span><span class="page-route">/dashboard/settings</span></div>
+      <p class="page-purpose">Per-user preferences and connections. Risk profile is NOT here — it lives on the Trader page.</p>
+      <h4>Cards (top to bottom)</h4>
+      <ul>
+        <li><strong>Broker Connections</strong> — add / activate / delete. Choose broker (Alpaca / IBKR / Tradier), label, paper or live, paste API keys, Test, Save. Live requires typing "LIVE" to confirm.</li>
+        <li><strong>Leaderboard opt-in</strong> — toggle.</li>
+        <li><strong>Export Data</strong> — bulk trades + P&amp;L download (CSV / XLS).</li>
+        <li><strong>Tax Report</strong> — Form 8949 download.</li>
+        <li><strong>Display Preferences</strong> — P&amp;L format ($/% /both), time format (12h/24h), color-blind palette, default landing page, daily-digest email opt-in.</li>
+        <li><strong>Discord Webhooks</strong> — operational alerts (engine halts, order rejections). Add multiple webhooks with a Test button.</li>
+      </ul>
+      <div class="gotcha"><strong>Risk Overrides moved to Trader page.</strong> Settings only carries display + connections + export. Risk settings are operationally adjacent to the engine controls.</div>
+    </div>
+  </section>
+
+  <!-- ===== ADMIN ===== -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-num">ADMIN</div>
+      <h2>Admin (role=admin only)</h2>
+    </div>
+
+    <div class="page-card" id="page-admin">
+      <div class="page-card-head"><span class="page-name">Admin home (Users + Invites)</span><span class="page-route">/dashboard/admin</span></div>
+      <p class="page-purpose">User management + invite system + engine overrides + reports.</p>
+      <h4>Cards (top to bottom)</h4>
+      <ul>
+        <li><strong>User Management</strong> — list, create, edit (name/email/password/role), delete. Roles: admin / supervisor / operator / read-only.</li>
+        <li><strong>Slippage Report</strong> — fills vs intended price across all users, by symbol.</li>
+        <li><strong>Position Drift Audit</strong> — DB-recorded position state vs live broker reality, per user.</li>
+        <li><strong>User Engines</strong> — start / stop / halt other users' trading engines. Toggle live-trading-enabled per user.</li>
+        <li><strong>System Configuration</strong> card → links to <a href="#page-admin-system-config" style="color:var(--accent)">/dashboard/admin/system-config</a>.</li>
+        <li><strong>Invitations</strong> — send by email (creates token, sends signup link via Resend). Copy link manually if email is unconfigured. Sent / Registered / Expired status badges.</li>
+      </ul>
+    </div>
+
+    <div class="page-card" id="page-admin-audit">
+      <div class="page-card-head"><span class="page-name">Audit Log</span><span class="page-route">/dashboard/admin/audit</span></div>
+      <p class="page-purpose">Hash-chained log of every privileged action. Tamper-evident. Searchable.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Filter</strong> — by user, action, date range, resource type.</li>
+        <li><strong>Detail row</strong> — actor, IP (from X-Forwarded-For), user agent, metadata blob, prev_hash, hash.</li>
+      </ul>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Verify chain</strong> — walks every row, recomputes each hash, reports first break (or "intact"). Takes ~2s per 100k rows.</li>
+      </ul>
+      <div class="gotcha"><strong>If verify reports a break, stop trading immediately.</strong> The chain breaking means either someone deleted/modified rows, or there's a code bug. Either way, the audit trail is no longer trusted.</div>
+    </div>
+
+    <div class="page-card" id="page-admin-system-config">
+      <div class="page-card-head"><span class="page-name">System Configuration</span><span class="page-route">/dashboard/admin/system-config</span></div>
+      <p class="page-purpose">Rotate server-wide encrypted API keys without SSH. Currently supports Groq, Finnhub, Anthropic.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li>One row per known key with last-4-char mask + source badge (DB / ENV fallback / Not set).</li>
+        <li>"Updated by … X ago" metadata per row.</li>
+      </ul>
+      <h4>Buttons &amp; controls</h4>
+      <ul>
+        <li><strong>Replace</strong> button → opens a paste modal.</li>
+        <li><strong>Test before save</strong> — hits the live provider with a 1-token ping using the candidate key. Returns ✓ or specific error. Value is NOT persisted.</li>
+        <li><strong>Save</strong> — encrypts (AES-256-GCM), upserts into the <code>system_config</code> table, invalidates the 60s in-memory cache, writes a hash-chained <code>SYSTEM_CONFIG_UPDATED</code> audit row (metadata records key name + actor + whether prior value existed, never the value itself).</li>
+      </ul>
+      <div class="gotcha"><strong>Server-wide:</strong> these keys are shared by every user. One Groq key powers AI for the whole deployment. Per-user overrides are a deferred design — see <code>docs/future-ideas.md</code>.</div>
+      <div class="gotcha"><strong>Finnhub caveat:</strong> the Finnhub client reads its key once at process boot. Rotating <code>FINNHUB_API_KEY</code> via this UI requires an app restart for the trading engine + per-symbol routes to pick up the new value. The LLM path is fully async and refreshes within the 60s cache window.</div>
+    </div>
+  </section>
+
+  <!-- ===== PUBLIC SURFACES ===== -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-num">PUB</div>
+      <h2>Public surfaces (no auth)</h2>
+    </div>
+
+    <div class="page-card" id="page-login">
+      <div class="page-card-head"><span class="page-name">Login</span><span class="page-route">/login</span></div>
+      <p class="page-purpose">Email + password authentication. Rate-limited (3-5 req per 10s). Successful login writes <code>auth.login_success</code> audit; failures write <code>auth.login_failed</code> with the attacker IP.</p>
+    </div>
+
+    <div class="page-card" id="page-register">
+      <div class="page-card-head"><span class="page-name">Register</span><span class="page-route">/register?token=...</span></div>
+      <p class="page-purpose">Invite-only. Without a valid <code>?token=</code>, shows "Invite Required." Token is generated by admin via /dashboard/admin → Invitations.</p>
+    </div>
+
+    <div class="page-card" id="page-terms">
+      <div class="page-card-head"><span class="page-name">Terms of Service</span><span class="page-route">/terms</span></div>
+      <p class="page-purpose">Public legal document. Click-through acceptance modal blocks the dashboard until accepted. <code>TERMS_VERSION</code> bumping forces re-acceptance.</p>
+    </div>
+
+    <div class="page-card" id="page-risk">
+      <div class="page-card-head"><span class="page-name">Risk Disclosure</span><span class="page-route">/risk</span></div>
+      <p class="page-purpose">Public risk-disclosure page covering trading risk, AI-not-financial-advice disclaimers, paper-vs-live distinctions.</p>
+    </div>
+
+    <div class="page-card" id="page-shared-watchlist">
+      <div class="page-card-head"><span class="page-name">Shared Watchlist</span><span class="page-route">/w/[token]</span></div>
+      <p class="page-purpose">Public read-only view of a watchlist. Token-gated — anyone with the URL can view, but only the owner can add/remove symbols. Revocable per-list.</p>
+    </div>
+  </section>
+
+  <!-- ===== GLOSSARY ===== -->
+  <section class="section" id="glossary">
+    <div class="section-header">
+      <div class="section-num">GLOSSARY</div>
+      <h2>Internal terms</h2>
+    </div>
+
+    <p>Sentinel-specific or trading-specific terms that appear throughout the UI and these docs.</p>
+
+    <div class="concept">
+      <div class="concept-title">Boot equity</div>
+      <p>Equity captured when the engine starts. Used as the baseline for the 50% equity-collapse tripwire. Re-snapshots at every new trading day so the tripwire stays calibrated as the account grows.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Position map</div>
+      <p>The engine's in-memory map of <code>symbol → TrackedPosition</code>. Updated from broker on every scan (<code>syncPositionMapFromBroker</code>). The dashboard always reads this, but the broker is the source of truth — if they ever diverge, the broker wins.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Hybrid signal</div>
+      <p>The final signal that flows from analyzer → engine. Combines: technical analysis (EMA crosses, RSI, MACD, volume), sentiment (Finnhub social), options flow (unusual call/put ratios), analyst recommendations, AI scoring (Groq adjusts confidence ±0.20). Each layer can be turned on/off per pipeline.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Screener</div>
+      <p>Server-side market scanner. Scans the full S&amp;P 500 every 5 minutes, returns symbols matching active filters. Pure technical — does NOT run sentiment / options / analyst layers (those serialize through Finnhub's rate limit and would make scans 15-45 min instead of 30-60s). The engine re-applies hybrid layers when it processes screener-pushed signals.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Optimizer</div>
+      <p>Genetic algorithm that evolves the 8 strategy parameters against 5 years of S&amp;P 500 history. Walk-forward validated. Output feeds the <code>optimized</code> engine mode. Admin-only to run; results are shared globally.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">MTM (§475(f) Mark-to-Market)</div>
+      <p>An IRS election that lets active traders (1) treat trading gains/losses as ordinary income instead of capital gains, and (2) be exempt from wash-sale rules. Election must be made at year-start. Sentinel self-attestation drives wash-sale protection on/off — DOES NOT file or validate the election. Talk to a CPA.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">PDT (Pattern Day Trader)</div>
+      <p>FINRA rule: if equity &lt; $25k AND ≥4 day-trades in 5 business days, the broker locks the account. Sentinel auto-detects equity threshold, refuses to start intraday mode below $25k, blocks new BUYs at 3+ daytrades (one shy of the limit). SELLs are always allowed — exits override PDT.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Wash sale</div>
+      <p>IRS §1091: selling at a loss and buying a "substantially identical" security within 30 days disallows the loss for tax purposes. Sentinel's wash-sale protection blocks BUYs on any symbol with a losing exit in the last 31 calendar days. Symbol-level, not lot-level — over-conservative but simpler. Disabled when MTM is elected.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Trailing stop (dynamic)</div>
+      <p>Stop-loss that tightens exponentially as profit grows. At entry: ~10% trail (disaster stop). At 30% profit: ~3.7% trail (locks in ~26%). At 50% profit: ~2.4% trail (locks in ~48%). Sentinel pushes the actual stop to the broker on every scan so it's enforced even if Sentinel crashes.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Sector exposure cap</div>
+      <p>Risk-profile setting that refuses BUYs that would push any sector over <code>cap × equity</code>. E.g. cap=0.25 means no more than 25% of equity in any single sector. Calculated from live broker position values.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Earnings blackout</div>
+      <p>Risk-profile setting that skips BUYs within N trading days of a symbol's earnings release. Reduces gap risk. Default: disabled.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Hash chain (audit log)</div>
+      <p>Every audit row's hash includes the previous row's hash. To tamper with a single row, you'd need to recompute every subsequent row's hash. Verify chain button walks the entire log in id order, recomputes each hash, reports first mismatch.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Hybrid signal vs technical signal</div>
+      <p>The screener emits pure technical signals (fast scans). The engine re-runs analysis with hybrid layers (sentiment, options flow, analyst, AI scoring) before deciding whether to actually buy. Both use the same <code>analyzeBars()</code> core — the engine just layers more context on top.</p>
+    </div>
+
+    <div class="concept">
+      <div class="concept-title">Engine-gated</div>
+      <p>Operations refused while the engine is running, returning 409 <code>ENGINE_RUNNING</code>: manual order placement, broker connection switching. Prevents the in-memory position map from drifting from the broker. Stop the engine first.</p>
+    </div>
+  </section>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <p><span class="brand">Sentinel</span> &mdash; Platform Reference v1 &middot; 2026-05-12</p>
+    <p style="margin-top:6px">Engine internals: <a href="engine-ruleset.html">engine-ruleset.html</a> &middot; Financial education: <a href="/dashboard/education">/dashboard/education</a></p>
+    <p style="margin-top:14px;font-size:0.78rem">This is a user reference for an authorized in-house deployment of Sentinel. Sentinel is not a registered investment adviser; nothing here is financial advice. AI summaries and signal evaluations are tools — final trading decisions are yours.</p>
+  </footer>
+
+</div>
+</body>
+</html>
