@@ -16,7 +16,26 @@ import {
   X,
   ChevronUp,
   ChevronDown,
+  GripVertical,
 } from "lucide-react";
+// Phase 9 — drag-and-drop on dashboard widgets
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 // Widget component imports
 import { WatchlistWidget } from "./widgets/watchlist-widget";
@@ -113,6 +132,15 @@ export function WidgetGrid({ editMode, onLayoutChange }: WidgetGridProps) {
     load();
   }, [onLayoutChange]);
 
+  // Phase 9 — dnd-kit sensors. Must be declared BEFORE any conditional
+  // return (rules-of-hooks) so they're called the same way every render.
+  // PointerSensor 8px activation distance prevents accidental drag on click.
+  // KeyboardSensor enables Tab+Space pickup and arrow-key navigation.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
   // Save layout to API
   const saveLayout = useCallback(async (newIds: string[]) => {
     setSaving(true);
@@ -199,52 +227,40 @@ export function WidgetGrid({ editMode, onLayoutChange }: WidgetGridProps) {
     );
   }
 
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = widgetIds.indexOf(active.id as string);
+    const newIndex = widgetIds.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const newIds = arrayMove(widgetIds, oldIndex, newIndex);
+    setWidgetIds(newIds);
+    onLayoutChange?.(newIds);
+    saveLayout(newIds);
+  }
+
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-4">
-        {widgetIds.map((id, index) => {
-          const def = getWidgetDefinition(id);
-          if (!def) return null;
-
-          return (
-            <WidgetWrapper
-              key={id}
-              title={def.name}
-              size={def.defaultSize}
-              editMode={editMode}
-              index={index}
-              onRemove={() => handleRemove(id)}
-              headerAction={
-                editMode ? (
-                  <div className="flex items-center gap-0.5">
-                    <button
-                      onClick={() => handleMoveUp(index)}
-                      disabled={index === 0}
-                      className="p-1 rounded text-text-muted hover:text-text-primary
-                        disabled:opacity-30 transition-colors min-h-[28px] min-w-[28px]
-                        flex items-center justify-center"
-                      aria-label="Move up"
-                    >
-                      <ChevronUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleMoveDown(index)}
-                      disabled={index === widgetIds.length - 1}
-                      className="p-1 rounded text-text-muted hover:text-text-primary
-                        disabled:opacity-30 transition-colors min-h-[28px] min-w-[28px]
-                        flex items-center justify-center"
-                      aria-label="Move down"
-                    >
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : undefined
-              }
-            >
-              {renderWidget(def)}
-            </WidgetWrapper>
-          );
-        })}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={widgetIds} strategy={rectSortingStrategy}>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-4">
+            {widgetIds.map((id, index) => {
+              const def = getWidgetDefinition(id);
+              if (!def) return null;
+              return (
+                <SortableWidget
+                  key={id}
+                  id={id}
+                  def={def}
+                  index={index}
+                  total={widgetIds.length}
+                  editMode={editMode}
+                  onRemove={() => handleRemove(id)}
+                  onMoveUp={() => handleMoveUp(index)}
+                  onMoveDown={() => handleMoveDown(index)}
+                />
+              );
+            })}
 
         {/* Add widget button — fills remaining columns */}
         {editMode && availableWidgets.length > 0 && (
@@ -267,7 +283,9 @@ export function WidgetGrid({ editMode, onLayoutChange }: WidgetGridProps) {
             </button>
           </div>
         )}
-      </div>
+          </div>
+        </SortableContext>
+      </DndContext>
 
       {/* Empty state */}
       {widgetIds.length === 0 && (
@@ -360,6 +378,98 @@ export function WidgetGrid({ editMode, onLayoutChange }: WidgetGridProps) {
           <span className="text-xs text-text-secondary">Saving...</span>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Phase 9 — sortable widget wrapper. Renders a single dashboard widget that
+ * can be dragged via @dnd-kit. Drag handle is the grip icon, visible only in
+ * edit mode. The chevrons are kept as a keyboard-accessible fallback in case
+ * the user prefers click-to-move (also useful on touch when drag may conflict
+ * with scroll).
+ */
+function SortableWidget({
+  id,
+  def,
+  index,
+  total,
+  editMode,
+  onRemove,
+  onMoveUp,
+  onMoveDown,
+}: {
+  id: string;
+  def: WidgetDefinition;
+  index: number;
+  total: number;
+  editMode: boolean;
+  onRemove: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled: !editMode,
+  });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 10 : "auto",
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={def.defaultSize === "full" ? "col-span-full" : def.defaultSize === "lg" ? "col-span-1 md:col-span-2 2xl:col-span-3" : def.defaultSize === "md" ? "col-span-1 md:col-span-2 2xl:col-span-2" : "col-span-1"}>
+      <WidgetWrapper
+        title={def.name}
+        size={def.defaultSize}
+        editMode={editMode}
+        index={index}
+        onRemove={onRemove}
+        className=""
+        headerAction={
+          editMode ? (
+            <div className="flex items-center gap-0.5">
+              {/* Drag handle — main interaction in edit mode */}
+              <button
+                {...attributes}
+                {...listeners}
+                className="p-1 rounded text-text-muted hover:text-text-primary cursor-grab active:cursor-grabbing
+                  min-h-[28px] min-w-[28px] flex items-center justify-center touch-none"
+                aria-label={`Drag to reorder ${def.name}`}
+                title="Drag to reorder"
+              >
+                <GripVertical className="w-3.5 h-3.5" />
+              </button>
+              {/* Chevrons — accessible fallback */}
+              <button
+                onClick={onMoveUp}
+                disabled={index === 0}
+                className="p-1 rounded text-text-muted hover:text-text-primary
+                  disabled:opacity-30 transition-colors min-h-[28px] min-w-[28px]
+                  flex items-center justify-center"
+                aria-label="Move up"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={onMoveDown}
+                disabled={index === total - 1}
+                className="p-1 rounded text-text-muted hover:text-text-primary
+                  disabled:opacity-30 transition-colors min-h-[28px] min-w-[28px]
+                  flex items-center justify-center"
+                aria-label="Move down"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : undefined
+        }
+      >
+        {renderWidget(def)}
+      </WidgetWrapper>
     </div>
   );
 }
