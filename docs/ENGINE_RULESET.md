@@ -604,7 +604,7 @@ Append-only, hash-chained record of every privileged action. Schema in `drizzle/
 - **B. Code revert**: `git revert` phase commits in reverse order (4 → 3 → 2). Migrations stay. **Do not revert Phase 1** — it would re-introduce the silent-plaintext decrypt fallback.
 - **C. Migration drop**: `DROP TABLE audit_log` and/or `ALTER TABLE user_risk_profiles DROP COLUMN ...`. Almost never needed. **Must pair with code revert** or `loadRiskLimits()` crashes. For audit_log: `TRUNCATE` is the clean reset (next write becomes genesis). Do NOT `DELETE WHERE id < N` — breaks the chain forever.
 
-See `engine-ruleset.html` (sections 16-20) and `CLAUDE.md` § Live Trading for full detail.
+See `public/docs/engine-ruleset.html` (sections 16-20) and `CLAUDE.md` § Live Trading for full detail. The HTML is served at `/docs/engine-ruleset.html` on any deployment.
 
 ## AI Provider & System Configuration
 
@@ -656,6 +656,6 @@ Migration `0029_engine_intelligence.sql` added three columns to `user_risk_profi
 - **P&L heatmap widget.** New `pnl-heatmap-widget` registered. Reads `/api/performance/attribution`. Top-5 symbols by realized $ with proportional bars.
 - **Deferred:** adaptive mode auto-switching (column shipped, no consumer wired yet); engine dry-run mode.
 
-See `engine-ruleset.html` (web view of this doc) for the same content in HTML form. Both files are intentionally kept in sync — edit one, mirror to the other.
+See `public/docs/engine-ruleset.html` (web view of this doc, served at `/docs/engine-ruleset.html` on any deployment) for the same content in HTML form. Both files are intentionally kept in sync — edit one, mirror to the other.
 
 **Last revised:** 2026-05-12 (post-marathon doc sweep).
