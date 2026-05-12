@@ -189,16 +189,39 @@ export async function GET() {
     // Get tracked stop/target data from engine's in-memory position map
     const trackedData = getTrackedPositionData(session.userId);
 
+    // Build a broker-side stop map from the user's resting open sell-stop
+    // orders. This is the *actual* live trailing stop sitting on Alpaca —
+    // the engine's syncBrokerStops() ratchets it up as positions trail.
+    // We prefer it over the in-memory `pos.stopLoss` because that field
+    // may be stale right after a server restart, before the next scan
+    // syncs in-memory to broker.
+    const brokerStopMap = new Map<string, number>();
+    for (const o of brokerOpenOrders) {
+      if (o.type === "stop" && o.side === "sell" && o.stopPrice) {
+        const v = parseFloat(o.stopPrice);
+        if (!isNaN(v)) brokerStopMap.set(o.symbol, v);
+      }
+    }
+    function effectiveStop(symbol: string): number | null {
+      const tracked = trackedData.get(symbol);
+      const broker = brokerStopMap.get(symbol);
+      // The truth lives on the broker. Take the max of broker + tracked so
+      // we never display a number lower than what's actually resting.
+      if (broker != null && tracked?.stopLoss != null) {
+        return Math.max(broker, tracked.stopLoss);
+      }
+      return broker ?? tracked?.stopLoss ?? null;
+    }
+
     if (brokerPositions.length > 0) {
-      // Live broker data — merge with engine's tracked stop prices
+      // Live broker data — merge with the highest known stop (trailing)
       finalPositions = brokerPositions.map((p) => {
-        const tracked = trackedData.get(p.symbol);
         return {
           symbol: p.symbol, quantity: p.qty, qty: p.qty,
           entryPrice: p.avgEntryPrice, currentPrice: p.currentPrice,
           unrealizedPnl: p.unrealizedPnl, pnl: p.unrealizedPnl,
           marketValue: p.marketValue,
-          stopPrice: tracked?.stopLoss ?? null,
+          stopPrice: effectiveStop(p.symbol),
           updatedAt: new Date().toISOString(),
         };
       });
@@ -209,13 +232,12 @@ export async function GET() {
         positionsStale = true;
         positionsAgeSeconds = Math.floor((Date.now() - cached.fetchedAt.getTime()) / 1000);
         finalPositions = cached.positions.map((p) => {
-          const tracked = trackedData.get(p.symbol);
           return {
             symbol: p.symbol, quantity: p.qty, qty: p.qty,
             entryPrice: p.avgEntryPrice, currentPrice: p.currentPrice,
             unrealizedPnl: p.unrealizedPnl, pnl: p.unrealizedPnl,
             marketValue: p.marketValue,
-            stopPrice: tracked?.stopLoss ?? null,
+            stopPrice: effectiveStop(p.symbol),
             updatedAt: cached.fetchedAt.toISOString(),
           };
         });
