@@ -98,6 +98,7 @@ interface TraderData {
     status: string;
     pnl: number | null;
     traderTimestamp: string;
+    aiSummary?: string | null;
   }>;
   signals: Array<{
     id: string;
@@ -203,6 +204,10 @@ export default function TraderPage() {
   });
   const [riskSaving, setRiskSaving] = useState(false);
   const [riskSaved, setRiskSaved] = useState(false);
+
+  // Phase 18 — AI trade summary UI state
+  const [summarizing, setSummarizing] = useState<Set<string>>(new Set());
+  const [summaryByTradeId, setSummaryByTradeId] = useState<Record<string, string>>({});
 
   // Phase 5 — MTM election state, loaded from /api/tax-status
   const [taxStatus, setTaxStatus] = useState<TaxStatus | null>(null);
@@ -889,28 +894,63 @@ export default function TraderPage() {
           {trades.length === 0 ? (
             <p className="text-sm text-text-muted py-4 text-center">No trades yet</p>
           ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
               {trades.map((t) => (
-                <div
-                  key={t.id}
-                  className="flex items-center gap-3 p-2 rounded-lg bg-bg-elevated"
-                >
-                  <Badge variant={t.action === "BUY" ? "bullish" : "bearish"}>{t.action}</Badge>
-                  <span className="text-sm font-mono font-medium">{t.symbol}</span>
-                  <span className="text-xs font-mono text-text-muted">{t.quantity} shares</span>
-                  <Badge variant={
-                    t.status === "FILLED" ? "bullish"
-                    : t.status === "REJECTED" ? "bearish"
-                    : "neutral"
-                  }>{t.status}</Badge>
-                  {(t.pnl ?? 0) != null && (
-                    <span className={`text-xs font-mono ml-auto ${(t.pnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-                      {(t.pnl ?? 0) >= 0 ? "+" : ""}${(t.pnl ?? 0).toFixed(2)}
+                <div key={t.id} className="rounded-lg bg-bg-elevated">
+                  <div className="flex items-center gap-3 p-2">
+                    <Badge variant={t.action === "BUY" ? "bullish" : "bearish"}>{t.action}</Badge>
+                    <span className="text-sm font-mono font-medium">{t.symbol}</span>
+                    <span className="text-xs font-mono text-text-muted">{t.quantity} shares</span>
+                    <Badge variant={
+                      t.status === "FILLED" ? "bullish"
+                      : t.status === "REJECTED" ? "bearish"
+                      : "neutral"
+                    }>{t.status}</Badge>
+                    {(t.pnl ?? 0) != null && (
+                      <span className={`text-xs font-mono ml-auto ${(t.pnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+                        {(t.pnl ?? 0) >= 0 ? "+" : ""}${(t.pnl ?? 0).toFixed(2)}
+                      </span>
+                    )}
+                    <span className="text-xs text-text-muted">
+                      {timeAgo(t.traderTimestamp)}
                     </span>
+                    <button
+                      onClick={async () => {
+                        const tradeId = t.id;
+                        setSummarizing((prev) => new Set(prev).add(tradeId));
+                        try {
+                          const res = await fetch("/api/trader/summarize-trade", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ tradeId }),
+                          });
+                          if (res.ok) {
+                            const data = await res.json();
+                            setSummaryByTradeId((prev) => ({ ...prev, [tradeId]: data.summary }));
+                          }
+                        } catch { /* ignore */ } finally {
+                          setSummarizing((prev) => {
+                            const next = new Set(prev);
+                            next.delete(tradeId);
+                            return next;
+                          });
+                        }
+                      }}
+                      disabled={summarizing.has(t.id)}
+                      className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded
+                        text-text-muted hover:text-accent hover:bg-accent/10
+                        disabled:opacity-50 transition-colors"
+                      title="AI summary of this trade"
+                    >
+                      {summarizing.has(t.id) ? "..." : (summaryByTradeId[t.id] || t.aiSummary) ? "↻" : "AI ✨"}
+                    </button>
+                  </div>
+                  {(summaryByTradeId[t.id] || t.aiSummary) && (
+                    <div className="px-3 pb-2 text-xs text-text-secondary leading-relaxed border-t border-border/30 pt-2">
+                      <span className="text-[10px] uppercase tracking-wider text-text-muted mr-2">summary</span>
+                      {summaryByTradeId[t.id] || t.aiSummary}
+                    </div>
                   )}
-                  <span className="text-xs text-text-muted ml-auto">
-                    {timeAgo(t.traderTimestamp)}
-                  </span>
                 </div>
               ))}
             </div>
