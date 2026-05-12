@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { WidgetGrid } from "@/components/dashboard/widget-grid";
+import { WidgetGrid, type WidgetEntry } from "@/components/dashboard/widget-grid";
+import { LayoutSwitcher } from "@/components/dashboard/layout-switcher";
 import { Button } from "@/components/ui/button";
-import { DEFAULT_LAYOUT } from "@/lib/widget-registry";
 import {
   Pencil,
   Check,
@@ -12,7 +12,10 @@ import {
 
 export default function DashboardPage() {
   const [editMode, setEditMode] = useState(false);
-  const [activeWidgetIds, setActiveWidgetIds] = useState<string[]>(DEFAULT_LAYOUT);
+  const [activeEntries, setActiveEntries] = useState<WidgetEntry[]>([]);
+  // Bumped by the layout switcher whenever it changes the default — the grid
+  // watches refreshKey via useEffect and re-fetches /api/dashboard/layout.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -24,7 +27,11 @@ export default function DashboardPage() {
             Live market context, execution tools, and the modules you use.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <LayoutSwitcher
+            currentEntries={activeEntries}
+            onChanged={() => setRefreshKey((k) => k + 1)}
+          />
           <Button
             variant={editMode ? "primary" : "outline"}
             size="md"
@@ -51,12 +58,17 @@ export default function DashboardPage() {
           <Pencil className="h-4 w-4 shrink-0 text-accent" />
           <p className="text-sm text-text-secondary">
             <span className="font-medium text-accent">Layout mode</span>{" "}
-            &mdash; add, remove, and reorder modules.
+            &mdash; drag to reorder, click the resize icon to cycle sizes, or
+            use the layout menu to save this view.
           </p>
         </div>
       )}
 
-      <WidgetGrid editMode={editMode} onLayoutChange={setActiveWidgetIds} />
+      <WidgetGrid
+        editMode={editMode}
+        refreshKey={refreshKey}
+        onLayoutChange={setActiveEntries}
+      />
     </div>
   );
 }
