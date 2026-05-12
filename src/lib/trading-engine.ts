@@ -3492,6 +3492,9 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
             symbol, side: "sell", qty: String(pos.qty),
             type: "stop", timeInForce: "gtc", stopPrice: targetStop.toFixed(2),
           });
+          // Sync in-memory stopLoss so the dashboard reads the actual live
+          // stop, not the original disaster-stop value
+          pos.stopLoss = targetStop;
           updated++;
           log.info(
             { symbol, stopPrice: targetStop.toFixed(2), peakPrice: pos.peakPrice.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
@@ -3504,6 +3507,15 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
           );
         }
         continue;
+      }
+
+      // Reconcile in-memory stopLoss with the actual broker stop even when
+      // we're not pushing an update — the broker might have a more recent
+      // value than our memory if a previous run placed/replaced it and we
+      // restarted, or if pos.stopLoss was initialized to the original
+      // disaster level and never overwritten.
+      if (existing.stopPrice > pos.stopLoss) {
+        pos.stopLoss = existing.stopPrice;
       }
 
       // Only ratchet UP — never lower the stop
@@ -3526,6 +3538,8 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
 
       try {
         await client.replaceOrder!(existing.id, { stopPrice: targetStop.toFixed(2) });
+        // Sync in-memory after a successful broker update
+        pos.stopLoss = targetStop;
         updated++;
         log.info(
           { symbol, oldStop: existing.stopPrice.toFixed(2), newStop: targetStop.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
