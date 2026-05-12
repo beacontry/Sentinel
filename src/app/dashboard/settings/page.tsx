@@ -14,8 +14,13 @@ import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import {
   Webhook, Plus, Trash2, TestTube, Check, X, Shield,
-  Link, Unlink, Pencil, CircleDot, Zap,
+  Link, Unlink, Pencil, CircleDot, Zap, Sliders,
 } from "lucide-react";
+import {
+  useDisplayPrefs,
+  LANDING_PAGES,
+  type LandingPage,
+} from "@/components/display-prefs-provider";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -108,6 +113,17 @@ const BROKER_FIELD_LABELS: Record<string, { apiKey: string; apiSecret: string; h
 // ─── Page ───────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const {
+    pnlFormat,
+    setPnlFormat,
+    timeFormat,
+    setTimeFormat,
+    colorBlindMode,
+    setColorBlindMode,
+    landingPage,
+    setLandingPage,
+  } = useDisplayPrefs();
+
   // Webhook state
   const [webhooks, setWebhooks] = useState<DiscordWebhook[]>([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -789,6 +805,87 @@ export default function SettingsPage() {
             lots + wash-sale flags. Wash-sale rule is applied at symbol level only — substantially-identical ETF
             cross-matches (SPY↔IVV) are NOT detected. If you elected §475(f) MTM, disregard the wash-sale column.
             Always review with a CPA before filing.
+          </div>
+        </div>
+      </Card>
+
+      {/* Display Preferences */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sliders className="w-4 h-4 text-accent" />
+            Display preferences
+          </CardTitle>
+        </CardHeader>
+        <p className="text-xs text-text-muted mb-4">
+          Per-device settings stored in your browser. Affects how numbers, times,
+          and colors are rendered across the app.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* P&L format */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-text-secondary">P&L format</label>
+            <div className="flex gap-0.5 rounded-lg border border-border bg-bg-secondary p-0.5">
+              {(["dollar", "percent", "both"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setPnlFormat(v)}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors
+                    ${pnlFormat === v
+                      ? "bg-bg-elevated text-text-primary"
+                      : "text-text-muted hover:text-text-secondary"
+                    }`}
+                >
+                  {v === "dollar" ? "Dollars" : v === "percent" ? "Percent" : "Both"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Time format */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-text-secondary">Time format</label>
+            <div className="flex gap-0.5 rounded-lg border border-border bg-bg-secondary p-0.5">
+              {(["12h", "24h"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setTimeFormat(v)}
+                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors
+                    ${timeFormat === v
+                      ? "bg-bg-elevated text-text-primary"
+                      : "text-text-muted hover:text-text-secondary"
+                    }`}
+                >
+                  {v === "12h" ? "12-hour" : "24-hour"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Default landing page */}
+          <div className="space-y-1.5 sm:col-span-2">
+            <Select
+              label="Default page after login"
+              value={landingPage}
+              onChange={(v) => setLandingPage(v as LandingPage)}
+              options={LANDING_PAGES.map((p) => ({ value: p.value, label: p.label }))}
+            />
+          </div>
+
+          {/* Color-blind mode */}
+          <div className="sm:col-span-2 flex items-start justify-between gap-3 rounded-lg border border-border bg-bg-secondary p-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-text-primary">Color-blind palette</div>
+              <p className="text-xs text-text-muted mt-0.5">
+                Swap bullish/bearish to a deuteranopia-friendly blue/orange (Wong palette).
+                Affects every $/%, badge, and chart color across the app.
+              </p>
+            </div>
+            <Toggle
+              checked={colorBlindMode}
+              onCheckedChange={(v) => setColorBlindMode(v)}
+              aria-label="Toggle color-blind palette"
+            />
           </div>
         </div>
       </Card>
