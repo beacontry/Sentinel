@@ -20,25 +20,17 @@ export function MarketOverviewWidget() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/screener");
+        // Phase 9 — source from /api/breadth which computes per-symbol change%
+        // from (lastClose - prevClose) / prevClose. The screener cache doesn't
+        // carry change data, which is why this widget showed 0.0% everywhere.
+        const res = await fetch("/api/breadth");
         if (!res.ok) throw new Error("Failed");
-        const data = await res.json();
-        const results = data.results ?? [];
-
-        // Sort by change percentage (derived from price data if available)
-        const withChange = results
-          .filter((r: { symbol: string; price: number; change?: number }) => r.price > 0)
-          .map((r: { symbol: string; price: number; change?: number }) => ({
-            symbol: r.symbol,
-            change: r.change ?? 0,
-            price: r.price,
-          }));
-
-        const sorted = [...withChange].sort(
-          (a: MarketMover, b: MarketMover) => b.change - a.change
-        );
-        setGainers(sorted.slice(0, 5));
-        setLosers(sorted.slice(-5).reverse());
+        const data: { topGainers?: MarketMover[]; topLosers?: MarketMover[] } = await res.json();
+        // Defensive: server returns changePct, type expects change — normalize
+        const norm = (rows: { symbol: string; changePct?: number; change?: number }[]) =>
+          (rows ?? []).map((r) => ({ symbol: r.symbol, change: r.changePct ?? r.change ?? 0 }));
+        setGainers(norm(data.topGainers ?? []));
+        setLosers(norm(data.topLosers ?? []));
       } catch {
         setError(true);
       } finally {

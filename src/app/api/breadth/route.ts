@@ -66,11 +66,14 @@ export async function GET() {
     let rsiCount = 0;
     let scanned = 0;
     const sectorData: Record<string, { advancers: number; decliners: number; changes: number[] }> = {};
+    // Phase 9 — per-symbol change% for the Market Overview widget
+    const allMovers: { symbol: string; changePct: number }[] = [];
 
     for (const r of results) {
       if (r.status !== "fulfilled" || !r.value) continue;
       const v = r.value;
       scanned++;
+      allMovers.push({ symbol: v.symbol, changePct: v.change * 100 });
 
       if (v.change > 0.001) advancers++;
       else if (v.change < -0.001) decliners++;
@@ -107,10 +110,16 @@ export async function GET() {
         : 0,
     })).sort((a, b) => b.avgChange - a.avgChange);
 
+    // Phase 9 — top 5 gainers / losers for the Market Overview widget
+    const sortedMovers = [...allMovers].sort((a, b) => b.changePct - a.changePct);
+    const topGainers = sortedMovers.slice(0, 5);
+    const topLosers = sortedMovers.slice(-5).reverse();
+
     return NextResponse.json({
       scanned, advancers, decliners, unchanged,
       pctAbove50, pctAbove200, avgRSI, breadthScore,
       marketStatus, bySector,
+      topGainers, topLosers,
     }, {
       headers: { "Cache-Control": "private, max-age=300" },
     });
