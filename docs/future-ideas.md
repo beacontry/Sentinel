@@ -272,3 +272,57 @@ Found during the cross-app QoL pass. These are L-sized features that need their 
 ## 2026-05-12 — Pruned
 
 Removed: "Path to Live Trading — Today / This Week" — referenced specific stale commits (`565fd76`, `b2a8d06`) and one-off operational items (APA short cleanup) that are no longer relevant. The "Before Live (the actual gate)" checklist remains as the still-valid pre-live gate.
+
+---
+
+## 2026-05-12 — UI-lie bug audit (25 findings)
+
+Catalog of bugs where the UI shows a frozen / stale / drifted value while the real source-of-truth has been updating correctly. Triaged after fixing the original case (Trader page Stop column displaying the entry-time disaster stop while the real trailing stop was correctly ratcheting up on Alpaca — commit `00131db`).
+
+### Money / safeguard bugs (high priority)
+
+1. **`__brokerPositionCache` 15-min stale lag.** Dashboard reads from a cache that's only refreshed during engine scans (every 15 min). If the user manually closes a position on Alpaca, the dashboard shows it as still open for up to 15 minutes. Fix: invalidate-on-fetch OR a 60s TTL on the cache.
+2. **`engine.pdtDayTradeCount` frozen between scans.** A second day-trade made within a 15-min window evaluates against stale PDT state and gets allowed even when it shouldn't. Fix: re-call `evaluatePdtState()` on every position exit, not just main-scan boundaries.
+3. **`engine.dailyNotional` doesn't reset at midnight if engine stops + restarts the next day.** Yesterday's notional accumulates into today's cap. Fix: compare ET date at scan start, reset on date change. Schedule a guaranteed midnight reset.
+4. **`engine.bootEquity` (Phase 3 50% equity-collapse tripwire) captured at engine start, never refreshed.** Over weeks/months of organic account growth, a normal drawdown could fire the tripwire. Fix: re-snapshot at every market-open boundary.
+5. **`washSaleBlockedSymbols` only refreshed once per full scan.** Closing a losing trade and re-entering within the same scan window won't be blocked. Fix: refresh-if-older-than-5-min on every BUY decision, not just scan boundary.
+6. **`engine.halted` state may not appear in UI until next DB heartbeat.** User sees engine running for up to ~5s after a real halt fires; could try to manually close positions during that gap and get mysterious failures. Fix: synchronous DB update on halt before returning from handler.
+7. **Two incompatible P&L sources mixed in dashboard.** When broker connected uses `unrealizedIntradayPnl`; when not connected uses DB `unrealizedPnl`. The two fields measure different things. Fix: never fall through if broker is unavailable — show "—" with a stale indicator instead.
+
+### Frozen-value bugs (medium priority)
+
+8. **`pos.takeProfit` set once at entry, never updated.** Trailing TP doesn't exist; the broker-side limit order (if any) stays at entry × (1 + tpPct). UI shows it as if it's current. Fix: either implement trailing TP, or relabel the field "fixed target" so users don't expect it to move.
+9. **`pos.trailingStopPct` captured at entry, never refreshed.** If user edits the strategy's trailing-stop %, existing positions still use the old value. Fix: re-resolve strategy in `syncBrokerStops()` every scan.
+10. **`pos.peakPrice` ratchets up only, never reset on quantity changes.** Partial close on broker leaves the peak referring to a price set when qty was higher; trailing % calculation is now off. Fix: reset peakPrice = currentPrice when qty drops by > 5%.
+11. **`pos.entryDate` set to `now()` when position discovered post-opening** (e.g. user buys manually on Alpaca, engine syncs it). Hold-period math wrong. Fix: pull broker order `createdAt` during sync.
+
+### Cache invalidation (medium priority)
+
+12. **`__earningsCache` / `__sentimentCache` / `__rsCache` day-based invalidation is fragile.** If server starts at 3am ET, cache marks "today" and never refreshes for >20 hours. Fix: timestamp-based TTL (6h) in addition to date check.
+13. **`__screenerCache.scannedAt` set at scan end.** During a 45-min scan, UI shows "last scanned 45 min ago" the whole time, then jumps to "now." Fix: set at scan start, expose both `scanStartedAt` and `scanCompletedAt`.
+14. **`engine.lastScanAt` ditto.** Same issue, smaller window.
+
+### Dual-source divergence (medium priority)
+
+15. **Position quantity in Open Positions vs Open Orders.** Live broker qty in Positions row, but stop order's qty (placed when position opened, frozen) shown in Orders row. Diverges on partial fills. Fix: `syncBrokerStops()` checks for qty mismatch and replaces the order.
+16. **Watchlist symbol count shown in 3 places** (sidebar widget, watchlists page, analysis page header) — different sources, different caches. Fix: centralize via React Query or SWR.
+17. **Win rate computed differently on Performance page vs Trader analytics card vs PerformanceWidget.** Same underlying data, three formulas. Fix: single helper in `src/lib/stats.ts`.
+
+### Preference propagation (low priority)
+
+18. **DisplayPrefs context change doesn't cause re-render in PositionDetailSheet** while it's open. The user toggles P&L format from sidebar; sheet behind it stays formatted in the old style until closed and reopened. Fix: verify the consumer is actually wrapped in the provider (it is) and re-renders on `pnlFormat` change (likely a stale-closure bug in `useEffect`).
+19. **Active watchlist switch doesn't refresh Analysis page filters.** Switching watchlists via the sidebar doesn't update the symbols shown on the analysis cockpit until refresh.
+
+### Timing / off-by-one (cosmetic)
+
+20. **`finalPositions[].updatedAt` set to "now" at dashboard fetch time**, not actual position update time. "Position opened 5m ago" actually means "we fetched 5m ago." Fix: separate `fetchedAt` from `positionUpdatedAt`.
+21. **`brokerConnections.lastConnectedAt` updated only after every action, not on initial connect verification.** Fix: write on first successful API call.
+22. **Recent-viewed history race condition** on same-symbol double-click → can lose the most-recent stamp. Use `sql\`now()\`` in upsert.
+
+### Dead code / structural
+
+23. **`traderPositions` DB table defined but never written.** Either populate it (so a "position history" view becomes possible) or delete the schema entry. Currently a footgun for anyone writing a new query.
+24. **`pos.stopLoss` reconciliation fix from commit `00131db` should be backported** to anywhere else that reads `pos.stopLoss` directly (audit needed — there were ~5 callsites at last check).
+25. **AI trade summary frozen at PENDING.** When the trade fills, summary still describes "pending." Fix: auto-regenerate on PENDING → FILLED transition (cheap — one Haiku call per fill, ~$0.003).
+
+**Recommended order to fix:** money bugs first (1–7), then frozen values (8–11), then caches (12–14). Dual-source and preferences can wait until they actually bite.
