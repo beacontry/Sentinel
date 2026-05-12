@@ -5,12 +5,14 @@ const useHttps = process.env.FORCE_HTTPS === "true";
 
 const csp = [
   "default-src 'self'",
-  // Next.js dev mode requires 'unsafe-eval' for hot reload
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  // Next.js dev mode requires 'unsafe-eval' for hot reload.
+  // Cloudflare Web Analytics injects beacon.min.js when CF Insights is enabled
+  // on the domain — allow its origins so the CSP doesn't block it.
+  `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data:",
   "font-src 'self' https://fonts.gstatic.com",
-  `connect-src 'self' https://query1.finance.yahoo.com https://finnhub.io${isDev ? " ws://localhost:* ws://127.0.0.1:*" : ""}`,
+  `connect-src 'self' https://query1.finance.yahoo.com https://finnhub.io https://cloudflareinsights.com${isDev ? " ws://localhost:* ws://127.0.0.1:*" : ""}`,
   "object-src 'none'",
   "form-action 'self'",
   "frame-ancestors 'none'",
