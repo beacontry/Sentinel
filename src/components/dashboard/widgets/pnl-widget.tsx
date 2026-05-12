@@ -5,15 +5,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DollarSign, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
-interface PnlData {
+interface TodayPnl {
   realizedPnl: number;
   unrealizedPnl: number;
   totalPnl: number;
   tradesCount: number;
 }
+interface LifetimePnl {
+  realizedPnl: number;
+  unrealizedPnl: number;
+  totalPnl: number;
+}
 
 export function PnlWidget() {
-  const [pnl, setPnl] = useState<PnlData | null>(null);
+  const [todayPnl, setTodayPnl] = useState<TodayPnl | null>(null);
+  const [lifetimePnl, setLifetimePnl] = useState<LifetimePnl | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -23,7 +29,8 @@ export function PnlWidget() {
         const res = await fetch("/api/trader/dashboard");
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
-        setPnl(data.todayPnl ?? null);
+        setTodayPnl(data.todayPnl ?? null);
+        setLifetimePnl(data.lifetimePnl ?? null);
       } catch {
         setError(true);
       } finally {
@@ -50,7 +57,7 @@ export function PnlWidget() {
     );
   }
 
-  if (!pnl) {
+  if (!todayPnl) {
     return (
       <div className="py-5 text-center">
         <DollarSign className="mx-auto mb-2 h-7 w-7 text-text-muted" />
@@ -65,7 +72,14 @@ export function PnlWidget() {
     );
   }
 
-  const isPositive = pnl.totalPnl >= 0;
+  // Big number: today's P&L (intraday change + today's realized)
+  // Card values: LIFETIME realized (banked) and LIFETIME unrealized (open positions)
+  // The breakdown cards used to be today's realized + today's intraday, which was
+  // confusing — they always summed to the big number. Lifetime totals give the
+  // important context of "what's banked + what's still riding."
+  const isPositive = todayPnl.totalPnl >= 0;
+  const realized = lifetimePnl?.realizedPnl ?? todayPnl.realizedPnl;
+  const unrealized = lifetimePnl?.unrealizedPnl ?? todayPnl.unrealizedPnl;
 
   return (
     <div>
@@ -75,7 +89,7 @@ export function PnlWidget() {
             isPositive ? "text-bullish" : "text-bearish"
           }`}
         >
-          {isPositive ? "+" : ""}${pnl.totalPnl.toFixed(2)}
+          {isPositive ? "+" : ""}${todayPnl.totalPnl.toFixed(2)}
         </p>
         <p className="mt-1 text-[10px] uppercase tracking-[0.08em] text-text-muted">
           Today&apos;s P&L
@@ -87,26 +101,28 @@ export function PnlWidget() {
           <p className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Realized</p>
           <p
             className={`font-mono text-[13px] font-medium ${
-              pnl.realizedPnl >= 0 ? "text-bullish" : "text-bearish"
+              realized >= 0 ? "text-bullish" : "text-bearish"
             }`}
           >
-            ${pnl.realizedPnl.toFixed(2)}
+            {realized >= 0 ? "+" : "-"}${Math.abs(realized).toFixed(2)}
           </p>
+          <p className="text-[9px] uppercase tracking-[0.12em] text-text-muted/70 mt-0.5">lifetime</p>
         </div>
         <div className="rounded-[10px] bg-bg-elevated px-2 py-1.5 text-center">
           <p className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Unrealized</p>
           <p
             className={`font-mono text-[13px] font-medium ${
-              pnl.unrealizedPnl >= 0 ? "text-bullish" : "text-bearish"
+              unrealized >= 0 ? "text-bullish" : "text-bearish"
             }`}
           >
-            ${pnl.unrealizedPnl.toFixed(2)}
+            {unrealized >= 0 ? "+" : "-"}${Math.abs(unrealized).toFixed(2)}
           </p>
+          <p className="text-[9px] uppercase tracking-[0.12em] text-text-muted/70 mt-0.5">open positions</p>
         </div>
       </div>
 
       <p className="mt-1.5 text-center text-[10px] uppercase tracking-[0.16em] text-text-muted">
-        {pnl.tradesCount} trade{pnl.tradesCount !== 1 ? "s" : ""} today
+        {todayPnl.tradesCount} trade{todayPnl.tradesCount !== 1 ? "s" : ""} today
       </p>
 
       <Link
