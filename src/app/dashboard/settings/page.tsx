@@ -703,6 +703,14 @@ export default function SettingsPage() {
         </ModalFooter>
       </Modal>
 
+      {/* Phase 19 — Leaderboard opt-in */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Leaderboard</CardTitle>
+        </CardHeader>
+        <LeaderboardSettings />
+      </Card>
+
       {/* Phase 15 — Export Data */}
       <Card>
         <CardHeader>
@@ -903,6 +911,90 @@ export default function SettingsPage() {
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+// ─── Phase 19 — Leaderboard opt-in settings ───────────────────────────
+
+function LeaderboardSettings() {
+  const [optIn, setOptIn] = useState<boolean | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/leaderboard/preferences")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) {
+          setOptIn(data.optIn ?? false);
+          setDisplayName(data.displayName ?? "");
+        } else {
+          setOptIn(false);
+        }
+      })
+      .catch(() => setOptIn(false));
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    setSaved(false);
+    try {
+      const res = await fetch("/api/leaderboard/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ optIn: optIn === true, displayName: displayName.trim() || null }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Failed" }));
+        setError(data.error ?? "Failed to save");
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (optIn === null) {
+    return <p className="text-sm text-text-muted">Loading…</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-text-secondary">
+        Show your realized P&amp;L ranking on the <a href="/dashboard/leaderboard" className="text-accent hover:text-accent-hover underline">/dashboard/leaderboard</a> page.
+        Email addresses are never displayed. You can use a custom anonymous handle.
+      </p>
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={optIn}
+          onChange={(e) => setOptIn(e.target.checked)}
+          className="h-4 w-4 rounded border-border accent-accent cursor-pointer"
+        />
+        <span className="text-sm">Show me on the leaderboard</span>
+      </label>
+      <Input
+        label="Display name (optional)"
+        placeholder="Leave blank to use your real name"
+        value={displayName}
+        onChange={(e) => setDisplayName(e.target.value)}
+        disabled={!optIn}
+      />
+      <div className="flex items-center gap-2">
+        <Button onClick={save} loading={saving} disabled={!saving && optIn === null}>
+          Save
+        </Button>
+        {saved && <span className="text-xs text-bullish">✓ Saved</span>}
+        {error && <span className="text-xs text-bearish">{error}</span>}
+      </div>
     </div>
   );
 }

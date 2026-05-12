@@ -24,6 +24,10 @@ export const users = pgTable("users", {
   // Phase 13 — per-user live-trading permission. Engine refuses live boot
   // when false even if ALLOW_LIVE_TRADING=1 is set on the server.
   liveTradingEnabled: boolean("live_trading_enabled").notNull().default(false),
+  // Phase 19 — opt-in leaderboard participation. Defaults false; user must
+  // explicitly opt in. display_name lets them appear as anonymous handle.
+  leaderboardOptIn: boolean("leaderboard_opt_in").notNull().default(false),
+  leaderboardDisplayName: text("leaderboard_display_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
