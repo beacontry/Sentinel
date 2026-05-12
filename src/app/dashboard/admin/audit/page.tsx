@@ -35,8 +35,11 @@ interface VerifyResult {
   break?: { brokenAtId: number; reason: string; expected: string; stored: string };
 }
 
+// Radix Select rejects empty-string values (collision with "clear selection"),
+// so use a sentinel "__all__" that the route treats as "no filter".
+const ALL_ACTIONS = "__all__";
 const ACTION_FILTER_OPTIONS = [
-  { value: "", label: "All actions" },
+  { value: ALL_ACTIONS, label: "All actions" },
   { value: "engine.started", label: "engine.started" },
   { value: "engine.stopped", label: "engine.stopped" },
   { value: "engine.halted", label: "engine.halted" },
@@ -78,7 +81,7 @@ export default function AuditLogPage() {
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [actionFilter, setActionFilter] = useState("");
+  const [actionFilter, setActionFilter] = useState(ALL_ACTIONS);
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -89,7 +92,7 @@ export default function AuditLogPage() {
     setError("");
     try {
       const params = new URLSearchParams({ limit: "100" });
-      if (actionFilter) params.set("action", actionFilter);
+      if (actionFilter && actionFilter !== ALL_ACTIONS) params.set("action", actionFilter);
       const res = await fetch(`/api/admin/audit?${params}`);
       if (res.status === 403) {
         setError("Admin access required");
