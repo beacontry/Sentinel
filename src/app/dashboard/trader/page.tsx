@@ -196,7 +196,21 @@ export default function TraderPage() {
   const [loading, setLoading] = useState(true);
   const [cmdLoading, setCmdLoading] = useState<string | null>(null);
   const [engineMode, setEngineMode] = useState<string>("optimized");
+  // Persist showRisk across reloads — power-user QoL. Reads from localStorage
+  // on mount (after hydration to avoid SSR mismatch) and writes on toggle.
   const [showRisk, setShowRisk] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setShowRisk(window.localStorage.getItem("sentinel-trader-show-risk") === "1");
+  }, []);
+  function setShowRiskPersisted(next: boolean) {
+    setShowRisk(next);
+    try {
+      window.localStorage.setItem("sentinel-trader-show-risk", next ? "1" : "0");
+    } catch {
+      // Quota — non-critical
+    }
+  }
   // Batch 2 — position detail side-sheet. Stores the symbol currently
   // open (or null). Click on any position row to populate.
   const [detailSymbol, setDetailSymbol] = useState<string | null>(null);
@@ -997,7 +1011,7 @@ export default function TraderPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setShowRisk(!showRisk)}
+              onClick={() => setShowRiskPersisted(!showRisk)}
             >
               <Settings className="w-4 h-4 text-text-muted" />
             </Button>

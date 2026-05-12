@@ -10,6 +10,7 @@ import { SessionGuard } from "@/components/session-guard";
 import { PinSetupBanner } from "@/components/pin-setup-banner";
 import { SafeguardsOnboardingModal } from "@/components/safeguards-onboarding-modal";
 import { DisplayPrefsProvider } from "@/components/display-prefs-provider";
+import { KeyboardShortcuts } from "@/components/layout/keyboard-shortcuts";
 
 export default function DashboardLayout({
   children,
@@ -26,6 +27,7 @@ export default function DashboardLayout({
               {children}
             </AppShell>
             <CommandPalette />
+            <KeyboardShortcuts />
             <CsrfInit />
             <SessionGuard />
             <SafeguardsOnboardingModal />
