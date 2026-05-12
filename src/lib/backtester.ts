@@ -23,6 +23,10 @@ export interface BacktestResult {
   lossCount: number;
   maxDrawdown: number;
   sharpeRatio: number;
+  // 2026-05-12 — extra risk-adjusted metrics
+  sortinoRatio: number;
+  calmarRatio: number;
+  marRatio: number;
   totalTrades: number;
 }
 
@@ -236,6 +240,36 @@ export function runBacktest(
     : 0;
   const sharpeRatio = stdDev > 0 ? (meanReturn / stdDev) * Math.sqrt(252) : 0;
 
+  // Sortino — like Sharpe but downside-only stdev. Same numerator
+  // (mean return), denominator built from negative returns only.
+  // Sample size in the denominator is the count of negative days, not
+  // the count of all days (matches the most common Sortino formulation).
+  const downside = portfolioReturns.filter((r) => r < 0);
+  const downsideStdDev =
+    downside.length > 1
+      ? Math.sqrt(
+          downside.reduce((sum, r) => sum + r * r, 0) / downside.length
+        )
+      : 0;
+  const sortinoRatio =
+    downsideStdDev > 0 ? (meanReturn / downsideStdDev) * Math.sqrt(252) : 0;
+
+  // Calmar — annualized return / max drawdown. Days-to-years scaling
+  // uses 252 trading days. Drawdown is already in percent so we keep
+  // the same units on both sides (drop totalReturn's percent normalization
+  // by dividing by 100 nowhere, just match).
+  const tradingDays = Math.max(1, portfolioReturns.length);
+  const annualizedReturn =
+    portfolioReturns.length > 0 && initialCash > 0
+      ? (Math.pow(cash / initialCash, 252 / tradingDays) - 1) * 100
+      : 0;
+  const calmarRatio = maxDrawdown > 0 ? annualizedReturn / maxDrawdown : 0;
+
+  // MAR — total return over the full track record / max drawdown. Same
+  // shape as Calmar but no annualization (useful when the backtest
+  // window is short and annualizing would extrapolate aggressively).
+  const marRatio = maxDrawdown > 0 ? totalReturn / maxDrawdown : 0;
+
   return {
     symbol,
     trades,
@@ -246,6 +280,9 @@ export function runBacktest(
     lossCount,
     maxDrawdown,
     sharpeRatio,
+    sortinoRatio,
+    calmarRatio,
+    marRatio,
     totalTrades: trades.length,
   };
 }
