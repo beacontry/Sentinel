@@ -185,3 +185,59 @@ Replace 15-min scan + 1-min quote polling with Alpaca's websocket market data st
 Periodically (weekly?) retrain the GA optimizer on the most recent N days of trader_trades data, refreshing the optimizer's preferred params. Adaptive to changing market regimes. Requires careful guard against overfitting to small N. Defer until live runs accumulate enough trade data. ~300 LOC + ops.
 
 **Why:** static GA params drift out-of-distribution as market regime changes. Continuous tuning keeps the engine current.
+
+---
+
+## 2026-05-12 — Competitive gap analysis triage
+
+Done a full audit comparing Sentinel against Robinhood / Webull / Wealthfront / Autopilot / eToro / IBKR. Items below were considered and **deferred** (parked here) or **declined** (won't build). Things being built next are NOT in this file — they're in commit/branch history.
+
+### Declined — won't build
+
+**Crypto trading.** Out of scope for this platform's positioning. Alpaca supports it, but Sentinel stays equity-focused. Reconsider if user demand shifts.
+
+**Options trading + chain UI + Greeks.** Out of scope. Sentinel keeps options-*flow* analysis (already wired in `src/lib/hybrid/options-layer.ts`) as a signal input, but won't be an options execution venue.
+
+### Deferred — parked for later
+
+**User-code backtest (Python or JS).** QuantConnect / Quantopian territory. XL effort — sandbox runner, language SDK, security boundary. Wait until there's a power-user community asking for it.
+
+**Public read-API + per-user API keys.** Same auth model as session, but key-scoped. Power-user / programmatic-dashboard / "my own bot reads my Sentinel signals." M effort. Defer until external integrations are actually requested.
+
+**Generic outgoing webhooks.** Beyond the existing Discord-specific webhook surface — let a user wire any URL to fire on events (trade fills, signals, alerts) with HMAC-signed payloads. S effort, schema mostly exists. Pair with API-key delivery so subscribers can verify. Defer with the public API.
+
+**Copy trading / mirror another trader.** eToro / Autopilot pattern. Subscribe to user B's signals, auto-execute proportional to your account with sizing rules. Forum + leaderboard already exist as discovery surfaces. L effort — signal pub/sub + per-follower mirror engine + execution-rate-limit + dispute handling. Defer until there's a meaningful userbase to subscribe.
+
+**Model portfolios with auto-rebalance.** Wealthfront / Betterment pattern. "60/40 Aggressive Growth" target allocation, drift-triggered rebalance. Naturally a new engine mode. L effort. Defer until goal-based investing is shipped (it's the prerequisite UI).
+
+**Goal-based investing.** "Retire by 50" / "House in 5 years." Entity model, recommended monthly contribution, projection chart. Pairs with recurring buys. M effort. Defer with model portfolios.
+
+**Automated tax-loss harvesting (execute, not just identify).** Tax Center identifies harvestable lots today — *executing* the harvest as a SELL + non-substantially-identical replacement BUY is the next step. The §475(f) and wash-sale plumbing is already there from Phase 5. M effort. Defer until live trading is steady.
+
+**Dividend tracking + ex-div calendar + DRIP enrollment.** Alpaca's `/account/activities` exposes dividends; need a calendar surface and a DRIP toggle. M effort. Useful but no one's asked.
+
+**Level 2 / order book / time & sales.** Alpaca's SIP feed is paid ($99/mo). Order-book card on analysis page. M effort. Wait until we'd actually pay for SIP for streaming anyway.
+
+**Sortino / Calmar / MAR ratios on backtest results.** Already have Sharpe + max DD computed; adding these three formulas is an hour each. Sortino = excess return ÷ downside-only stdev (Sharpe but only penalizing losses); Calmar = annualized return ÷ max drawdown; MAR = same formula over full track record. XS effort total. Park because it's not bundle-worthy alone — fold into a future backtest UI polish pass.
+
+**Native iOS / Android apps.** XL — full RN / Swift / Kotlin build + App Store / Play Store ops. PWA push (already shipped) covers ~80% of use cases. Reconsider only with significant user volume.
+
+**Real-time streaming quotes (WebSocket).** Sub-second price updates from Alpaca's IEX feed (free) or full SIP (paid). Real engine reaction-speed edge on volatile names. ~400 LOC infra change with reconnect logic + state reconciliation. M-L effort. Park here because the polling cache is good enough for current swing/optimized modes. Revisit when adding a scalp/intraday mode where it matters, or when going live and engine reaction speed becomes critical.
+
+### Tier 4 (compliance) — mostly not applicable
+
+As a middleware on top of Alpaca/IBKR, the broker handles ACH funding, KYC/W-9/ID verification, SIPC, PFOF disclosure, execution-quality reports, 1099s, and bond/mutual fund/international markets (if upstream adds them). Sentinel just signs the broker's REST API on the user's behalf.
+
+What *would* still matter if commercializing multi-user:
+- Formalized ToS + risk disclosure + "AI is not financial advice" page (the inline disclaimer covers most of it)
+- Customer-support ticketing surface (email-only today)
+
+Both are S effort, deferred until there's actual external user demand.
+
+### Tier 3 explanations (for reference)
+
+- **Sortino ratio** = excess return ÷ stdev(negative returns only). Same shape as Sharpe but doesn't penalize upside volatility. Almost always higher than Sharpe for the same strategy.
+- **Calmar ratio** = annualized return ÷ max drawdown. Return per unit of peak-to-trough pain. > 3.0 is excellent.
+- **MAR ratio** = same formula as Calmar but over the entire track record, not just a year. Calmar is annual MAR.
+
+These tell you how *painful* a strategy is to hold — Sharpe alone hides the worst-day texture.
