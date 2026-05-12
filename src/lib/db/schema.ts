@@ -23,3 +23,4 @@ export * from "./schema/invites";
 export * from "./schema/audit";
 export * from "./schema/support";
 export * from "./schema/dm";
+export * from "./schema/system-config";

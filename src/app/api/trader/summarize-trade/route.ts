@@ -1,23 +1,21 @@
 /**
- * Phase 18 — AI-generated trade journal entry.
+ * AI-generated trade journal entry.
  *
  * POST /api/trader/summarize-trade
- *   body: { tradeId: uuid }
+ *   body: { tradeId: uuid, regenerate?: boolean }
  *
  * Looks up the trader_trades row (scoped to caller's userId), pairs SELLs
- * with their FIFO BUY entry, sends both to Claude with the engine's signal
+ * with their FIFO BUY entry, sends both to the LLM with the engine's signal
  * + P&L context, returns a 1-2 sentence summary. Caches the result on
  * trader_trades.ai_summary so subsequent calls are instant.
  *
- * Anthropic SDK guidance:
- *  - Use claude-haiku-4-5 — this is structured short-form generation, no
- *    reasoning required, haiku is plenty.
- *  - max_tokens 200 (one short paragraph).
- *  - Cache on row, never regenerate unless explicitly asked.
+ * Originally used Anthropic claude-haiku-4-5; migrated to Groq
+ * llama-3.3-70b-versatile so the single-provider story matches everything
+ * else (Insights, Quick Insight, hybrid AI scoring, market digest, chat).
  *
- * Cost note: every Summarize click is one API call. Frontend should
- * disable the button once a summary exists; user clicks "regenerate"
- * explicitly if they want a fresh one.
+ * Cost note: every Summarize click is one API call. Frontend disables the
+ * button once a summary exists; user clicks "regenerate" explicitly if they
+ * want a fresh one.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -25,7 +23,8 @@ import { requireAuthWithCsrf } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { traderTrades } from "@/lib/db/schema";
 import { eq, and, desc, lt } from "drizzle-orm";
-import Anthropic from "@anthropic-ai/sdk";
+import { groqChat } from "@/lib/claude";
+import { getLlmApiKey } from "@/lib/system-config";
 import { createRouteLogger } from "@/lib/logger";
 import { z } from "zod";
 
@@ -40,9 +39,9 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!(await getLlmApiKey())) {
     return NextResponse.json(
-      { error: "AI summaries require ANTHROPIC_API_KEY in server environment" },
+      { error: "LLM not configured — set GROQ_API_KEY in admin → System Config" },
       { status: 503 }
     );
   }
@@ -129,21 +128,15 @@ export async function POST(request: NextRequest) {
 
 ${context}`;
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 200,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const response = await groqChat(
+      [{ role: "user", content: prompt }],
+      200
+    );
 
-    const summary = response.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b.type === "text" ? b.text : ""))
-      .join("\n")
-      .trim();
+    const summary = (response.choices[0]?.message?.content ?? "").trim();
 
     if (!summary) {
-      log.warn({ tradeId: trade.id }, "Anthropic returned empty summary");
+      log.warn({ tradeId: trade.id }, "LLM returned empty summary");
       return NextResponse.json({ error: "AI returned empty summary" }, { status: 502 });
     }
 

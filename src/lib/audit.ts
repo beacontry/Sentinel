@@ -273,6 +273,8 @@ export const AuditAction = {
   RISK_PROFILE_UPDATED: "risk_profile.updated",
   // Account / user — used for ToS acceptance + future user-profile mutations
   USER_PROFILE_UPDATED: "user.profile_updated",
+  // System configuration (admin) — set/rotate encrypted server-wide keys
+  SYSTEM_CONFIG_UPDATED: "system_config.updated",
 } as const;
 
 export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];

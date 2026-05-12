@@ -1,4 +1,5 @@
 import { CLAUDE_CONFIG } from "./config";
+import { getLlmApiKey } from "./system-config";
 import { getMarketDataProvider } from "./market-data";
 import { getFinnhubClient } from "./finnhub";
 
@@ -56,7 +57,8 @@ export async function getQuickInsight(symbol: string): Promise<QuickInsightResul
   }
 
   // If no API key, return a fallback
-  if (!CLAUDE_CONFIG.apiKey) {
+  const apiKey = await getLlmApiKey();
+  if (!apiKey) {
     const fallback = buildFallbackInsight(upperSymbol, quote, newsHeadlines);
     cache.set(upperSymbol, { data: fallback, expiry: Date.now() + CACHE_TTL_MS });
     return fallback;
@@ -82,12 +84,6 @@ export async function getQuickInsight(symbol: string): Promise<QuickInsightResul
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
   try {
-    const apiKey = CLAUDE_CONFIG.apiKey || process.env.GROQ_API_KEY || "";
-    if (!apiKey) {
-      const fallback = buildFallbackInsight(upperSymbol, quote, newsHeadlines);
-      cache.set(upperSymbol, { data: fallback, expiry: Date.now() + CACHE_TTL_MS });
-      return fallback;
-    }
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {

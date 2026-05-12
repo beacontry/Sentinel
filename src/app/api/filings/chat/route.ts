@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuthWithCsrf } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
 import { CLAUDE_CONFIG } from "@/lib/config";
+import { getLlmApiKey } from "@/lib/system-config";
 import { getFilingContent } from "@/lib/sec-filings";
 import { createRouteLogger } from "@/lib/logger";
 
@@ -54,9 +55,10 @@ export async function POST(request: Request) {
 
   const { symbol, question, filingUrl } = parsed.data;
 
-  if (!CLAUDE_CONFIG.apiKey) {
+  const apiKey = await getLlmApiKey();
+  if (!apiKey) {
     return NextResponse.json(
-      { error: "AI features require a Groq API key to be configured." },
+      { error: "LLM not configured — set GROQ_API_KEY in admin → System Config" },
       { status: 503 }
     );
   }
@@ -78,7 +80,7 @@ export async function POST(request: Request) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${CLAUDE_CONFIG.apiKey}`,
+        "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: CLAUDE_CONFIG.model,

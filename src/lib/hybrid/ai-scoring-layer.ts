@@ -1,5 +1,6 @@
 import { SignalType } from "@/types";
 import { CLAUDE_CONFIG } from "../config";
+import { getLlmApiKey } from "../system-config";
 import { createRouteLogger } from "../logger";
 import type { SentimentLayer } from "./sentiment-layer";
 import type { OptionsFlowLayer } from "./options-layer";
@@ -55,7 +56,8 @@ export async function applyAiScoringLayer(
   optionsLayer: OptionsFlowLayer | null,
   timeout?: number
 ): Promise<AiScoringLayer | null> {
-  if (!CLAUDE_CONFIG.apiKey) return null;
+  const apiKey = await getLlmApiKey();
+  if (!apiKey) return null;
 
   const effectiveTimeout = timeout ?? 15000;
 
@@ -134,7 +136,7 @@ export async function applyAiScoringLayer(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${CLAUDE_CONFIG.apiKey}`,
+        "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: CLAUDE_CONFIG.model,

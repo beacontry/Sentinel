@@ -26,10 +26,10 @@ export async function POST(request: NextRequest) {
   }
 
   const claude = getClaudeClient();
-  if (!claude.isConfigured) {
+  if (!(await claude.isConfigured())) {
     return NextResponse.json({
       configured: false,
-      error: "ANTHROPIC_API_KEY not configured",
+      error: "LLM not configured — set GROQ_API_KEY in admin → System Config",
     }, { status: 503 });
   }
 

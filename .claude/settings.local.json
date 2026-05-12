@@ -116,7 +116,26 @@
       "Bash(git stash *)",
       "Bash(echo \"tsc=$?\")",
       "Bash(search\" 2>&1)",
-      "Bash(scp *)"
+      "Bash(scp *)",
+      "Bash(dig +short MX guardcybersolutionsllc.com)",
+      "Bash(dig +short TXT guardcybersolutionsllc.com)",
+      "Bash(dig +short TXT _dmarc.guardcybersolutionsllc.com)",
+      "Bash(dig +short TXT resend._domainkey.guardcybersolutionsllc.com)",
+      "PowerShell(Resolve-DnsName *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Avalon\\\\Nextcloud\\\\Projects\\\\Sentinel\" -Recurse -Filter \"*.ts\" -Filter \"*.tsx\")",
+      "Bash(Select-Object -First 30)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 100)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 60)",
+      "PowerShell(npx next lint --max-warnings 0 --file src/app/api/dashboard --file src/app/dashboard/page.tsx --file src/components/dashboard/widget-grid.tsx --file src/components/dashboard/layout-switcher.tsx 2>&1 | Select-Object -First 80)",
+      "PowerShell(npx vitest run 2>&1 | Select-Object -Last 30)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 30)",
+      "PowerShell(npx vitest run 2>&1 | Select-Object -Last 10)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 40)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Avalon\\\\Nextcloud\\\\Projects\\\\Sentinel\" -Directory)",
+      "Bash(Select-Object Name)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 15)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 15; npx vitest run 2>&1 | Select-Object -Last 6)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 10; npx next build 2>&1 | Select-Object -Last 40)"
     ]
   }
 }
