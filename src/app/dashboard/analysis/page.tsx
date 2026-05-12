@@ -27,6 +27,7 @@ import type { AnalysisResult } from "@/types";
 import { SignalFeed, type SignalFeedItem } from "@/components/dashboard/signal-feed";
 import { SignalDetails } from "@/components/dashboard/signal-details";
 import { PriceChart, type ChartEvent } from "@/components/dashboard/price-chart";
+import { TradingViewChart } from "@/components/dashboard/tradingview-chart";
 import { IntelligenceTabs } from "@/components/dashboard/intelligence-tabs";
 import {
   CockpitWatchlist,
@@ -79,6 +80,25 @@ export default function AnalysisCockpit() {
   // is the one whose contents drive `symbols`.
   const [watchlistOptions, setWatchlistOptions] = useState<WatchlistOption[]>([]);
   const [activeWatchlistId, setActiveWatchlistId] = useState<string | null>(null);
+
+  // Chart engine: "engine" = our lightweight-charts view with signal/earnings
+  // markers; "tradingview" = embedded TradingView Advanced Chart with full
+  // drawing tools. User toggles per their preference; choice persists in
+  // localStorage so power users default to TradingView.
+  const [chartMode, setChartMode] = useState<"engine" | "tradingview">("engine");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("sentinel-chart-mode");
+    if (saved === "tradingview" || saved === "engine") setChartMode(saved);
+  }, []);
+  function switchChartMode(next: "engine" | "tradingview") {
+    setChartMode(next);
+    try {
+      window.localStorage.setItem("sentinel-chart-mode", next);
+    } catch {
+      // Quota / disabled — non-critical
+    }
+  }
 
   // Phase B.2 — Signals panel pulled from screener cache, not the watchlist
   const [signalItems, setSignalItems] = useState<SignalFeedItem[]>([]);
@@ -609,8 +629,41 @@ export default function AnalysisCockpit() {
               height: "100%",
             }}
           >
-            <div className="min-h-0 overflow-hidden p-3">
-              {selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
+            <div className="min-h-0 overflow-hidden p-3 flex flex-col">
+              {/* Chart engine toggle */}
+              {selectedSymbol && (
+                <div className="flex items-center justify-end gap-1 mb-2">
+                  <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
+                    <button
+                      onClick={() => switchChartMode("engine")}
+                      className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
+                        ${chartMode === "engine"
+                          ? "bg-bg-elevated text-text-primary"
+                          : "text-text-muted hover:text-text-secondary"
+                        }`}
+                      title="Sentinel's chart with signal/earnings markers"
+                    >
+                      Engine view
+                    </button>
+                    <button
+                      onClick={() => switchChartMode("tradingview")}
+                      className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
+                        ${chartMode === "tradingview"
+                          ? "bg-bg-elevated text-text-primary"
+                          : "text-text-muted hover:text-text-secondary"
+                        }`}
+                      title="TradingView Advanced Chart with full drawing tools"
+                    >
+                      TradingView
+                    </button>
+                  </div>
+                </div>
+              )}
+              {selectedSymbol && chartMode === "tradingview" ? (
+                <div className="flex-1 min-h-0">
+                  <TradingViewChart symbol={selectedSymbol} interval="D" height={520} />
+                </div>
+              ) : selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
                 <PriceChart analysis={selectedAnalysis} height={undefined} events={chartEvents} />
               ) : isSelectedLoading ? (
                 <div className="flex h-full items-center justify-center rounded-xl border border-border bg-bg-secondary">

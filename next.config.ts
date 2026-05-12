@@ -8,13 +8,17 @@ const csp = [
   // Next.js dev mode requires 'unsafe-eval' for hot reload.
   // Cloudflare Web Analytics injects beacon.min.js when CF Insights is enabled
   // on the domain — allow its origins so the CSP doesn't block it.
-  `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com${isDev ? " 'unsafe-eval'" : ""}`,
+  // TradingView Advanced Chart loads s3.tradingview.com/tv.js which then
+  // injects iframes from s.tradingview.com / charting-library and pulls
+  // images for ticker logos. Whitelist all three origins.
+  `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://s3.tradingview.com${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "img-src 'self' data:",
+  "img-src 'self' data: https://s3.tradingview.com https://*.tradingview.com",
   "font-src 'self' https://fonts.gstatic.com",
-  `connect-src 'self' https://query1.finance.yahoo.com https://finnhub.io https://cloudflareinsights.com${isDev ? " ws://localhost:* ws://127.0.0.1:*" : ""}`,
+  `connect-src 'self' https://query1.finance.yahoo.com https://finnhub.io https://cloudflareinsights.com https://*.tradingview.com${isDev ? " ws://localhost:* ws://127.0.0.1:*" : ""}`,
   "object-src 'none'",
   "form-action 'self'",
+  "frame-src https://s.tradingview.com https://www.tradingview.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   ...(useHttps ? ["upgrade-insecure-requests"] : []),
