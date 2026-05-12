@@ -302,11 +302,13 @@ Fixed in the Phase 2 batch:
 Still pending:
 - **`pos.entryDate` from broker creation time.** Currently set to `new Date()` when the engine discovers a position post-opening (manual buy on Alpaca, server restart). Fix requires a `getOrderByFill(symbol)` method on the broker client OR persisting the position map across restarts. Defer until hold-period math actually bites — most users don't notice the off-by-hours issue.
 
-### Cache invalidation (medium priority)
+### ~~Cache invalidation~~ ✅ SHIPPED — Phase 3
 
-12. **`__earningsCache` / `__sentimentCache` / `__rsCache` day-based invalidation is fragile.** If server starts at 3am ET, cache marks "today" and never refreshes for >20 hours. Fix: timestamp-based TTL (6h) in addition to date check.
-13. **`__screenerCache.scannedAt` set at scan end.** During a 45-min scan, UI shows "last scanned 45 min ago" the whole time, then jumps to "now." Fix: set at scan start, expose both `scanStartedAt` and `scanCompletedAt`.
-14. **`engine.lastScanAt` ditto.** Same issue, smaller window.
+Fixed in the Phase 3 batch:
+- **`__earningsCache` / `__sentimentCache` get TTL.** New `FILTER_CACHE_TTL_MS = 6h`. `isFilterCacheStale()` helper combines the date check with timestamp age check — refresh on date change OR every 6 hours, whichever first. Server-boot-at-3am-ET no longer means 20+ hours of stale earnings data.
+- **Screener cache: `scanStartedAt` separate from `scannedAt`.** New `cache.scanStartedAt: Date | null` set at scan start, cleared on completion. `/api/screener` response now exposes both. UI can render "scan in progress, started X ago" during long scans instead of "last scanned 45 min ago" the whole way through.
+- **Engine cache: `engine.scanStartedAt` separate from `lastScanAt`.** Same treatment for engine scans. Exposed via `peekEngineStatus()` so the Trader page can show the in-progress state honestly.
+- **`__rsCache` not exposed.** Type slot exists in `gFilters` but no read sites — left untouched.
 
 ### Dual-source divergence (medium priority)
 

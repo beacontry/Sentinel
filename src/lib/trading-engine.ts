@@ -100,6 +100,8 @@ export interface EngineState {
   dailyNotional: number;
   /** Date string (ET) when bootEquity was last snapshotted. Re-snapshotted at every market-open boundary so the 50% equity-collapse tripwire stays calibrated as the account grows over months. */
   bootEquitySnapshotDate: string;
+  /** Phase 3 — when the current scan started. Null while idle. Used by the dashboard to render "scan in progress" vs "last completed scan X ago." */
+  scanStartedAt: Date | null;
   /** Number of consecutive losing trades (resets on any winner). */
   consecutiveLosses: number;
   /** Sliding-window timestamps (ms) of recent order placements for rate limiting. */
@@ -151,6 +153,7 @@ function createDefaultEngine(): EngineState {
     boot: null,
     dailyNotional: 0,
     bootEquitySnapshotDate: "",
+    scanStartedAt: null,
     consecutiveLosses: 0,
     recentOrderTimestamps: [],
     mtmElected: false,
@@ -291,11 +294,27 @@ function calcSectorStrength(
 const gFilters = globalThis as typeof globalThis & {
   __earningsCache?: Map<string, string[]>; // symbol → upcoming earnings dates
   __earningsCacheDate?: string;
+  __earningsCacheTimestamp?: number;
   __sentimentCache?: Map<string, number>; // symbol → bullish score (0-1)
   __sentimentCacheDate?: string;
+  __sentimentCacheTimestamp?: number;
   __rsCache?: Map<string, number>; // symbol → relative strength vs SPY
   __rsCacheDate?: string;
+  __rsCacheTimestamp?: number;
 };
+
+// Phase 3 (UI-lie audit fix): max age for the date-based caches above.
+// Without this, if the server boots at 3am ET the cache is marked
+// "today" and never refreshes for >20 hours. Earnings calendars update
+// intra-day (analyst revisions, schedule changes); a 6h TTL keeps the
+// cache reasonably fresh without thrashing the upstream APIs.
+const FILTER_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+function isFilterCacheStale(cacheDate: string | undefined, cacheTimestamp: number | undefined, today: string): boolean {
+  if (cacheDate !== today) return true;
+  if (!cacheTimestamp) return true;
+  return Date.now() - cacheTimestamp > FILTER_CACHE_TTL_MS;
+}
 
 /**
  * #1: Earnings blackout — don't buy within 5 trading days of earnings
@@ -303,10 +322,11 @@ const gFilters = globalThis as typeof globalThis & {
 async function isInEarningsBlackout(symbol: string): Promise<boolean> {
   const today = new Date().toISOString().slice(0, 10);
 
-  // Refresh cache daily
-  if (gFilters.__earningsCacheDate !== today || !gFilters.__earningsCache) {
+  // Refresh cache daily OR every 6h (whichever first) — see FILTER_CACHE_TTL_MS
+  if (isFilterCacheStale(gFilters.__earningsCacheDate, gFilters.__earningsCacheTimestamp, today) || !gFilters.__earningsCache) {
     gFilters.__earningsCache = new Map();
     gFilters.__earningsCacheDate = today;
+    gFilters.__earningsCacheTimestamp = Date.now();
 
     const client = getFinnhubClient();
     if (client.isConfigured) {
@@ -361,10 +381,11 @@ async function getRelativeStrength(symbol: string, bars: Bar[]): Promise<number>
 async function getSentimentScore(symbol: string): Promise<number> {
   const today = new Date().toISOString().slice(0, 10);
 
-  // Refresh cache every 6 hours
-  if (!gFilters.__sentimentCache || gFilters.__sentimentCacheDate !== today) {
+  // Refresh cache daily OR every 6h (whichever first)
+  if (!gFilters.__sentimentCache || isFilterCacheStale(gFilters.__sentimentCacheDate, gFilters.__sentimentCacheTimestamp, today)) {
     gFilters.__sentimentCache = new Map();
     gFilters.__sentimentCacheDate = today;
+    gFilters.__sentimentCacheTimestamp = Date.now();
   }
 
   const cached = gFilters.__sentimentCache.get(symbol);
@@ -1914,6 +1935,8 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   const engine = getEngine(engineUserId);
   if (!engine.userId || !engine.running || engine.halted) return;
   if (!isMarketOpen()) return;
+  // Phase 3 — mark scan as in-flight so dashboard can show "scanning…"
+  engine.scanStartedAt = new Date();
   try { SCAN_UNIVERSE = await getSP500Symbols(); } catch { /* keep current */ }
 
   const today = getETDateString();
@@ -1971,6 +1994,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
     log.warn("Failed to fetch SPY bars for tactical scan");
     engine.lastScanAt = new Date();
     engine.scanCount++;
+    engine.scanStartedAt = null; // scan ended (errored out)
     return;
   }
 
@@ -2123,9 +2147,10 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   } catch { /* use 0 */ }
   await upsertDailyPnl(today, 0, totalUnrealizedPnl, 0, engine.halted, undefined, engine.userId);
 
-  // Update status
+  // Update status — scan completed, clear in-flight marker
   engine.lastScanAt = new Date();
   engine.scanCount++;
+  engine.scanStartedAt = null;
   await updateHeartbeat(SCAN_UNIVERSE, engine.userId);
 }
 
@@ -2135,6 +2160,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   const engine = getEngine(engineUserId);
   if (!engine.userId || !engine.running || engine.halted) return;
   if (!isMarketOpen()) return;
+  engine.scanStartedAt = new Date();
 
   // Phase 14 — scan latency instrumentation. The 2026-05-11 TGT incident
   // happened because a scan started before 4 PM ET but was still placing
@@ -2600,6 +2626,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 
   engine.lastScanAt = new Date();
   engine.scanCount++;
+  engine.scanStartedAt = null;
   await updateHeartbeat([...positionMap.keys()], engine.userId);
 
   // Phase 14 — emit total scan duration. If totalMs >> 60s, the scan is at
@@ -2625,6 +2652,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     log.info("Engine halted, skipping scan");
     return;
   }
+
+  // Phase 3 — mark scan as in-flight
+  engine.scanStartedAt = new Date();
 
   if (!engine.userId) {
     log.error("No userId set on engine");
@@ -3267,9 +3297,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     if (now - ts > 150 * 60 * 1000) engine.cooldowns.delete(sym);
   }
 
-  // 7. Update engine state
+  // 7. Update engine state — scan completed, clear in-flight marker
   engine.lastScanAt = new Date();
   engine.scanCount++;
+  engine.scanStartedAt = null;
   engine.positionCount = positionMap.size;
 
   // 7. Calculate total unrealized PnL from tracked positions
@@ -4063,6 +4094,7 @@ export function peekEngineStatus(userId: string): {
   halted: boolean;
   mode: EngineMode;
   lastScanAt: string | null;
+  scanStartedAt: string | null;
   scanCount: number;
   positionCount: number;
   dailyLoss: number;
@@ -4081,6 +4113,7 @@ export function peekEngineStatus(userId: string): {
     halted: engine.halted,
     mode: engine.mode,
     lastScanAt: engine.lastScanAt?.toISOString() ?? null,
+    scanStartedAt: engine.scanStartedAt?.toISOString() ?? null,
     scanCount: engine.scanCount,
     positionCount: engine.positionCount,
     dailyLoss: engine.dailyLoss,
