@@ -234,6 +234,25 @@ These tell you how *painful* a strategy is to hold — Sharpe alone hides the wo
 
 ---
 
+## 2026-05-12 — Earnings transcript AI summary (paid-tier dependency)
+
+The `/api/transcripts/[symbol]` endpoint shipped only the *listing*
+(year/quarter/date/Finnhub-id) because the full transcript text endpoint
+is on Finnhub's paid alternative-data tier. To actually AI-summarize:
+
+1. Upgrade Finnhub plan to the alternative-data tier (~$100+/mo)
+2. Add `getTranscript(id)` to finnhub.ts pulling `/stock/transcript?id=…`
+3. Pass the text to Anthropic Haiku with a "summarize the call: results,
+   guidance, analyst Q&A surprises, management tone" prompt (~$0.003/call)
+4. Cache the AI summary by transcript id (immutable once published — TTL
+   forever, no invalidation needed)
+5. Surface on the Analysis page intelligence tabs as a "Last call summary"
+   card alongside the existing transcript listing
+
+Defer until Finnhub upgrade is worth the spend. The metadata listing
+alone surfaces "Latest call: Q3 2025, Nov 7" which is already useful
+context.
+
 ## 2026-05-12 — QoL audit, bigger asks (deferred)
 
 Found during the cross-app QoL pass. These are L-sized features that need their own design + commits, not part of the 6-batch polish bundle.

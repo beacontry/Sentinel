@@ -36,6 +36,25 @@ export interface FinnhubSentiment {
 }
 
 /**
+ * One row in Finnhub's earnings-call transcript listing. Full transcript
+ * text is paid (`getTranscript(id)` would be a separate paid call); the
+ * listing endpoint is free and is what this app uses.
+ */
+export interface FinnhubTranscriptEntry {
+  symbol: string;
+  id: string;        // Finnhub-internal id, opaque
+  title: string;
+  time: string;      // ISO timestamp
+  year: number;
+  quarter: number;
+}
+
+export interface FinnhubTranscriptsResponse {
+  symbol: string;
+  transcripts: FinnhubTranscriptEntry[];
+}
+
+/**
  * One row from Finnhub's Congressional Trading endpoint. Each row is a
  * single Periodic Transaction Report filing by a member of Congress.
  * `amountFrom` / `amountTo` are the lower/upper bounds of the disclosed
@@ -320,6 +339,21 @@ class FinnhubClient {
     return this.request<FinnhubInsiderResponse>(
       path,
       `insider:${symbol}`,
+      FINNHUB_CONFIG.insiderCacheTtl
+    );
+  }
+
+  /**
+   * Earnings call transcript metadata listing. Free tier returns the list
+   * of available calls (year, quarter, date, duration, audio URL). Full
+   * transcript text + AI summarization require the paid alternative-data
+   * tier — listing alone is useful as a "latest call" surface on Analysis.
+   */
+  async getEarningsTranscripts(symbol: string): Promise<FinnhubTranscriptsResponse> {
+    const path = `/stock/transcripts/list?symbol=${encodeURIComponent(symbol)}`;
+    return this.request<FinnhubTranscriptsResponse>(
+      path,
+      `transcripts:${symbol}`,
       FINNHUB_CONFIG.insiderCacheTtl
     );
   }
