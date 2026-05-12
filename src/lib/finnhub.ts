@@ -35,6 +35,31 @@ export interface FinnhubSentiment {
   sectorAverageNewsScore: number;
 }
 
+/**
+ * One row from Finnhub's Congressional Trading endpoint. Each row is a
+ * single Periodic Transaction Report filing by a member of Congress.
+ * `amountFrom` / `amountTo` are the lower/upper bounds of the disclosed
+ * trade value range (federal disclosure rules require a range, not an
+ * exact dollar amount).
+ */
+export interface FinnhubCongressionalTrade {
+  symbol: string;
+  transactionDate: string;       // ISO date
+  filingDate: string;            // ISO date
+  name: string;                  // "Pelosi, Nancy"
+  position: string;              // "House" | "Senate"
+  ownerType: string;             // "Self" | "Spouse" | "Joint" | "Child"
+  amountFrom: number;
+  amountTo: number;
+  transactionType: string;       // "Purchase" | "Sale" | "Exchange" | "Partial Sale"
+  party?: string;                // "Democrat" | "Republican" | "Independent" (when available)
+}
+
+export interface FinnhubCongressionalResponse {
+  data: FinnhubCongressionalTrade[];
+  symbol?: string;
+}
+
 export interface FinnhubOptionContract {
   contractName: string;
   strike: number;
@@ -295,6 +320,23 @@ class FinnhubClient {
     return this.request<FinnhubInsiderResponse>(
       path,
       `insider:${symbol}`,
+      FINNHUB_CONFIG.insiderCacheTtl
+    );
+  }
+
+  /**
+   * Congressional trading disclosures (Periodic Transaction Reports). When
+   * `symbol` is supplied, returns only that ticker's trades; pass undefined
+   * to get the most recent across all symbols (Finnhub returns up to 100).
+   */
+  async getCongressionalTrading(symbol?: string): Promise<FinnhubCongressionalResponse> {
+    const path = symbol
+      ? `/stock/congressional-trading?symbol=${encodeURIComponent(symbol)}`
+      : `/stock/congressional-trading`;
+    const cacheKey = symbol ? `congress:${symbol}` : "congress:recent";
+    return this.request<FinnhubCongressionalResponse>(
+      path,
+      cacheKey,
       FINNHUB_CONFIG.insiderCacheTtl
     );
   }

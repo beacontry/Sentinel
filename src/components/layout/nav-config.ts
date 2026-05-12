@@ -76,8 +76,8 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Research",
     description: "News, filings, articles, insights, and education.",
     icon: Newspaper,
-    matchPaths: ["/dashboard/articles", "/dashboard/filings", "/dashboard/insights", "/dashboard/education", "/dashboard/sentiment"],
-    keywords: ["news", "filings", "articles", "insights", "education", "sentiment"],
+    matchPaths: ["/dashboard/articles", "/dashboard/filings", "/dashboard/insights", "/dashboard/education", "/dashboard/sentiment", "/dashboard/congress"],
+    keywords: ["news", "filings", "articles", "insights", "education", "sentiment", "congress", "politicians"],
   },
   {
     href: "/dashboard/calendar",
@@ -193,6 +193,7 @@ export const SUB_NAV: Record<string, SubNavTab[]> = {
     { href: "/dashboard/articles", label: "Articles" },
     { href: "/dashboard/filings", label: "Filings" },
     { href: "/dashboard/insights", label: "Insights" },
+    { href: "/dashboard/congress", label: "Congress" },
     { href: "/dashboard/education", label: "Education" },
   ],
   macro: [
