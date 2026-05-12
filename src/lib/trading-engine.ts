@@ -1351,6 +1351,9 @@ async function logTrade(
       quantity,
       orderType: "market",
       fillPrice,
+      // Phase 16 — preserve the placeholder price (quote at submission time)
+      // so the slippage report can compare against reconciled actual fill.
+      placeholderFillPrice: fillPrice,
       fillTime: fillPrice ? new Date() : null,
       status,
       pnl,
