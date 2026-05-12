@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw, AlertTriangle } from "lucide-react";
 
 interface User {
   id: string;
@@ -23,6 +23,24 @@ interface User {
   email: string;
   role: string;
   createdAt: string;
+}
+
+interface DriftRow {
+  symbol: string;
+  category: "OVER_RECORDED" | "UNDER_RECORDED" | "MISSING_EXIT";
+  recordedNetQty: number;
+  brokerQty: number;
+  diff: number;
+  buys: number;
+  sells: number;
+}
+
+interface UserDrift {
+  user: { id: string; name: string; email: string; role: string };
+  connection: { broker: string; label: string; environment: string } | null;
+  driftRows: DriftRow[];
+  totalDriftRows: number;
+  brokerError: string | null;
 }
 
 interface UserEngineRow {
@@ -121,6 +139,31 @@ export default function AdminPage() {
       }
     } catch { /* ignore — invites are secondary */ }
   }, []);
+
+  // Phase 12 — position drift audit
+  const [driftUsers, setDriftUsers] = useState<UserDrift[]>([]);
+  const [driftLoading, setDriftLoading] = useState(false);
+  const [expandedDrift, setExpandedDrift] = useState<Set<string>>(new Set());
+
+  const loadDrift = useCallback(async () => {
+    setDriftLoading(true);
+    try {
+      const res = await fetch("/api/admin/position-drift");
+      if (res.ok) {
+        const data = await res.json();
+        setDriftUsers(data.users ?? []);
+      }
+    } catch { /* ignore */ } finally { setDriftLoading(false); }
+  }, []);
+
+  function toggleDriftExpanded(userId: string) {
+    setExpandedDrift((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
 
   // Phase 6a — admin engine override
   const [engineRows, setEngineRows] = useState<UserEngineRow[]>([]);
@@ -461,6 +504,151 @@ export default function AdminPage() {
           </div>
         )}
       </Card>
+
+      {/* ── Phase 12: Position Drift Audit ── */}
+      <div className="pt-4">
+        <h2 className="text-lg font-semibold text-text-primary mb-2 flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 text-warning" />
+          Position Drift Audit
+        </h2>
+        <p className="text-xs text-text-muted mb-3">
+          Compares <code className="px-1 py-0.5 bg-bg-elevated rounded">trader_trades</code> net qty against actual broker
+          positions. Finds historical drift from pre-Phase-7/7.5/8 bugs (duplicate fills, missed broker-side stops). Three
+          categories:
+        </p>
+        <ul className="text-xs text-text-muted mb-4 space-y-1 ml-4 list-disc">
+          <li><strong className="text-bearish">OVER_RECORDED</strong>: trader_trades has MORE buys than broker shows — pre-Phase-7 duplicate fills</li>
+          <li><strong className="text-warning">MISSING_EXIT</strong>: trader_trades has buys but broker has no position — broker-side stop fired pre-Phase-7.5</li>
+          <li><strong className="text-text-muted">UNDER_RECORDED</strong>: broker has more than trader_trades — manual buys outside the engine</li>
+        </ul>
+        <div className="flex items-center gap-2 mb-3">
+          <Button onClick={loadDrift} loading={driftLoading} variant="secondary">
+            <RefreshCw className="w-3.5 h-3.5" />
+            {driftUsers.length === 0 ? "Run audit" : "Refresh"}
+          </Button>
+          {driftUsers.length > 0 && (
+            <span className="text-xs text-text-muted">
+              {driftUsers.reduce((sum, u) => sum + u.totalDriftRows, 0)} drift rows across {driftUsers.length} user{driftUsers.length === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+        {driftUsers.length > 0 && (
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-text-muted text-left text-xs uppercase tracking-wide">
+                    <th className="p-3 font-medium">User</th>
+                    <th className="p-3 font-medium">Connection</th>
+                    <th className="p-3 font-medium text-right">Drift Rows</th>
+                    <th className="p-3 font-medium">Status</th>
+                    <th className="p-3 font-medium"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {driftUsers.map((u) => {
+                    const isOpen = expandedDrift.has(u.user.id);
+                    return (
+                      <Fragment key={u.user.id}>
+                        <tr
+                          onClick={() => toggleDriftExpanded(u.user.id)}
+                          className="border-b border-border/50 hover:bg-bg-elevated/50 transition-colors cursor-pointer"
+                        >
+                          <td className="p-3">
+                            <div className="text-text-primary">{u.user.name}</div>
+                            <div className="text-xs text-text-muted">{u.user.email}</div>
+                          </td>
+                          <td className="p-3 text-xs">
+                            {u.connection ? (
+                              <>
+                                {u.connection.broker} · {u.connection.label}
+                                <Badge variant={u.connection.environment === "live" ? "bearish" : "neutral"} className="ml-2">
+                                  {u.connection.environment}
+                                </Badge>
+                              </>
+                            ) : (
+                              <span className="text-text-muted">No connection</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right font-mono">
+                            {u.brokerError ? (
+                              <span className="text-bearish">err</span>
+                            ) : (
+                              <Badge variant={u.totalDriftRows === 0 ? "bullish" : "warning"}>
+                                {u.totalDriftRows}
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="p-3 text-xs">
+                            {u.brokerError ? (
+                              <span className="text-bearish">{u.brokerError.slice(0, 60)}</span>
+                            ) : u.totalDriftRows === 0 ? (
+                              <span className="text-bullish">Clean</span>
+                            ) : (
+                              <span className="text-warning">Drift detected — click to view</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right text-xs text-text-muted">
+                            {u.totalDriftRows > 0 && (isOpen ? "▼" : "▶")}
+                          </td>
+                        </tr>
+                        {isOpen && u.driftRows.length > 0 && (
+                          <tr className="bg-bg-secondary border-b border-border/50">
+                            <td colSpan={5} className="p-4">
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs font-mono">
+                                  <thead>
+                                    <tr className="text-text-muted border-b border-border/30">
+                                      <th className="pb-2 pr-3 text-left font-medium">Symbol</th>
+                                      <th className="pb-2 pr-3 text-left font-medium">Category</th>
+                                      <th className="pb-2 pr-3 text-right font-medium">trader_trades net</th>
+                                      <th className="pb-2 pr-3 text-right font-medium">Broker qty</th>
+                                      <th className="pb-2 pr-3 text-right font-medium">Diff</th>
+                                      <th className="pb-2 pr-3 text-right font-medium">Buys / Sells</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {u.driftRows.map((r) => (
+                                      <tr key={r.symbol} className="border-b border-border/20">
+                                        <td className="py-1.5 pr-3 text-text-primary">{r.symbol}</td>
+                                        <td className="py-1.5 pr-3">
+                                          <span
+                                            className={
+                                              r.category === "OVER_RECORDED"
+                                                ? "text-bearish"
+                                                : r.category === "MISSING_EXIT"
+                                                ? "text-warning"
+                                                : "text-text-muted"
+                                            }
+                                          >
+                                            {r.category}
+                                          </span>
+                                        </td>
+                                        <td className="py-1.5 pr-3 text-right">{r.recordedNetQty}</td>
+                                        <td className="py-1.5 pr-3 text-right">{r.brokerQty}</td>
+                                        <td className={`py-1.5 pr-3 text-right ${r.diff > 0 ? "text-bearish" : "text-warning"}`}>
+                                          {r.diff > 0 ? "+" : ""}{r.diff}
+                                        </td>
+                                        <td className="py-1.5 pr-3 text-right text-text-muted">
+                                          {r.buys} / {r.sells}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </div>
 
       {/* ── User Engines (admin override) ── */}
       <div className="pt-4">
