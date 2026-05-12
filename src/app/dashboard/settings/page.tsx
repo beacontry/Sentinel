@@ -712,7 +712,7 @@ export default function SettingsPage() {
           <p className="text-sm text-text-secondary">
             Download your trading data as CSV. All exports are scoped to your account only.
           </p>
-          <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex flex-col sm:flex-row gap-2 flex-wrap">
             <Button
               variant="secondary"
               onClick={() => {
@@ -733,6 +733,55 @@ export default function SettingsPage() {
           <p className="text-xs text-text-muted">
             For custom date ranges, append <code className="px-1 py-0.5 bg-bg-elevated rounded">?from=YYYY-MM-DD&amp;to=YYYY-MM-DD</code> to either URL.
           </p>
+        </div>
+      </Card>
+
+      {/* Phase 17 — Tax Report */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Tax Report (Form 8949)</CardTitle>
+        </CardHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-text-secondary">
+            FIFO realized gains/losses with §1091 wash-sale flagging. Short-term and long-term classified
+            automatically (365-day boundary). Output is IRS Form 8949-compatible CSV — import into TurboTax,
+            FreeTaxUSA, or hand to your CPA.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 flex-wrap items-center">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const y = new Date().getFullYear();
+                window.location.href = `/api/export/tax-report?year=${y}&format=csv`;
+              }}
+            >
+              <span>Form 8949 CSV ({new Date().getFullYear()})</span>
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                const y = new Date().getFullYear() - 1;
+                window.location.href = `/api/export/tax-report?year=${y}&format=csv`;
+              }}
+            >
+              <span>Prior year ({new Date().getFullYear() - 1})</span>
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                const y = new Date().getFullYear();
+                window.location.href = `/api/export/tax-report?year=${y}&format=summary`;
+              }}
+            >
+              <span>JSON summary</span>
+            </Button>
+          </div>
+          <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-text-secondary">
+            <strong className="text-warning">Self-attested — not a tax substitute.</strong> Sentinel computes FIFO
+            lots + wash-sale flags. Wash-sale rule is applied at symbol level only — substantially-identical ETF
+            cross-matches (SPY↔IVV) are NOT detected. If you elected §475(f) MTM, disregard the wash-sale column.
+            Always review with a CPA before filing.
+          </div>
         </div>
       </Card>
 
