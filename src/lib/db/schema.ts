@@ -21,3 +21,4 @@ export * from "./schema/broker-connections";
 export * from "./schema/optimization";
 export * from "./schema/invites";
 export * from "./schema/audit";
+export * from "./schema/support";
