@@ -363,6 +363,86 @@ describe("live-trading safeguards", () => {
       expect(canPlaceBuyOrder(at_3, "X", 100, 1.0, 10_000).ok).toBe(false);
     });
   });
+
+  describe("duplicate-order prevention (Phase 7)", () => {
+    // Phase 7 doesn't change canPlaceBuyOrder — duplicate detection happens at
+    // the call-site level using pendingBuySymbols / pendingSellSymbols Sets
+    // computed from the broker's open orders. These tests pin the gate logic
+    // independently of the engine module.
+
+    interface OpenOrder { symbol: string; side: "buy" | "sell"; type: string; status: string }
+    function buildPendingSets(orders: OpenOrder[]) {
+      const buys = new Set<string>();
+      const sells = new Set<string>();
+      const active = ["new", "accepted", "pending_new", "partially_filled", "held"];
+      for (const o of orders) {
+        if (!active.includes(o.status)) continue;
+        if (o.side === "buy") buys.add(o.symbol);
+        else if (o.side === "sell" && o.type !== "stop" && o.type !== "stop_limit") sells.add(o.symbol);
+      }
+      return { buys, sells };
+    }
+
+    it("pending sell market order populates pendingSellSymbols", () => {
+      const { sells } = buildPendingSets([
+        { symbol: "TGT", side: "sell", type: "market", status: "accepted" },
+      ]);
+      expect(sells.has("TGT")).toBe(true);
+    });
+
+    it("protective stop order does NOT populate pendingSellSymbols", () => {
+      // Stops are managed by syncBrokerStops; they're not active exit intents
+      const { sells } = buildPendingSets([
+        { symbol: "GLW", side: "sell", type: "stop", status: "accepted" },
+      ]);
+      expect(sells.has("GLW")).toBe(false);
+    });
+
+    it("stop_limit also excluded (managed by syncBrokerStops variant)", () => {
+      const { sells } = buildPendingSets([
+        { symbol: "AAPL", side: "sell", type: "stop_limit", status: "accepted" },
+      ]);
+      expect(sells.has("AAPL")).toBe(false);
+    });
+
+    it("pending buy limit populates pendingBuySymbols", () => {
+      const { buys } = buildPendingSets([
+        { symbol: "USO", side: "buy", type: "limit", status: "accepted" },
+      ]);
+      expect(buys.has("USO")).toBe(true);
+    });
+
+    it("filled / canceled orders ignored (not active)", () => {
+      const { buys, sells } = buildPendingSets([
+        { symbol: "X", side: "buy", type: "market", status: "filled" },
+        { symbol: "Y", side: "sell", type: "market", status: "canceled" },
+      ]);
+      expect(buys.size).toBe(0);
+      expect(sells.size).toBe(0);
+    });
+
+    it("mixed orders sort into the right sets", () => {
+      // The exact pattern that caused the TGT bug: stop fired, market sells
+      // queued, limit buys for swap-in. Engine must NOT confuse stops with
+      // active sells.
+      const { buys, sells } = buildPendingSets([
+        { symbol: "TGT", side: "sell", type: "market", status: "accepted" },   // phantom sell — should dedupe
+        { symbol: "TGT", side: "sell", type: "stop", status: "accepted" },     // protective — ignore
+        { symbol: "USO", side: "buy", type: "limit", status: "accepted" },     // paired buy — should dedupe
+        { symbol: "GLW", side: "sell", type: "stop", status: "accepted" },     // protective for live position — ignore
+      ]);
+      expect(sells.has("TGT")).toBe(true);  // dedupe target
+      expect(buys.has("USO")).toBe(true);   // dedupe target
+      expect(sells.has("GLW")).toBe(false); // not a dedupe target (protective stop)
+    });
+
+    it("partially_filled status still counts as active", () => {
+      const { buys } = buildPendingSets([
+        { symbol: "PARTL", side: "buy", type: "limit", status: "partially_filled" },
+      ]);
+      expect(buys.has("PARTL")).toBe(true);
+    });
+  });
 });
 
 // Vitest needs at least one beforeEach if we use afterEach with env state — keep

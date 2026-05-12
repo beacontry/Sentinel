@@ -1421,12 +1421,29 @@ async function syncPositionMapFromBroker(
 
   const brokerSymbols = new Set(longBrokerPositions.map(p => p.symbol));
 
-  // Remove positions that no longer exist on broker (or flipped to short)
-  for (const [symbol] of positionMap) {
+  // Remove positions that no longer exist on broker (or flipped to short).
+  // Phase 7 — emit an audit event when a tracked position disappears WITHOUT
+  // the engine initiating the exit. This is almost always a broker-side stop
+  // firing; surfaces it to the admin audit log so realized-P&L
+  // reconciliation in trader_trades is at least traceable. Full automatic
+  // trader_trades insert deferred to Phase 7.5 (needs broker client passed in).
+  for (const [symbol, pos] of positionMap) {
     if (!brokerSymbols.has(symbol)) {
-      log.info({ symbol, userId }, "Position no longer on broker — removing");
+      log.info({ symbol, userId, expectedQty: pos.qty, entryPrice: pos.entryPrice }, "Position no longer on broker — removing (likely broker-side stop fired)");
+      void writeAudit({
+        actor: { userId, email: null, role: null },
+        action: AuditAction.ENGINE_POSITION_DISAPPEARED,
+        resourceType: "position",
+        resourceId: symbol,
+        metadata: {
+          symbol,
+          expectedQty: pos.qty,
+          entryPrice: pos.entryPrice,
+          peakPrice: pos.peakPrice,
+          likelyCause: "broker_side_stop_fired",
+        },
+      });
       positionMap.delete(symbol);
-
     }
   }
 
@@ -1555,12 +1572,16 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
 
   // Pending limit buys count as "invested" — without this, a re-scan before
   // limits fill re-runs the entry loop and doubles every order.
+  // Phase 7 — also track pending sells (excluding stops) for symmetric guards.
   const pendingBuySymbols = new Set<string>();
+  const pendingSellSymbols = new Set<string>();
   try {
     const openOrders = await client.getOrders(100);
     for (const o of openOrders) {
-      if (o.side === "buy" && ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)) {
-        pendingBuySymbols.add(o.symbol);
+      if (!["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)) continue;
+      if (o.side === "buy") pendingBuySymbols.add(o.symbol);
+      else if (o.side === "sell" && o.type !== "stop" && o.type !== "stop_limit") {
+        pendingSellSymbols.add(o.symbol);
       }
     }
   } catch {
@@ -1608,6 +1629,11 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
         const qty = Math.min(Math.floor(perPosition / quote.price), riskLimits.maxPositionSize);
         if (qty <= 0) continue;
 
+        // Phase 7 — skip if buy already pending on broker for this symbol
+        if (pendingBuySymbols.has(symbol)) {
+          log.info({ symbol }, "Tactical entry skipped — active buy already pending on broker");
+          continue;
+        }
         const limitPrice = (quote.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
         const gate = canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
@@ -1623,6 +1649,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
         }
         const tentryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
+        pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "FILLED", null, "Tactical entry: SPY above SMA", tentryOrder.id, null, engine.userId);
 
         positionMap.set(symbol, {
@@ -1732,12 +1759,21 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   // Pending buy orders — symbols with an open buy that hasn't filled yet must
   // be treated as "already held" so the next scan doesn't re-buy them. This
   // is the bug that caused two CIEN buys 18 minutes apart.
+  // Phase 7 — duplicate-order prevention. Track BOTH pending buys and pending
+  // active sells (excluding protective stops). The swap-sell path was the TGT
+  // bug source: it would re-fire the same sell every 15-min scan after market
+  // close because nothing checked the broker for an already-pending sell.
   const pendingBuySymbols = new Set<string>();
+  const pendingSellSymbols = new Set<string>();
   try {
     const openOrders = await client.getOrders(100);
     for (const o of openOrders) {
-      if (o.side === "buy" && ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)) {
+      if (!["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)) continue;
+      if (o.side === "buy") {
         pendingBuySymbols.add(o.symbol);
+      } else if (o.side === "sell" && o.type !== "stop" && o.type !== "stop_limit") {
+        // Stop orders are protective — managed by syncBrokerStops, NOT a duplicate of an active sell intent
+        pendingSellSymbols.add(o.symbol);
       }
     }
   } catch {
@@ -1748,7 +1784,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   // re-runs the full buy-in before any limits fill, doubling every order.
   const isInvested = currentPositions.length > 0 || pendingBuySymbols.size > 0;
 
-  log.info({ spyPrice: spyPrice.toFixed(2), sma20: sma20.toFixed(2), sma50: sma50.toFixed(2), confirmedBelow, isInvested, positions: positionMap.size, pendingBuys: pendingBuySymbols.size }, "Tactical Smart scan");
+  log.info({ spyPrice: spyPrice.toFixed(2), sma20: sma20.toFixed(2), sma50: sma50.toFixed(2), confirmedBelow, isInvested, positions: positionMap.size, pendingBuys: pendingBuySymbols.size, pendingSells: pendingSellSymbols.size }, "Tactical Smart scan");
 
   if (isInvested && confirmedBelow && spyPrice < sma20) {
     // ── EXIT: same as regular tactical ──
@@ -1833,6 +1869,11 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       const qty = Math.min(Math.floor(positionValue / price), riskLimits.maxPositionSize);
       if (qty <= 0 || qty * price > account.buyingPower) continue;
 
+      // Phase 7 — skip if buy already pending on broker for this symbol
+      if (pendingBuySymbols.has(symbol)) {
+        log.info({ symbol }, "Smart entry skipped — active buy already pending on broker");
+        continue;
+      }
       try {
         const limitPrice = (price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
@@ -1849,6 +1890,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         }
         const tsEntryOrder = await client.placeOrder({ symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
+        pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Smart: momentum + signal + invVol weighted", tsEntryOrder.id, null, engine.userId);
         tradesThisScan++;
         positionMap.set(symbol, {
@@ -1930,11 +1972,41 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       const bp = currentPositions.find(p => p.symbol === weak.symbol);
       if (!bp || bp.qty <= 0) continue;
 
+      // Phase 7 — duplicate-order guard. If an active sell is already pending
+      // for this symbol on the broker, do NOT place another. This is the
+      // exact bug that caused the TGT incident on 2026-05-11: after a stop
+      // fire closed the position, the engine's next scan still saw TGT in
+      // its in-memory list and placed a second sell — which Alpaca accepted
+      // and queued, creating a phantom short risk.
+      if (pendingSellSymbols.has(weak.symbol)) {
+        log.info({ symbol: weak.symbol }, "Swap-sell skipped — active sell already pending on broker");
+        void writeAudit({
+          actor: { userId: engine.userId, email: null, role: null },
+          action: AuditAction.ORDER_REJECTED,
+          resourceType: "order",
+          metadata: { symbol: weak.symbol, side: "sell", qty: bp.qty, reason: "duplicate_pending_order", source: "engine_swap_sell" },
+        });
+        continue;
+      }
+
       const replacement = candidates.shift()!;
+
+      // Also guard the buy side of the swap — don't double-buy the replacement
+      if (pendingBuySymbols.has(replacement.symbol)) {
+        log.info({ symbol: replacement.symbol }, "Swap-buy skipped — active buy already pending on broker");
+        void writeAudit({
+          actor: { userId: engine.userId, email: null, role: null },
+          action: AuditAction.ORDER_REJECTED,
+          resourceType: "order",
+          metadata: { symbol: replacement.symbol, side: "buy", reason: "duplicate_pending_order", source: "engine_swap_buy" },
+        });
+        continue;
+      }
 
       // Sell the weak position
       try {
         const swapSellOrder = await client.placeOrder({ symbol: weak.symbol, side: "sell", qty: String(bp.qty), type: "market", timeInForce: "day" });
+        pendingSellSymbols.add(weak.symbol); // mark immediately so subsequent iterations in this scan don't re-fire
         await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "FILLED", bp.unrealizedPnl, `Swap out: ${weak.signal}`, swapSellOrder.id, null, engine.userId);
         realizedPnlThisScan += bp.unrealizedPnl;
         tradesThisScan++;
@@ -1967,6 +2039,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         }
         const swapBuyOrder = await client.placeOrder({ symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
+        pendingBuySymbols.add(replacement.symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "FILLED", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`, swapBuyOrder.id, null, engine.userId);
         tradesThisScan++;
         positionMap.set(replacement.symbol, {
@@ -1998,6 +2071,17 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
       if (currentExposure + cand.price * qty > effectiveMaxExposure) break;
 
+      // Phase 7 — duplicate-order guard: skip add if buy already pending on broker
+      if (pendingBuySymbols.has(cand.symbol)) {
+        log.info({ symbol: cand.symbol }, "STRONG_BUY add skipped — active buy already pending on broker");
+        void writeAudit({
+          actor: { userId: engine.userId, email: null, role: null },
+          action: AuditAction.ORDER_REJECTED,
+          resourceType: "order",
+          metadata: { symbol: cand.symbol, side: "buy", reason: "duplicate_pending_order", source: "engine_add" },
+        });
+        continue;
+      }
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
@@ -2014,6 +2098,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         }
         const addOrder = await client.placeOrder({ symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
+        pendingBuySymbols.add(cand.symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "FILLED", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`, addOrder.id, null, engine.userId);
         tradesThisScan++;
         positionMap.set(cand.symbol, {
@@ -2256,8 +2341,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   await syncPositionMapFromBroker(brokerPositions, positionMap, engine.userId!);
   engine.positionCount = positionMap.size;
 
-  // Fetch open orders to avoid conflicts (duplicate buys, stale stops)
+  // Fetch open orders to avoid conflicts (duplicate buys, stale stops).
+  // Phase 7 — also track pending sells (excluding stops) for symmetric guards.
   const pendingBuySymbols = new Set<string>();
+  const pendingSellSymbols = new Set<string>();
   const pendingOrdersBySymbol = new Map<string, { id: string; side: string; type: string }[]>();
   try {
     const openOrders = await client.getOrders(100);
@@ -2265,13 +2352,20 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
       ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)
     );
     for (const o of pendingOrders) {
-      if (o.side === "buy") pendingBuySymbols.add(o.symbol);
+      if (o.side === "buy") {
+        pendingBuySymbols.add(o.symbol);
+      } else if (o.side === "sell" && o.type !== "stop" && o.type !== "stop_limit") {
+        pendingSellSymbols.add(o.symbol);
+      }
       const existing = pendingOrdersBySymbol.get(o.symbol) ?? [];
       existing.push({ id: o.id, side: o.side, type: o.type ?? "unknown" });
       pendingOrdersBySymbol.set(o.symbol, existing);
     }
     if (pendingBuySymbols.size > 0) {
       log.info({ symbols: [...pendingBuySymbols] }, "Pending buy orders detected — will skip these symbols");
+    }
+    if (pendingSellSymbols.size > 0) {
+      log.info({ symbols: [...pendingSellSymbols] }, "Pending sell orders detected — will skip these symbols");
     }
   } catch {
     // If order fetch fails, proceed without conflict check
@@ -2561,6 +2655,12 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         // Phase 3 safeguards: notional cap + rate limit gate before submission
         const buyNotional = qty * limitPrice;
         const bootEquity = engine.boot?.equity ?? equity;
+        // Phase 7 — skip if buy already pending on broker (pendingBuySymbols also
+        // gets re-populated here from the fetched openOrders earlier in the scan)
+        if (pendingBuySymbols.has(symbol)) {
+          log.info({ symbol }, "Main-scan BUY skipped — active buy already pending on broker");
+          continue;
+        }
         const gate = canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity);
         if (!gate.ok) {
           log.warn(
@@ -2597,6 +2697,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             limitPrice: String(limitPrice),
           });
           recordOrderPlacement(engine, "buy", buyNotional);
+          pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
 
           tradesThisScan++;
 

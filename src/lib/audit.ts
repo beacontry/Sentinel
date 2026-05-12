@@ -264,6 +264,7 @@ export const AuditAction = {
   ENGINE_LIVE_BLOCKED: "engine.live_blocked",
   ENGINE_PDT_VULNERABLE: "engine.pdt_vulnerable",
   ENGINE_ADMIN_OVERRIDE: "engine.admin_override",
+  ENGINE_POSITION_DISAPPEARED: "engine.position_disappeared",
   // Orders
   ORDER_PLACED: "order.placed",
   ORDER_REJECTED: "order.rejected",
