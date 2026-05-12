@@ -35,6 +35,14 @@ export async function GET() {
         log.info("Auto-seeded forum categories");
       }
 
+      // NOTE: the correlated reference to the outer category id is written as
+      // a literal `forum_categories.id` rather than `${forumCategories.id}`
+      // because drizzle's sql tag was compiling the interpolated column as a
+      // bare unqualified "id", which collides with users.id / forum_threads.id
+      // inside the inner subqueries that JOIN those tables. Postgres then
+      // raises `column reference "id" is ambiguous` and the whole categories
+      // endpoint returns 500, leaving the forum page with no boards and the
+      // "New Thread" button disabled (gh issue surfaced 2026-05-12).
       return tx
         .select({
           id: forumCategories.id,
@@ -44,31 +52,31 @@ export async function GET() {
           createdAt: forumCategories.createdAt,
           threadCount: sql<number>`(
             SELECT count(*)::int FROM forum_threads
-            WHERE forum_threads.category_id = ${forumCategories.id}
+            WHERE forum_threads.category_id = forum_categories.id
           )`,
           replyCount: sql<number>`(
             SELECT count(*)::int FROM forum_replies
             WHERE forum_replies.thread_id IN (
-              SELECT forum_threads.id FROM forum_threads WHERE forum_threads.category_id = ${forumCategories.id}
+              SELECT forum_threads.id FROM forum_threads WHERE forum_threads.category_id = forum_categories.id
             )
           )`,
           lastThreadTitle: sql<string | null>`(
             SELECT ft.title FROM forum_threads ft
-            WHERE ft.category_id = ${forumCategories.id}
+            WHERE ft.category_id = forum_categories.id
             ORDER BY ft.created_at DESC LIMIT 1
           )`,
           lastThreadAuthor: sql<string | null>`(
             SELECT u.name FROM forum_threads ft
             JOIN users u ON u.id = ft.user_id
-            WHERE ft.category_id = ${forumCategories.id}
+            WHERE ft.category_id = forum_categories.id
             ORDER BY ft.created_at DESC LIMIT 1
           )`,
           lastActivityAt: sql<string | null>`(
             SELECT GREATEST(
-              (SELECT max(ft2.created_at) FROM forum_threads ft2 WHERE ft2.category_id = ${forumCategories.id}),
+              (SELECT max(ft2.created_at) FROM forum_threads ft2 WHERE ft2.category_id = forum_categories.id),
               (SELECT max(fr.created_at) FROM forum_replies fr
                JOIN forum_threads ft3 ON ft3.id = fr.thread_id
-               WHERE ft3.category_id = ${forumCategories.id})
+               WHERE ft3.category_id = forum_categories.id)
             )::text
           )`,
         })
