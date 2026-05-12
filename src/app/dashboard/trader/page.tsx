@@ -791,12 +791,8 @@ export default function TraderPage() {
                     className="border-b border-border/50 hover:bg-bg-hover cursor-pointer transition-colors"
                     onClick={() => setDetailSymbol(p.symbol)}
                   >
-                    <td className="py-2 pr-4 font-medium">
-                      <SymbolLink
-                        symbol={p.symbol}
-                        className="font-medium"
-                        stopPropagation
-                      />
+                    <td className="py-2 pr-4 font-medium text-text-primary">
+                      {p.symbol}
                     </td>
                     <td className="py-2 pr-4 text-right">{p.quantity ?? 0}</td>
                     <td className="py-2 pr-4 text-right">${(p.entryPrice ?? 0).toFixed(2)}</td>
