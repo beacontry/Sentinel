@@ -292,12 +292,15 @@ Bugs from the original list that turned out to already be mitigated and were NOT
 - `dailyNotional` does reset at midnight — every scan's date check (`engine.dailyLossDate !== today`) handles it. False positive in the original audit.
 - `__brokerPositionCache` 15-min stale lag — already mitigated because the dashboard route fetches fresh broker data on every request and falls back to the cache only when broker is unreachable. `positionsStale` + `positionsAgeSeconds` already surface staleness when fallback happens.
 
-### Frozen-value bugs (medium priority)
+### ~~Frozen-value bugs~~ ✅ SHIPPED (mostly) — Phase 2
 
-8. **`pos.takeProfit` set once at entry, never updated.** Trailing TP doesn't exist; the broker-side limit order (if any) stays at entry × (1 + tpPct). UI shows it as if it's current. Fix: either implement trailing TP, or relabel the field "fixed target" so users don't expect it to move.
-9. **`pos.trailingStopPct` captured at entry, never refreshed.** If user edits the strategy's trailing-stop %, existing positions still use the old value. Fix: re-resolve strategy in `syncBrokerStops()` every scan.
-10. **`pos.peakPrice` ratchets up only, never reset on quantity changes.** Partial close on broker leaves the peak referring to a price set when qty was higher; trailing % calculation is now off. Fix: reset peakPrice = currentPrice when qty drops by > 5%.
-11. **`pos.entryDate` set to `now()` when position discovered post-opening** (e.g. user buys manually on Alpaca, engine syncs it). Hold-period math wrong. Fix: pull broker order `createdAt` during sync.
+Fixed in the Phase 2 batch:
+- **`pos.peakPrice` reset on >5% qty drop.** `syncPositionMapFromBroker()` now detects a material qty drop (`new/old < 0.95`) and resets peakPrice to currentPrice. Trail % calculation recalibrates from the post-close size instead of an inflated peak.
+- **`pos.trailingStopPct` re-resolved on every sync.** Strategy edits (trailingStopPct) now propagate to existing positions instead of being frozen at entry-time values.
+- **`pos.takeProfit` re-computed from current strategy.** When the strategy's `takeProfitPct` changes, refreshed as `entryPrice × (1 + tpPct)` so existing positions reflect the new target.
+
+Still pending:
+- **`pos.entryDate` from broker creation time.** Currently set to `new Date()` when the engine discovers a position post-opening (manual buy on Alpaca, server restart). Fix requires a `getOrderByFill(symbol)` method on the broker client OR persisting the position map across restarts. Defer until hold-period math actually bites — most users don't notice the off-by-hours issue.
 
 ### Cache invalidation (medium priority)
 
