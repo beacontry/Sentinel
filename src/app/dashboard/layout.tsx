@@ -11,6 +11,7 @@ import { PinSetupBanner } from "@/components/pin-setup-banner";
 import { SafeguardsOnboardingModal } from "@/components/safeguards-onboarding-modal";
 import { DisplayPrefsProvider } from "@/components/display-prefs-provider";
 import { KeyboardShortcuts } from "@/components/layout/keyboard-shortcuts";
+import { TermsAcceptanceModal } from "@/components/terms-acceptance-modal";
 
 export default function DashboardLayout({
   children,
@@ -31,6 +32,7 @@ export default function DashboardLayout({
             <CsrfInit />
             <SessionGuard />
             <SafeguardsOnboardingModal />
+            <TermsAcceptanceModal />
           </AiProvider>
         </DisplayPrefsProvider>
       </ToastProvider>
