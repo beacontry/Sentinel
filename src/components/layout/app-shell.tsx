@@ -18,6 +18,7 @@ import {
 } from "./nav-config";
 import { useAi } from "@/components/ai/ai-provider";
 import { useTheme } from "@/components/theme-provider";
+import { BrokerSwitcher } from "./broker-switcher";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -69,6 +70,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               </Link>
             </div>
+
+            {/* Active broker switcher */}
+            <BrokerSwitcher />
 
             {/* Nav items */}
             <nav style={{ flex: 1, overflowY: "auto", padding: "4px 10px" }}>
@@ -203,6 +207,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               </Link>
             </div>
+
+            {/* Active broker switcher (mobile) */}
+            <BrokerSwitcher />
 
             <nav style={{ flex: 1, overflowY: "auto", padding: "4px 10px" }}>
               {NAV_ITEMS.map((item) => {
