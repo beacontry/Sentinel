@@ -44,7 +44,7 @@ export async function GET() {
 
     // Always fetch broker account data when a connection exists
     let brokerAccount: { equity: number; cash: number; buyingPower: number; portfolioValue: number } | null = null;
-    let brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number; unrealizedPnl: number; marketValue: number }[] = [];
+    let brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number; unrealizedPnl: number; unrealizedIntradayPnl: number; marketValue: number }[] = [];
     let brokerOpenOrders: Array<{
       id: string; symbol: string; side: string; type: string; qty: number;
       filledQty: number; status: string; stopPrice: string | null;
@@ -68,7 +68,9 @@ export async function GET() {
         if (pos.status === "fulfilled") {
           brokerPositions = pos.value.map((p) => ({
             symbol: p.symbol, qty: p.qty, avgEntryPrice: p.avgEntryPrice,
-            currentPrice: p.currentPrice, unrealizedPnl: p.unrealizedPnl, marketValue: p.marketValue,
+            currentPrice: p.currentPrice, unrealizedPnl: p.unrealizedPnl,
+            unrealizedIntradayPnl: p.unrealizedIntradayPnl,
+            marketValue: p.marketValue,
           }));
         }
         if (orders.status === "fulfilled") {
@@ -242,9 +244,17 @@ export async function GET() {
         portfolioValue: brokerAccount.portfolioValue,
       } : null,
       todayPnl: (() => {
-        // Always prefer live broker P&L when connected
+        // Always prefer live broker P&L when connected. Bug fix: was summing
+        // p.unrealizedPnl (TOTAL unrealized since position opened — could be
+        // weeks of accumulated gains). Now sums p.unrealizedIntradayPnl which
+        // is Alpaca's "today only" intraday P&L — change since prev close.
+        // Falls back to total unrealizedPnl when intraday is unavailable
+        // (IBKR / Tradier — neither exposes intraday).
         if (brokerConnected && brokerPositions.length > 0) {
-          const unrealized = brokerPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
+          const hasIntraday = brokerPositions.some((p) => p.unrealizedIntradayPnl !== 0);
+          const unrealized = hasIntraday
+            ? brokerPositions.reduce((sum, p) => sum + p.unrealizedIntradayPnl, 0)
+            : brokerPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
           const realized = todayPnl?.realizedPnl ?? 0;
           return {
             realizedPnl: realized,
