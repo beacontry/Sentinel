@@ -35,6 +35,7 @@ import {
   traderDailyPnl,
   optimizationRuns,
   userTaxStatus,
+  users,
 } from "./db/schema";
 import { eq, and, desc, gt, inArray, lt, isNotNull } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
@@ -962,26 +963,57 @@ async function resolveBrokerClient(
     return null;
   }
 
-  // Prefer paper environment connections; live requires ALLOW_LIVE_TRADING=1.
+  // Prefer paper environment connections; live requires both env-gate AND
+  // per-user permission (Phase 13).
   const conn =
     connections.find((c) => c.environment === "paper") ?? connections[0];
 
-  if (conn.environment === "live" && !isLiveTradingAllowed()) {
-    log.error(
-      { userId, connectionId: conn.id },
-      "Refusing to start engine on LIVE broker — set ALLOW_LIVE_TRADING=1 to unlock"
-    );
-    void writeAudit({
-      actor: { userId, email: null, role: null },
-      action: AuditAction.ENGINE_LIVE_BLOCKED,
-      resourceType: "broker_connection",
-      resourceId: conn.id,
-      metadata: { reason: "ALLOW_LIVE_TRADING_not_set", broker: conn.broker },
-    });
-    return null;
-  }
-
   if (conn.environment === "live") {
+    // Gate 1 — global infra env flag (server-side kill switch)
+    if (!isLiveTradingAllowed()) {
+      log.error(
+        { userId, connectionId: conn.id },
+        "Refusing to start engine on LIVE broker — set ALLOW_LIVE_TRADING=1 to unlock"
+      );
+      void writeAudit({
+        actor: { userId, email: null, role: null },
+        action: AuditAction.ENGINE_LIVE_BLOCKED,
+        resourceType: "broker_connection",
+        resourceId: conn.id,
+        metadata: { reason: "ALLOW_LIVE_TRADING_not_set", broker: conn.broker },
+      });
+      return null;
+    }
+    // Gate 2 — per-user permission (Phase 13). Admin-grantable.
+    try {
+      const [u] = await db
+        .select({ liveEnabled: users.liveTradingEnabled, email: users.email })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (!u?.liveEnabled) {
+        log.error(
+          { userId, email: u?.email, connectionId: conn.id },
+          "Refusing to start engine on LIVE broker — user.live_trading_enabled is false"
+        );
+        void writeAudit({
+          actor: { userId, email: u?.email ?? null, role: null },
+          action: AuditAction.ENGINE_LIVE_BLOCKED,
+          resourceType: "broker_connection",
+          resourceId: conn.id,
+          metadata: { reason: "user_not_granted_live", broker: conn.broker, email: u?.email },
+        });
+        return null;
+      }
+    } catch (err) {
+      // DB failure — fail closed (refuse live boot). Don't trust env-only.
+      log.error(
+        { userId, err: err instanceof Error ? err.message : "unknown" },
+        "Failed to read user.live_trading_enabled — refusing live boot"
+      );
+      return null;
+    }
+
     log.warn(
       { userId, connectionId: conn.id, broker: conn.broker },
       "Engine starting against LIVE broker connection — real money at risk"

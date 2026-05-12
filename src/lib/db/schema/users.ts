@@ -21,6 +21,9 @@ export const users = pgTable("users", {
   timezone: text("timezone"),
   // Phase 6b — onboarding: NULL = first-time user, modal shown on next login.
   safeguardsAcknowledgedAt: timestamp("safeguards_acknowledged_at", { withTimezone: true }),
+  // Phase 13 — per-user live-trading permission. Engine refuses live boot
+  // when false even if ALLOW_LIVE_TRADING=1 is set on the server.
+  liveTradingEnabled: boolean("live_trading_enabled").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

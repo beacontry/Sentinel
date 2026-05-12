@@ -44,7 +44,7 @@ interface UserDrift {
 }
 
 interface UserEngineRow {
-  user: { id: string; name: string; email: string; role: string };
+  user: { id: string; name: string; email: string; role: string; liveTradingEnabled?: boolean };
   engine: {
     running: boolean;
     halted: boolean;
@@ -179,6 +179,27 @@ export default function AdminPage() {
       }
     } catch { /* ignore */ }
   }, []);
+
+  async function toggleUserLiveTrading(targetUserId: string, enabled: boolean) {
+    const target = engineRows.find((r) => r.user.id === targetUserId);
+    const label = target ? `${target.user.name} (${target.user.email})` : "this user";
+    const verb = enabled ? "GRANT live trading" : "REVOKE live trading";
+    if (!confirm(`${verb} for ${label}? They'll ${enabled ? "be able to start" : "no longer be able to start"} the engine on a LIVE broker connection.`)) return;
+    try {
+      const res = await fetch("/api/admin/user-live-trading", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId, enabled }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: "Unknown" }));
+        setEngineCmdError(data.error ?? "Action failed");
+      }
+      await loadEngines();
+    } catch {
+      setEngineCmdError("Network error");
+    }
+  }
 
   async function adminEngineAction(
     targetUserId: string,
@@ -703,12 +724,26 @@ export default function AdminPage() {
                         {r.connection ? (
                           <div className="text-xs">
                             <div className="text-text-secondary">{r.connection.broker} · {r.connection.label}</div>
-                            <Badge
-                              variant={r.connection.environment === "live" ? "bearish" : "neutral"}
-                              className="mt-1"
-                            >
-                              {r.connection.environment}
-                            </Badge>
+                            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                              <Badge variant={r.connection.environment === "live" ? "bearish" : "neutral"}>
+                                {r.connection.environment}
+                              </Badge>
+                              {/* Phase 13 — per-user live-trading toggle */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleUserLiveTrading(r.user.id, !r.user.liveTradingEnabled);
+                                }}
+                                className={`text-[10px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider transition-colors ${
+                                  r.user.liveTradingEnabled
+                                    ? "bg-bullish/10 text-bullish hover:bg-bullish/20"
+                                    : "bg-bg-elevated text-text-muted hover:bg-bg-hover"
+                                }`}
+                                title={r.user.liveTradingEnabled ? "Click to revoke live trading" : "Click to grant live trading"}
+                              >
+                                {r.user.liveTradingEnabled ? "✓ Live OK" : "○ Live denied"}
+                              </button>
+                            </div>
                           </div>
                         ) : (
                           <span className="text-xs text-text-muted">No connection</span>
