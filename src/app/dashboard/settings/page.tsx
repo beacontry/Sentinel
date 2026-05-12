@@ -703,6 +703,39 @@ export default function SettingsPage() {
         </ModalFooter>
       </Modal>
 
+      {/* Phase 15 — Export Data */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Export Data</CardTitle>
+        </CardHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-text-secondary">
+            Download your trading data as CSV. All exports are scoped to your account only.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                window.location.href = "/api/export/trades";
+              }}
+            >
+              <span>Trades (last 365 days)</span>
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                window.location.href = "/api/export/pnl-history";
+              }}
+            >
+              <span>P&amp;L History (all time)</span>
+            </Button>
+          </div>
+          <p className="text-xs text-text-muted">
+            For custom date ranges, append <code className="px-1 py-0.5 bg-bg-elevated rounded">?from=YYYY-MM-DD&amp;to=YYYY-MM-DD</code> to either URL.
+          </p>
+        </div>
+      </Card>
+
       {/* Discord Webhooks */}
       <Card>
         <CardHeader>
