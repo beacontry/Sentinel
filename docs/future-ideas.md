@@ -20,20 +20,10 @@ Stocks with stronger 60-day momentum get larger allocations. This matches how ta
 
 A practical checklist before flipping the engine off Paper Mode. Order matters — don't skip ahead.
 
-### Today
-
-- **Verify the deploy.** Run `podman logs --tail 30 sentinel-app` and confirm both `"Trading engine started"` and `"Engine watchdog started"`. If only the first, CI hasn't shipped `565fd76` yet — wait for the next deploy.
-- **Subscribe to PWA push notifications on phone.** Otherwise the watchdog's `error` severity alerts have nowhere to go and you're back to "find out by checking the dashboard."
-- **Hook the health endpoint into something external.** Better Uptime / UptimeRobot free tier, point it at `https://<domain>/api/health/engine`. This is the only thing that catches "container is dead entirely" — the in-process watchdog can't.
-
-### This Week
-
-- **Decide on the APA short.** Engine ignores it (long-only). Halt won't touch it. Either close it manually on Alpaca or accept that it sits outside the engine's accounting.
-- **Open the optimizer dashboard once** to confirm cancelled runs clear from the UI. If they don't, there's a UI bug worth filing.
-
 ### Before Live (the actual gate)
 
-- **60 trading days of clean paper** post-`b2a8d06`. No manual restarts. No `engine_alerts` rows for `stall` or `broker_disconnect`. No daily-loss halts that didn't auto-recover. If something does fire, fix it and reset the clock.
+- **60 trading days of clean paper.** No manual restarts. No `engine_alerts` rows for `stall` or `broker_disconnect`. No daily-loss halts that didn't auto-recover. If something does fire, fix it and reset the clock.
+- **External health monitoring.** UptimeRobot (or similar free tier) pointed at `https://<domain>/api/health/engine`. The in-process watchdog can't catch "container is dead entirely" — only an outside prober can.
 - **Refuse to trade when `brokerConnected=false`** (P1 from audit). Currently the engine keeps going on stale prices when Alpaca is unreachable. Not urgent for paper; matters for live.
 - **Backoff on Alpaca rate limits** (P1 from audit). With 500-symbol scans + per-position `replaceOrder` calls, bursts can hit the 200 req/min cap. Add a token-bucket wrapper around the broker client.
 - **Position-size ramp.** Start live at `positionPct` = 1/5 of paper (e.g. 3% if paper is 15%) for the first 30 days. Ratchet up if nothing breaks.
@@ -241,3 +231,25 @@ Both are S effort, deferred until there's actual external user demand.
 - **MAR ratio** = same formula as Calmar but over the entire track record, not just a year. Calmar is annual MAR.
 
 These tell you how *painful* a strategy is to hold — Sharpe alone hides the worst-day texture.
+
+---
+
+## 2026-05-12 — QoL audit, bigger asks (deferred)
+
+Found during the cross-app QoL pass. These are L-sized features that need their own design + commits, not part of the 6-batch polish bundle.
+
+**Compare strategies side-by-side.** Backtest page already saves multiple strategies; add a "Compare" mode that renders 2–3 backtest results in parallel columns (equity curve overlay, stats side-by-side, win-rate / Sharpe / drawdown rows). L effort. Useful once Sortino/Calmar/MAR ship — comparison matters more when you have richer metrics to compare against.
+
+**Real portfolio overview page.** Today `/dashboard/portfolio` is a 1-line redirect to `/dashboard/trader`. Replace with a dedicated overview: all manual entries + live broker positions in one table, asset allocation pie (sector + position-size weight), historical equity curve, top winners/losers by % and by $. L effort. Bridges the gap between Trader (engine-focused) and Tax Center (lot-focused).
+
+**Persist recently-viewed symbols to DB for cross-device.** Today `useRecentlyViewed` is localStorage-only, so jumping from desktop to phone loses the history. Add `users.recent_symbols TEXT[]` + lightweight POST on every selection. M effort. Low-priority unless multi-device usage actually picks up.
+
+**Batch quote endpoint for watchlist.** Quotes on the Watchlists page fetch one-by-one via `/api/analyze`, which is slow for >10 symbols and wasteful (analyze does the full hybrid pipeline). Add `/api/quotes?symbols=AAPL,MSFT,…` that returns just last price + intraday change. Cache 1min. M effort. Pairs nicely with the future websocket plan but useful even on its own.
+
+**Trader 3-col layout on XL screens.** Trader page stacks positions / orders / signals vertically. On a 2560+ wide screen this is a lot of empty space. Switch to grid-cols-3 at `2xl:` for positions+orders+signals row. M effort. Pure responsive polish.
+
+---
+
+## 2026-05-12 — Pruned
+
+Removed: "Path to Live Trading — Today / This Week" — referenced specific stale commits (`565fd76`, `b2a8d06`) and one-off operational items (APA short cleanup) that are no longer relevant. The "Before Live (the actual gate)" checklist remains as the still-valid pre-live gate.

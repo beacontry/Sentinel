@@ -11,6 +11,7 @@
 // page treats as "your watchlist."
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -493,15 +494,25 @@ export default function WatchlistsPage() {
                     {active.symbols.map((sym) => {
                       const q = quotes[sym];
                       return (
-                        <div key={sym} className="rounded-xl border border-border bg-bg-surface p-3 relative group">
+                        <Link
+                          key={sym}
+                          href={`/dashboard/analysis?symbol=${encodeURIComponent(sym)}`}
+                          className="rounded-xl border border-border bg-bg-surface p-3 relative group hover:border-border-hover transition-colors"
+                        >
                           <button
-                            onClick={() => removeSymbol(sym)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              removeSymbol(sym);
+                            }}
                             className="absolute top-2 right-2 p-0.5 opacity-0 group-hover:opacity-100 text-text-muted hover:text-bearish transition-all"
                             aria-label={`Remove ${sym}`}
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>
-                          <div className="font-mono font-semibold text-text-primary">{sym}</div>
+                          <div className="font-mono font-semibold text-text-primary group-hover:text-accent transition-colors">
+                            {sym}
+                          </div>
                           {q ? (
                             <div className="mt-1">
                               <div className="font-mono text-sm">${q.price.toFixed(2)}</div>
@@ -510,9 +521,12 @@ export default function WatchlistsPage() {
                               </div>
                             </div>
                           ) : (
-                            <div className="mt-1 text-xs text-text-muted">Loading…</div>
+                            <div className="mt-1 space-y-1">
+                              <Skeleton className="h-4 w-16" rounded="sm" />
+                              <Skeleton className="h-3 w-12" rounded="sm" />
+                            </div>
                           )}
-                        </div>
+                        </Link>
                       );
                     })}
                   </div>

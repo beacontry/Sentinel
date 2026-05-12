@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SignalBadge } from "@/components/ui/signal-badge";
+import { SymbolLink } from "@/components/ui/symbol-link";
 import { Zap, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
@@ -103,9 +104,9 @@ export function RecentSignalsWidget() {
               bg-bg-elevated hover:bg-bg-hover transition-colors"
           >
             <div className="flex items-center gap-2">
-              <span className="font-mono text-[13px] font-medium text-text-primary">
+              <SymbolLink symbol={sig.symbol} className="text-[13px] font-medium">
                 {sig.symbol}
-              </span>
+              </SymbolLink>
               <SignalBadge signal={sig.signal} />
             </div>
             <div className="flex flex-col items-end gap-0.5 text-right leading-none">

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { SymbolLink } from "@/components/ui/symbol-link";
 import { Briefcase, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
@@ -80,9 +81,9 @@ export function PositionsWidget() {
                 bg-bg-elevated hover:bg-bg-hover transition-colors"
             >
               <div className="flex items-center gap-2.5">
-                <span className="font-mono text-sm font-medium text-text-primary">
+                <SymbolLink symbol={pos.symbol} className="text-sm font-medium">
                   {pos.symbol}
-                </span>
+                </SymbolLink>
                 <Badge variant="neutral">
                   {pos.quantity} shr
                 </Badge>
