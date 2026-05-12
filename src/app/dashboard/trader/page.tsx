@@ -775,6 +775,7 @@ export default function TraderPage() {
       <TraderTaxCallouts />
 
       {/* Open positions */}
+      <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
       <Card>
         <CardHeader className="p-0 pb-3">
           <CardTitle>Open Positions ({positions.length})</CardTitle>
@@ -906,6 +907,7 @@ export default function TraderPage() {
           </div>
         </Card>
       )}
+      </div>{/* end 2xl:grid-cols-2 positions+orders wrap */}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent signals */}

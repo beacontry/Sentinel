@@ -245,19 +245,16 @@ Defer until Finnhub upgrade is worth the spend. The metadata listing
 alone surfaces "Latest call: Q3 2025, Nov 7" which is already useful
 context.
 
-## 2026-05-12 — QoL audit, bigger asks (deferred)
+## 2026-05-12 — QoL audit bigger asks: 4 of 5 shipped (Phase 6)
 
-Found during the cross-app QoL pass. These are L-sized features that need their own design + commits, not part of the 6-batch polish bundle.
+Shipped:
+- **Compare strategies side-by-side** ✅ — see Phase 5 above. `/dashboard/backtest/compare`.
+- **Real portfolio overview page** ✅ — `/dashboard/portfolio` no longer redirects to /trader. Aggregates manual portfolios + live broker positions via the existing `/api/portfolio/summary` endpoint. Sector allocation bars (color-coded by `getSymbolSector()`), top-5 winners + top-5 losers, full broker positions table.
+- **Batch quote endpoint** ✅ — new `/api/quotes?symbols=AAPL,MSFT,…` returns `{ symbol → { price, change } }`. Caps at 100 symbols. Uses `getMarketDataProvider().fetchBars(2, "1d")` per symbol with Promise.allSettled so one bad symbol doesn't tank the batch. 60s response cache.
+- **Trader 2-col layout on wide screens** ✅ — Open Positions + Open Orders now wrap in `grid-cols-1 2xl:grid-cols-2`, side-by-side on 2560+ screens. (The audit said "3-col with signals"; the existing signals/trades 2-col row stays as-is — practical change was the positions/orders wrap which had been a tall vertical scroll.)
 
-**Compare strategies side-by-side.** Backtest page already saves multiple strategies; add a "Compare" mode that renders 2–3 backtest results in parallel columns (equity curve overlay, stats side-by-side, win-rate / Sharpe / drawdown rows). L effort. Useful once Sortino/Calmar/MAR ship — comparison matters more when you have richer metrics to compare against.
-
-**Real portfolio overview page.** Today `/dashboard/portfolio` is a 1-line redirect to `/dashboard/trader`. Replace with a dedicated overview: all manual entries + live broker positions in one table, asset allocation pie (sector + position-size weight), historical equity curve, top winners/losers by % and by $. L effort. Bridges the gap between Trader (engine-focused) and Tax Center (lot-focused).
-
-**Persist recently-viewed symbols to DB for cross-device.** Today `useRecentlyViewed` is localStorage-only, so jumping from desktop to phone loses the history. Add `users.recent_symbols TEXT[]` + lightweight POST on every selection. M effort. Low-priority unless multi-device usage actually picks up.
-
-**Batch quote endpoint for watchlist.** Quotes on the Watchlists page fetch one-by-one via `/api/analyze`, which is slow for >10 symbols and wasteful (analyze does the full hybrid pipeline). Add `/api/quotes?symbols=AAPL,MSFT,…` that returns just last price + intraday change. Cache 1min. M effort. Pairs nicely with the future websocket plan but useful even on its own.
-
-**Trader 3-col layout on XL screens.** Trader page stacks positions / orders / signals vertically. On a 2560+ wide screen this is a lot of empty space. Switch to grid-cols-3 at `2xl:` for positions+orders+signals row. M effort. Pure responsive polish.
+Still pending:
+- **Persist recently-viewed symbols to DB for cross-device.** Today `useRecentlyViewed` is localStorage-only. Would need `users.recent_symbols TEXT[]` + lightweight POST on every selection. M effort. Defer unless multi-device usage actually picks up — single-device localStorage is fine for now.
 
 ---
 
