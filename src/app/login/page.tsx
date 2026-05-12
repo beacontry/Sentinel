@@ -14,6 +14,33 @@ interface LastUser {
   name: string;
 }
 
+// Read the user's chosen landing page from the same localStorage key
+// DisplayPrefsProvider writes. Login page isn't inside the provider tree
+// so it reads directly — a tiny duplication but avoids restructuring the
+// auth shell. Falls back to /dashboard on missing/corrupt data.
+const ALLOWED_LANDING = new Set([
+  "/dashboard",
+  "/dashboard/trader",
+  "/dashboard/analysis",
+  "/dashboard/screener",
+  "/dashboard/news",
+  "/dashboard/pnl-calendar",
+]);
+function getLandingPage(): string {
+  if (typeof window === "undefined") return "/dashboard";
+  try {
+    const raw = window.localStorage.getItem("sentinel-display-prefs");
+    if (!raw) return "/dashboard";
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.landingPage === "string" && ALLOWED_LANDING.has(parsed.landingPage)) {
+      return parsed.landingPage;
+    }
+  } catch {
+    // fall through
+  }
+  return "/dashboard";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -77,7 +104,7 @@ export default function LoginPage() {
         email: data.user?.email ?? email,
         name: data.user?.name ?? email,
       }));
-      router.push("/dashboard");
+      router.push(getLandingPage());
     } catch {
       setError("An unexpected error occurred");
     } finally {
@@ -105,7 +132,7 @@ export default function LoginPage() {
         }
         return;
       }
-      router.push("/dashboard");
+      router.push(getLandingPage());
     } catch {
       setError("An unexpected error occurred");
     } finally {

@@ -123,6 +123,28 @@
   html.dark ::-webkit-scrollbar-thumb { background: #3d5349; }
   html.dark ::-webkit-scrollbar-thumb:hover { background: #4d6559; }
   html.dark ::selection { background-color: rgba(16, 185, 129, 0.30); }
+
+  /* Color-blind palette swap. Activated by the `colorblind` class on
+     the <html> element, toggled by useDisplayPrefs.setColorBlindMode.
+     Replaces red/green with a deuteranopia-friendly orange/blue pair
+     (Wong palette). Bullish stays a vivid color (still emotionally
+     positive), bearish swaps to orange (distinguishable from green
+     for the ~8% of men + ~0.5% of women who can't tell red from green).
+     The hex values match Bang Wong's published recommendations:
+     - blue:   #0072B2 (positive / bullish)
+     - orange: #E69F00 (negative / bearish) */
+  html.colorblind {
+    --color-bullish: #0072B2;
+    --color-bullish-muted: rgba(0, 114, 178, 0.15);
+    --color-bearish: #E69F00;
+    --color-bearish-muted: rgba(230, 159, 0, 0.15);
+  }
+  html.colorblind.dark {
+    --color-bullish: #56B4E9;
+    --color-bullish-muted: rgba(86, 180, 233, 0.15);
+    --color-bearish: #E69F00;
+    --color-bearish-muted: rgba(230, 159, 0, 0.20);
+  }
 }
 
 html {
