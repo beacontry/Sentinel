@@ -15,7 +15,8 @@ import {
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw, AlertTriangle, BarChart3 } from "lucide-react";
+import Link from "next/link";
+import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw, AlertTriangle, BarChart3, Key, ArrowRight } from "lucide-react";
 
 interface User {
   id: string;
@@ -950,6 +951,32 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
+        </Card>
+      </div>
+
+      {/* ── System Configuration card (API keys) ── */}
+      <div className="pt-4">
+        <h2 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+          <Key className="w-5 h-5 text-accent" />
+          System Configuration
+        </h2>
+        <Card>
+          <Link
+            href="/dashboard/admin/system-config"
+            className="flex items-center justify-between gap-4 group"
+          >
+            <div>
+              <div className="text-sm font-semibold text-text-primary group-hover:text-accent transition-colors">
+                API Keys
+              </div>
+              <p className="text-xs text-text-muted mt-1">
+                Rotate Groq, Finnhub, and other server-wide API keys without
+                touching the droplet. Values are encrypted at rest and never
+                exposed in the UI after save.
+              </p>
+            </div>
+            <ArrowRight className="w-5 h-5 text-text-muted group-hover:text-accent group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+          </Link>
         </Card>
       </div>
 

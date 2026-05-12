@@ -1,4 +1,5 @@
 import { CLAUDE_CONFIG } from "./config";
+import { getLlmApiKey } from "./system-config";
 import type { MarketContext, ChatContext } from "@/types";
 
 interface DigestResult {
@@ -55,12 +56,16 @@ interface GroqResponse {
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
 }
 
-async function groqChat(messages: GroqMessage[], maxTokens: number): Promise<GroqResponse> {
+export async function groqChat(messages: GroqMessage[], maxTokens: number): Promise<GroqResponse> {
+  const apiKey = await getLlmApiKey();
+  if (!apiKey) {
+    throw new Error("LLM not configured — set GROQ_API_KEY in admin → System Config");
+  }
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${CLAUDE_CONFIG.apiKey}`,
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: CLAUDE_CONFIG.model,
@@ -81,8 +86,8 @@ async function groqChat(messages: GroqMessage[], maxTokens: number): Promise<Gro
 class LLMClient {
   private lastDigestAt: number = 0;
 
-  get isConfigured(): boolean {
-    return !!CLAUDE_CONFIG.apiKey;
+  async isConfigured(): Promise<boolean> {
+    return !!(await getLlmApiKey());
   }
 
   canGenerateDigest(): boolean {

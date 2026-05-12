@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SignalBadge } from "@/components/ui/signal-badge";
 import { SymbolLink } from "@/components/ui/symbol-link";
+import { useToast } from "@/components/ui/toast";
 import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 import { PositionDetailSheet } from "@/components/dashboard/position-detail-sheet";
 import type { SignalType } from "@/types";
@@ -191,6 +192,7 @@ interface TaxStatus {
 
 export default function TraderPage() {
   const { pnlFormat } = useDisplayPrefs();
+  const { toast } = useToast();
   const [data, setData] = useState<TraderData | null>(null);
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -982,8 +984,23 @@ export default function TraderPage() {
                           if (res.ok) {
                             const data = await res.json();
                             setSummaryByTradeId((prev) => ({ ...prev, [tradeId]: data.summary }));
+                          } else {
+                            const data = await res.json().catch(() => ({}));
+                            toast({
+                              type: "error",
+                              message:
+                                data?.error ||
+                                `AI summary failed (${res.status}) — check admin → System Config`,
+                            });
                           }
-                        } catch { /* ignore */ } finally {
+                        } catch (err) {
+                          toast({
+                            type: "error",
+                            message:
+                              "AI summary failed — " +
+                              ((err as Error)?.message ?? "network error"),
+                          });
+                        } finally {
                           setSummarizing((prev) => {
                             const next = new Set(prev);
                             next.delete(tradeId);

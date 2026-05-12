@@ -358,6 +358,20 @@ Gate ordering inside `canPlaceBuyOrder()`: wash-sale → PDT → notional → ra
 - `maxConsecutiveLosses`: 3
 - MTM checkbox: unchecked unless you actually filed §475(f) at last year-start
 
+## AI Providers & System Configuration
+
+**All AI flows go through Groq (`llama-3.3-70b-versatile`)** — Insights, Quick Insight widget, hybrid AI scoring + sentiment layers, filings chat, market digest, AI chat panel, and the Recent Trades **AI ✨** button. The single-Anthropic-route holdover at `summarize-trade` was migrated 2026-05-12; `@anthropic-ai/sdk` is no longer a dependency. The misleadingly-named `CLAUDE_CONFIG` in `src/lib/config.ts` is still the source of truth for `.model` + `.maxTokens` constants but no longer reads `.apiKey` directly — all key lookups go through `getLlmApiKey()` / `getFinnhubApiKey()` / `getAnthropicApiKey()` in `src/lib/system-config.ts`.
+
+**Keys live in the `system_config` table** (migration `0030_system_config.sql`), encrypted with AES-256-GCM via `src/lib/crypto.ts`. Rotate from **/dashboard/admin/system-config** — no SSH required. Lookup order at runtime: 60s in-memory cache → DB → `process.env[<key>]` fallback. The env fallback is intentional so a fresh install boots cleanly before the admin has populated the DB.
+
+**Audit:** every save emits a hash-chained `SYSTEM_CONFIG_UPDATED` audit row whose metadata records `{key, hadOldValue, valueLength}` — never the value itself.
+
+**Test-before-save:** the admin UI's [Test] button calls `POST /api/admin/system-config/test` which hits the live provider with a 1-token ping using the candidate key. The candidate is not persisted; only [Save] writes.
+
+**Known keys** (allow-list enforced in both API + helper): `GROQ_API_KEY`, `FINNHUB_API_KEY`, `ANTHROPIC_API_KEY`. Anything else is rejected — admins can't silently overwrite arbitrary env vars from the UI.
+
+**Caveat — Finnhub:** the Finnhub client (`src/lib/finnhub.ts`) constructs once at process boot and reads its key field at that time. Rotating `FINNHUB_API_KEY` via the admin UI requires an app restart for the trading engine + per-symbol routes (news, sentiment, recommendations, fundamentals, etc.) to pick up the new value. The LLM path (`getLlmApiKey()`) is fully async and picks up changes on the next call after the 60s cache window.
+
 ## Security & Route Patterns
 
 ### Auth on Mutating Routes

@@ -18,8 +18,8 @@ export async function GET(request: NextRequest) {
   }
 
   const claude = getClaudeClient();
-  if (!claude.isConfigured) {
-    return NextResponse.json({ error: "ANTHROPIC_API_KEY not configured" }, { status: 503 });
+  if (!(await claude.isConfigured())) {
+    return NextResponse.json({ error: "LLM not configured — set GROQ_API_KEY in admin → System Config" }, { status: 503 });
   }
 
   const today = new Date().toISOString().slice(0, 10);
