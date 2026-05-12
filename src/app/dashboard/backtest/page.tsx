@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -408,9 +409,18 @@ export default function BacktestPage() {
         <Card>
           <CardHeader className="p-0 pb-3">
             <CardTitle>Saved Strategies ({strategies.length})</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setShowLoadList(false)}>
-              <X className="w-4 h-4" />
-            </Button>
+            <div className="flex gap-2">
+              {strategies.length >= 2 && (
+                <Link href="/dashboard/backtest/compare">
+                  <Button variant="secondary" size="sm">
+                    Compare strategies
+                  </Button>
+                </Link>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => setShowLoadList(false)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
           </CardHeader>
           {strategies.length === 0 ? (
             <p className="text-sm text-text-muted py-4 text-center">

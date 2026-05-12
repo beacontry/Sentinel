@@ -127,17 +127,18 @@ Adds an `oversold-bounce` mode alongside momentum-only modes. RSI < 30 + price >
 
 ---
 
-## Strategy testing
+## Strategy testing — 1 of 3 shipped (Phase 5)
+
+Shipped:
+- **Compare strategies side-by-side** ✅ — new `/dashboard/backtest/compare?ids=…` route. Pick up to 5 saved strategies (URL-driven so links are shareable), see stats columns (Return / Win Rate / Trades / Max DD / Sharpe / Sortino / Calmar / MAR) and an equity-curve overlay (normalized to start = 100 so different starting balances are visually comparable). New `/api/backtest/compare?ids=...` endpoint. "Compare strategies" button on the existing Saved Strategies card.
+
+Still pending:
 
 ### Engine dry-run mode
-New `EngineMode` value `"dry-run"` where the engine runs scans normally, computes decisions, logs to `trader_trades` with `status='DRY_RUN'`, but never calls `placeOrder()`. Lets you test strategy code changes without risk. UI badge shows "DRY RUN" prominently. ~150 LOC.
-
-**Why:** changing the engine in production-mode is scary. Dry-run lets you ship strategy code and watch its decisions for a week before any real orders fire.
+New `dryRun: boolean` on `EngineState` + a gate at `placeEngineOrder` that logs would-be orders to `trader_trades` with `status='DRY_RUN'` instead of calling the broker. UI badge "DRY RUN" prominently. ~150 LOC. Defer until there's a specific change to dry-test — adds infra without immediate user-visible value.
 
 ### Live-vs-backtest divergence tracker
-For each engine fill, compare against what the backtester would have predicted at the same timestamp. If divergence > 5%, log to a new `engine_divergence` table. Surfaces drift between paper backtest assumptions and live broker reality. ~200 LOC + migration.
-
-**Why:** backtests almost always overstate live performance (slippage, latency, fill quality). Quantifying the delta lets you size expectations correctly.
+For each engine fill, compare against what the backtester would have predicted at the same timestamp. If divergence > 5%, log to a new `engine_divergence` table. Surfaces drift between paper backtest assumptions and live broker reality. ~200 LOC + migration. Defer until live trading is running consistently — needs enough live fills to calibrate the "expected divergence" baseline.
 
 ---
 
