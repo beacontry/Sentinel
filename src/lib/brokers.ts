@@ -58,7 +58,18 @@ export interface BrokerOrder {
 export interface PlaceOrderParams {
   symbol: string;
   side: "buy" | "sell";
-  qty: string;
+  /**
+   * Share quantity. Mutually exclusive with `notional` — exactly one of the
+   * two must be set. For fractional-share buys ("$100 of AAPL"), pass
+   * `notional` and leave `qty` undefined.
+   */
+  qty?: string;
+  /**
+   * Dollar amount for the order (fractional shares). Alpaca restriction:
+   * `notional` orders must be market type with `day` or `ioc` TIF.
+   * Mutually exclusive with `qty`.
+   */
+  notional?: string;
   type: "market" | "limit" | "stop" | "stop_limit";
   timeInForce: string;
   limitPrice?: string;
@@ -298,10 +309,17 @@ class AlpacaClient implements BrokerClient {
     const payload: Record<string, unknown> = {
       symbol: params.symbol,
       side: params.side,
-      qty: params.qty,
       type: params.type,
       time_in_force: params.timeInForce,
     };
+    // Fractional-share path: notional (dollars) vs qty (shares). Mutually
+    // exclusive per Alpaca's contract. notional only works with market +
+    // day/ioc TIF; the route validator enforces that.
+    if (params.notional) {
+      payload.notional = params.notional;
+    } else if (params.qty) {
+      payload.qty = params.qty;
+    }
     if (params.limitPrice) payload.limit_price = params.limitPrice;
 
     // Phase 8 — broker-side naked-position guard. Alpaca rejects if intent
@@ -703,6 +721,18 @@ class IBKRClient implements BrokerClient {
       );
     }
 
+    // IBKR doesn't support notional / fractional via this endpoint
+    if (params.notional) {
+      throw new BrokerError(
+        "IBKR does not support dollar-based (fractional) orders via this endpoint",
+        400,
+        "IBKR does not support dollar-based orders here. Use share quantity."
+      );
+    }
+    if (!params.qty) {
+      throw new BrokerError("Order missing qty", 400, "Order quantity is required");
+    }
+
     // Step 2: Place the order
     const ibkrOrder: Record<string, unknown> = {
       acctId: this.accountId,
@@ -1068,6 +1098,18 @@ class TradierClient implements BrokerClient {
   }
 
   async placeOrder(params: PlaceOrderParams): Promise<BrokerOrder> {
+    // Tradier doesn't support fractional / notional orders — surface it
+    // clearly instead of letting the broker reject a malformed request.
+    if (params.notional) {
+      throw new BrokerError(
+        "Tradier does not support dollar-based (fractional) orders",
+        400,
+        "Tradier does not support dollar-based orders. Use share quantity."
+      );
+    }
+    if (!params.qty) {
+      throw new BrokerError("Order missing qty", 400, "Order quantity is required");
+    }
     const formData = new URLSearchParams();
     formData.append("class", "equity");
     formData.append("symbol", params.symbol);

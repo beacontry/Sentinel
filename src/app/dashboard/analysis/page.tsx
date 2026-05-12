@@ -22,6 +22,7 @@
 //   - Every click also pushes the symbol onto Recently Viewed.
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import type { AnalysisResult } from "@/types";
 import { SignalFeed, type SignalFeedItem } from "@/components/dashboard/signal-feed";
 import { SignalDetails } from "@/components/dashboard/signal-details";
@@ -573,18 +574,28 @@ export default function AnalysisCockpit() {
                 )}
 
                 {selectedSymbol && (
-                  <button
-                    onClick={() => {
-                      if (selectedSymbol) analyzeSymbol(selectedSymbol);
-                    }}
-                    disabled={isSelectedLoading}
-                    className="flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded-[16px]
-                      border border-border px-3 py-1.5 text-xs text-text-muted transition-colors
-                      hover:border-accent/30 hover:text-accent disabled:opacity-30"
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isSelectedLoading ? "animate-spin" : ""}`} />
-                    Refresh
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => {
+                        if (selectedSymbol) analyzeSymbol(selectedSymbol);
+                      }}
+                      disabled={isSelectedLoading}
+                      className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-[16px]
+                        border border-border px-3 py-1.5 text-xs text-text-muted transition-colors
+                        hover:border-accent/30 hover:text-accent disabled:opacity-30"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isSelectedLoading ? "animate-spin" : ""}`} />
+                      Refresh
+                    </button>
+                    <Link
+                      href={`/dashboard/trade/${encodeURIComponent(selectedSymbol)}`}
+                      className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-[16px]
+                        border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent transition-colors
+                        hover:bg-accent/20"
+                    >
+                      Trade
+                    </Link>
+                  </div>
                 )}
               </div>
             </div>

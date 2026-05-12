@@ -277,15 +277,54 @@ export const testBrokerConnectionSchema = z.object({
   environment: z.enum(["paper", "live"]).default("paper"),
 });
 
-export const placeBrokerOrderSchema = z.object({
-  symbol: z.string().min(1, "Symbol is required").max(10).transform((s) => s.toUpperCase().trim()),
-  side: z.enum(["buy", "sell"]),
-  qty: z.string().min(1, "Quantity is required"),
-  type: z.enum(["market", "limit", "stop", "stop_limit"]).default("market"),
-  timeInForce: z.enum(["day", "gtc", "ioc", "fok"]).default("day"),
-  limitPrice: z.string().optional(),
-  stopPrice: z.string().optional(),
-});
+// Exactly one of `qty` (shares) or `notional` (dollars) must be set. For
+// fractional-share buys ("$100 of AAPL"), pass notional. The schema enforces
+// the broker's constraint that notional orders must be market + day/ioc.
+export const placeBrokerOrderSchema = z
+  .object({
+    symbol: z.string().min(1, "Symbol is required").max(10).transform((s) => s.toUpperCase().trim()),
+    side: z.enum(["buy", "sell"]),
+    qty: z.string().min(1).optional(),
+    notional: z.string().min(1).optional(),
+    type: z.enum(["market", "limit", "stop", "stop_limit"]).default("market"),
+    timeInForce: z.enum(["day", "gtc", "ioc", "fok"]).default("day"),
+    limitPrice: z.string().optional(),
+    stopPrice: z.string().optional(),
+    orderClass: z.enum(["simple", "bracket"]).optional(),
+    takeProfitPrice: z.string().optional(),
+    stopLossPrice: z.string().optional(),
+  })
+  .refine((v) => Boolean(v.qty) !== Boolean(v.notional), {
+    message: "Provide either qty (shares) or notional (dollars), not both",
+    path: ["qty"],
+  })
+  .refine(
+    (v) =>
+      !v.notional ||
+      (v.type === "market" && (v.timeInForce === "day" || v.timeInForce === "ioc")),
+    {
+      message: "Dollar-based (notional) orders must be market type with day or ioc TIF",
+      path: ["notional"],
+    }
+  )
+  .refine(
+    (v) =>
+      !v.notional ||
+      (v.orderClass === undefined || v.orderClass === "simple"),
+    {
+      message: "Bracket orders require a share quantity (qty), not a dollar amount",
+      path: ["orderClass"],
+    }
+  )
+  .refine(
+    (v) =>
+      v.orderClass !== "bracket" ||
+      (Boolean(v.stopLossPrice) || Boolean(v.takeProfitPrice)),
+    {
+      message: "Bracket orders need at least a stop-loss or take-profit",
+      path: ["orderClass"],
+    }
+  );
 
 // ─── Inferred Types ───────────────────────────────────────────────
 
