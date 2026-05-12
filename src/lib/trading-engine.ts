@@ -36,7 +36,7 @@ import {
   optimizationRuns,
   userTaxStatus,
 } from "./db/schema";
-import { eq, and, desc, gt, inArray, lt } from "drizzle-orm";
+import { eq, and, desc, gt, inArray, lt, isNotNull } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
 import { writeAudit, AuditAction } from "./audit";
 
@@ -1207,7 +1207,7 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
             }
           }
 
-          await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "FILLED", pnl, exitReason, exitOrder.id, null, engine.userId);
+          await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "PENDING", pnl, exitReason, exitOrder.id, null, engine.userId);
           positionMap.delete(symbol);
           engine.positionCount = positionMap.size;
 
@@ -1666,6 +1666,137 @@ async function reconcileBrokerSideExit(
   }
 }
 
+/**
+ * Phase 11 — trade-status reconciliation.
+ *
+ * Engine writes logTrade with status="PENDING" right after placeOrder accepts.
+ * That only means Alpaca accepted the order, NOT that it filled. This reconciler
+ * runs at the top of each scan to update PENDING trader_trades rows with real
+ * broker state:
+ *
+ *   - filled    → status="FILLED", fillPrice from broker, pnl corrected via delta math
+ *   - canceled  → status="CANCELED", pnl=null
+ *   - rejected  → status="REJECTED", pnl=null
+ *   - expired   → status="EXPIRED", pnl=null
+ *   - partial   → status="PARTIAL_FILLED", fillPrice from broker, pnl scaled to filled qty
+ *
+ * P&L correction (no schema change needed):
+ *   placeholder_pnl = (placeholder_fill - entry) × qty   [recorded at submission]
+ *   actual_pnl      = placeholder_pnl + (actual_fill - placeholder_fill) × qty
+ *
+ * Idempotent — re-running on the same row just no-ops (status already FILLED etc).
+ * Never throws — per-row failures log and continue.
+ */
+async function reconcilePendingTrades(client: BrokerClient, userId: string): Promise<void> {
+  try {
+    // Find PENDING rows from the last 24h that have a broker_order_id to look up
+    const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
+    const pending = await db
+      .select()
+      .from(traderTrades)
+      .where(
+        and(
+          eq(traderTrades.userId, userId),
+          eq(traderTrades.status, "PENDING"),
+          isNotNull(traderTrades.brokerOrderId),
+          gt(traderTrades.createdAt, new Date(sinceMs))
+        )
+      )
+      .limit(200);
+
+    if (pending.length === 0) return;
+
+    // One batch fetch of broker orders (both open + closed) to map id → state.
+    // getOrders("all") returns mixed; we read status field per row.
+    const recent = await client.getOrders(200);
+    const byId = new Map(recent.map((o) => [o.id, o]));
+
+    let updated = 0;
+    for (const row of pending) {
+      if (!row.brokerOrderId) continue;
+      const brokerOrder = byId.get(row.brokerOrderId);
+      if (!brokerOrder) {
+        // Not in recent 200 — either too old or got purged. Leave PENDING; next
+        // scan may find it. After 24h the row drops out of our query anyway.
+        continue;
+      }
+
+      const bs = brokerOrder.status;
+      // Still pending → leave as-is
+      if (["new", "accepted", "pending_new", "held", "accepted_for_bidding"].includes(bs)) continue;
+
+      // Resolved states → compute update
+      let newStatus: string;
+      let newFillPrice: number | null = null;
+      let newFillTime: Date | null = null;
+      let newPnl: number | null = row.pnl;
+
+      if (bs === "filled") {
+        newStatus = "FILLED";
+        newFillPrice = brokerOrder.filledPrice ?? row.fillPrice;
+        newFillTime = brokerOrder.filledAt ? new Date(brokerOrder.filledAt) : new Date();
+        // P&L correction via delta math (no schema change). Only for SELLs with placeholder pnl.
+        if (
+          row.action === "SELL" &&
+          row.pnl !== null &&
+          row.fillPrice !== null &&
+          newFillPrice !== null
+        ) {
+          const delta = (newFillPrice - row.fillPrice) * row.quantity;
+          newPnl = row.pnl + delta;
+        }
+      } else if (bs === "partially_filled") {
+        newStatus = "PARTIAL_FILLED";
+        newFillPrice = brokerOrder.filledPrice ?? row.fillPrice;
+        newFillTime = brokerOrder.filledAt ? new Date(brokerOrder.filledAt) : new Date();
+        // P&L: scale to actual filled qty proportionally
+        if (row.action === "SELL" && row.pnl !== null && row.fillPrice !== null && newFillPrice !== null && row.quantity > 0) {
+          const filledQty = brokerOrder.filledQty;
+          const deltaPerShare = newFillPrice - row.fillPrice;
+          const pnlPerShare = row.pnl / row.quantity;
+          newPnl = (pnlPerShare + deltaPerShare) * filledQty;
+        }
+      } else if (bs === "canceled" || bs === "expired") {
+        newStatus = bs === "canceled" ? "CANCELED" : "EXPIRED";
+        newPnl = null;
+        newFillPrice = null;
+      } else if (bs === "rejected") {
+        newStatus = "REJECTED";
+        newPnl = null;
+        newFillPrice = null;
+      } else {
+        // Unknown status — leave for next cycle
+        log.debug({ orderId: row.brokerOrderId, brokerStatus: bs }, "Unknown broker order status — skipping reconciliation");
+        continue;
+      }
+
+      try {
+        await db
+          .update(traderTrades)
+          .set({
+            status: newStatus,
+            ...(newFillPrice !== null ? { fillPrice: newFillPrice } : {}),
+            ...(newFillTime ? { fillTime: newFillTime } : {}),
+            pnl: newPnl,
+          })
+          .where(eq(traderTrades.id, row.id));
+        updated++;
+      } catch (err) {
+        log.warn(
+          { orderId: row.brokerOrderId, err: err instanceof Error ? err.message : "unknown" },
+          "Failed to reconcile single trader_trades row"
+        );
+      }
+    }
+
+    if (updated > 0) {
+      log.info({ userId, updated, scanned: pending.length }, "Reconciled pending trades from broker");
+    }
+  } catch (err) {
+    log.error({ userId, err: err instanceof Error ? err.message : "unknown" }, "reconcilePendingTrades failed");
+  }
+}
+
 // ─── Core Scan ───────────────────────────────────────────────────────────────
 
 // ─── Tactical Scan: Stay invested, exit on market weakness ──────────────────
@@ -1757,6 +1888,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
     return;
   }
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
+  await reconcilePendingTrades(client, engine.userId!);
   engine.positionCount = positionMap.size;
 
   // Pending limit buys count as "invested" — without this, a re-scan before
@@ -1792,7 +1924,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
       if (pos.qty <= 0) continue;
       try {
         const texitOrder = await placeEngineOrder(client, { symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical exit: SPY below SMA", texitOrder.id, null, engine.userId);
+        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "PENDING", pos.unrealizedPnl, "Tactical exit: SPY below SMA", texitOrder.id, null, engine.userId);
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -1839,7 +1971,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
         const tentryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
         pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
-        await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "FILLED", null, "Tactical entry: SPY above SMA", tentryOrder.id, null, engine.userId);
+        await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "PENDING", null, "Tactical entry: SPY above SMA", tentryOrder.id, null, engine.userId);
 
         positionMap.set(symbol, {
           symbol, qty, entryPrice: quote.price, peakPrice: quote.price,
@@ -1938,6 +2070,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
     return;
   }
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
+  await reconcilePendingTrades(client, engine.userId!);
   engine.positionCount = positionMap.size;
 
   // Track for daily PnL: limit-order buys may not show in getPositions() yet
@@ -1982,7 +2115,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       if (pos.qty <= 0) continue;
       try {
         const tsExitOrder = await placeEngineOrder(client, { symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "FILLED", pos.unrealizedPnl, "Tactical Smart exit", tsExitOrder.id, null, engine.userId);
+        await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "PENDING", pos.unrealizedPnl, "Tactical Smart exit", tsExitOrder.id, null, engine.userId);
         realizedPnlThisScan += pos.unrealizedPnl;
         tradesThisScan++;
         positionMap.delete(pos.symbol);
@@ -2080,7 +2213,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         const tsEntryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
         pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
-        await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "FILLED", null, "Smart: momentum + signal + invVol weighted", tsEntryOrder.id, null, engine.userId);
+        await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "PENDING", null, "Smart: momentum + signal + invVol weighted", tsEntryOrder.id, null, engine.userId);
         tradesThisScan++;
         positionMap.set(symbol, {
           symbol, qty, entryPrice: price, peakPrice: price,
@@ -2196,7 +2329,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       try {
         const swapSellOrder = await placeEngineOrder(client, { symbol: weak.symbol, side: "sell", qty: String(bp.qty), type: "market", timeInForce: "day" });
         pendingSellSymbols.add(weak.symbol); // mark immediately so subsequent iterations in this scan don't re-fire
-        await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "FILLED", bp.unrealizedPnl, `Swap out: ${weak.signal}`, swapSellOrder.id, null, engine.userId);
+        await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "PENDING", bp.unrealizedPnl, `Swap out: ${weak.signal}`, swapSellOrder.id, null, engine.userId);
         realizedPnlThisScan += bp.unrealizedPnl;
         tradesThisScan++;
         positionMap.delete(weak.symbol);
@@ -2229,7 +2362,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         const swapBuyOrder = await placeEngineOrder(client, { symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
         pendingBuySymbols.add(replacement.symbol); // Phase 7: prevent re-fire within this scan
-        await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "FILLED", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`, swapBuyOrder.id, null, engine.userId);
+        await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "PENDING", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`, swapBuyOrder.id, null, engine.userId);
         tradesThisScan++;
         positionMap.set(replacement.symbol, {
           symbol: replacement.symbol, qty, entryPrice: replacement.price, peakPrice: replacement.price,
@@ -2288,7 +2421,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         const addOrder = await placeEngineOrder(client, { symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
         pendingBuySymbols.add(cand.symbol); // Phase 7: prevent re-fire within this scan
-        await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "FILLED", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`, addOrder.id, null, engine.userId);
+        await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "PENDING", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`, addOrder.id, null, engine.userId);
         tradesThisScan++;
         positionMap.set(cand.symbol, {
           symbol: cand.symbol, qty, entryPrice: cand.price, peakPrice: cand.price,
@@ -2359,7 +2492,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             const resolved = await resolveBrokerClient(engine.userId);
             if (resolved) {
               const flattenOrder = await placeEngineOrder(resolved.client, { symbol: sym, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-              await logTrade(sym, "flatten", "SELL", pos.qty, pos.entryPrice, "FILLED", null, "EOD flatten", flattenOrder.id, null, engine.userId);
+              await logTrade(sym, "flatten", "SELL", pos.qty, pos.entryPrice, "PENDING", null, "EOD flatten", flattenOrder.id, null, engine.userId);
             }
             positionMap.delete(sym);
           } catch (err) {
@@ -2528,6 +2661,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
   // Sync position map with broker — handles manual sells/buys on Alpaca
   await syncPositionMapFromBroker(brokerPositions, positionMap, engine.userId!, client);
+  await reconcilePendingTrades(client, engine.userId!);
   engine.positionCount = positionMap.size;
 
   // Fetch open orders to avoid conflicts (duplicate buys, stale stops).
@@ -2700,7 +2834,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
               "SELL",
               heldPosition.qty,
               currentPrice,
-              "FILLED",
+              "PENDING",
               pnl,
               exitReason,
               sellOrder.id,
@@ -2924,7 +3058,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             "BUY",
             qty,
             currentPrice,
-            "FILLED",
+            "PENDING",
             null,
             `Entry: ${signal} (${(confidence * 100).toFixed(0)}% confidence)`,
             buyOrder.id,
@@ -3529,7 +3663,7 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
               "SELL",
               pos.qty,
               closePrice,
-              "FILLED",
+              "PENDING",
               pnl,
               "Emergency halt — all positions closed",
               haltOrder.id,

@@ -29,8 +29,11 @@ export interface BrokerPosition {
   avgEntryPrice: number;
   currentPrice: number;
   marketValue: number;
+  /** Total unrealized P&L since position was opened (lifetime, not today). */
   unrealizedPnl: number;
   unrealizedPnlPct: number;
+  /** Intraday unrealized P&L — change since previous session's close. THIS is "today's P&L". */
+  unrealizedIntradayPnl: number;
   side: string;
   changeToday: number;
 }
@@ -241,6 +244,7 @@ class AlpacaClient implements BrokerClient {
       marketValue: toNumber(p.market_value),
       unrealizedPnl: toNumber(p.unrealized_pl),
       unrealizedPnlPct: toNumber(p.unrealized_plpc),
+      unrealizedIntradayPnl: toNumber(p.unrealized_intraday_pl),
       side: toString(p.side),
       changeToday: toNumber(p.change_today),
     }));
@@ -590,6 +594,7 @@ class IBKRClient implements BrokerClient {
         toNumber(p.avgCost) !== 0
           ? (toNumber(p.unrealizedPnl) / (toNumber(p.avgCost) * Math.abs(toNumber(p.position)))) * 100
           : 0,
+      unrealizedIntradayPnl: 0, // IBKR Gateway doesn't expose intraday P&L; falls back to 0
       side: toNumber(p.position) >= 0 ? "long" : "short",
       changeToday: 0, // IBKR does not provide intraday change in positions endpoint
     }));
@@ -1002,6 +1007,7 @@ class TradierClient implements BrokerClient {
         marketValue,
         unrealizedPnl,
         unrealizedPnlPct: costBasis !== 0 ? (unrealizedPnl / Math.abs(costBasis)) * 100 : 0,
+        unrealizedIntradayPnl: 0, // Tradier doesn't expose intraday P&L; falls back to 0
         side: qty >= 0 ? "long" : "short",
         changeToday: 0, // Tradier positions don't include intraday change
       };
