@@ -51,6 +51,9 @@ export const traderTrades = pgTable("trader_trades", {
   status: text("status").notNull().default("PENDING"),
   pnl: real("pnl"),
   notes: text("notes"),
+  // Phase 18 — AI-generated trade summary, cached per row
+  aiSummary: text("ai_summary"),
+  aiSummaryGeneratedAt: timestamp("ai_summary_generated_at", { withTimezone: true }),
   traderTimestamp: timestamp("trader_timestamp", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
