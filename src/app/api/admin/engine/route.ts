@@ -57,6 +57,7 @@ export async function GET() {
           name: users.name,
           email: users.email,
           role: users.role,
+          liveTradingEnabled: users.liveTradingEnabled,
         })
         .from(users);
     });
@@ -82,7 +83,7 @@ export async function GET() {
       const engine = peekEngineStatus(u.id);
       const conn = connByUserId.get(u.id) ?? null;
       return {
-        user: { id: u.id, name: u.name, email: u.email, role: u.role },
+        user: { id: u.id, name: u.name, email: u.email, role: u.role, liveTradingEnabled: u.liveTradingEnabled },
         engine, // null when user has never started an engine
         connection: conn
           ? {
