@@ -10,13 +10,18 @@ import {
   DEFAULT_LAYOUT,
   getWidgetDefinition,
 } from "@/lib/widget-registry";
-import type { WidgetDefinition, WidgetCategory } from "@/lib/widget-registry";
+import type {
+  WidgetDefinition,
+  WidgetCategory,
+  WidgetSize,
+} from "@/lib/widget-registry";
 import {
   Plus,
   X,
   ChevronUp,
   ChevronDown,
   GripVertical,
+  Maximize2,
 } from "lucide-react";
 // Phase 9 — drag-and-drop on dashboard widgets
 import {
@@ -85,6 +90,25 @@ const CATEGORY_ORDER: WidgetCategory[] = [
   "research",
 ];
 
+// Phase 20 — size cycle order. The cycler button in edit mode walks through
+// these in order; the next click after "full" goes back to "sm". Naming is
+// deliberately verbose so the tooltip reads clearly.
+const SIZE_CYCLE: WidgetSize[] = ["sm", "md", "lg", "full"];
+const SIZE_LABELS: Record<WidgetSize, string> = {
+  sm: "Small",
+  md: "Medium",
+  lg: "Large",
+  full: "Full width",
+};
+
+// Phase 20 — widget entry: id plus optional size override. When size is undefined
+// the widget falls back to its definition's defaultSize. Stored verbatim in the
+// dashboard_layouts.layout_data JSONB column.
+export interface WidgetEntry {
+  id: string;
+  size?: WidgetSize;
+}
+
 function renderWidget(definition: WidgetDefinition) {
   const Component = WIDGET_COMPONENTS[definition.component];
   if (!Component) {
@@ -97,40 +121,74 @@ function renderWidget(definition: WidgetDefinition) {
   return <Component />;
 }
 
-interface WidgetGridProps {
-  editMode: boolean;
-  onLayoutChange?: (widgetIds: string[]) => void;
+// Coerce arbitrary inputs from the API into WidgetEntry[]. Tolerates the old
+// string[] shape so users with pre-Phase-20 saved layouts don't see a regression.
+function coerceEntries(value: unknown): WidgetEntry[] {
+  if (!Array.isArray(value)) return DEFAULT_LAYOUT.map((id) => ({ id }));
+  return value.map((entry) => {
+    if (typeof entry === "string") return { id: entry };
+    if (entry && typeof entry === "object" && "id" in entry) {
+      const e = entry as { id: string; size?: string };
+      const size: WidgetSize | undefined =
+        e.size === "sm" || e.size === "md" || e.size === "lg" || e.size === "full"
+          ? e.size
+          : undefined;
+      return { id: e.id, size };
+    }
+    return { id: "" };
+  }).filter((e) => e.id);
 }
 
-export function WidgetGrid({ editMode, onLayoutChange }: WidgetGridProps) {
-  const [widgetIds, setWidgetIds] = useState<string[]>([]);
+interface WidgetGridProps {
+  editMode: boolean;
+  /** Bumped by the parent to force a reload from /api/dashboard/layout. */
+  refreshKey?: number;
+  onLayoutChange?: (entries: WidgetEntry[]) => void;
+}
+
+export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetGridProps) {
+  const [entries, setEntries] = useState<WidgetEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Load layout from API
+  // Load layout from API. Re-runs whenever the parent bumps refreshKey, which
+  // is how the layout switcher signals "I just changed the default — refetch."
   useEffect(() => {
+    let cancelled = false;
     async function load() {
+      setLoading(true);
       try {
         const res = await fetch("/api/dashboard/layout");
+        if (cancelled) return;
         if (res.ok) {
           const data = await res.json();
-          const initialLayout = data.widgets ?? DEFAULT_LAYOUT;
-          setWidgetIds(initialLayout);
-          onLayoutChange?.(initialLayout);
+          const next = coerceEntries(data.widgets);
+          setEntries(next);
+          onLayoutChange?.(next);
         } else {
-          setWidgetIds(DEFAULT_LAYOUT);
-          onLayoutChange?.(DEFAULT_LAYOUT);
+          const fallback = DEFAULT_LAYOUT.map((id) => ({ id }));
+          setEntries(fallback);
+          onLayoutChange?.(fallback);
         }
       } catch {
-        setWidgetIds(DEFAULT_LAYOUT);
-        onLayoutChange?.(DEFAULT_LAYOUT);
+        if (cancelled) return;
+        const fallback = DEFAULT_LAYOUT.map((id) => ({ id }));
+        setEntries(fallback);
+        onLayoutChange?.(fallback);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     load();
-  }, [onLayoutChange]);
+    return () => {
+      cancelled = true;
+    };
+    // onLayoutChange is intentionally omitted — the parent passes a new
+    // identity each render and we don't want to re-fetch the layout on every
+    // unrelated render. The effect already calls onLayoutChange after loading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   // Phase 9 — dnd-kit sensors. Must be declared BEFORE any conditional
   // return (rules-of-hooks) so they're called the same way every render.
@@ -141,59 +199,74 @@ export function WidgetGrid({ editMode, onLayoutChange }: WidgetGridProps) {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Save layout to API
-  const saveLayout = useCallback(async (newIds: string[]) => {
+  // Save current entries to the default layout. Sends the full {id, size?}
+  // shape; the API also accepts bare strings for legacy callers.
+  const saveLayout = useCallback(async (next: WidgetEntry[]) => {
     setSaving(true);
     try {
       await fetch("/api/dashboard/layout", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ widgets: newIds }),
+        body: JSON.stringify({ widgets: next }),
       });
     } catch {
-      // Save failed silently; user can retry
+      // Save failed silently; user can retry by triggering another change
     } finally {
       setSaving(false);
     }
   }, []);
 
+  function commit(next: WidgetEntry[]) {
+    setEntries(next);
+    onLayoutChange?.(next);
+    saveLayout(next);
+  }
+
   function handleRemove(id: string) {
-    const newIds = widgetIds.filter((w) => w !== id);
-    setWidgetIds(newIds);
-    onLayoutChange?.(newIds);
-    saveLayout(newIds);
+    commit(entries.filter((e) => e.id !== id));
   }
 
   function handleAdd(id: string) {
-    if (widgetIds.includes(id)) return;
-    const newIds = [...widgetIds, id];
-    setWidgetIds(newIds);
-    onLayoutChange?.(newIds);
-    saveLayout(newIds);
+    if (entries.some((e) => e.id === id)) return;
+    commit([...entries, { id }]);
     setShowAddPanel(false);
   }
 
   function handleMoveUp(index: number) {
     if (index <= 0) return;
-    const newIds = [...widgetIds];
-    [newIds[index - 1], newIds[index]] = [newIds[index], newIds[index - 1]];
-    setWidgetIds(newIds);
-    onLayoutChange?.(newIds);
-    saveLayout(newIds);
+    const next = [...entries];
+    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+    commit(next);
   }
 
   function handleMoveDown(index: number) {
-    if (index >= widgetIds.length - 1) return;
-    const newIds = [...widgetIds];
-    [newIds[index], newIds[index + 1]] = [newIds[index + 1], newIds[index]];
-    setWidgetIds(newIds);
-    onLayoutChange?.(newIds);
-    saveLayout(newIds);
+    if (index >= entries.length - 1) return;
+    const next = [...entries];
+    [next[index], next[index + 1]] = [next[index + 1], next[index]];
+    commit(next);
+  }
+
+  function handleCycleSize(index: number) {
+    const cur = entries[index];
+    if (!cur) return;
+    const def = getWidgetDefinition(cur.id);
+    const currentSize = cur.size ?? def?.defaultSize ?? "sm";
+    const currentIdx = SIZE_CYCLE.indexOf(currentSize);
+    const nextSize = SIZE_CYCLE[(currentIdx + 1) % SIZE_CYCLE.length];
+    const next = [...entries];
+    // When the cycle lands exactly on the widget's defaultSize, drop the override
+    // so the saved layout stays small (no noise in the JSONB column).
+    next[index] = {
+      id: cur.id,
+      size: nextSize === def?.defaultSize ? undefined : nextSize,
+    };
+    commit(next);
   }
 
   // Widgets available to add (not already in layout)
+  const usedIds = new Set(entries.map((e) => e.id));
   const availableWidgets = WIDGET_REGISTRY.filter(
-    (w) => !widgetIds.includes(w.id)
+    (w) => !usedIds.has(w.id)
   );
 
   // Group available by category
@@ -230,34 +303,37 @@ export function WidgetGrid({ editMode, onLayoutChange }: WidgetGridProps) {
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = widgetIds.indexOf(active.id as string);
-    const newIndex = widgetIds.indexOf(over.id as string);
+    const oldIndex = entries.findIndex((e) => e.id === active.id);
+    const newIndex = entries.findIndex((e) => e.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
-    const newIds = arrayMove(widgetIds, oldIndex, newIndex);
-    setWidgetIds(newIds);
-    onLayoutChange?.(newIds);
-    saveLayout(newIds);
+    commit(arrayMove(entries, oldIndex, newIndex));
   }
+
+  // dnd-kit needs string IDs at the SortableContext level
+  const sortableIds = entries.map((e) => e.id);
 
   return (
     <div className="space-y-5">
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={widgetIds} strategy={rectSortingStrategy}>
+        <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-4">
-            {widgetIds.map((id, index) => {
-              const def = getWidgetDefinition(id);
+            {entries.map((entry, index) => {
+              const def = getWidgetDefinition(entry.id);
               if (!def) return null;
+              const effectiveSize: WidgetSize = entry.size ?? def.defaultSize;
               return (
                 <SortableWidget
-                  key={id}
-                  id={id}
+                  key={entry.id}
+                  id={entry.id}
                   def={def}
+                  size={effectiveSize}
                   index={index}
-                  total={widgetIds.length}
+                  total={entries.length}
                   editMode={editMode}
-                  onRemove={() => handleRemove(id)}
+                  onRemove={() => handleRemove(entry.id)}
                   onMoveUp={() => handleMoveUp(index)}
                   onMoveDown={() => handleMoveDown(index)}
+                  onCycleSize={() => handleCycleSize(index)}
                 />
               );
             })}
@@ -288,7 +364,7 @@ export function WidgetGrid({ editMode, onLayoutChange }: WidgetGridProps) {
       </DndContext>
 
       {/* Empty state */}
-      {widgetIds.length === 0 && (
+      {entries.length === 0 && (
         <div className="rounded-xl border border-border bg-bg-surface py-16 text-center">
           <p className="text-text-muted mb-4">
             Your dashboard is empty. Add some widgets to get started.
@@ -388,25 +464,32 @@ export function WidgetGrid({ editMode, onLayoutChange }: WidgetGridProps) {
  * edit mode. The chevrons are kept as a keyboard-accessible fallback in case
  * the user prefers click-to-move (also useful on touch when drag may conflict
  * with scroll).
+ *
+ * Phase 20 — adds size cycler. Clicking the maximize icon walks through
+ * sm → md → lg → full → sm. Hidden outside edit mode.
  */
 function SortableWidget({
   id,
   def,
+  size,
   index,
   total,
   editMode,
   onRemove,
   onMoveUp,
   onMoveDown,
+  onCycleSize,
 }: {
   id: string;
   def: WidgetDefinition;
+  size: WidgetSize;
   index: number;
   total: number;
   editMode: boolean;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onCycleSize: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id,
@@ -420,11 +503,21 @@ function SortableWidget({
     zIndex: isDragging ? 10 : "auto",
   };
 
+  // Map effective size → grid column span. Mirrors widget-wrapper's table.
+  const colSpan =
+    size === "full"
+      ? "col-span-full"
+      : size === "lg"
+      ? "col-span-1 md:col-span-2 2xl:col-span-3"
+      : size === "md"
+      ? "col-span-1 md:col-span-2 2xl:col-span-2"
+      : "col-span-1";
+
   return (
-    <div ref={setNodeRef} style={style} className={def.defaultSize === "full" ? "col-span-full" : def.defaultSize === "lg" ? "col-span-1 md:col-span-2 2xl:col-span-3" : def.defaultSize === "md" ? "col-span-1 md:col-span-2 2xl:col-span-2" : "col-span-1"}>
+    <div ref={setNodeRef} style={style} className={colSpan}>
       <WidgetWrapper
         title={def.name}
-        size={def.defaultSize}
+        size={size}
         editMode={editMode}
         index={index}
         onRemove={onRemove}
@@ -443,7 +536,18 @@ function SortableWidget({
               >
                 <GripVertical className="w-3.5 h-3.5" />
               </button>
-              {/* Chevrons — accessible fallback */}
+              {/* Size cycler — clicks through sm → md → lg → full */}
+              <button
+                onClick={onCycleSize}
+                className="p-1 rounded text-text-muted hover:text-text-primary
+                  transition-colors min-h-[28px] min-w-[28px]
+                  flex items-center justify-center"
+                aria-label={`Resize ${def.name} (currently ${SIZE_LABELS[size]})`}
+                title={`Resize — ${SIZE_LABELS[size]}`}
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+              {/* Chevrons — accessible fallback for reordering */}
               <button
                 onClick={onMoveUp}
                 disabled={index === 0}

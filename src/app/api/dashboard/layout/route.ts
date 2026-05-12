@@ -30,22 +30,30 @@ export async function GET() {
     });
 
     if (layout) {
-      let widgets: string[] = [];
+      // Phase 20 — widgets can be string[] (legacy) or {id, size?}[] (new).
+      // Normalize to the new shape so the client always gets {id, size?}.
+      let widgets: Array<{ id: string; size?: string }> = [];
       try {
-        const data = layout.layoutData as { widgets?: string[] };
-        widgets = Array.isArray(data?.widgets) ? data.widgets : DEFAULT_LAYOUT;
+        const data = layout.layoutData as { widgets?: unknown };
+        if (Array.isArray(data?.widgets)) {
+          widgets = data.widgets.map((w: unknown) =>
+            typeof w === "string" ? { id: w } : (w as { id: string; size?: string })
+          );
+        } else {
+          widgets = DEFAULT_LAYOUT.map((id) => ({ id }));
+        }
       } catch {
-        widgets = DEFAULT_LAYOUT;
+        widgets = DEFAULT_LAYOUT.map((id) => ({ id }));
       }
 
       return NextResponse.json(
-        { widgets, saved: true },
+        { widgets, saved: true, layoutId: layout.id, name: layout.name },
         { headers: { "Cache-Control": "private, no-store" } }
       );
     }
 
     return NextResponse.json(
-      { widgets: DEFAULT_LAYOUT, saved: false },
+      { widgets: DEFAULT_LAYOUT.map((id) => ({ id })), saved: false },
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {
@@ -83,17 +91,26 @@ export async function PUT(request: Request) {
     );
   }
 
+  // Phase 20 — normalize string | {id, size?} into a uniform shape
+  const entries = parsed.data.widgets.map((w) =>
+    typeof w === "string" ? { id: w } : { id: w.id, size: w.size }
+  );
+
   // Validate all widget IDs exist in the registry
-  const invalidIds = parsed.data.widgets.filter((id) => !isValidWidgetId(id));
+  const invalidIds = entries.filter((e) => !isValidWidgetId(e.id));
   if (invalidIds.length > 0) {
     return NextResponse.json(
-      { error: `Unknown widget IDs: ${invalidIds.join(", ")}` },
+      { error: `Unknown widget IDs: ${invalidIds.map((e) => e.id).join(", ")}` },
       { status: 400 }
     );
   }
 
-  // Deduplicate while preserving order
-  const uniqueWidgets = [...new Set(parsed.data.widgets)];
+  // Deduplicate by id, preserving order + last-wins size
+  const seen = new Map<string, { id: string; size?: string }>();
+  for (const e of entries) {
+    seen.set(e.id, e);
+  }
+  const uniqueWidgets = Array.from(seen.values());
 
   try {
     // Check if a default layout exists

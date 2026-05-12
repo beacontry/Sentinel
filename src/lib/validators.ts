@@ -291,11 +291,34 @@ export type PlaceBrokerOrderInput = z.infer<typeof placeBrokerOrderSchema>;
 
 // ─── Dashboard Layout ────────────────────────────────────────────
 
+// Phase 20 — widget entries can be either a bare id string (legacy) or an
+// object with optional size override. Backward-compat: both shapes accepted.
+const widgetEntrySchema = z.union([
+  z.string().min(1).max(50),
+  z.object({
+    id: z.string().min(1).max(50),
+    size: z.enum(["sm", "md", "lg", "full"]).optional(),
+  }),
+]);
+
 export const updateDashboardLayoutSchema = z.object({
   widgets: z
-    .array(z.string().min(1).max(50))
+    .array(widgetEntrySchema)
     .min(0)
     .max(20, "Maximum 20 widgets allowed"),
 });
 
+export const createDashboardLayoutSchema = z.object({
+  name: z.string().min(1).max(60).trim(),
+  widgets: z
+    .array(widgetEntrySchema)
+    .min(0)
+    .max(20),
+});
+
+export const renameDashboardLayoutSchema = z.object({
+  name: z.string().min(1).max(60).trim(),
+});
+
 export type UpdateDashboardLayoutInput = z.infer<typeof updateDashboardLayoutSchema>;
+export type CreateDashboardLayoutInput = z.infer<typeof createDashboardLayoutSchema>;
