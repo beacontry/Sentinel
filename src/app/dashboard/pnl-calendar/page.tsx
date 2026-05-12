@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalHeader, ModalTitle } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
 import { SymbolLink } from "@/components/ui/symbol-link";
+import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 import { PnlCalendarGrid } from "@/components/dashboard/pnl-calendar-grid";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
@@ -53,6 +54,7 @@ function formatDate(dateStr: string): string {
 }
 
 export default function PnlCalendarPage() {
+  const { pnlFormat } = useDisplayPrefs();
   const [days, setDays] = useState<PnlCalendarDay[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [source, setSource] = useState<Source>("both");
@@ -270,7 +272,7 @@ export default function PnlCalendarPage() {
                     openDay.pnl >= 0 ? "text-bullish" : "text-bearish"
                   }`}
                 >
-                  {openDay.pnl >= 0 ? "+" : ""}${openDay.pnl.toFixed(2)}
+                  {formatPnl(openDay.pnl, undefined, pnlFormat)}
                 </div>
               </div>
               <div className="rounded-lg bg-bg-elevated px-3 py-2">
@@ -338,7 +340,7 @@ export default function PnlCalendarPage() {
                         >
                           {t.pnl == null
                             ? "—"
-                            : `${t.pnl >= 0 ? "+" : ""}$${t.pnl.toFixed(2)}`}
+                            : formatPnl(t.pnl, t.price * t.quantity, pnlFormat)}
                         </td>
                       </tr>
                     ))}
