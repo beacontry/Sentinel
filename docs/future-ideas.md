@@ -1,5 +1,34 @@
 # Sentinel — Future Ideas
 
+## Phase status (2026-05-12 marathon)
+
+After a long build session, the originally-queued 6 phases are done. What follows is a tracking table; the descriptive sections below remain as design notes for items still pending.
+
+| Phase | Theme | Shipped | Pending |
+|-------|-------|---------|---------|
+| 1 | Money bugs (UI-lie audit) | ✅ Wash-sale + PDT live refresh, bootEquity day-boundary re-snapshot, halted-state synchronous DB write, P&L source labels | (none — false positives dropped) |
+| 2 | Frozen-value cleanup | ✅ peakPrice reset on partial close, trailingStopPct + takeProfit re-resolved on every sync | `pos.entryDate` from broker creation time |
+| 3 | Cache invalidation | ✅ Filter-cache 6h TTL, screener `scanStartedAt`, engine `scanStartedAt` | (none) |
+| 4 | Engine intelligence | ✅ Sector exposure cap, earnings blackout, per-symbol P&L heatmap widget | Adaptive mode auto-switching, engine dry-run mode |
+| 5 | Strategy testing & analytics | ✅ Compare strategies side-by-side | Engine dry-run, live-vs-backtest divergence tracker, mean reversion mode |
+| 6 | Frontend bigger asks | ✅ Real `/dashboard/portfolio` overview, `/api/quotes` batch endpoint, Trader 2-col XL layout | Persist recently-viewed to DB |
+
+**Themes that remain large unbuilt scopes:**
+- Options trading module (theta-gang extension) — XL, separate product surface
+- Real-time WebSocket quotes — M-L, defer until intraday/scalp engine mode demands it
+- Copy trading (eToro/Autopilot pattern) — L, needs user-base to be worthwhile
+- Mean-reversion engine mode — L, defer until momentum-only validates in paper
+- User-code backtest sandbox (Python/JS) — XL, QuantConnect territory
+- Public read-API + per-user API keys — M
+- Generic outgoing webhooks beyond Discord — S, pair with public API
+- Native iOS/Android apps — XL (PWA push covers most)
+- Bonds / mutual funds / international markets — depends on Alpaca upstream
+- Earnings call transcript AI summary — needs paid Finnhub tier
+
+The 2026-05-12 dated sections below contain detailed retrospective notes for each phase. The undated sections at the top are the long-form design notes for items still pending.
+
+---
+
 ## Optimizer Improvements
 
 ### Momentum-Weighted Position Sizing in Backtester
@@ -95,10 +124,8 @@ Webhook destinations attached to audit-log events. Subscribe to: `engine.halted`
 
 **Why:** monitor from phone without dashboard staring. Especially valuable during the first weeks of live trading.
 
-### Daily P&L digest email
-Every market close (4:30 PM ET cron), summary email per user: today's realized + unrealized, biggest gainer/loser, halt status, drift audit summary (any new drift since yesterday), engine state. Uses existing `sendAlertEmail()` helper. Opt-in via Settings. ~100 LOC, no migration.
-
-**Why:** async monitoring. Doesn't require user to load the app.
+### ~~Daily P&L digest email~~ ✅ SHIPPED
+The market-close cron now emails opted-in users alongside the existing Discord webhook + PWA push channels. Opt-in via Settings → Display preferences. See migration `0024_digest_email_opt_in.sql`.
 
 ---
 
