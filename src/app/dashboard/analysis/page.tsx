@@ -23,6 +23,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { AnalysisResult } from "@/types";
 import { SignalFeed, type SignalFeedItem } from "@/components/dashboard/signal-feed";
 import { SignalDetails } from "@/components/dashboard/signal-details";
@@ -66,6 +67,13 @@ interface ScreenerCacheItem {
 }
 
 export default function AnalysisCockpit() {
+  // Respect ?symbol=XXX query param — links from anywhere else in the
+  // app (positions list, recently-viewed dropdown, SymbolLink in widgets,
+  // shared watchlist tiles) deep-link to a specific symbol. Without this
+  // the page silently opened whatever was first in the watchlist instead.
+  const searchParams = useSearchParams();
+  const requestedSymbol = searchParams.get("symbol")?.toUpperCase().trim() ?? null;
+
   const [symbols, setSymbols] = useState<string[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [analyses, setAnalyses] = useState<Record<string, AnalysisResult>>({});
@@ -251,12 +259,40 @@ export default function AnalysisCockpit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialLoad, symbols]);
 
-  // Auto-select first symbol once analyses are available
+  // Auto-select first symbol once analyses are available. If the URL
+  // carries a ?symbol=XXX param, prefer that — and trigger an analyze()
+  // for it even if it's not on the user's watchlist, so deep-links to
+  // arbitrary tickers (e.g. clicking a position the user doesn't watch)
+  // still work.
   useEffect(() => {
-    if (!selectedSymbol && symbols.length > 0) {
+    if (selectedSymbol) return;
+    if (requestedSymbol) {
+      setSelectedSymbol(requestedSymbol);
+      if (!analyses[requestedSymbol]) {
+        analyzeSymbol(requestedSymbol);
+      }
+      pushRecent(requestedSymbol);
+      return;
+    }
+    if (symbols.length > 0) {
       setSelectedSymbol(symbols[0]);
     }
-  }, [symbols, selectedSymbol]);
+    // selectedSymbol intentionally omitted from deps — we only auto-pick
+    // when nothing is selected, and either symbols loads or the URL param
+    // resolves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbols, requestedSymbol]);
+
+  // If the URL changes ?symbol= while the user is on the page (e.g. they
+  // hit the back button or a Cmd+K jump fires a router.push), respect it.
+  useEffect(() => {
+    if (!requestedSymbol) return;
+    if (selectedSymbol === requestedSymbol) return;
+    setSelectedSymbol(requestedSymbol);
+    if (!analyses[requestedSymbol]) analyzeSymbol(requestedSymbol);
+    pushRecent(requestedSymbol);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedSymbol]);
 
   // Fetch earnings for chart markers when selected symbol changes
   useEffect(() => {
