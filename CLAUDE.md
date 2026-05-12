@@ -692,6 +692,46 @@ Both checks call `peekEngineStatus(userId)`. Rationale: the engine maintains an 
 
 ---
 
+## 2026-05-12 (later) — Bug fixes worth remembering
+
+### Trader: Open Positions Stop column was a UI lie
+The trailing-stop logic in `syncBrokerStops()` correctly ratchets up the resting Alpaca stop every scan as positions climb, but it never wrote the new value back into `pos.stopLoss` (the in-memory field the dashboard reads). Result: positions could be up +36% with the broker stop trailing at peak × 0.98, while the UI's Stop column still displayed the entry-time disaster value (entry × 0.9033).
+
+Fix in commit `00131db`:
+1. `syncBrokerStops()` now writes `pos.stopLoss = targetStop` after every successful broker place/replace. Also reconciles the other way: if the existing broker stop > pos.stopLoss (e.g. after a server restart), it lifts memory to match.
+2. Dashboard route also reads the actual resting broker stops via the open-orders feed and renders `Math.max(broker, tracked.stopLoss)` as the effective stop — belt-and-suspenders so the table can never display a value lower than what's actually resting.
+
+When debugging future "displayed value looks wrong" reports, check **both** the in-memory `positionMap` AND the broker's open-orders list — they can drift. See `docs/future-ideas.md § UI-lie bug audit` for the catalog of other suspected-drift surfaces.
+
+### Analysis page now respects ?symbol= deep links
+Deep-links like `/dashboard/analysis?symbol=HPE` now actually load HPE. Previously the page only read symbols from the user's watchlist and auto-selected `symbols[0]`, ignoring the URL. Commit `647c1bb` adds a `useSearchParams()` read + auto-analyze for non-watchlist symbols + pushRecent.
+
+Used by: Cmd+K symbol jump, congress trade rows, performance attribution rows, every `<SymbolLink>` in the app.
+
+### Next.js 15 build-time gotcha: useSearchParams needs Suspense
+The Analysis-page deep-link fix broke prerendering (`⨯ useSearchParams() should be wrapped in a suspense boundary`). The hook opts the route out of static SSR; Next.js 15's prerenderer requires `<Suspense>` so the SSR shell can render while the client hydrates.
+
+Pattern (commit `d6bd8ef`):
+
+```tsx
+export default function Page() {
+  return (
+    <Suspense fallback={<Spinner />}>
+      <InnerComponent />
+    </Suspense>
+  );
+}
+
+function InnerComponent() {
+  const searchParams = useSearchParams();
+  // …
+}
+```
+
+**`tsc --noEmit` does not catch this.** Always run a real `next build` locally when adding `useSearchParams()`, `useParams()`, or any other client-only hook to a route that's currently static. The CI build is the safety net but a local build catches it before the push.
+
+---
+
 ## 2026-05-12 — Migrations summary (0023–0028)
 
 All idempotent. Apply on prod as `postgres` (chmod-700 droplet means app user can't `ALTER TABLE`).
