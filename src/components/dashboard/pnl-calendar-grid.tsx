@@ -5,6 +5,8 @@ import type { PnlCalendarDay } from "@/types";
 
 interface PnlCalendarGridProps {
   days: PnlCalendarDay[];
+  /** Called when the user clicks a day cell that has trades. */
+  onDayClick?: (day: PnlCalendarDay) => void;
 }
 
 const DAY_LABELS = ["Mon", "", "Wed", "", "Fri", "", ""];
@@ -42,7 +44,7 @@ interface WeekColumn {
   monthLabel: string | null;
 }
 
-export function PnlCalendarGrid({ days }: PnlCalendarGridProps) {
+export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
   const [tooltip, setTooltip] = useState<{
     day: PnlCalendarDay;
     x: number;
@@ -136,13 +138,27 @@ export function PnlCalendarGrid({ days }: PnlCalendarGridProps) {
               {week.days.map((day, di) => {
                 const dateForCell = getDateForCell(weeks, wi, di);
                 const isToday = dateForCell === new Date().toISOString().split("T")[0];
+                const clickable = day && onDayClick;
                 return (
                   <div
                     key={di}
+                    role={clickable ? "button" : undefined}
+                    tabIndex={clickable ? 0 : undefined}
+                    onClick={() => {
+                      if (day && onDayClick) onDayClick(day);
+                    }}
+                    onKeyDown={(e) => {
+                      if (!day || !onDayClick) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onDayClick(day);
+                      }
+                    }}
                     className={`w-[14px] h-[14px] my-[1px] rounded-[3px] transition-all duration-150
                       ${day ? getColor(day.pnl, maxAbs) : EMPTY_COLOR}
                       ${isToday ? "ring-1 ring-accent/50" : ""}
-                      hover:ring-1 hover:ring-text-muted/50 cursor-default`}
+                      hover:ring-1 hover:ring-text-muted/50 ${clickable ? "cursor-pointer" : "cursor-default"}
+                      focus:outline-none focus:ring-2 focus:ring-accent/60`}
                     onMouseEnter={(e) => {
                       if (day) {
                         const rect = e.currentTarget.getBoundingClientRect();

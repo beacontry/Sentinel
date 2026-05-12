@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Modal, ModalHeader, ModalTitle } from "@/components/ui/modal";
+import { Badge } from "@/components/ui/badge";
+import { SymbolLink } from "@/components/ui/symbol-link";
 import { PnlCalendarGrid } from "@/components/dashboard/pnl-calendar-grid";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
@@ -16,6 +19,15 @@ import {
   BarChart3,
 } from "lucide-react";
 import type { PnlCalendarDay } from "@/types";
+
+interface DayTrade {
+  symbol: string;
+  action: string;
+  quantity: number;
+  price: number;
+  pnl: number | null;
+  fillTime: string;
+}
 
 type Source = "portfolio" | "trader" | "both";
 
@@ -45,6 +57,39 @@ export default function PnlCalendarPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [source, setSource] = useState<Source>("both");
   const [loading, setLoading] = useState(true);
+
+  // Day drill-down modal state
+  const [openDay, setOpenDay] = useState<PnlCalendarDay | null>(null);
+  const [dayTrades, setDayTrades] = useState<DayTrade[]>([]);
+  const [loadingTrades, setLoadingTrades] = useState(false);
+
+  // Fetch trades whenever a day modal opens. Uses the existing trader-trades
+  // endpoint with a date filter; falls back to client-side filtering if the
+  // endpoint doesn't support filtering yet.
+  useEffect(() => {
+    if (!openDay) return;
+    let cancelled = false;
+    setLoadingTrades(true);
+    setDayTrades([]);
+    fetch(`/api/trader/trades?date=${encodeURIComponent(openDay.date)}&limit=200`)
+      .then(async (res) => {
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        const rows: DayTrade[] = (data.trades ?? []).filter(
+          (t: DayTrade) => t.fillTime?.startsWith(openDay.date)
+        );
+        setDayTrades(rows);
+      })
+      .catch(() => {
+        /* non-critical */
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTrades(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [openDay]);
 
   useEffect(() => {
     let cancelled = false;
@@ -190,10 +235,120 @@ export default function PnlCalendarPage() {
 
           {/* Calendar heatmap */}
           <Card>
-            <PnlCalendarGrid days={days} />
+            <PnlCalendarGrid
+              days={days}
+              onDayClick={(d) => {
+                if (d.tradesCount > 0) setOpenDay(d);
+              }}
+            />
+            <p className="mt-3 text-[11px] text-text-muted text-center">
+              Click any day with activity to see that day&apos;s trades.
+            </p>
           </Card>
         </>
       )}
+
+      {/* Day drill-down */}
+      <Modal open={openDay !== null} onClose={() => setOpenDay(null)} className="max-w-2xl">
+        <ModalHeader>
+          <ModalTitle>
+            {openDay && new Date(openDay.date + "T00:00:00").toLocaleDateString(undefined, {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
+          </ModalTitle>
+        </ModalHeader>
+        {openDay && (
+          <div className="px-5 pb-2 space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-lg bg-bg-elevated px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wider text-text-muted">P&L</div>
+                <div
+                  className={`font-mono text-base font-semibold ${
+                    openDay.pnl >= 0 ? "text-bullish" : "text-bearish"
+                  }`}
+                >
+                  {openDay.pnl >= 0 ? "+" : ""}${openDay.pnl.toFixed(2)}
+                </div>
+              </div>
+              <div className="rounded-lg bg-bg-elevated px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wider text-text-muted">Trades</div>
+                <div className="font-mono text-base text-text-primary">{openDay.tradesCount}</div>
+              </div>
+              <div className="rounded-lg bg-bg-elevated px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wider text-text-muted">Avg / Trade</div>
+                <div
+                  className={`font-mono text-base ${
+                    openDay.pnl >= 0 ? "text-bullish" : "text-bearish"
+                  }`}
+                >
+                  {openDay.tradesCount > 0
+                    ? `$${(openDay.pnl / openDay.tradesCount).toFixed(2)}`
+                    : "—"}
+                </div>
+              </div>
+            </div>
+
+            {loadingTrades ? (
+              <p className="text-sm text-text-muted py-6 text-center">Loading trades…</p>
+            ) : dayTrades.length === 0 ? (
+              <p className="text-sm text-text-muted py-6 text-center">
+                No trade detail available for this day.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-text-muted">
+                      <th className="pb-2 pr-3 font-medium">Time</th>
+                      <th className="pb-2 pr-3 font-medium">Action</th>
+                      <th className="pb-2 pr-3 font-medium">Symbol</th>
+                      <th className="pb-2 pr-3 font-medium text-right">Qty</th>
+                      <th className="pb-2 pr-3 font-medium text-right">Price</th>
+                      <th className="pb-2 font-medium text-right">P&L</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono text-xs">
+                    {dayTrades.map((t, i) => (
+                      <tr key={i} className="border-b border-border/50">
+                        <td className="py-1.5 pr-3 text-text-muted">
+                          {new Date(t.fillTime).toLocaleTimeString(undefined, {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          <Badge
+                            variant={t.action.toUpperCase().includes("BUY") ? "bullish" : "bearish"}
+                          >
+                            {t.action.toUpperCase()}
+                          </Badge>
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          <SymbolLink symbol={t.symbol} className="text-text-primary" stopPropagation />
+                        </td>
+                        <td className="py-1.5 pr-3 text-right">{t.quantity}</td>
+                        <td className="py-1.5 pr-3 text-right">${t.price.toFixed(2)}</td>
+                        <td
+                          className={`py-1.5 text-right ${
+                            t.pnl == null ? "text-text-muted" : t.pnl >= 0 ? "text-bullish" : "text-bearish"
+                          }`}
+                        >
+                          {t.pnl == null
+                            ? "—"
+                            : `${t.pnl >= 0 ? "+" : ""}$${t.pnl.toFixed(2)}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
