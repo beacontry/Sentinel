@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { BarChart3, Target, TrendingUp, TrendingDown } from "lucide-react";
+import { SymbolLink } from "@/components/ui/symbol-link";
+import { BarChart3, Target, TrendingUp, TrendingDown, PieChart } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
@@ -37,15 +38,33 @@ interface PerformanceData {
   }>;
 }
 
+interface AttributionRow {
+  symbol: string;
+  pnl: number;
+  tradeCount: number;
+  winCount: number;
+  pctOfTotal: number;
+}
+
+interface AttributionData {
+  totalPnl: number;
+  rows: AttributionRow[];
+}
+
 export default function PerformancePage() {
   const [data, setData] = useState<PerformanceData | null>(null);
+  const [attribution, setAttribution] = useState<AttributionData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/performance");
-        if (res.ok) setData(await res.json());
+        const [perfRes, attrRes] = await Promise.all([
+          fetch("/api/performance"),
+          fetch("/api/performance/attribution"),
+        ]);
+        if (perfRes.ok) setData(await perfRes.json());
+        if (attrRes.ok) setAttribution(await attrRes.json());
       } catch {
         // Silent
       } finally {
@@ -219,6 +238,11 @@ export default function PerformancePage() {
         )}
       </Card>
 
+      {/* P&L attribution — realized $ contribution per symbol */}
+      {attribution && attribution.rows.length > 0 && (
+        <AttributionCard data={attribution} />
+      )}
+
       {/* Weekly trend */}
       {data.weekly.length > 0 && (
         <Card>
@@ -247,5 +271,79 @@ export default function PerformancePage() {
         </Card>
       )}
     </div>
+  );
+}
+
+// P&L attribution card. Realized $ contribution per symbol (top 10) with
+// proportional bars. Answers the user's question "which names actually
+// made me money?" — distinct from the bySymbol card above which shows
+// signal-prediction accuracy.
+function AttributionCard({ data }: { data: AttributionData }) {
+  const top = data.rows.slice(0, 10);
+  // Cap bar width relative to the largest absolute contribution so the
+  // biggest mover always fills 100% and others scale accordingly.
+  const maxAbs = top.reduce((m, r) => Math.max(m, Math.abs(r.pnl)), 0);
+
+  return (
+    <Card>
+      <CardHeader className="p-0 pb-3">
+        <CardTitle className="flex items-center gap-2">
+          <PieChart className="w-4 h-4 text-accent" />
+          P&L Attribution
+        </CardTitle>
+      </CardHeader>
+      <p className="text-xs text-text-muted mb-3">
+        Realized P&L by symbol from closed trades. Net total:{" "}
+        <span
+          className={`font-mono font-semibold ${
+            data.totalPnl >= 0 ? "text-bullish" : "text-bearish"
+          }`}
+        >
+          {data.totalPnl >= 0 ? "+" : ""}${data.totalPnl.toFixed(2)}
+        </span>
+      </p>
+      <div className="space-y-1.5">
+        {top.map((r) => {
+          const widthPct = maxAbs === 0 ? 0 : (Math.abs(r.pnl) / maxAbs) * 100;
+          const isPositive = r.pnl >= 0;
+          const winRate = r.tradeCount > 0 ? (r.winCount / r.tradeCount) * 100 : 0;
+          return (
+            <div
+              key={r.symbol}
+              className="grid grid-cols-[80px_1fr_auto] gap-3 items-center text-sm"
+            >
+              <SymbolLink symbol={r.symbol} className="font-medium" />
+              <div className="relative h-6 rounded-md bg-bg-elevated overflow-hidden">
+                <div
+                  className={`absolute inset-y-0 left-0 ${
+                    isPositive ? "bg-bullish/30" : "bg-bearish/30"
+                  } transition-all`}
+                  style={{ width: `${widthPct}%` }}
+                />
+                <div className="absolute inset-0 flex items-center justify-end pr-2 text-[10px] text-text-muted font-mono">
+                  {r.tradeCount} trade{r.tradeCount !== 1 ? "s" : ""} · {Math.round(winRate)}% win
+                </div>
+              </div>
+              <div
+                className={`font-mono text-sm font-medium tabular-nums min-w-[80px] text-right ${
+                  isPositive ? "text-bullish" : "text-bearish"
+                }`}
+              >
+                {isPositive ? "+" : ""}${r.pnl.toFixed(2)}
+                <div className="text-[10px] text-text-muted">
+                  {r.pctOfTotal >= 0 ? "+" : ""}
+                  {r.pctOfTotal.toFixed(1)}%
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {data.rows.length > 10 && (
+        <p className="text-[11px] text-text-muted text-center mt-3">
+          +{data.rows.length - 10} more symbols not shown
+        </p>
+      )}
+    </Card>
   );
 }
