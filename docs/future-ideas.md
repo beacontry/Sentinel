@@ -95,3 +95,93 @@ Historical options data is paid. Yahoo doesn't have it usable. Realistic sources
 4. **Backtesting + additional strategies** — only after real options data is wired up.
 
 **Impact:** High — entire new product line. Reuses ~30% of Sentinel infrastructure (auth, broker layer, dashboard shell, push, watchdog) and rebuilds the rest. Don't bundle with equity engine work; ship as a sibling module behind a feature flag.
+
+---
+
+## Operational visibility
+
+### Slack/Discord/email notifications
+Webhook destinations attached to audit-log events. Subscribe to: `engine.halted`, `engine.live_blocked`, `order.rejected`, `auth.login_failed`, `engine.position_disappeared`. Per-user webhook config in a new table; admin can also configure system-wide channels for halt events. Hooks into existing Resend infra for email. ~200 LOC + migration for webhook config table.
+
+**Why:** monitor from phone without dashboard staring. Especially valuable during the first weeks of live trading.
+
+### Daily P&L digest email
+Every market close (4:30 PM ET cron), summary email per user: today's realized + unrealized, biggest gainer/loser, halt status, drift audit summary (any new drift since yesterday), engine state. Uses existing `sendAlertEmail()` helper. Opt-in via Settings. ~100 LOC, no migration.
+
+**Why:** async monitoring. Doesn't require user to load the app.
+
+---
+
+## Engine intelligence
+
+### Per-symbol P&L heatmap
+Dashboard widget: for each symbol you've traded, total realized P&L over selectable window (30d / 90d / YTD / all-time). Color-coded heatmap, sortable. Shows which names work for your strategy and which don't — actionable input for watchlist tuning. Reads `trader_trades`. ~120 LOC.
+
+**Why:** AAPL profitable, AMD not, etc. Trims the universe to what actually works.
+
+### Adaptive mode switching
+Auto-switch engine mode based on market regime indicators (VIX level, SPY breadth, SPY vs SMA50, sector rotation phase). Defined rules:
+- VIX < 18 + SPY > SMA50: `optimized` (aggressive)
+- VIX 18-25: `tactical-smart`
+- VIX > 25 OR SPY < SMA50 for 3+ days: `conservative`
+
+Opt-in per-user via new `adaptive_mode_enabled` column. Engine reads market state at scan start and switches before placing orders. ~100 LOC + migration.
+
+**Why:** strategy-mode mismatch with regime is the #1 source of drawdown. Automating the switch removes the human's tendency to keep an aggressive strategy on too long.
+
+### Sector exposure cap
+Refuse new BUYs if any sector would exceed N% of equity (default 25%). Uses the existing sector classification in `src/lib/sectors.ts`. New field on risk profile: `max_sector_exposure_pct`. ~80 LOC + migration.
+
+**Why:** prevents the engine from accidentally loading up on 8 tech names in a hot week. Surfaces concentration risk before it becomes a drawdown event.
+
+### News/earnings blackout
+No new entries 24h before a position's earnings release. Uses Finnhub's earnings calendar (already integrated). Tracks blocked symbols per scan in a new field on engine state, audit `order.rejected` with reason `earnings_blackout`. ~80 LOC.
+
+**Why:** earnings moves are dominated by guidance/macro factors that the technical engine has zero edge on. Skipping these days is +EV.
+
+### Mean reversion strategy
+Adds an `oversold-bounce` mode alongside momentum-only modes. RSI < 30 + price > SMA200 + above-avg volume → buy. Exits on RSI > 55 OR time-stop 10 days. Diversifies engine edge. ~250 LOC, biggest engine change — defer until momentum-only is profitable in paper.
+
+**Why:** momentum strategies underperform in choppy markets; mean reversion thrives there. Running both modes with capital allocation across them smooths the return curve.
+
+---
+
+## Strategy testing
+
+### Engine dry-run mode
+New `EngineMode` value `"dry-run"` where the engine runs scans normally, computes decisions, logs to `trader_trades` with `status='DRY_RUN'`, but never calls `placeOrder()`. Lets you test strategy code changes without risk. UI badge shows "DRY RUN" prominently. ~150 LOC.
+
+**Why:** changing the engine in production-mode is scary. Dry-run lets you ship strategy code and watch its decisions for a week before any real orders fire.
+
+### Live-vs-backtest divergence tracker
+For each engine fill, compare against what the backtester would have predicted at the same timestamp. If divergence > 5%, log to a new `engine_divergence` table. Surfaces drift between paper backtest assumptions and live broker reality. ~200 LOC + migration.
+
+**Why:** backtests almost always overstate live performance (slippage, latency, fill quality). Quantifying the delta lets you size expectations correctly.
+
+---
+
+## Multi-user / social
+
+### Signal copying (shadow trading)
+User A subscribes to user B's published signals. When B's engine places an order, A's engine places the same trade proportionally to their account size. Privacy controls: B chooses whether to publish, A chooses whether to copy, with a confirmation step before each first-time copy of a new symbol. ~250 LOC + new `signal_subscriptions` schema.
+
+**Why:** lets users with proven strategies amplify them, lets novices follow without copying manually. Sentinel becomes a platform, not just a tool.
+
+---
+
+## Order types / broker features
+
+### OCO orders attached at entry
+Currently the engine places a separate stop after a market buy. Alpaca supports bracket orders (entry + stop + take-profit atomically). The Alpaca client already has a `orderClass: "bracket"` code path — just unused. Wire it into the entry-order construction for paths that have known stop + TP at entry time. ~50 LOC.
+
+**Why:** atomic — broker enforces the stop the moment the entry fills, no race window where the position is unprotected.
+
+### Real-time websocket price feed
+Replace 15-min scan + 1-min quote polling with Alpaca's websocket market data stream. Price updates push immediately; trailing stops tighten in real-time instead of on the 1-min cadence. Reduces broker API rate-limit pressure too. ~400 LOC — biggest infra change.
+
+**Why:** sub-minute responsiveness for trailing stops on volatile names; eliminates the "stop fired at $117.67 but engine's tracked peak was $452" lag we saw with TGT.
+
+### Engine-internal model fine-tuning
+Periodically (weekly?) retrain the GA optimizer on the most recent N days of trader_trades data, refreshing the optimizer's preferred params. Adaptive to changing market regimes. Requires careful guard against overfitting to small N. Defer until live runs accumulate enough trade data. ~300 LOC + ops.
+
+**Why:** static GA params drift out-of-distribution as market regime changes. Continuous tuning keeps the engine current.
