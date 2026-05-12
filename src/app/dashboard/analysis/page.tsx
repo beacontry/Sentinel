@@ -21,7 +21,7 @@
 //   - Click a Recent row → analyzes and selects (same as watchlist click).
 //   - Every click also pushes the symbol onto Recently Viewed.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { AnalysisResult } from "@/types";
@@ -66,7 +66,26 @@ interface ScreenerCacheItem {
   indicators?: { sma_20?: number | null };
 }
 
-export default function AnalysisCockpit() {
+// Wrap the body in Suspense because useSearchParams() is a client-side
+// hook that opts the route out of static prerendering. Next.js 15
+// requires the Suspense boundary so the SSR shell can render while the
+// client hydrates the query-param read. Without this the build fails:
+// "useSearchParams() should be wrapped in a suspense boundary".
+export default function AnalysisCockpitPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-full">
+          <div className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <AnalysisCockpit />
+    </Suspense>
+  );
+}
+
+function AnalysisCockpit() {
   // Respect ?symbol=XXX query param — links from anywhere else in the
   // app (positions list, recently-viewed dropdown, SymbolLink in widgets,
   // shared watchlist tiles) deep-link to a specific symbol. Without this
