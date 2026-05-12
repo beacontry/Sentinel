@@ -40,6 +40,7 @@ export async function GET(
           id: watchlists.id,
           name: watchlists.name,
           isDefault: watchlists.isDefault,
+          shareToken: watchlists.shareToken,
           createdAt: watchlists.createdAt,
         })
         .from(watchlists)

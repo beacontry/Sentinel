@@ -18,6 +18,9 @@ export const watchlists = pgTable("watchlists", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   isDefault: boolean("is_default").notNull().default(false),
+  // 2026-05-12 — public share token. NULL = private (default). When set,
+  // /w/[token] renders the list read-only without authentication.
+  shareToken: text("share_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("watchlists_user_idx").on(t.userId),

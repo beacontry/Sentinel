@@ -30,6 +30,9 @@ import {
   Pencil,
   Check,
   Star,
+  Share2,
+  Copy,
+  Link2Off,
 } from "lucide-react";
 
 interface WatchlistSummary {
@@ -46,6 +49,7 @@ interface WatchlistDetail {
   isDefault: boolean;
   createdAt: string;
   symbols: string[];
+  shareToken?: string | null;
 }
 
 const MAX_WATCHLISTS = 20;
@@ -460,12 +464,19 @@ export default function WatchlistsPage() {
                     )}
                     <p className="text-xs text-text-muted">{active.symbols.length} / {MAX_SYMBOLS} symbols</p>
                   </div>
-                  {!active.isDefault && (
-                    <Button variant="secondary" size="sm" onClick={() => makeDefault(active.id)}>
-                      <Star className="w-3.5 h-3.5" />
-                      Make default
-                    </Button>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ShareButton
+                      watchlistId={active.id}
+                      shareToken={active.shareToken ?? null}
+                      onChanged={() => loadActive(active.id)}
+                    />
+                    {!active.isDefault && (
+                      <Button variant="secondary" size="sm" onClick={() => makeDefault(active.id)}>
+                        <Star className="w-3.5 h-3.5" />
+                        Make default
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </Card>
 
@@ -536,6 +547,97 @@ export default function WatchlistsPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Public-share toggle. When `shareToken` is null the button generates a
+// new one + copies the URL to the clipboard; when set, it shows a copy
+// affordance + a revoke option. Token rotation is "revoke and re-share."
+function ShareButton({
+  watchlistId,
+  shareToken,
+  onChanged,
+}: {
+  watchlistId: string;
+  shareToken: string | null;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const [submitting, setSubmitting] = useState(false);
+
+  function getUrl(token: string): string {
+    if (typeof window === "undefined") return `/w/${token}`;
+    return `${window.location.origin}/w/${token}`;
+  }
+
+  async function generate() {
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/watchlists/${watchlistId}/share`, { method: "POST" });
+      if (!res.ok) {
+        toast.toast({ type: "error", message: "Could not generate share link." });
+        return;
+      }
+      const data = await res.json();
+      const url = getUrl(data.shareToken);
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.toast({ type: "success", message: "Share link copied to clipboard." });
+      } catch {
+        toast.toast({ type: "success", message: `Share link: ${url}` });
+      }
+      onChanged();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function copy() {
+    if (!shareToken) return;
+    const url = getUrl(shareToken);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.toast({ type: "success", message: "Link copied." });
+    } catch {
+      toast.toast({ type: "info", message: url });
+    }
+  }
+
+  async function revoke() {
+    if (!confirm("Revoke the share link? Anyone with the link will lose access.")) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/watchlists/${watchlistId}/share`, { method: "DELETE" });
+      if (!res.ok) {
+        toast.toast({ type: "error", message: "Could not revoke share." });
+        return;
+      }
+      toast.toast({ type: "success", message: "Share link revoked." });
+      onChanged();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!shareToken) {
+    return (
+      <Button variant="secondary" size="sm" onClick={generate} loading={submitting}>
+        <Share2 className="w-3.5 h-3.5" />
+        Share link
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Button variant="secondary" size="sm" onClick={copy}>
+        <Copy className="w-3.5 h-3.5" />
+        Copy link
+      </Button>
+      <Button variant="ghost" size="sm" onClick={revoke} loading={submitting}>
+        <Link2Off className="w-3.5 h-3.5" />
+      </Button>
     </div>
   );
 }
