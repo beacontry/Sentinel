@@ -52,6 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div style={{ display: "flex", height: "100vh" }}>
         {/* Desktop sidebar */}
         <aside
+          data-app-sidebar
           className="hidden lg:flex"
           style={{ width: 260, flexShrink: 0, backgroundColor: "var(--color-bg-elevated)", flexDirection: "column", height: "100vh", overflow: "hidden" }}
         >

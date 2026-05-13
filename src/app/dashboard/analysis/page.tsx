@@ -47,7 +47,12 @@ import {
   X,
   Crosshair,
   RefreshCw,
+  Maximize2,
+  Focus,
 } from "lucide-react";
+import { ChartFullscreenOverlay } from "@/components/ui/chart-fullscreen-overlay";
+
+const FOCUS_STORAGE_KEY = "sentinel-focus-mode";
 
 const POPULAR_SYMBOLS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"];
 
@@ -124,6 +129,40 @@ function AnalysisCockpit() {
       window.localStorage.setItem("sentinel-chart-mode", next);
     } catch {
       // Quota / disabled — non-critical
+    }
+  }
+
+  // Chart fullscreen / zoom mode — user request to be able to expand
+  // either Engine view or TradingView to fill the viewport. Pure client
+  // state; the chart components don't need to know they're inside an
+  // overlay vs. inside the normal split layout.
+  const [chartFullscreen, setChartFullscreen] = useState(false);
+
+  // Focus mode — collapses the left dashboard sidebar to maximize the
+  // research workspace. Persists across visits via localStorage. The
+  // sidebar listens for an `html.focus-mode` class (see globals.css).
+  // The class is also removed on unmount in case the user navigates to
+  // a different page and forgets to disable it (sidebar otherwise stays
+  // hidden globally, which would be confusing).
+  const [focusMode, setFocusModeState] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(FOCUS_STORAGE_KEY);
+    if (saved === "1") {
+      setFocusModeState(true);
+      document.documentElement.classList.add("focus-mode");
+    }
+    return () => {
+      document.documentElement.classList.remove("focus-mode");
+    };
+  }, []);
+  function setFocusMode(next: boolean) {
+    setFocusModeState(next);
+    document.documentElement.classList.toggle("focus-mode", next);
+    try {
+      window.localStorage.setItem(FOCUS_STORAGE_KEY, next ? "1" : "0");
+    } catch {
+      /* quota — non-critical */
     }
   }
 
@@ -467,6 +506,24 @@ function AnalysisCockpit() {
           { label: "Market Signals", value: signalItems.length },
           { label: "Desk Tempo", value: isAnyLoading ? "Refreshing" : "Stable", tone: isAnyLoading ? "brand" : "bullish" },
         ]}
+        actions={
+          <button
+            type="button"
+            onClick={() => setFocusMode(!focusMode)}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+              focusMode
+                ? "border-accent/40 bg-accent/10 text-accent"
+                : "border-border bg-bg-secondary text-text-secondary hover:text-text-primary hover:bg-bg-hover"
+            }`}
+            title={focusMode ? "Show the sidebar" : "Hide the sidebar for more chart space"}
+            aria-pressed={focusMode}
+          >
+            <Focus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">
+              {focusMode ? "Exit focus" : "Focus mode"}
+            </span>
+          </button>
+        }
       />
 
       <div className="min-h-[760px] flex-1 overflow-hidden rounded-xl border border-border bg-bg-surface shadow-2xl">
@@ -685,9 +742,9 @@ function AnalysisCockpit() {
             }}
           >
             <div className="min-h-0 overflow-hidden p-3 flex flex-col">
-              {/* Chart engine toggle */}
+              {/* Chart engine toggle + fullscreen button */}
               {selectedSymbol && (
-                <div className="flex items-center justify-end gap-1 mb-2">
+                <div className="flex items-center justify-end gap-2 mb-2">
                   <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
                     <button
                       onClick={() => switchChartMode("engine")}
@@ -712,6 +769,14 @@ function AnalysisCockpit() {
                       TradingView
                     </button>
                   </div>
+                  <button
+                    onClick={() => setChartFullscreen(true)}
+                    className="rounded-md border border-border bg-bg-secondary p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+                    title="Expand chart to full screen (Esc to exit)"
+                    aria-label="Expand chart to full screen"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
               {selectedSymbol && chartMode === "tradingview" ? (
@@ -746,6 +811,31 @@ function AnalysisCockpit() {
           </div>
         </div>
       </div>
+
+      {/* Chart fullscreen overlay — renders whichever chart engine is
+       * currently selected, taking over the full viewport. Esc or the
+       * Exit button closes. The chart components are aware of resizing
+       * (they use ResizeObserver / TradingView reflows on container
+       * size change) so they re-layout automatically. */}
+      <ChartFullscreenOverlay
+        open={chartFullscreen}
+        onClose={() => setChartFullscreen(false)}
+        title={selectedSymbol ? `${selectedSymbol} — ${chartMode === "tradingview" ? "TradingView" : "Engine view"}` : "Chart"}
+      >
+        {selectedSymbol && chartMode === "tradingview" ? (
+          <div className="w-full h-full">
+            <TradingViewChart symbol={selectedSymbol} interval="D" height="fill" />
+          </div>
+        ) : selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
+          <div className="w-full h-full p-3">
+            <PriceChart analysis={selectedAnalysis} height={undefined} events={chartEvents} />
+          </div>
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-sm text-text-muted">No chart data available</p>
+          </div>
+        )}
+      </ChartFullscreenOverlay>
     </div>
   );
 }
