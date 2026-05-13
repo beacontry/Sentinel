@@ -1119,8 +1119,8 @@ async function refreshAdaptiveMode(engine: EngineState): Promise<void> {
 
 /**
  * Tightens the trailing stop proportionally as profit grows.
- * The trail shrinks from baseTrailingPct toward a minimum floor
- * as the profit percentage increases.
+ *
+ * v1 (legacy fallback): trail = floor + (base - floor) × exp(-rate × profit)
  *
  * Example with base 12%, floor 2%:
  *   0% profit  → 12% trail
@@ -1130,26 +1130,104 @@ async function refreshAdaptiveMode(engine: EngineState): Promise<void> {
  *  30% profit  → 3% trail (near floor)
  *  40%+ profit → 2% trail (floor)
  *
- * This locks in progressively more gain as the stock rises.
+ * v2 (when atr + vix supplied): trail scales with volatility and regime.
+ *
+ *   - ATR replaces baseTrailingPct as the per-stock base width.
+ *     Trail starts at ATR_BASE_MULT × (ATR / peakPrice). High-volatility
+ *     stocks (e.g. WDC, NVDA) get naturally wider trails; low-volatility
+ *     stocks (utilities, REITs) get tighter trails. No per-symbol
+ *     configuration needed.
+ *
+ *   - VIX adjusts the floor. Panic markets (VIX > 25) → 4% floor (give
+ *     positions room to whipsaw). Neutral (18-25) → 2.5% floor. Calm
+ *     (VIX < 18) → 1.5% floor (tighten further to lock in late-stage
+ *     gains).
+ *
+ * Backward-compatible: when atr/vix are omitted, the function returns
+ * exactly the same result as v1. Callsites with no upstream ATR plumbing
+ * (the safety-stop placer when the engine stops, for example) keep
+ * working without changes.
  */
-const TRAIL_FLOOR = 0.02; // minimum trailing stop: 2%
-const TRAIL_DECAY_RATE = 3; // how fast the trail tightens (higher = faster)
+const TRAIL_FLOOR = 0.02; // legacy / fallback floor
+const TRAIL_DECAY_RATE = 3; // how fast the trail tightens with profit
+
+// v2 — volatility-relative tuning constants
+const ATR_BASE_MULT = 2.5;    // start at 2.5× ATR for the initial trail width
+const ATR_TRAIL_CAP = 0.25;   // 25% absolute cap — protects against penny-stock ATR explosions
+
+// v2 — regime-aware floors. Loose in panic, tight in calm. These map
+// directly to the breakpoints used by the adaptive-mode classifier so
+// the regime story stays consistent across the engine.
+const TRAIL_FLOOR_VIX_PANIC = 0.04;   // VIX > 25
+const TRAIL_FLOOR_VIX_NEUTRAL = 0.025; // 18 < VIX <= 25
+const TRAIL_FLOOR_VIX_CALM = 0.015;   // VIX <= 18
+const VIX_PANIC_THRESHOLD = 25;
+const VIX_CALM_THRESHOLD = 18;
+
+interface TrailOptions {
+  /** 14-day Average True Range in DOLLARS (not %). When supplied, drives the per-stock base trail via ATR_BASE_MULT × ATR / peakPrice. */
+  atr?: number;
+  /** Current VIX level. When supplied, scales the floor via the panic/neutral/calm bands. */
+  vix?: number;
+}
 
 function getDynamicTrailingPct(
   entryPrice: number,
   peakPrice: number,
-  baseTrailingPct: number
+  baseTrailingPct: number,
+  options?: TrailOptions
 ): number {
   const profitPct = (peakPrice - entryPrice) / entryPrice;
-  if (profitPct <= 0) return baseTrailingPct;
+  const atr = options?.atr;
+  const vix = options?.vix;
+
+  // Regime-aware floor (defaults to legacy 2% when no VIX)
+  let floor: number;
+  if (vix !== undefined) {
+    floor =
+      vix > VIX_PANIC_THRESHOLD
+        ? TRAIL_FLOOR_VIX_PANIC
+        : vix > VIX_CALM_THRESHOLD
+          ? TRAIL_FLOOR_VIX_NEUTRAL
+          : TRAIL_FLOOR_VIX_CALM;
+  } else {
+    floor = TRAIL_FLOOR;
+  }
+
+  // ATR-relative base trail (defaults to legacy fixed % when no ATR)
+  let base: number;
+  if (atr !== undefined && atr > 0 && peakPrice > 0) {
+    base = Math.min(ATR_TRAIL_CAP, (ATR_BASE_MULT * atr) / peakPrice);
+    // Never tighter than the legacy floor at entry — gives positions
+    // room to find their footing in the first scan post-entry.
+    base = Math.max(base, floor);
+  } else {
+    base = baseTrailingPct;
+  }
+
+  // Pre-profit: just return the base (with floor as the absolute minimum)
+  if (profitPct <= 0) return Math.max(floor, base);
 
   // Exponential decay from base toward floor as profit grows
-  // trail = floor + (base - floor) * e^(-rate * profitPct)
-  const range = baseTrailingPct - TRAIL_FLOOR;
-  const trail = TRAIL_FLOOR + range * Math.exp(-TRAIL_DECAY_RATE * profitPct);
+  const range = Math.max(0, base - floor);
+  const trail = floor + range * Math.exp(-TRAIL_DECAY_RATE * profitPct);
 
-  return Math.max(TRAIL_FLOOR, trail);
+  return Math.max(floor, trail);
 }
+
+// Exposed for unit tests + ad-hoc spreadsheets
+export const trailInternals = {
+  TRAIL_FLOOR,
+  TRAIL_DECAY_RATE,
+  ATR_BASE_MULT,
+  ATR_TRAIL_CAP,
+  TRAIL_FLOOR_VIX_PANIC,
+  TRAIL_FLOOR_VIX_NEUTRAL,
+  TRAIL_FLOOR_VIX_CALM,
+  VIX_PANIC_THRESHOLD,
+  VIX_CALM_THRESHOLD,
+  getDynamicTrailingPct,
+};
 
 // ─── Market Hours ────────────────────────────────────────────────────────────
 
@@ -1509,9 +1587,18 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
       const params = await resolveStrategy(engine.userId, symbol);
       let exitReason = "";
 
-      // Stop loss with profit-based tightening
+      // Stop loss with profit-based tightening.
+      // v2 — pass pos.atr (cached on entry, refreshed on each main scan)
+      // and engine.adaptiveRegime.vix (when adaptive mode is engaged or
+      // the regime snapshot was populated by another path). Both
+      // optional — falls back to fixed-% when absent.
       const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
-      const dynTrailPct = getDynamicTrailingPct(pos.entryPrice, pos.peakPrice, params.trailingStopPct);
+      const dynTrailPct = getDynamicTrailingPct(
+        pos.entryPrice,
+        pos.peakPrice,
+        params.trailingStopPct,
+        { atr: pos.atr, vix: engine.adaptiveRegime?.vix }
+      );
       const trailStop = pos.peakPrice * (1 - dynTrailPct);
       const effectiveStop = Math.max(fixedStop, trailStop);
 
@@ -1776,6 +1863,14 @@ interface TrackedPosition {
   /** Phase 4 — last-known live price + marketValue from the most recent sync. Used for sector-exposure math without an extra broker call per BUY decision. */
   currentPrice?: number;
   marketValue?: number;
+  /**
+   * Trail dynamism v2 — most recent 14-day ATR (in dollars) for this
+   * position's symbol, refreshed at scan time when analyzer indicators
+   * are available. Consumed by getDynamicTrailingPct() to scale the
+   * trail width volatility-relative per stock. Optional — when absent,
+   * the trail falls back to the fixed-% formula.
+   */
+  atr?: number;
 }
 
 const g2 = globalThis as typeof globalThis & {
@@ -3213,9 +3308,23 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         if (currentPrice > heldPosition.peakPrice) {
           heldPosition.peakPrice = currentPrice;
         }
+        // v2 trail dynamism — refresh per-symbol ATR on each scan so the
+        // trail width adapts as volatility changes. ATR availability is
+        // best-effort; getDynamicTrailingPct falls back to the legacy
+        // fixed-% formula when atr/vix are absent.
+        const heldAtr = (analysis.indicators as unknown as Record<string, number | null | undefined>).atr_14;
+        if (typeof heldAtr === "number" && heldAtr > 0) {
+          heldPosition.atr = heldAtr;
+        }
+        const regimeVix = engine.adaptiveRegime?.vix;
 
         const strategy = await resolveStrategy(engine.userId, symbol);
-        const dynTrail = getDynamicTrailingPct(heldPosition.entryPrice, heldPosition.peakPrice, strategy.trailingStopPct);
+        const dynTrail = getDynamicTrailingPct(
+          heldPosition.entryPrice,
+          heldPosition.peakPrice,
+          strategy.trailingStopPct,
+          { atr: heldPosition.atr, vix: regimeVix }
+        );
         const trailingStopPrice =
           heldPosition.peakPrice * (1 - dynTrail);
         const tradingDays = tradingDaysBetween(heldPosition.entryDate, new Date());
@@ -3499,7 +3608,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           // Set cooldown to prevent re-buying same symbol too quickly (~2.5h)
           engine.cooldowns.set(symbol, Date.now());
 
-          // Track position in memory
+          // Track position in memory.
+          // Capture ATR at entry — v2 dynamic-trail formula uses ATR as
+          // the per-stock base trail width. Refreshed on each subsequent
+          // scan in the held-position branch below.
           const tracked: TrackedPosition = {
             symbol,
             qty,
@@ -3510,6 +3622,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             trailingStopPct: strategy.trailingStopPct,
             entryDate: new Date(),
             holdPeriod: strategy.holdPeriod,
+            atr: atrVal ?? undefined,
           };
           positionMap.set(symbol, tracked);
 
@@ -3878,6 +3991,12 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
   const positionMap = getPositionMap(userId);
   if (positionMap.size === 0) return;
 
+  // v2 trail dynamism — pull current VIX from the engine's adaptive regime
+  // snapshot if available. The cached snapshot is up to ~scan-interval
+  // stale, which is fine for a per-scan stop refresh.
+  const engine = getEngine(userId);
+  const regimeVix = engine.adaptiveRegime?.vix;
+
   try {
     // Get only open stop orders (avoids old filled/cancelled orders eating the limit)
     const openOrders = await client.getOrders(100, "open");
@@ -3893,9 +4012,18 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
     for (const [symbol, pos] of positionMap) {
       const existing = stopOrders.get(symbol);
 
-      // Compute dynamic trailing stop
+      // Compute dynamic trailing stop. ATR is cached on pos.atr by the
+      // main scan loop (refreshed every scan when indicators are
+      // computed). VIX comes from the adaptive-regime snapshot. Both are
+      // optional — getDynamicTrailingPct falls back to legacy fixed-%
+      // when either is absent.
       const strategy = await resolveStrategy(userId, symbol);
-      const dynTrailPct = getDynamicTrailingPct(pos.entryPrice, pos.peakPrice, strategy.trailingStopPct);
+      const dynTrailPct = getDynamicTrailingPct(
+        pos.entryPrice,
+        pos.peakPrice,
+        strategy.trailingStopPct,
+        { atr: pos.atr, vix: regimeVix }
+      );
       const trailStop = pos.peakPrice * (1 - dynTrailPct);
       const fixedStop = pos.entryPrice * (1 - strategy.stopLossPct);
       const targetStop = Math.max(fixedStop, trailStop);
