@@ -1068,4 +1068,160 @@ export const GLOSSARY_TERMS: GlossaryTerm[] = [
       "Switch to specific-ID or HIFO before tax-loss harvesting — FIFO usually realizes gains exactly when you don't want them.",
     ],
   },
+
+  // ─── Custodial / minor-investing terms ──────────────────────────────────
+  {
+    id: "ugma",
+    term: "UGMA (Uniform Gifts to Minors Act)",
+    definition:
+      "1956 state-law framework for custodial accounts holding cash and securities on behalf of a minor. The minor legally owns the assets immediately; an adult custodian manages them until the age of termination (usually 18). Most states have replaced UGMA with the more flexible UTMA, but South Carolina and Vermont still default to UGMA. Functionally identical to UTMA for ordinary brokerage holdings.",
+    category: "wealth",
+    examples: [
+      "Grandparent opens a UGMA at Fidelity for a newborn grandchild, deposits $5,000 of Vanguard ETFs. Account becomes the child's outright at age 18.",
+      "Don't open UGMA when UTMA is available — UTMA lets you extend the age of termination to 21 or 25 in many states.",
+    ],
+  },
+  {
+    id: "utma",
+    term: "UTMA (Uniform Transfers to Minors Act)",
+    definition:
+      "1986 modernization of UGMA, adopted by every state except South Carolina and Vermont. Allows custodial accounts to hold any asset type — securities, real estate, art, intellectual property — and lets the custodian extend the age of termination to 21 or 25 at account opening (states vary). For brokerage purposes, UTMA and UGMA behave identically.",
+    category: "wealth",
+    examples: [
+      "Open the UTMA in California with the age of termination set to 25 (the maximum CA allows). You cannot extend it later — lock it in at opening.",
+      "Mom transfers her painting collection into a UTMA for her teenage daughter. UGMA wouldn't have allowed this; only securities + cash.",
+    ],
+  },
+  {
+    id: "custodial-account",
+    term: "Custodial Account",
+    definition:
+      "Any account legally owned by a minor and managed by an adult custodian. Includes UGMA, UTMA, and Custodial Roth IRA. The custodian has a fiduciary duty to manage the assets for the minor's benefit, but cannot revoke the gift — the assets belong to the minor from the moment of transfer.",
+    category: "wealth",
+    examples: [
+      "A custodial Roth IRA opened at age 10 with $1,000 of babysitting income; mom invests in VTSAX and lets it compound.",
+      "Custodial accounts are irrevocable. You cannot 'take back' the money if you change your mind.",
+    ],
+  },
+  {
+    id: "coverdell-esa",
+    term: "Coverdell ESA",
+    definition:
+      "Coverdell Education Savings Account — $2,000/year tax-advantaged investment account for a minor's education expenses (K-12 and post-secondary). Contributions are after-tax; growth and qualified withdrawals are tax-free. The $2,000 limit is per beneficiary across all contributors combined. Contributor income phases out at $95K-$110K (single) / $190K-$220K (MFJ) in 2026. Funds must be used by age 30 or rolled to a family member.",
+    category: "wealth",
+    examples: [
+      "Parents fund $2,000/year in a Coverdell at Fidelity invested in VTI — broader investment menu than their state's 529.",
+      "Coverdell beats 529 for K-12 because it covers books, computers, and supplies — not just tuition.",
+    ],
+  },
+  {
+    id: "custodial-roth-ira",
+    term: "Custodial Roth IRA",
+    definition:
+      "A Roth IRA opened in a minor's name and managed by an adult custodian. Same rules as a regular Roth IRA: $7,000 (2026) annual contribution cap, must be backed by the minor's earned income, tax-free growth forever. The most powerful retirement account a minor can have — every additional year of compounding is geometric at the back end.",
+    category: "wealth",
+    examples: [
+      "$3,500 contributed at age 10 → roughly $215,000 by age 65 at 7% returns. The cost was $3,500.",
+      "Custodial Roth IRAs are explicitly excluded from FAFSA asset reporting (unlike UTMAs which count at 20%).",
+    ],
+  },
+  {
+    id: "kiddie-tax",
+    term: "Kiddie Tax",
+    definition:
+      "IRS rule (since 1986) that taxes a minor's unearned income above small thresholds at the parent's marginal rate, not the child's. For 2026 (estimated): first $1,350 tax-free, next $1,350 at child's rate, anything over $2,700 at parent's rate. Applies to dependents under 19, or under 24 if a full-time student. Earned income (wages, self-employment) is NOT subject to Kiddie Tax — only investment income.",
+    category: "wealth",
+    examples: [
+      "Your child's $80K UTMA throws off $3,200 of dividends. First $1,350 tax-free, next $1,350 at 10% ($135), remaining $500 at parent's 24% rate ($120). Total federal tax: $255.",
+      "Why custodial Roth IRA dominates UTMA when the child has earned income — Roth's tax-free growth bypasses Kiddie Tax entirely.",
+    ],
+  },
+  {
+    id: "age-of-termination",
+    term: "Age of Termination",
+    definition:
+      "The age at which a UGMA or UTMA account converts from custodial management to the minor's full control. Set by state statute, typically 18 or 21 (some states allow 25 if elected at account opening). The custodian cannot delay this — it's automatic. Cannot be retroactively extended once the account is open.",
+    category: "wealth",
+    examples: [
+      "California UTMA default: age 18, with election to 25 if specified at opening. New York: age 21 default, no extension allowed.",
+      "If you want control past 25, you need a trust, not a UTMA.",
+    ],
+  },
+  {
+    id: "fafsa",
+    term: "FAFSA (Free Application for Federal Student Aid)",
+    definition:
+      "Annual federal form that determines eligibility for need-based financial aid at US colleges. Reports parent and student income + assets. Student-owned assets are assessed at 20% per year (reduces aid by 20% of balance); parent-owned assets at a max of 5.64%. Retirement accounts (IRAs, 401(k)s) are explicitly EXCLUDED — they don't reduce aid eligibility regardless of balance.",
+    category: "wealth",
+    examples: [
+      "$50K in a UTMA: ~$10K/year aid reduction. Same $50K in a parent-owned 529: ~$2,820/year. Same $50K in a Roth IRA: $0 reduction.",
+      "For financial-aid-eligible households, asset location matters enormously — Roth IRA > 529 > taxable parent account > UTMA.",
+    ],
+  },
+  {
+    id: "earned-income-minor",
+    term: "Earned Income (for IRA eligibility)",
+    definition:
+      "Wages, salary, self-employment income — money a person works for. The IRS requires Roth IRA contributions to be backed by earned income at least equal to the contribution amount. For minors: babysitting, lawn-mowing, working at a family business, modeling, and W-2 jobs all qualify. Allowance, gifts, dividends, and capital gains do NOT qualify.",
+    category: "wealth",
+    examples: [
+      "12-year-old earns $2,400 from a summer of lawn-mowing (Schedule C self-employment). Maximum Roth contribution: $2,400.",
+      "Document everything — keep invoices, deposit logs, pay stubs. IRS can audit Roth contributions retroactively.",
+    ],
+  },
+  {
+    id: "529-to-roth-rollover",
+    term: "529-to-Roth Rollover",
+    definition:
+      "Provision in SECURE Act 2.0 (effective 2024) allowing up to $35,000 LIFETIME to be rolled from a 529 plan into the beneficiary's Roth IRA, subject to annual Roth contribution limits and a 15-year minimum 529 account age. Solves the 'oversaved for college' problem by repurposing leftover 529 funds for retirement without the 10% non-qualified withdrawal penalty.",
+    category: "wealth",
+    examples: [
+      "Child gets a full scholarship. Parents have $50K in a 529 opened 16 years ago. Up to $35K can roll into the child's Roth IRA over their lifetime, at $7K/year.",
+      "Coverdell ESAs do NOT have this provision — leftover funds either transfer to a sibling or distribute with tax + penalty.",
+    ],
+  },
+  {
+    id: "qhee",
+    term: "QHEE (Qualified Higher Education Expenses)",
+    definition:
+      "IRS-defined list of expenses that qualify for tax-free withdrawals from 529 plans, Coverdell ESAs, and other education-funding vehicles. Includes tuition, fees, required books and supplies, computers and software, room and board (up to school's published cost-of-attendance), special-needs equipment, and apprenticeship program fees. Most non-essential expenses (cars, travel home for breaks, ordinary phone) are excluded.",
+    category: "wealth",
+    examples: [
+      "Laptop required by the engineering program: QHEE-eligible. Laptop the student wants but isn't required: not eligible.",
+      "Room and board count for QHEE only up to the school's published cost-of-attendance figure for that category.",
+    ],
+  },
+  {
+    id: "gift-tax-exclusion",
+    term: "Annual Gift Tax Exclusion",
+    definition:
+      "The IRS-set amount you can give a single recipient per year without filing a gift tax return or eating into your lifetime exemption. For 2026: $19,000 per donor per recipient. A married couple can jointly give $38,000 to a single recipient. 529 plans allow 5-year forward-averaging ('superfunding'): $95,000 single / $190,000 married into a 529 in one year, treated as 5 years of exclusion gifts.",
+    category: "wealth",
+    examples: [
+      "Grandparents each give $19K to a grandchild's UTMA in December and again in January — that's $76K transferred in 32 days using two years of exclusions.",
+      "Going over the $19K limit doesn't mean you owe tax — it means filing Form 709 and reducing your lifetime exemption ($13.99M in 2026).",
+    ],
+  },
+  {
+    id: "front-loading",
+    term: "Front-Loading (529 Superfunding)",
+    definition:
+      "Strategy of contributing 5 years of gift-tax-exclusion gifts to a 529 in one year — up to $95,000 single / $190,000 married per beneficiary. Treated as 5 separate annual gifts for tax purposes (you must file Form 709 and skip exclusion gifts to that beneficiary for the next 4 years). Maximizes tax-free compounding for grandparent-funded plans.",
+    category: "wealth",
+    examples: [
+      "Grandparent superfunds $95K into a grandchild's 529 in 2026. Cannot use the annual gift exclusion for THIS grandchild again until 2031.",
+      "Tax-free growth on $95K compounded for 18 years at 7% = ~$320K — meaningfully more than steady $19K/year contributions.",
+    ],
+  },
+  {
+    id: "fiduciary-duty-custodial",
+    term: "Fiduciary Duty (custodial)",
+    definition:
+      "The legal obligation of a UGMA/UTMA custodian to manage the account in the minor's best interest, with reasonable care. Allows spending custodial funds on legitimate child-benefit expenses (school, medical, summer programs, even a car for the child) before the age of termination. Prohibits self-dealing — the custodian cannot 'borrow' from the account or use it for the family's general expenses.",
+    category: "wealth",
+    examples: [
+      "Legal: paying for the child's summer math camp from the UTMA. Illegal: using UTMA funds for the family's rent.",
+      "When approaching FAFSA filing, spending UTMA funds on legitimate child-benefit expenses (computer, tutoring, etc.) is both legal and tax-efficient.",
+    ],
+  },
 ];
