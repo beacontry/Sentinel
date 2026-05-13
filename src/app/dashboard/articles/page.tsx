@@ -91,8 +91,8 @@ export default function ArticlesPage() {
       ) : articles.length === 0 ? (
         <EmptyState
           icon={<FileText className="w-12 h-12" />}
-          title="No Articles Yet"
-          description="Published articles will appear here."
+          title="No articles yet"
+          description="Daily market digest articles publish automatically every weekday morning. Long-form analysis from the editorial team appears here too. Check back tomorrow."
         />
       ) : (
         <>
