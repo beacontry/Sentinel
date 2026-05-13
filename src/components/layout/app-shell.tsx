@@ -8,8 +8,6 @@ import {
   Menu,
   Radar,
   Sparkles,
-  Sun,
-  Moon,
   X,
 } from "lucide-react";
 import {
@@ -17,7 +15,7 @@ import {
   isActivePath,
 } from "./nav-config";
 import { useAi } from "@/components/ai/ai-provider";
-import { useTheme } from "@/components/theme-provider";
+import { ThemePicker } from "@/components/theme-picker";
 import { BrokerSwitcher } from "./broker-switcher";
 import { PnlFormatToggle } from "./pnl-format-toggle";
 
@@ -25,7 +23,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isChatOpen, toggleChat } = useAi();
-  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -106,27 +103,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Footer */}
             <div style={{ padding: "4px 10px 12px" }}>
-              <button
-                type="button"
-                onClick={toggleTheme}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "7px 10px",
-                  borderRadius: 6,
-                  fontSize: 13,
-                  width: "100%",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "var(--color-text-secondary)",
-                  backgroundColor: "transparent",
-                  marginBottom: 1,
-                }}
-              >
-                {theme === "dark" ? <Sun style={{ width: 16, height: 16 }} /> : <Moon style={{ width: 16, height: 16 }} />}
-                {theme === "dark" ? "Light Mode" : "Dark Mode"}
-              </button>
+              <div style={{ marginBottom: 6 }}>
+                <ThemePicker variant="sidebar" />
+              </div>
               <PnlFormatToggle />
               <button
                 type="button"
@@ -243,18 +222,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </nav>
 
             <div style={{ padding: "4px 10px 12px" }}>
-              <button
-                type="button"
-                onClick={toggleTheme}
-                style={{
-                  display: "flex", alignItems: "center", gap: 10, padding: "7px 10px",
-                  borderRadius: 6, fontSize: 13, width: "100%", border: "none", cursor: "pointer",
-                  color: "var(--color-text-secondary)", backgroundColor: "transparent", marginBottom: 1,
-                }}
-              >
-                {theme === "dark" ? <Sun style={{ width: 16, height: 16 }} /> : <Moon style={{ width: 16, height: 16 }} />}
-                {theme === "dark" ? "Light Mode" : "Dark Mode"}
-              </button>
+              <div style={{ marginBottom: 6 }}>
+                <ThemePicker variant="sidebar" />
+              </div>
               <button
                 type="button"
                 onClick={() => { toggleChat(); setMobileOpen(false); }}

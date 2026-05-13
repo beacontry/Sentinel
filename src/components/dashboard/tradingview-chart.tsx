@@ -15,7 +15,7 @@
 // and let the iframe handle the rest.
 
 import { useEffect, useRef } from "react";
-import { useTheme } from "@/components/theme-provider";
+import { useTheme, isDarkTheme } from "@/components/theme-provider";
 
 interface TradingViewChartProps {
   symbol: string;
@@ -72,10 +72,10 @@ export function TradingViewChart({
         symbol: tvSymbol(symbol),
         interval,
         timezone: "Etc/UTC",
-        theme: theme === "dark" ? "dark" : "light",
+        theme: isDarkTheme(theme) ? "dark" : "light",
         style: "1", // candles
         locale: "en",
-        toolbar_bg: theme === "dark" ? "#1a1f1d" : "#f7f8f7",
+        toolbar_bg: isDarkTheme(theme) ? "#1a1f1d" : "#f7f8f7",
         enable_publishing: false,
         allow_symbol_change: true,
         hide_side_toolbar: false,
