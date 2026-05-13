@@ -37,8 +37,25 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Hard 6s upper bound on the upstream call. The Finnhub client has its
+  // own 10s timeout AND a 60-req/min rate limiter that can wait up to ~60s
+  // when other Finnhub callers (news, sentiment, etc.) saturate the bucket.
+  // Combined, the route could hang long enough for Caddy/Cloudflare to
+  // return their own 502 with HTML body — which the UI then sees as a
+  // generic "Server returned 502" because it can't parse Caddy's HTML.
+  // Capping at 6s here keeps the failure inside our handler so we can
+  // return a clean JSON error.
+  const ROUTE_TIMEOUT_MS = 6000;
   try {
-    const response = await finnhub.getCongressionalTrading(symbolParam || undefined);
+    const response = await Promise.race([
+      finnhub.getCongressionalTrading(symbolParam || undefined),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Finnhub API error: 504 Timeout after ${ROUTE_TIMEOUT_MS}ms`)),
+          ROUTE_TIMEOUT_MS
+        )
+      ),
+    ]);
     const trades = (response.data ?? [])
       // Sort newest-filing first (transactionDate is what users care about,
       // but filings can be backdated months — secondary sort on filingDate)
@@ -72,15 +89,24 @@ export async function GET(request: NextRequest) {
     const upstreamStatus = upstreamMatch ? parseInt(upstreamMatch[1], 10) : null;
 
     let userMessage = "Could not reach Congressional trade feed.";
+    let upstreamCategory: "paid_tier" | "rate_limit" | "timeout" | "server_error" | "unknown" = "unknown";
     if (upstreamStatus === 401 || upstreamStatus === 403) {
       userMessage =
         `Finnhub returned ${upstreamStatus} — Congressional trading may now ` +
         `require a paid Finnhub tier. The endpoint was free as of late 2025; ` +
         `Finnhub has been moving alternative-data endpoints to paid plans.`;
+      upstreamCategory = "paid_tier";
     } else if (upstreamStatus === 429) {
       userMessage = "Finnhub rate-limited the request. Try again in a minute.";
+      upstreamCategory = "rate_limit";
+    } else if (upstreamStatus === 504) {
+      userMessage =
+        "Finnhub took too long to respond (>6s). The endpoint may be slow or " +
+        "the request was queued behind other Finnhub calls.";
+      upstreamCategory = "timeout";
     } else if (upstreamStatus && upstreamStatus >= 500) {
       userMessage = `Finnhub returned ${upstreamStatus} — their server-side issue. Try again shortly.`;
+      upstreamCategory = "server_error";
     } else if (upstreamStatus) {
       userMessage = `Finnhub returned ${upstreamStatus}.`;
     }
@@ -90,6 +116,7 @@ export async function GET(request: NextRequest) {
         trades: [],
         error: userMessage,
         upstreamStatus,
+        upstreamCategory,
       },
       // 502 maps the upstream failure cleanly; client treats this as a
       // surfaceable error (data.error is rendered as-is).

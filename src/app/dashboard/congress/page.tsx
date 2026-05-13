@@ -82,10 +82,13 @@ function isSell(type: string): boolean {
   return t.includes("sale") || t.includes("sell") || t.includes("dispose");
 }
 
+type UpstreamCategory = "paid_tier" | "rate_limit" | "timeout" | "server_error" | "unknown";
+
 export default function CongressPage() {
   const [trades, setTrades] = useState<CongressTrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [upstreamCategory, setUpstreamCategory] = useState<UpstreamCategory | null>(null);
 
   // Filters
   const [symbolFilter, setSymbolFilter] = useState("");
@@ -103,6 +106,8 @@ export default function CongressPage() {
     const sym = symbolFilter.trim().toUpperCase();
     if (sym) params.set("symbol", sym);
 
+    setUpstreamCategory(null);
+
     // Debounce 300ms — symbol queries hit Finnhub
     const timer = setTimeout(async () => {
       try {
@@ -119,12 +124,22 @@ export default function CongressPage() {
             `Server returned ${res.status} ${res.statusText || ""}`.trim() ||
             `Server error (${res.status})`;
           setError(message);
+          if (data && typeof data.upstreamCategory === "string") {
+            setUpstreamCategory(data.upstreamCategory as UpstreamCategory);
+          } else if (res.status === 502) {
+            // Likely Caddy/Cloudflare 502 — origin didn't respond. Treat as
+            // upstream-unreachable so we still show the helpful fallback UI.
+            setUpstreamCategory("server_error");
+          }
           setTrades([]);
           return;
         }
         const data = await res.json();
         if (data.error) {
           setError(data.error);
+          if (typeof data.upstreamCategory === "string") {
+            setUpstreamCategory(data.upstreamCategory as UpstreamCategory);
+          }
           setTrades([]);
           return;
         }
@@ -267,7 +282,70 @@ export default function CongressPage() {
           ))}
         </div>
       ) : error ? (
-        <Card className="p-6 text-center text-sm text-bearish">{error}</Card>
+        <Card className="p-6 space-y-4">
+          <div className="flex items-start gap-3">
+            <Landmark className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-text-primary mb-1">
+                Congressional trade feed unavailable
+              </p>
+              <p className="text-sm text-text-secondary leading-relaxed">{error}</p>
+            </div>
+          </div>
+
+          {/* External alternatives — independent of Finnhub's tier */}
+          {(upstreamCategory === "paid_tier" ||
+            upstreamCategory === "server_error" ||
+            upstreamCategory === "timeout") && (
+            <div className="border-t border-border/60 pt-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-text-muted mb-3">
+                External alternatives (free)
+              </p>
+              <ul className="space-y-2 text-sm">
+                <li>
+                  <a
+                    href="https://www.quiverquant.com/congresstrading/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-accent hover:underline"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    QuiverQuant — Congressional Trading
+                  </a>
+                  <span className="text-text-muted ml-2 text-xs">
+                    Aggregates the same federal PTR filings, free tier covers browsing.
+                  </span>
+                </li>
+                <li>
+                  <a
+                    href="https://disclosures-clerk.house.gov/PublicDisclosure/FinancialDisclosure"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-accent hover:underline"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    House Disclosures — Financial Disclosure (official source)
+                  </a>
+                  <span className="text-text-muted ml-2 text-xs">
+                    Direct from the source. Slower to navigate, but authoritative.
+                  </span>
+                </li>
+                <li>
+                  <a
+                    href="https://efdsearch.senate.gov/search/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-accent hover:underline"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Senate eFD — Financial Disclosure search (official source)
+                  </a>
+                  <span className="text-text-muted ml-2 text-xs">Senate counterpart to the House feed above.</span>
+                </li>
+              </ul>
+            </div>
+          )}
+        </Card>
       ) : visible.length === 0 ? (
         <EmptyState
           icon={<Landmark className="w-12 h-12" />}
