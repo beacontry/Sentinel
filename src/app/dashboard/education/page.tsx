@@ -9,6 +9,7 @@ import {
   Brain,
   Calculator as CalculatorIcon,
   Check,
+  ChevronDown,
   Clock,
   GraduationCap,
   Trophy,
@@ -28,6 +29,9 @@ import { CollegeFundingCompareCalculator } from "@/components/education/calculat
 import { TermVsWholeLifeCalculator } from "@/components/education/calculators/term-vs-whole-life";
 import { TaxLossHarvestingCalculator } from "@/components/education/calculators/tax-loss-harvesting";
 import { EmployerMatchOptimizerCalculator } from "@/components/education/calculators/employer-match-optimizer";
+import { CompoundInterestCalculator } from "@/components/education/calculators/compound-interest";
+import { FireNumberCalculator } from "@/components/education/calculators/fire-number";
+import { QuarterlyTaxEstimatorCalculator } from "@/components/education/calculators/quarterly-tax-estimator";
 import { GLOSSARY_TERMS, type GlossaryCategory } from "@/lib/glossary-data";
 import {
   GUIDES,
@@ -279,24 +283,140 @@ export default function EducationPage() {
         </div>
       </TabPanel>
 
-      {/* ─── Calculators ────────────────────────────────────────────── */}
+      {/* ─── Calculators ──────────────────────────────────────────────
+       *
+       * Previously all calculators rendered always-expanded in a long
+       * stack — fine when there were 2-3, awkward at 8. Replaced with a
+       * click-to-expand accordion (one open at a time) so the user can:
+       *   1. See every calculator's existence at a glance (browse beats
+       *      search for a small fixed catalog)
+       *   2. Open the one they want without scrolling past 7 others
+       *   3. Switch quickly between them
+       *
+       * Also adds the 3 calculators that already existed on disk but
+       * weren't imported (compound-interest, fire-number,
+       * quarterly-tax-estimator). All 8 from CLAUDE.md now present.
+       * ────────────────────────────────────────────────────────────── */}
       <TabPanel active={hubTab === "calculators"}>
-        <div className="space-y-6">
+        <div className="space-y-3">
           <div className="flex items-center gap-3">
             <CalculatorIcon className="h-5 w-5 text-accent" aria-hidden="true" />
             <p className="text-sm text-text-secondary max-w-2xl">
               Run your own numbers. All assumptions are editable; outputs are
-              illustrative only.
+              illustrative only. Click any calculator below to open it.
             </p>
           </div>
 
-          <EmployerMatchOptimizerCalculator />
-          <RothVsTraditionalCalculator />
-          <CollegeFundingCompareCalculator />
-          <TermVsWholeLifeCalculator />
-          <TaxLossHarvestingCalculator />
+          <CalculatorAccordion items={CALCULATOR_REGISTRY} />
         </div>
       </TabPanel>
+    </div>
+  );
+}
+
+// ─── Calculator accordion ───────────────────────────────────────────────────
+
+interface CalculatorRegistryEntry {
+  id: string;
+  title: string;
+  description: string;
+  Component: () => React.ReactNode;
+}
+
+const CALCULATOR_REGISTRY: CalculatorRegistryEntry[] = [
+  {
+    id: "employer-match",
+    title: "Employer 401(k) match optimizer",
+    description: "Make sure you're capturing every dollar of the company match.",
+    Component: EmployerMatchOptimizerCalculator,
+  },
+  {
+    id: "roth-vs-traditional",
+    title: "Roth vs Traditional IRA",
+    description: "Pay tax now or later — depends on your bracket trajectory.",
+    Component: RothVsTraditionalCalculator,
+  },
+  {
+    id: "compound-interest",
+    title: "Compound interest",
+    description: "What $X/month grows to over Y years at Z% return.",
+    Component: CompoundInterestCalculator,
+  },
+  {
+    id: "fire-number",
+    title: "FIRE number",
+    description: "How much you need to retire — and when you'll get there.",
+    Component: FireNumberCalculator,
+  },
+  {
+    id: "college-funding",
+    title: "College funding compare",
+    description: "529 vs UTMA vs taxable for your specific timeline.",
+    Component: CollegeFundingCompareCalculator,
+  },
+  {
+    id: "term-vs-whole-life",
+    title: "Term vs whole life insurance",
+    description: "Honest math on the buy-term-and-invest-the-difference debate.",
+    Component: TermVsWholeLifeCalculator,
+  },
+  {
+    id: "tax-loss-harvesting",
+    title: "Tax loss harvesting",
+    description: "What that realized loss is actually worth against ordinary income.",
+    Component: TaxLossHarvestingCalculator,
+  },
+  {
+    id: "quarterly-tax",
+    title: "Quarterly tax estimator",
+    description: "1040-ES estimate for trading gains and self-employment.",
+    Component: QuarterlyTaxEstimatorCalculator,
+  },
+];
+
+function CalculatorAccordion({ items }: { items: CalculatorRegistryEntry[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-2">
+      {items.map((item) => {
+        const isOpen = openId === item.id;
+        return (
+          <div
+            key={item.id}
+            className="rounded-xl border border-border bg-bg-secondary overflow-hidden"
+          >
+            <button
+              type="button"
+              onClick={() => setOpenId(isOpen ? null : item.id)}
+              aria-expanded={isOpen}
+              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-bg-hover transition-colors"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2.5">
+                  <CalculatorIcon className="h-4 w-4 text-accent shrink-0" aria-hidden="true" />
+                  <h3 className="text-sm font-semibold text-text-primary truncate">
+                    {item.title}
+                  </h3>
+                </div>
+                <p className="mt-0.5 ml-[26px] text-xs text-text-muted truncate">
+                  {item.description}
+                </p>
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 text-text-muted shrink-0 transition-transform ${
+                  isOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {isOpen && (
+              <div className="border-t border-border p-4">
+                <item.Component />
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
