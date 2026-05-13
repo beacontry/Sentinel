@@ -320,7 +320,7 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
     <div className="space-y-5">
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-4 [grid-auto-rows:min-content] [grid-auto-flow:dense]">
             {entries.map((entry, index) => {
               const def = getWidgetDefinition(entry.id);
               if (!def) return null;

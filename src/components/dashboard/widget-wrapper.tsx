@@ -37,7 +37,12 @@ export function WidgetWrapper({
       className={`${sizeClasses[size]} animate-fade-in-up ${className}`}
       style={{ animationDelay: `${index * 0.06}s` }}
     >
-      <div className={`rounded-2xl border border-border bg-bg-secondary p-4 h-full ${editMode ? "border-accent/30" : ""}`}>
+      {/* h-full was here previously — caused all sibling widgets in
+       * the same grid row to stretch to match the tallest one, leaving
+       * giant empty cards next to a tall widget. Removed so widgets
+       * size to their content. Adjacent widgets may not align bottoms
+       * exactly; that's the right trade. */}
+      <div className={`rounded-2xl border border-border bg-bg-secondary p-4 ${editMode ? "border-accent/30" : ""}`}>
         <div className="mb-4 flex items-center justify-between">
           <div className="text-sm font-semibold text-text-primary">{title}</div>
           <div className="flex items-center gap-1">
