@@ -1224,4 +1224,59 @@ export const GLOSSARY_TERMS: GlossaryTerm[] = [
       "When approaching FAFSA filing, spending UTMA funds on legitimate child-benefit expenses (computer, tutoring, etc.) is both legal and tax-efficient.",
     ],
   },
+  {
+    id: "fers-basic-annuity",
+    term: "FERS Basic Annuity",
+    definition:
+      "The defined-benefit pension component of the Federal Employees Retirement System (FERS) — leg #1 of the three-legged federal retirement (alongside TSP and Social Security). Funded by both employee contributions (0.8% / 3.1% / 4.4% of salary depending on hire date) and a much larger employer contribution. Calculated as high-3 × years-of-service × 1.0% (1.1% if retiring at 62+ with 20+ years). Vesting cliff at 5 years; before that, only a refund of contributions is available.",
+    category: "wealth",
+    examples: [
+      "$115K high-3 × 10.06 years × 1.0% = $11,569/year pension (no reduction) when claimed at age 62.",
+      "Cashing out FERS contributions before retirement forfeits the employer-funded portion — typically worth 2-4× the contribution refund in present-value terms.",
+    ],
+  },
+  {
+    id: "mra",
+    term: "MRA (Minimum Retirement Age)",
+    definition:
+      "The earliest age a FERS employee can voluntarily retire with an immediate annuity (with 30+ years of service) or claim MRA+10 (with 10-29 years). MRA is 55 for those born before 1948 and grows to 57 for those born in 1970 and later. Distinct from age 62 (the standard retirement age with no reductions for any service level).",
+    category: "wealth",
+    examples: [
+      "Federal employee born 1988 has an MRA of 57 — eligible to claim FERS immediately at 57 with 30+ years of service, or MRA+10 with 10-29 years (subject to a 5% per year reduction if under 62).",
+      "MRA+10 starting at exactly MRA = 25% actuarial reduction PLUS no COLA until age 62.",
+    ],
+  },
+  {
+    id: "high-3",
+    term: "high-3",
+    definition:
+      "For FERS (and CSRS) pension calculations, the average of an employee's three highest consecutive years (36 months) of basic pay including locality. For most steady federal careers this is approximately the final 3 years' average salary. high-3 freezes at separation — deferring the annuity to a later claim age does NOT inflation-adjust high-3 between separation and claim date.",
+    category: "wealth",
+    examples: [
+      "GS-13 step 5 in Albany NY at $124K (base $103K + locality $21K), with steps 3 and 4 averaging lower → high-3 ≈ $115K.",
+      "Leaving federal service in 2026 with a $115K high-3, deferring to 2050 → pension calculated using $115K (frozen), not the inflation-adjusted equivalent.",
+    ],
+  },
+  {
+    id: "fers-cola",
+    term: "FERS COLA",
+    definition:
+      "Cost-of-Living Adjustment applied to FERS pensions starting at age 62, regardless of when payments began. Called the 'diet COLA': when CPI is under 2%, retirees get the full CPI; when CPI is 2-3%, exactly 2%; when CPI exceeds 3%, CPI minus 1%. Disability retirees, survivors, and special-category employees (LEO/FF/ATC) get immediate COLAs. MRA+10 retirees starting before 62 get NO COLA until 62, meaning multi-year nominal-flat payments while inflation erodes real value.",
+    category: "wealth",
+    examples: [
+      "If CPI runs 4% in a year, FERS retirees over 62 see a 3% pension increase (CPI - 1%).",
+      "MRA+10 retiree starting at 57 with $723/month nominal — that amount stays at $723/month through age 62, then COLAs begin.",
+    ],
+  },
+  {
+    id: "sick-leave-conversion",
+    term: "Sick Leave Conversion",
+    definition:
+      "FERS rule that converts unused sick leave at separation into creditable service for pension eligibility and calculation purposes. Conversion rate is 174 hours = 1 month. Affects both whether you qualify for various retirement options AND the final pension amount via the formula's service-years multiplier. Does NOT extend MRA itself or vesting.",
+    category: "wealth",
+    examples: [
+      "372 hours of unused sick leave ÷ 174 = ~2 months, 4 days of additional creditable service.",
+      "An employee with 9 years, 11 months of time-served and 400+ sick hours can cross the 10-year MRA+10 threshold via conversion.",
+    ],
+  },
 ];

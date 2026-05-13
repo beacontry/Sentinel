@@ -4062,6 +4062,454 @@ const kiddieTax: Guide = {
   ],
 };
 
+// ═══ FERS pension decision ═══════════════════════════════════════════════
+
+const fersRefundVsDefer: Guide = {
+  slug: "fers-refund-vs-deferred-annuity",
+  title: "FERS: Refund Your Contributions or Defer the Pension?",
+  topic: "retirement",
+  difficulty: "intermediate",
+  summary:
+    "The math behind a $20K-$60K decision most federal employees never think through. Cash out, defer to 62, or take MRA+10 — what actually wins for your situation.",
+  readingMinutes: 12,
+  lastReviewed: "2026-05-13",
+  keyFacts: [
+    { label: "Vesting Cliff", value: "5 years of creditable civilian service" },
+    { label: "Pension Formula", value: "high-3 × years-of-service × 1.0% per year" },
+    { label: "Multiplier Bonus", value: "1.1% if retiring at 62+ with 20+ years" },
+    { label: "MRA (born 1970+)", value: "57 years old" },
+    { label: "MRA+10 Reduction", value: "5% per year you claim before age 62" },
+    { label: "COLA Start Age", value: "62 — regardless of when you start collecting" },
+    { label: "Cash Refund Tax Hit", value: "20% withholding + 10% penalty + state tax (~36% if taken directly)" },
+    { label: "Break-Even Return", value: "~5% real CAGR over ~48 years to match pension EV" },
+  ],
+  sections: [
+    {
+      id: "what-fers-is",
+      heading: "What FERS actually is",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "FERS — the Federal Employees Retirement System — is a three-legged retirement system for federal employees hired since 1987. The three legs are: (1) a defined-benefit Basic Annuity (the pension everyone calls 'FERS'), (2) the Thrift Savings Plan (TSP — the federal 401(k) equivalent), and (3) Social Security. This guide is about leg #1 only. Your TSP is its own decision; Social Security follows standard rules.",
+        },
+        {
+          type: "paragraph",
+          text: "The Basic Annuity is funded by BOTH your contributions (0.8% / 3.1% / 4.4% of salary depending on hire date) AND a much larger employer contribution. The pension you eventually collect at retirement is way bigger than just your contributions back. Cashing out your contributions forfeits the entire employer-funded benefit forever.",
+        },
+        {
+          type: "table",
+          caption: "Your employee contribution rate depends on hire date",
+          headers: ["Hire date", "Plan", "Employee contribution"],
+          rows: [
+            ["Before 1/1/2013", "Regular FERS", "0.8%"],
+            ["1/1/2013 – 12/31/2013", "FERS-RAE", "3.1%"],
+            ["1/1/2014 onward", "FERS-FRAE", "4.4%"],
+          ],
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "The contribution rate affects your $28K balance, not your pension",
+          body: "Different cohorts (FERS / RAE / FRAE) have different employee contribution rates but the SAME pension formula. A FERS-FRAE employee with 10 years of service gets the same pension as a regular FERS employee with 10 years of service — they just contributed more along the way (which means more $$ available if they cash out, but the same future pension benefit).",
+        },
+      ],
+    },
+    {
+      id: "vesting",
+      heading: "The 5-year vesting cliff",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "You become VESTED in the FERS pension after 5 years of creditable civilian service. Before 5 years, the pension benefit is $0 — your only option is to take a refund of your contributions when you leave. After 5 years, you have a real retirement asset that you can either cash out OR leave alone to collect at retirement.",
+        },
+        {
+          type: "list",
+          items: [
+            "Years 0-4: No pension. Refund is the only option if you leave.",
+            "Years 5+: Vested. Pension is real and significant. Refund is one option; deferring to claim later is usually better.",
+            "Years 10+: Unlocks MRA+10 retirement (can claim as early as age 57 with reductions).",
+            "Years 20+ at 60+: Unlocks immediate retirement (no reductions).",
+            "Years 30+ at MRA: Unlocks immediate retirement (no reductions, can claim at 57).",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Sick leave counts toward vesting AND the pension",
+          body: "Under FERS, unused sick leave at separation is converted to creditable service for both eligibility AND the pension calculation. Conversion rate: 174 hours = 1 month. A typical 10-year employee with 400+ hours of unused sick leave can push past the 10-year MRA+10 threshold even if their time-served is just under 10 years.",
+        },
+      ],
+    },
+    {
+      id: "claim-ages",
+      heading: "When can you claim?",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "If you're vested but leave federal service before retiring outright, you have several future-claim options. The math is governed by your service years and your MRA (Minimum Retirement Age).",
+        },
+        {
+          type: "table",
+          caption: "MRA by birth year",
+          headers: ["Birth year", "MRA"],
+          rows: [
+            ["Before 1948", "55"],
+            ["1948-1952", "55 + 2 months per year after 1947"],
+            ["1953-1964", "56"],
+            ["1965-1969", "56 + 2 months per year after 1964"],
+            ["1970 and later", "57"],
+          ],
+        },
+        {
+          type: "table",
+          caption: "Your options based on years of service",
+          headers: ["Service years", "Claim age", "Reduction"],
+          rows: [
+            ["5-9 years", "Deferred annuity at 62 only", "No reduction"],
+            ["10-29 years", "MRA+10 starting at MRA, OR defer to 62 (no reduction)", "5% per year under 62 if claimed before 62"],
+            ["20+ years", "Age 60 (immediate) OR deferred to 62", "No reduction"],
+            ["30+ years", "At MRA (immediate) OR deferred", "No reduction"],
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "The MRA+10 reduction trap",
+          body: "MRA+10 starting before 62 has TWO costs: (1) the actuarial reduction of 5% per year you're under 62 (so 25% at MRA itself, 10% if you wait to 60), AND (2) you don't receive FERS COLAs until you turn 62. So claiming MRA+10 early means BOTH a smaller starting payment AND inflation eating its real value for years before COLAs catch up.",
+        },
+      ],
+    },
+    {
+      id: "formula",
+      heading: "The pension formula",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "FERS pension is calculated using a simple but surprisingly under-explained formula:",
+        },
+        {
+          type: "key-value",
+          caption: "Annual pension calculation",
+          pairs: [
+            { label: "Standard", value: "high-3 × years-of-service × 1.0%" },
+            { label: "Age 62+ with 20+ years", value: "high-3 × years-of-service × 1.1% (10% bonus)" },
+            { label: "Special category (LEO/FF/ATC)", value: "Enhanced formula — see OPM" },
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "high-3 is the average of your three HIGHEST CONSECUTIVE years (36 months) of basic pay INCLUDING LOCALITY. For most steady federal careers, this equals approximately your final 3 years of salary. Years-of-service is your creditable service in years + months (with sick leave converted via 174 hours/month).",
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Your high-3 freezes when you leave",
+          body: "If you leave federal service and defer the annuity, the high-3 used in the formula is YOUR ACTUAL FINAL 3 YEARS — frozen in those dollar values forever. You don't get inflation-adjustment between when you leave and when you start collecting. A $115K high-3 in 2026 becomes a $115K high-3 in the formula when you finally claim in 2050. This is one of the most-overlooked costs of deferring.",
+        },
+      ],
+    },
+    {
+      id: "cola-rules",
+      heading: "The COLA rules (the hidden gotcha)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "FERS Cost-of-Living Adjustments don't start until age 62, regardless of when you begin collecting the pension. This is one of the most important rules to understand before claiming MRA+10 early.",
+        },
+        {
+          type: "table",
+          caption: "When FERS COLAs apply",
+          headers: ["Retiree type", "COLA starts at"],
+          rows: [
+            ["Disability retiree", "Immediately"],
+            ["Survivor annuitant", "Immediately"],
+            ["LEO / firefighter / ATC", "Immediately"],
+            ["Standard FERS retiree (any age)", "Age 62"],
+            ["MRA+10 retiree starting before 62", "Age 62 (no COLA for years before)"],
+            ["Deferred annuitant claiming at 62", "Immediately (since payments begin at 62)"],
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "The COLA itself is the so-called 'diet COLA': when CPI is under 2%, you get the full CPI; when CPI is 2-3%, you get exactly 2%; when CPI is over 3%, you get CPI minus 1%. So if inflation runs 4%, your pension grows 3%. Modest but real.",
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "MRA+10 at 57 loses 5 years of COLAs",
+          body: "If you start MRA+10 at 57 ($X/month nominal), that monthly check stays at $X until you turn 62 — five years of frozen payments while inflation eats away at the real value. Once you hit 62, COLA bumps kick in. This is in ADDITION to the 25% actuarial reduction. The combined effect makes MRA+10 at 57 the worst deferral option for most people.",
+        },
+      ],
+    },
+    {
+      id: "refund-vs-defer",
+      heading: "Refund vs defer: the decision tree",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "You can take a refund of your employee contributions at any time after separation. Refunds are processed via OPM Form SF 3106. The decision is whether the cash today beats the deferred pension benefit.",
+        },
+        {
+          type: "heading",
+          level: 3,
+          text: "How much you actually get if you take a cash refund",
+        },
+        {
+          type: "table",
+          caption: "Tax hit on a $28,000 refund",
+          headers: ["Path", "Net to you", "Notes"],
+          rows: [
+            ["Direct cash payout", "~$17,920 (-36%)", "20% withholding + 10% early-withdrawal penalty + state tax"],
+            ["Roll to Traditional IRA", "$28,000 (preserved)", "Taxed at future withdrawal as ordinary income"],
+            ["Convert to Roth IRA", "~$19,600 net invested", "Pay ~24% federal tax now, then tax-free growth forever"],
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "Direct cash is almost always wrong — the 36% combined hit means you forfeit a third of the money to taxes BEFORE you can invest it. Traditional IRA rollover preserves the full amount. Roth conversion locks in current tax brackets; only worth it if you expect higher tax brackets in retirement.",
+        },
+        {
+          type: "heading",
+          level: 3,
+          text: "Refund usually wins if…",
+        },
+        {
+          type: "list",
+          items: [
+            "You're under 5 years of service (no pension benefit anyway — refund is the only option)",
+            "You have $28K of high-interest debt (credit card, personal loan) — paying it off saves 18-25% APR",
+            "You expect to return to federal service in 1-2 years (you can redeposit later, but the math is roughly a wash)",
+            "Family history of early death (genetics or known health issues) — pension pays less if you don't live long",
+            "You have strong reasons to expect 8%+ real returns on investment AND zero behavioral risk",
+            "You have an immediate cash crisis that nothing else can solve",
+          ],
+        },
+        {
+          type: "heading",
+          level: 3,
+          text: "Defer usually wins if…",
+        },
+        {
+          type: "list",
+          items: [
+            "You're 5+ years vested and not in financial distress",
+            "You want guaranteed retirement income (longevity insurance)",
+            "You don't trust your future-self's discipline with a windfall (pension is forced commitment)",
+            "You value inflation-protected income (post-62 COLAs)",
+            "You expect a normal lifespan (~85+)",
+            "You might return to federal service",
+          ],
+        },
+      ],
+    },
+    {
+      id: "investment-breakeven",
+      heading: "Investment break-even math",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "If you take the refund and invest it, what return do you need to match the pension's lifetime income? Solving for the real CAGR required to grow $28K into the present value equivalent of the deferred pension stream:",
+        },
+        {
+          type: "key-value",
+          caption: "Real return needed to match pension EV (typical 10-year FERS retiree)",
+          pairs: [
+            { label: "Break-even (expected value, no risk premium)", value: "~5% real CAGR" },
+            { label: "Break-even (risk-adjusted for variance)", value: "~6.5-7% real CAGR" },
+            { label: "Long-run S&P 500 real return", value: "~7% real (with significant variance)" },
+            { label: "60/40 portfolio long-run real return", value: "~5% real (less variance)" },
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "Translation: a 60/40 buy-and-hold portfolio across 23 years of accumulation + 25 years of drawdown approximately matches the pension in expected-value terms — but with significant variance. A 100% S&P 500 portfolio comfortably beats the pension on expected value, but only if you actually hold through every drawdown without selling.",
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Expected value vs guarantee — they're not the same",
+          body: "The pension is GUARANTEED at its formula amount. Investment returns are EXPECTED. To replace a guaranteed income with an investment portfolio, you typically need a 1-2% return premium to compensate for the variance. Most people don't fully account for this in their math.",
+        },
+      ],
+    },
+    {
+      id: "worked-example",
+      heading: "Worked example: Albany NY, GS-13 Step 5, 10 years",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Concrete scenario: federal employee hired June 2016, separates April 2026, age 37 at separation, final position GS-13 step 5 in Albany NY locality area, 372 hours of unused sick leave, $28K of FERS Basic Annuity contributions accumulated.",
+        },
+        {
+          type: "heading",
+          level: 3,
+          text: "Service calculation",
+        },
+        {
+          type: "key-value",
+          caption: "Years of creditable service",
+          pairs: [
+            { label: "Time served (6/12/2016 to 4/30/2026)", value: "9 years, 10 months, 18 days" },
+            { label: "Sick leave (372 ÷ 174 hours/month)", value: "2 months, 4 days" },
+            { label: "Total creditable service", value: "10 years, 0 months, 22 days (10.06 years)" },
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "Just barely past the 10-year MRA+10 threshold thanks to sick leave conversion. Without those 372 hours, this employee would have been stuck with deferred-only retirement at 62. Sick leave matters more than people realize.",
+        },
+        {
+          type: "heading",
+          level: 3,
+          text: "high-3 estimate",
+        },
+        {
+          type: "key-value",
+          caption: "Final 36 months of basic pay (Albany NY locality + base)",
+          pairs: [
+            { label: "May 2023 – mid-2024 (GS-12 step 6 → GS-13 step 1)", value: "~$108K" },
+            { label: "Mid-2024 – mid-2025 (GS-13 step 1 → step 3)", value: "~$118K" },
+            { label: "Mid-2025 – Apr 2026 (GS-13 step 3 → step 5)", value: "~$124K" },
+            { label: "36-month average (estimated high-3)", value: "~$115K" },
+          ],
+        },
+        {
+          type: "heading",
+          level: 3,
+          text: "Pension calculation",
+        },
+        {
+          type: "paragraph",
+          text: "Annual pension = $115,000 × 10.06 × 1.0% = $11,569/year (full amount, no reduction). This is the annuity payable starting at age 62. Apply reductions for earlier MRA+10 claims.",
+        },
+        {
+          type: "table",
+          caption: "Monthly pension at various claim ages (nominal in 2048+ dollars)",
+          headers: ["Claim age", "Reduction", "Monthly", "Years of payments"],
+          rows: [
+            ["57 (MRA+10)", "-25%", "$723", "28 yrs"],
+            ["60 (MRA+10)", "-10%", "$867", "25 yrs"],
+            ["62 (full deferred)", "0%", "$964", "23 yrs"],
+          ],
+          align: ["left", "right", "right", "right"],
+        },
+        {
+          type: "heading",
+          level: 3,
+          text: "Real purchasing power (2026 dollars equivalent)",
+        },
+        {
+          type: "key-value",
+          caption: "Adjusted for inflation between 2026 and claim year (assumes 2.5% avg inflation)",
+          pairs: [
+            { label: "Monthly at 57 (real)", value: "~$419" },
+            { label: "Monthly at 60 (real)", value: "~$504" },
+            { label: "Monthly at 62 (real)", value: "~$537" },
+          ],
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "The honest comparison",
+          body: "$28K refund rolled to a Traditional IRA, invested at 5% real for 23 years, then withdrawn at 4% annually = ~$288/month real income at 60. The pension at 60 = ~$504/month real (with COLA-adjusted lifetime guarantee). At realistic returns the pension wins. At 7%+ real returns the IRA path roughly matches. Pension still wins on certainty + longevity insurance + forced commitment.",
+        },
+      ],
+    },
+    {
+      id: "action-items",
+      heading: "Action items if you've separated",
+      blocks: [
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "Pull your final SF-50 (Notification of Personnel Action) from your last day. Note total creditable service AND total sick leave hours.",
+            "Call OPM Retirement Operations at 1-888-767-6738. Request a benefits estimate showing your exact high-3, service computation date, and projected annuity at each claim age.",
+            "Don't do anything with the FERS Basic Annuity contributions yet — the default (leave them in) is correct. You have years to decide.",
+            "Handle your TSP separately. Either roll to Traditional IRA (more fund choices), leave in TSP (ultra-low expense ratios), or roll to Roth if you can absorb the tax hit. Don't take cash from TSP — same 10% penalty issue.",
+            "Note your MRA on a calendar 20+ years out. That's when the MRA+10 decision becomes live.",
+            "If you might return to federal service: leave the contributions in. Redeposit later is more expensive than letting it ride.",
+            "Get FEHB and FEGLI questions answered before they expire — both have tight 'continued enrollment' deadlines (typically requires 5 years immediately preceding retirement, which is forfeit on early separation).",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "OPM provides free counseling",
+          body: "Federal employees and former federal employees can get free retirement counseling through OPM. For a $20K-$60K decision, it's worth the time. Alternative: a fee-only CFP who specializes in federal employees (FedSavvy, FedSmith, NITP, etc.) for $200-400/hour. Worth it.",
+        },
+      ],
+    },
+  ],
+  quiz: [
+    {
+      question:
+        "You separate from federal service after 7 years with $30K in FERS Basic Annuity contributions. What can you do?",
+      options: [
+        "Nothing — only employees with 10+ years have any pension benefit",
+        "Take a refund OR defer the annuity to age 62 (deferred wins by ~2× in present-value terms for most cases)",
+        "Claim immediate retirement",
+        "Roll the pension benefit into your TSP",
+      ],
+      correctIndex: 1,
+      explanation:
+        "At 7 years you're vested (>5 years), so you have a real pension benefit. Without 10+ years you can't do MRA+10 — only the deferred annuity at age 62 is available. You can also take a refund of your contributions, but for most people the deferred annuity is worth significantly more than the cash refund.",
+    },
+    {
+      question:
+        "What's the BIGGEST hidden cost of claiming MRA+10 at age 57 vs deferring to age 62?",
+      options: [
+        "The 25% actuarial reduction",
+        "FERS COLAs don't apply until age 62, so 5 years of frozen-nominal payments while inflation erodes real value",
+        "You forfeit Social Security",
+        "You have to repay your TSP loan",
+      ],
+      correctIndex: 1,
+      explanation:
+        "The 25% reduction is the obvious cost, but the COLA-not-until-62 rule is the hidden one. Claiming at 57 means 5 years of flat-nominal payments while inflation reduces their real value. Combined with the reduction, MRA+10 at 57 is the worst deferral option for most people. The pension is taxed normally and doesn't affect Social Security or TSP separately.",
+    },
+    {
+      question:
+        "You take a $28K FERS contribution refund and want to maximize what you can invest. What's the cleanest route?",
+      options: [
+        "Direct cash payout — pay the 20% withholding and 10% early withdrawal penalty, invest what remains",
+        "Roll the full $28K to a Traditional IRA — no tax now, full amount invested, tax at withdrawal",
+        "Convert to Roth IRA — pay ~24% tax now, tax-free growth forever",
+        "Buy I-Bonds with the refund",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Direct cash loses ~36% to taxes + penalties (terrible). Roth conversion is only worth it if you expect higher tax brackets at withdrawal than your current bracket — typically not the right move for high earners. Traditional IRA rollover preserves the full $28K and defers tax until withdrawal, which is the cleanest path. Future Roth conversions can be done in lower-income years if circumstances warrant.",
+    },
+    {
+      question:
+        "Approximately what real annual return on $28K (invested across ~48 years of accumulation + drawdown) is needed to match a 10-year FERS deferred pension in expected-value terms?",
+      options: [
+        "~2% real (TIPS-like returns)",
+        "~5% real (60/40 balanced portfolio long-run average)",
+        "~12% real (aggressive but achievable)",
+        "Any positive return — investing $28K beats the pension automatically",
+      ],
+      correctIndex: 1,
+      explanation:
+        "The break-even is roughly 5% real CAGR — which corresponds to a 60/40 stock/bond portfolio's long-run real return. At this level, expected value is similar between the two paths, but the pension has guarantee + longevity insurance + forced commitment advantages that variance-adjusted returns don't fully capture. Beating the pension on a risk-adjusted basis requires more like 6.5-7% real.",
+    },
+    {
+      question:
+        "Your sick leave at separation was 372 hours. How does this affect your FERS service calculation?",
+      options: [
+        "Sick leave is forfeit at separation — no impact",
+        "Sick leave is converted to creditable service (174 hours = 1 month), so 372 hours adds ~2 months",
+        "Sick leave converts to extra contributions, increasing the refund amount",
+        "Sick leave converts at 100 hours per month",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Under FERS, unused sick leave at separation is converted to creditable service at 174 hours per month. 372 hours ÷ 174 ≈ 2 months, 4 days of additional service. This can be the difference between just-under-10-years (deferred-only) and just-over-10-years (MRA+10 eligible), so it's worth getting the exact number from your final SF-50.",
+    },
+  ],
+};
+
 // ─── Registry ────────────────────────────────────────────────────────────
 
 export const GUIDES: Guide[] = [
@@ -4083,6 +4531,7 @@ export const GUIDES: Guide[] = [
   custodialRothIra,
   coverdellEsa,
   kiddieTax,
+  fersRefundVsDefer,
 ];
 
 export function getGuideBySlug(slug: string): Guide | undefined {
