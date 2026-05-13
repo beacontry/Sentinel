@@ -109,8 +109,16 @@ export default function CongressPage() {
         const res = await fetch(`/api/congress?${params}`);
         if (cancelled) return;
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          setError(typeof data.error === "string" ? data.error : "Failed to load.");
+          // Try to read structured error from body; fall back to status code
+          // so the user sees something more actionable than "Failed to load."
+          // when the body is empty or non-JSON (Cloudflare 502s, SW
+          // fallbacks, etc).
+          const data = await res.json().catch(() => null);
+          const message =
+            (data && typeof data.error === "string" && data.error) ||
+            `Server returned ${res.status} ${res.statusText || ""}`.trim() ||
+            `Server error (${res.status})`;
+          setError(message);
           setTrades([]);
           return;
         }
@@ -121,9 +129,12 @@ export default function CongressPage() {
           return;
         }
         setTrades(data.trades ?? []);
-      } catch {
+      } catch (e) {
         if (!cancelled) {
-          setError("Network error — could not reach the trade-disclosure feed.");
+          setError(
+            "Network error — could not reach the trade-disclosure feed. " +
+              ((e as Error).message ?? "")
+          );
           setTrades([]);
         }
       } finally {

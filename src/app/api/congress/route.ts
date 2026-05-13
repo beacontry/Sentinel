@@ -62,8 +62,37 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message, symbol: symbolParam }, "Congress fetch error");
+
+    // Extract upstream status from the Finnhub error message. The client
+    // throws `Finnhub API error: 403 Forbidden` (etc.) so we parse that
+    // back out and surface it. Lets the UI render something actionable
+    // ("Finnhub returned 403 — this endpoint may require a paid tier")
+    // instead of a generic "Failed to load."
+    const upstreamMatch = message.match(/Finnhub API error: (\d+)/);
+    const upstreamStatus = upstreamMatch ? parseInt(upstreamMatch[1], 10) : null;
+
+    let userMessage = "Could not reach Congressional trade feed.";
+    if (upstreamStatus === 401 || upstreamStatus === 403) {
+      userMessage =
+        `Finnhub returned ${upstreamStatus} — Congressional trading may now ` +
+        `require a paid Finnhub tier. The endpoint was free as of late 2025; ` +
+        `Finnhub has been moving alternative-data endpoints to paid plans.`;
+    } else if (upstreamStatus === 429) {
+      userMessage = "Finnhub rate-limited the request. Try again in a minute.";
+    } else if (upstreamStatus && upstreamStatus >= 500) {
+      userMessage = `Finnhub returned ${upstreamStatus} — their server-side issue. Try again shortly.`;
+    } else if (upstreamStatus) {
+      userMessage = `Finnhub returned ${upstreamStatus}.`;
+    }
+
     return NextResponse.json(
-      { trades: [], error: "Failed to fetch Congressional trades" },
+      {
+        trades: [],
+        error: userMessage,
+        upstreamStatus,
+      },
+      // 502 maps the upstream failure cleanly; client treats this as a
+      // surfaceable error (data.error is rendered as-is).
       { status: 502 }
     );
   }
