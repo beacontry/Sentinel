@@ -8,12 +8,26 @@ import { Briefcase, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 
+/**
+ * Position shape returned by /api/trader/dashboard. The API has been
+ * normalized on `entryPrice` / `currentPrice` (not `averageCost` /
+ * `marketPrice` — that mismatch crashed the widget mid-rearrange).
+ *
+ * `qty` is the canonical field; `quantity` is included as an alias
+ * for backwards-compat on a few other callers. Use either.
+ *
+ * Every numeric field is marked optional + defaulted because the API
+ * can omit fields when broker data is partially stale (cached path
+ * vs live broker path return slightly different shapes). Defensive
+ * rendering > crash.
+ */
 interface Position {
   symbol: string;
-  quantity: number;
-  averageCost: number;
-  marketPrice: number;
-  unrealizedPnl: number;
+  qty?: number;
+  quantity?: number;
+  entryPrice?: number;
+  currentPrice?: number;
+  unrealizedPnl?: number;
 }
 
 export function PositionsWidget() {
@@ -75,7 +89,15 @@ export function PositionsWidget() {
     <div>
       <div className="space-y-1.5">
         {positions.slice(0, 6).map((pos) => {
-          const isPositive = pos.unrealizedPnl >= 0;
+          // Defensive defaults: the API has two code paths (live vs cached)
+          // and historically returned slightly different field names. Default
+          // everything to 0 so a missing field renders as $0.00 instead of
+          // crashing on .toFixed(undefined).
+          const qty = pos.qty ?? pos.quantity ?? 0;
+          const entryPrice = pos.entryPrice ?? 0;
+          const currentPrice = pos.currentPrice ?? 0;
+          const unrealizedPnl = pos.unrealizedPnl ?? 0;
+          const isPositive = unrealizedPnl >= 0;
           return (
             <div
               key={pos.symbol}
@@ -87,18 +109,18 @@ export function PositionsWidget() {
                   {pos.symbol}
                 </SymbolLink>
                 <Badge variant="neutral">
-                  {pos.quantity} shr
+                  {qty} shr
                 </Badge>
               </div>
               <span
                 className={`text-sm font-mono font-medium ${
                   isPositive ? "text-bullish" : "text-bearish"
                 }`}
-                title={`Entry $${pos.averageCost.toFixed(2)} → Now $${pos.marketPrice.toFixed(2)}`}
+                title={`Entry $${entryPrice.toFixed(2)} → Now $${currentPrice.toFixed(2)}`}
               >
                 {formatPnl(
-                  pos.unrealizedPnl,
-                  pos.averageCost * pos.quantity,
+                  unrealizedPnl,
+                  entryPrice * qty,
                   pnlFormat
                 )}
               </span>
