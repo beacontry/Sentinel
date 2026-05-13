@@ -13,9 +13,11 @@ import {
 
 interface BacktestChartProps {
   equityCurve: { date: string; value: number }[];
+  /** Override the default 300px height. Pass "fill" to take 100% of parent (used by fullscreen toggle). */
+  height?: number | "fill";
 }
 
-export function BacktestChart({ equityCurve }: BacktestChartProps) {
+export function BacktestChart({ equityCurve, height = 300 }: BacktestChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -28,11 +30,16 @@ export function BacktestChart({ equityCurve }: BacktestChartProps) {
     }
 
     const container = containerRef.current;
+    // When height==="fill", we want 100% of the parent. lightweight-charts
+    // takes a numeric pixel value, so read clientHeight at mount time and
+    // let the ResizeObserver below catch any subsequent layout shift.
+    const initialHeight =
+      height === "fill" ? container.clientHeight || 300 : height;
 
     try {
       const chart = createChart(container, {
         width: container.clientWidth,
-        height: 300,
+        height: initialHeight,
         layout: {
           background: { type: ColorType.Solid, color: "#ffffff" },
           textColor: "#64748b",
@@ -90,7 +97,15 @@ export function BacktestChart({ equityCurve }: BacktestChartProps) {
 
       const ro = new ResizeObserver((entries) => {
         for (const e of entries) {
-          chart.applyOptions({ width: e.contentRect.width });
+          // When parent is fullscreen (height="fill"), the chart needs
+          // to track BOTH width and height changes — otherwise it stays
+          // pinned at its mount-time height while the container grew to
+          // fill the viewport.
+          const opts: { width: number; height?: number } = { width: e.contentRect.width };
+          if (height === "fill" && e.contentRect.height) {
+            opts.height = e.contentRect.height;
+          }
+          chart.applyOptions(opts);
         }
       });
       ro.observe(container);
@@ -103,7 +118,7 @@ export function BacktestChart({ equityCurve }: BacktestChartProps) {
     } catch (err) {
       console.error("Chart init failed:", err);
     }
-  }, [equityCurve]);
+  }, [equityCurve, height]);
 
   return (
     <div

@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { FlaskConical, TrendingUp, TrendingDown, Target, BarChart3, Save, FolderOpen, X, Trash2, Shield, Zap } from "lucide-react";
+import { FlaskConical, TrendingUp, TrendingDown, Target, BarChart3, Save, FolderOpen, X, Trash2, Shield, Zap, Maximize2, Minimize2 } from "lucide-react";
 import type { BacktestResult } from "@/lib/backtester";
 import type { SavedStrategy } from "@/types";
 import { BacktestChart } from "@/components/dashboard/backtest-chart";
@@ -62,6 +62,22 @@ export default function BacktestPage() {
   const [error, setError] = useState<string | null>(null);
   const [strategySource, setStrategySource] = useState<string | null>(null);
   const [atrLoading, setAtrLoading] = useState(false);
+  const [chartFullscreen, setChartFullscreen] = useState(false);
+
+  // Esc to exit fullscreen + body scroll lock
+  useEffect(() => {
+    if (!chartFullscreen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setChartFullscreen(false);
+    }
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [chartFullscreen]);
 
   // Strategy save/load state
   const [strategies, setStrategies] = useState<SavedStrategy[]>([]);
@@ -675,12 +691,36 @@ export default function BacktestPage() {
             All three &gt; 1.0 is good; &gt; 3.0 is excellent.
           </p>
 
-          {/* Equity Curve */}
-          <Card>
+          {/* Equity Curve — supports fullscreen toggle so users can see
+              long-window backtests without squinting at the in-page card. */}
+          <Card
+            className={
+              chartFullscreen
+                ? "fixed inset-0 z-[60] m-0 rounded-none bg-bg-primary p-4 flex flex-col"
+                : undefined
+            }
+          >
             <CardHeader className="p-0 pb-3">
-              <CardTitle>Equity Curve</CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle>Equity Curve</CardTitle>
+                <button
+                  type="button"
+                  onClick={() => setChartFullscreen(!chartFullscreen)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-bg-secondary px-2.5 py-1 text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+                  title={chartFullscreen ? "Exit fullscreen (Esc)" : "Expand chart"}
+                  aria-label={chartFullscreen ? "Exit fullscreen" : "Expand chart"}
+                >
+                  {chartFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">{chartFullscreen ? "Exit" : "Expand"}</span>
+                </button>
+              </div>
             </CardHeader>
-            <BacktestChart equityCurve={result.equityCurve} />
+            <div className={chartFullscreen ? "flex-1 min-h-0" : ""}>
+              <BacktestChart
+                equityCurve={result.equityCurve}
+                height={chartFullscreen ? "fill" : 300}
+              />
+            </div>
           </Card>
 
           {/* Trade Table */}

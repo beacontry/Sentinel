@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { Play, BarChart3 } from "lucide-react";
+import { Play, BarChart3, Maximize2, Minimize2 } from "lucide-react";
 
 interface Trade {
   id?: string;
@@ -30,7 +30,35 @@ export default function ReplayPage() {
   const [bars, setBars] = useState<{ date: string; open: number; high: number; low: number; close: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
+  const [chartFullscreen, setChartFullscreen] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  // Esc to exit fullscreen + lock body scroll while fullscreen
+  useEffect(() => {
+    if (!chartFullscreen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setChartFullscreen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [chartFullscreen]);
+
+  // When toggling fullscreen, lightweight-charts needs a tick to reflow
+  // to the new container width. Trigger applyOptions explicitly.
+  useEffect(() => {
+    if (!chartRef.current || !chartContainerRef.current) return;
+    const id = window.setTimeout(() => {
+      if (chartRef.current && chartContainerRef.current) {
+        chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
+      }
+    }, 50);
+    return () => window.clearTimeout(id);
+  }, [chartFullscreen]);
   const chartRef = useRef<ReturnType<typeof import("lightweight-charts").createChart> | null>(null);
 
   // Load trades
@@ -220,18 +248,47 @@ export default function ReplayPage() {
         </div>
       </Card>
 
-      {/* Chart */}
-      <Card>
+      {/* Chart
+       *
+       * Fullscreen toggle uses fixed-position pinning on the Card itself
+       * rather than a portal/overlay. Why: lightweight-charts attaches
+       * via ref and a portal would require remounting the chart (re-fetch,
+       * re-render, lose zoom state). Pinning lets the same DOM node grow
+       * in place; the manual applyOptions({ width }) in the effect above
+       * triggers a clean reflow.
+       */}
+      <Card
+        className={
+          chartFullscreen
+            ? "fixed inset-0 z-[60] m-0 rounded-none bg-bg-primary p-4 flex flex-col"
+            : undefined
+        }
+      >
         <CardHeader className="p-0 pb-3">
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-text-muted" />
-            {selectedSymbol} — Price Chart with Trade Markers
-          </CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-text-muted" />
+              {selectedSymbol} — Price Chart with Trade Markers
+            </CardTitle>
+            <button
+              type="button"
+              onClick={() => setChartFullscreen(!chartFullscreen)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-bg-secondary px-2.5 py-1 text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+              title={chartFullscreen ? "Exit fullscreen (Esc)" : "Expand chart"}
+              aria-label={chartFullscreen ? "Exit fullscreen" : "Expand chart"}
+            >
+              {chartFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{chartFullscreen ? "Exit" : "Expand"}</span>
+            </button>
+          </div>
         </CardHeader>
         {chartLoading ? (
-          <Skeleton className="h-[450px] rounded-lg" />
+          <Skeleton className={chartFullscreen ? "flex-1 rounded-lg" : "h-[450px] rounded-lg"} />
         ) : (
-          <div ref={chartContainerRef} className="w-full rounded-lg overflow-hidden" />
+          <div
+            ref={chartContainerRef}
+            className={`w-full rounded-lg overflow-hidden ${chartFullscreen ? "flex-1 min-h-0" : ""}`}
+          />
         )}
         <div className="mt-3 flex items-center gap-4 text-[10px] text-text-muted">
           <div className="flex items-center gap-1">
