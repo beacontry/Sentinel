@@ -263,6 +263,13 @@ export interface ChatContext {
 
 // ─── Trade Journal ──────────────────────────────────────────────────
 
+export type JournalEntryType =
+  | "manual"
+  | "auto-trade"
+  | "pre-market"
+  | "post-market"
+  | "weekly-review";
+
 export interface JournalEntry {
   id: string;
   symbol: string;
@@ -273,6 +280,9 @@ export interface JournalEntry {
   rating: number | null;
   portfolioTradeId: string | null;
   traderTradeId: string | null;
+  /** Journal-entry type. See JournalEntryType for the catalog. Defaults to "manual" for old rows. */
+  type?: JournalEntryType;
+  promptDate?: string | null;
   createdAt: string;
   updatedAt: string;
 }

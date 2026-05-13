@@ -42,6 +42,7 @@ import { eq, and, desc, gt, inArray, lt, isNotNull } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
 import { writeAudit, AuditAction } from "./audit";
 import { detectMarketRegime } from "./market-regime";
+import { createAutoJournalStub } from "./journal-auto-stub";
 
 const log = createRouteLogger("trading-engine");
 
@@ -2343,6 +2344,23 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
           })
           .where(eq(traderTrades.id, row.id));
         updated++;
+
+        // Journal v2 — phase 1: when a trade reconciles to FILLED,
+        // auto-create a journal stub pre-filled with the trade
+        // mechanics. User just adds the WHY. Idempotent via partial
+        // unique index — re-runs no-op. Never throws.
+        if (newStatus === "FILLED") {
+          void createAutoJournalStub({
+            userId,
+            traderTradeId: row.id,
+            symbol: row.symbol,
+            action: row.action,
+            signal: row.signal,
+            quantity: row.quantity,
+            fillPrice: newFillPrice,
+            pnl: newPnl,
+          });
+        }
       } catch (err) {
         log.warn(
           { orderId: row.brokerOrderId, err: err instanceof Error ? err.message : "unknown" },
