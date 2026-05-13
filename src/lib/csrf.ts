@@ -50,7 +50,14 @@ export async function generateCsrfToken(): Promise<string> {
   cookieStore.set(CSRF_COOKIE, token, {
     httpOnly: false, // Client-side JS needs to read this to send in headers
     sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
+    // Match the session cookie's signal so both cookies agree on whether
+    // the connection is considered secure. Previously this used
+    // `NODE_ENV === "production"` while sessionCookie used
+    // `FORCE_HTTPS === "true"` — if those env vars diverged in prod
+    // (e.g., FORCE_HTTPS forgotten when migrating environments), one
+    // cookie could be sent over an insecure connection while the other
+    // is blocked.
+    secure: process.env.FORCE_HTTPS === "true",
     path: "/",
     maxAge: 60 * 60 * 24 * 7, // 7 days
   });

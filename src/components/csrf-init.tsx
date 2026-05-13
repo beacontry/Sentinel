@@ -26,15 +26,38 @@ const MUTATING_METHODS = ["POST", "PUT", "PATCH", "DELETE"];
 // canonical "session expired" signal — it should flow through the
 // normal session-expired redirect, not be silently swallowed. /api/csrf
 // is GET-only so the header-injection skip never applied anyway.
-const CSRF_EXEMPT_PATHS = [
+const CSRF_EXEMPT_PATHS = new Set<string>([
   "/api/auth/login",
   "/api/auth/register",
   "/api/auth/logout",
   "/api/auth/pin-login",
   "/api/auth/validate-invite",
-];
+]);
+
+/**
+ * Exact-pathname match against the exempt set. Originally this used
+ * `url.includes(prefix)` which silently exempted any URL containing the
+ * exempt string as a substring — the bug that hid /api/auth/set-pin
+ * under the blanket `/api/auth/` prefix. We then narrowed to specific
+ * sub-paths, but `.includes()` still has theoretical false-positive
+ * risk if a future route is named e.g. `/api/auth/login-attempt`.
+ *
+ * The defensive approach is to parse the URL and compare pathname
+ * exactly. Query strings, hash fragments, and trailing characters can't
+ * widen the match.
+ */
 function pathIsCsrfExempt(url: string): boolean {
-  return CSRF_EXEMPT_PATHS.some((p) => url.includes(p));
+  let pathname: string;
+  try {
+    // The base is only used when `url` is a relative path. For absolute
+    // URLs (https://example.com/...), the base is ignored.
+    pathname = new URL(url, "http://_local_").pathname;
+  } catch {
+    // If we can't parse the URL at all, conservatively assume non-exempt
+    // so the CSRF header is still injected.
+    return false;
+  }
+  return CSRF_EXEMPT_PATHS.has(pathname);
 }
 
 const CSRF_COOKIE = "csrf-token";
