@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, Shield, Sun, Moon, Search, Cpu, Zap, TrendingUp, Target, BarChart3, LineChart, Bell, Brain } from "lucide-react";
-import { useTheme } from "@/components/theme-provider";
+import { ArrowRight, Shield, Search, Cpu, Zap, TrendingUp, Target, BarChart3, LineChart, Bell, Brain } from "lucide-react";
+import { ThemePicker } from "@/components/theme-picker";
 
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);
@@ -106,18 +105,14 @@ export default function LandingPage() {
           </ul>
 
           <div className="hidden items-center gap-3 md:flex">
-            <button onClick={toggleTheme} className="flex h-9 w-9 items-center justify-center rounded-lg border border-ld-border text-ld-text-secondary transition-all duration-200 hover:-translate-y-0.5" aria-label="Toggle theme">
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
+            <ThemePicker variant="icon" />
             <Link href="/register" className="rounded-[10px] bg-ld-accent px-5 py-3 text-[0.92rem] font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
               Get Started
             </Link>
           </div>
 
           <div className="flex items-center gap-2 md:hidden">
-            <button onClick={toggleTheme} className="flex h-10 w-10 items-center justify-center rounded-lg border border-ld-border text-ld-text-secondary" aria-label="Toggle theme">
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
+            <ThemePicker variant="icon" />
             <button onClick={() => setMenuOpen(!menuOpen)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-ld-border text-ld-text" aria-label="Menu">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 {menuOpen ? <path d="M18 6L6 18M6 6l12 12" /> : <path d="M3 12h18M3 6h18M3 18h18" />}

@@ -139,12 +139,165 @@
     --color-bearish: #E69F00;
     --color-bearish-muted: rgba(230, 159, 0, 0.15);
   }
-  html.colorblind.dark {
+  html.colorblind.dark,
+  html.colorblind.gray {
     --color-bullish: #56B4E9;
     --color-bullish-muted: rgba(86, 180, 233, 0.15);
     --color-bearish: #E69F00;
     --color-bearish-muted: rgba(230, 159, 0, 0.20);
   }
+
+  /* ─────────────────────────────────────────────────────────────────
+     Coral theme — warm light variant, peachy off-white surfaces +
+     coral accent. Light-mode contrast model; trading semantics stay
+     the universal red/green so positions are still readable at a glance.
+     ───────────────────────────────────────────────────────────────── */
+  html.coral {
+    --color-bg-primary: #fdf5f3;
+    --color-bg-secondary: #ffffff;
+    --color-bg-surface: #fefaf9;
+    --color-bg-elevated: #fbe8e1;
+    --color-bg-hover: #f5d0c5;
+    --color-border: #f0c8bd;
+    --color-border-hover: #e3a796;
+    --color-text-primary: #4a1e0f;
+    --color-text-secondary: #6a3322;
+    --color-text-muted: #8a5240;
+    --color-accent: #f97066;
+    --color-accent-hover: #ef5a4e;
+    --color-accent-muted: rgba(249, 112, 102, 0.12);
+    --color-bullish: #047857;
+    --color-bullish-muted: rgba(4, 120, 87, 0.10);
+    --color-bearish: #b91c1c;
+    --color-bearish-muted: rgba(185, 28, 28, 0.10);
+    --color-warning: #b45309;
+    --color-warning-muted: rgba(180, 83, 9, 0.10);
+    --color-neutral: #a8826a;
+    --color-strong-buy: #065f46;
+    --color-buy: #047857;
+    --color-hold: #a8826a;
+    --color-sell: #b91c1c;
+    --color-strong-sell: #991b1b;
+
+    /* Landing page surfaces for coral */
+    --color-ld-deep: #fef4f1;
+    --color-ld-panel: #fdebe6;
+    --color-ld-card: #ffffff;
+    --color-ld-card-hover: #fefaf9;
+    --color-ld-border: #f0c8bd;
+    --color-ld-border-accent: #fcd1ca;
+    --color-ld-text: #4a1e0f;
+    --color-ld-text-secondary: #6a3322;
+    --color-ld-text-muted: #8a5240;
+    --color-ld-accent: #ef5a4e;
+    --color-ld-accent-dim: #c2410c;
+    --color-ld-red: #b91c1c;
+    --color-ld-cyan: #0891b2;
+    --color-ld-amber: #b45309;
+    --color-ld-green: #047857;
+  }
+
+  /* ─────────────────────────────────────────────────────────────────
+     Light Blue theme — cool light variant, sky-tinted surfaces, blue
+     accent. Same contrast model as light/coral.
+     ───────────────────────────────────────────────────────────────── */
+  html.light-blue {
+    --color-bg-primary: #f0f7ff;
+    --color-bg-secondary: #ffffff;
+    --color-bg-surface: #f8fcff;
+    --color-bg-elevated: #e0f0ff;
+    --color-bg-hover: #c7e2ff;
+    --color-border: #bdd9f5;
+    --color-border-hover: #94c0e8;
+    --color-text-primary: #0c2340;
+    --color-text-secondary: #1e3a5f;
+    --color-text-muted: #4a6580;
+    --color-accent: #3b82f6;
+    --color-accent-hover: #2563eb;
+    --color-accent-muted: rgba(59, 130, 246, 0.12);
+    --color-bullish: #047857;
+    --color-bullish-muted: rgba(4, 120, 87, 0.10);
+    --color-bearish: #b91c1c;
+    --color-bearish-muted: rgba(185, 28, 28, 0.10);
+    --color-warning: #b45309;
+    --color-warning-muted: rgba(180, 83, 9, 0.10);
+    --color-neutral: #6b8cb0;
+    --color-strong-buy: #065f46;
+    --color-buy: #047857;
+    --color-hold: #6b8cb0;
+    --color-sell: #b91c1c;
+    --color-strong-sell: #991b1b;
+
+    /* Landing page surfaces for light-blue */
+    --color-ld-deep: #f0f7ff;
+    --color-ld-panel: #e3eefe;
+    --color-ld-card: #ffffff;
+    --color-ld-card-hover: #f8fcff;
+    --color-ld-border: #bdd9f5;
+    --color-ld-border-accent: #c7e2ff;
+    --color-ld-text: #0c2340;
+    --color-ld-text-secondary: #1e3a5f;
+    --color-ld-text-muted: #4a6580;
+    --color-ld-accent: #2563eb;
+    --color-ld-accent-dim: #1d4ed8;
+    --color-ld-red: #b91c1c;
+    --color-ld-cyan: #0891b2;
+    --color-ld-amber: #b45309;
+    --color-ld-green: #047857;
+  }
+
+  /* ─────────────────────────────────────────────────────────────────
+     Gray theme — true neutral dark variant. No emerald tint in surfaces
+     (the default dark theme leans green). Accent stays emerald so
+     bullish/CTA elements still pop.
+     ───────────────────────────────────────────────────────────────── */
+  html.gray {
+    --color-bg-primary: #0f0f10;
+    --color-bg-secondary: #18181b;
+    --color-bg-surface: #1f1f23;
+    --color-bg-elevated: #27272a;
+    --color-bg-hover: #3f3f46;
+    --color-border: #3f3f46;
+    --color-border-hover: #52525b;
+    --color-text-primary: #fafafa;
+    --color-text-secondary: #a1a1aa;
+    --color-text-muted: #71717a;
+    --color-accent: #10b981;
+    --color-accent-hover: #34d399;
+    --color-accent-muted: rgba(16, 185, 129, 0.15);
+    --color-bullish: #10b981;
+    --color-bullish-muted: rgba(16, 185, 129, 0.15);
+    --color-bearish: #ef4444;
+    --color-bearish-muted: rgba(239, 68, 68, 0.15);
+    --color-warning: #f59e0b;
+    --color-warning-muted: rgba(245, 158, 11, 0.15);
+    --color-neutral: #71717a;
+    --color-strong-buy: #10b981;
+    --color-buy: #34d399;
+    --color-hold: #71717a;
+    --color-sell: #ef4444;
+    --color-strong-sell: #dc2626;
+
+    /* Landing page surfaces for gray */
+    --color-ld-deep: #0a0a0a;
+    --color-ld-panel: #18181b;
+    --color-ld-card: #1f1f23;
+    --color-ld-card-hover: #27272a;
+    --color-ld-border: #3f3f46;
+    --color-ld-border-accent: #404040;
+    --color-ld-text: #fafafa;
+    --color-ld-text-secondary: #a1a1aa;
+    --color-ld-text-muted: #71717a;
+    --color-ld-accent: #10b981;
+    --color-ld-accent-dim: #059669;
+    --color-ld-red: #ef4444;
+    --color-ld-cyan: #4df0e6;
+    --color-ld-amber: #ffa94d;
+    --color-ld-green: #54d38a;
+  }
+  html.gray ::-webkit-scrollbar-thumb { background: #3f3f46; }
+  html.gray ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+  html.gray ::selection { background-color: rgba(16, 185, 129, 0.30); }
 }
 
 html {
