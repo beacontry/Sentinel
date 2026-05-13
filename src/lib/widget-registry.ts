@@ -55,6 +55,14 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     component: "news-widget",
   },
   {
+    id: "live-news-feed",
+    name: "Live News Feed",
+    description: "Auto-refreshing scrolling newsfeed with sentiment + watchlist-symbol priority",
+    category: "research",
+    defaultSize: "lg",
+    component: "live-news-feed-widget",
+  },
+  {
     id: "positions",
     name: "Open Positions",
     description: "Current open positions from the live trader",
