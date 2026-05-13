@@ -10,7 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
 
 interface Earning {
   symbol: string;
@@ -34,11 +35,14 @@ function formatRevenue(v: number | null): string {
 export default function EarningsPage() {
   const [earnings, setEarnings] = useState<Earning[]>([]);
   const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
   const [symbolInput, setSymbolInput] = useState("");
   const [activeTab, setActiveTab] = useState("calendar");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [watchlistSize, setWatchlistSize] = useState<number | null>(null);
+  const { toast } = useToast();
 
-  async function loadEarnings(extraSymbols?: string) {
+  async function loadEarnings() {
     setLoading(true);
     try {
       // Get watchlist
@@ -51,11 +55,9 @@ export default function EarningsPage() {
         }
       } catch { /* fallback */ }
 
+      setWatchlistSize(symbols.length);
+
       if (symbols.length === 0) symbols = DEFAULT_SYMBOLS.split(",");
-      if (extraSymbols) {
-        const extra = extraSymbols.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
-        symbols = [...new Set([...symbols, ...extra])];
-      }
 
       const res = await fetch(`/api/earnings?symbols=${encodeURIComponent(symbols.join(","))}`);
       if (res.ok) {
@@ -66,7 +68,53 @@ export default function EarningsPage() {
     setLoading(false);
   }
 
-  useEffect(() => { loadEarnings(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  /**
+   * Add comma-separated symbols to the user's primary watchlist (persistent),
+   * then reload earnings. Previously this only merged the symbols in memory
+   * for one query — users assumed they were saving and were confused when
+   * the symbols disappeared on next visit.
+   */
+  async function addSymbolsToWatchlist() {
+    const symbols = symbolInput
+      .split(",")
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    if (symbols.length === 0) return;
+
+    setAdding(true);
+    let succeeded = 0;
+    let failed = 0;
+    for (const symbol of symbols) {
+      try {
+        const res = await fetch("/api/watchlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol }),
+        });
+        if (res.ok || res.status === 409) {
+          // 409 = already present, treat as success for UX purposes
+          succeeded++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+    setAdding(false);
+    setSymbolInput("");
+
+    if (succeeded > 0 && failed === 0) {
+      toast({ type: "success", message: `Added ${succeeded} symbol${succeeded > 1 ? "s" : ""} to watchlist` });
+    } else if (succeeded > 0 && failed > 0) {
+      toast({ type: "warning", message: `Added ${succeeded}, ${failed} failed` });
+    } else {
+      toast({ type: "error", message: "Failed to add symbols" });
+    }
+    await loadEarnings();
+  }
+
+  useEffect(() => { loadEarnings(); }, []);  
 
   const sorted = useMemo(() =>
     [...earnings].sort((a, b) => a.date.localeCompare(b.date)),
@@ -119,20 +167,61 @@ export default function EarningsPage() {
         ]}
       />
 
-      {/* Add symbols */}
-      <Card>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1">
-            <Input
-              label="Add symbols (comma-separated)"
-              value={symbolInput}
-              onChange={(e) => setSymbolInput(e.target.value.toUpperCase())}
-              placeholder="TSLA,NFLX,AMD"
-            />
+      {/* Add to watchlist
+       *
+       * Promoted to a prominent affordance — user reported "how do I add
+       * a ticker?" so the previous flat label-on-empty-card wasn't
+       * doing its job. Now shows:
+       *   - icon + bold heading explaining what this does
+       *   - explanatory subtext (these symbols persist to your
+       *     watchlist, not just this view)
+       *   - example placeholder ("TSLA, NFLX, AMD")
+       *   - clearer button label
+       * If the user's watchlist is empty, the card uses an accent border
+       * so it's visually impossible to miss on first visit.
+       */}
+      <Card
+        className={
+          watchlistSize === 0
+            ? "border-accent/40 bg-accent/5"
+            : undefined
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-accent">
+              <Plus className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">
+                Track earnings for a new symbol
+              </h3>
+              <p className="text-xs text-text-muted mt-0.5">
+                {watchlistSize === 0
+                  ? "Your watchlist is empty — add symbols to start tracking their earnings dates."
+                  : "Symbols are saved to your watchlist and appear here every visit."}
+              </p>
+            </div>
           </div>
-          <div className="flex items-end">
-            <Button onClick={() => { loadEarnings(symbolInput); setSymbolInput(""); }} loading={loading}>
-              Add & Refresh
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+            <div className="flex-1">
+              <Input
+                value={symbolInput}
+                onChange={(e) => setSymbolInput(e.target.value.toUpperCase())}
+                placeholder="TSLA, NFLX, AMD"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !adding && symbolInput.trim()) {
+                    addSymbolsToWatchlist();
+                  }
+                }}
+              />
+            </div>
+            <Button
+              onClick={addSymbolsToWatchlist}
+              loading={adding}
+              disabled={!symbolInput.trim()}
+            >
+              Add to watchlist
             </Button>
           </div>
         </div>
