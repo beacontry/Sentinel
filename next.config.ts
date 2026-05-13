@@ -15,7 +15,12 @@ const csp = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: https://s3.tradingview.com https://*.tradingview.com",
   "font-src 'self' https://fonts.gstatic.com",
-  `connect-src 'self' https://query1.finance.yahoo.com https://finnhub.io https://cloudflareinsights.com https://*.tradingview.com${isDev ? " ws://localhost:* ws://127.0.0.1:*" : ""}`,
+  // Cloudflare Insights uses TWO origins: `cloudflareinsights.com` for
+  // the beacon, and `static.cloudflareinsights.com` for the
+  // beacon.min.js loader fetch. Whitelist both. Without the static
+  // subdomain the console fills with CSP errors and the analytics
+  // never report.
+  `connect-src 'self' https://query1.finance.yahoo.com https://finnhub.io https://cloudflareinsights.com https://static.cloudflareinsights.com https://*.tradingview.com${isDev ? " ws://localhost:* ws://127.0.0.1:*" : ""}`,
   "object-src 'none'",
   "form-action 'self'",
   "frame-src https://s.tradingview.com https://www.tradingview.com",
