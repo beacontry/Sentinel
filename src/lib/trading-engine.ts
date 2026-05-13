@@ -2484,6 +2484,9 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   // Phase 7 — also track pending sells (excluding stops) for symmetric guards.
   const pendingBuySymbols = new Set<string>();
   const pendingSellSymbols = new Set<string>();
+  // Same duplicate-order protection as runScan: if getOrders fails, abort
+  // before the BUY/ENTRY branch can fire blind.
+  let openOrdersFetchOk = true;
   try {
     const openOrders = await client.getOrders(100);
     for (const o of openOrders) {
@@ -2493,8 +2496,16 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
         pendingSellSymbols.add(o.symbol);
       }
     }
-  } catch {
-    // If order fetch fails, fall back to held-only check (best effort)
+  } catch (err) {
+    openOrdersFetchOk = false;
+    const msg = err instanceof Error ? err.message : "unknown";
+    log.warn({ err: msg, userId: engine.userId }, "Tactical getOrders failed — aborting scan to avoid duplicate-order risk");
+    pushError(engine, `getOrders failed: ${msg} — tactical scan aborted (duplicate-order protection)`);
+  }
+  if (!openOrdersFetchOk) {
+    engine.lastScanAt = new Date();
+    engine.scanStartedAt = null;
+    return;
   }
 
   const isInvested = currentPositions.length > 0 || pendingBuySymbols.size > 0;
@@ -2697,6 +2708,9 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   // close because nothing checked the broker for an already-pending sell.
   const pendingBuySymbols = new Set<string>();
   const pendingSellSymbols = new Set<string>();
+  // Same duplicate-order protection as runScan + runTacticalScan: abort if
+  // we can't see the broker's pending-order list.
+  let openOrdersFetchOk = true;
   try {
     const openOrders = await client.getOrders(100);
     for (const o of openOrders) {
@@ -2708,8 +2722,16 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         pendingSellSymbols.add(o.symbol);
       }
     }
-  } catch {
-    // If order fetch fails, fall back to held-only check (best effort)
+  } catch (err) {
+    openOrdersFetchOk = false;
+    const msg = err instanceof Error ? err.message : "unknown";
+    log.warn({ err: msg, userId: engine.userId }, "Tactical-smart getOrders failed — aborting scan to avoid duplicate-order risk");
+    pushError(engine, `getOrders failed: ${msg} — tactical-smart scan aborted (duplicate-order protection)`);
+  }
+  if (!openOrdersFetchOk) {
+    engine.lastScanAt = new Date();
+    engine.scanStartedAt = null;
+    return;
   }
 
   // Pending limit buys count as "invested" — otherwise the entry branch
@@ -3305,9 +3327,20 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
   // Fetch open orders to avoid conflicts (duplicate buys, stale stops).
   // Phase 7 — also track pending sells (excluding stops) for symmetric guards.
+  //
+  // When this fetch fails we LOSE the cross-scan duplicate-order protection:
+  // every BUY branch in the scan loop consults pendingBuySymbols to avoid
+  // double-buying a symbol whose previous order is still queued at the
+  // broker. Silently swallowing the error (the pre-fix behavior) is how we
+  // ended up with two SNDK buy limits stacked in Open Orders. To keep the
+  // scan from going blind on a transient broker hiccup, we now abort the
+  // BUY portion of the scan when this fetch fails. Exits + position-map
+  // sync already happened above, so we can return safely without breaking
+  // stop-loss management.
   const pendingBuySymbols = new Set<string>();
   const pendingSellSymbols = new Set<string>();
   const pendingOrdersBySymbol = new Map<string, { id: string; side: string; type: string }[]>();
+  let openOrdersFetchOk = true;
   try {
     const openOrders = await client.getOrders(100);
     const pendingOrders = openOrders.filter((o) =>
@@ -3329,8 +3362,16 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     if (pendingSellSymbols.size > 0) {
       log.info({ symbols: [...pendingSellSymbols] }, "Pending sell orders detected — will skip these symbols");
     }
-  } catch {
-    // If order fetch fails, proceed without conflict check
+  } catch (err) {
+    openOrdersFetchOk = false;
+    const msg = err instanceof Error ? err.message : "unknown";
+    log.warn({ err: msg, userId: engine.userId }, "getOrders failed — aborting scan to avoid duplicate-order risk");
+    pushError(engine, `getOrders failed: ${msg} — scan aborted (duplicate-order protection)`);
+  }
+  if (!openOrdersFetchOk) {
+    engine.lastScanAt = new Date();
+    engine.scanStartedAt = null;
+    return;
   }
 
   let realizedPnlThisScan = 0;
@@ -3985,11 +4026,54 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     : mode === "tactical-smart" ? () => runTacticalSmartScan(userId)
     : () => runScan(barResolution, userId);
 
+  // Re-entrancy guard for the scan scheduler.
+  //
+  // Why: bare setInterval(() => scanFn().catch()) lets a new scan tick fire
+  // while the previous scan is still in flight. When that happens, BOTH scans
+  // independently call client.getOrders() to build pendingBuySymbols — and if
+  // the first scan's order hasn't registered with the broker yet (Alpaca has
+  // ~hundreds-of-ms eventual consistency on the orders endpoint), the second
+  // scan sees an empty pending list and re-fires the same buy. Result: two
+  // identical limit orders queued ~ms apart, both showing the same "Xh ago"
+  // age in the UI. This is exactly the SNDK duplicate-order bug reported.
+  //
+  // Fix: a closure-local flag flipped before scanFn() and cleared in the
+  // .finally() of the promise. .finally() guarantees the flag clears even if
+  // scanFn throws — robust against bugs inside the scan body.
+  //
+  // Safety net: a stale-flag watchdog. If for some reason .finally() doesn't
+  // run (process crash mid-promise, runtime weirdness), STALE_SCAN_MS
+  // overrides the flag so we never wedge the scheduler forever. 10 minutes
+  // is well past any realistic legitimate scan duration (95th percentile
+  // ~30s, worst observed ~90s) but short enough that a wedged engine
+  // self-recovers within the next two intraday ticks.
+  let scanInFlight = false;
+  let scanInFlightSince = 0;
+  const STALE_SCAN_MS = 10 * 60 * 1000;
+  const runScanGuarded = (origin: string): Promise<void> | undefined => {
+    if (scanInFlight) {
+      const ageMs = Date.now() - scanInFlightSince;
+      if (ageMs < STALE_SCAN_MS) {
+        log.warn({ userId, origin, ageMs }, "Skipping scan tick — previous scan still in flight");
+        return undefined;
+      }
+      log.error({ userId, origin, ageMs }, "Previous scan flagged in-flight for >10min — overriding flag (likely crashed)");
+    }
+    scanInFlight = true;
+    scanInFlightSince = Date.now();
+    return scanFn()
+      .catch((err) => {
+        log.error({ err: err instanceof Error ? err.message : "unknown", origin }, `${origin} scan failed`);
+        pushError(engine, `${origin} scan failed: ${err instanceof Error ? err.message : "unknown"}`);
+      })
+      .finally(() => {
+        scanInFlight = false;
+        scanInFlightSince = 0;
+      });
+  };
+
   // Run initial scan immediately (will skip if market is closed)
-  scanFn().catch((err) => {
-    log.error({ err: err instanceof Error ? err.message : "unknown" }, "Initial scan failed");
-    pushError(engine, `Initial scan failed: ${err instanceof Error ? err.message : "unknown"}`);
-  });
+  runScanGuarded("initial");
 
   // If market is not yet open, schedule a scan at exactly 9:30 AM ET
   const msToOpen = msUntilMarketOpen();
@@ -3999,20 +4083,14 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
       if (!engine.running || engine.halted) return;
       engine.marketOpenTimeoutId = null;
       log.info({ userId }, "Market just opened — running scheduled scan");
-      scanFn().catch((err) => {
-        log.error({ err: err instanceof Error ? err.message : "unknown" }, "Market-open scan failed");
-        pushError(engine, `Market-open scan failed: ${err instanceof Error ? err.message : "unknown"}`);
-      });
+      runScanGuarded("market-open");
     }, msToOpen);
   }
 
   // Set up scan interval
   engine.intervalId = setInterval(() => {
     if (!engine.running) return;
-    scanFn().catch((err) => {
-      log.error({ err: err instanceof Error ? err.message : "unknown" }, "Scan cycle failed");
-      pushError(engine, `Scan failed: ${err instanceof Error ? err.message : "unknown"}`);
-    });
+    runScanGuarded("tick");
   }, scanIntervalMs);
 
   // 1-minute exit checks run in EVERY mode — uses live fetchQuote() to update
@@ -4020,11 +4098,35 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   // to track intraday peaks in swing modes (analysis.price = yesterday's close
   // on 1d bars), which is why trailing stops only moved on engine restart before
   // this fix.
+  //
+  // Same re-entrancy guard rationale as the main scan. Exit checks place
+  // market sells (not limit buys), so the symptom on overlap is different
+  // — a single position can get hit by two sell orders if the trail trigger
+  // fires twice before the broker reflects the first sell. The
+  // pendingSellSymbols guard inside runExitCheck normally catches this, but
+  // belt-and-suspenders is cheap.
+  let exitCheckInFlight = false;
+  let exitCheckInFlightSince = 0;
   engine.exitCheckId = setInterval(() => {
     if (!engine.running || engine.halted) return;
-    runExitCheck(userId).catch((err) => {
-      log.error({ err: err instanceof Error ? err.message : "unknown" }, "Exit check failed");
-    });
+    if (exitCheckInFlight) {
+      const ageMs = Date.now() - exitCheckInFlightSince;
+      if (ageMs < STALE_SCAN_MS) {
+        log.debug({ userId, ageMs }, "Skipping exit check tick — previous still in flight");
+        return;
+      }
+      log.error({ userId, ageMs }, "Previous exit check flagged in-flight for >10min — overriding flag");
+    }
+    exitCheckInFlight = true;
+    exitCheckInFlightSince = Date.now();
+    runExitCheck(userId)
+      .catch((err) => {
+        log.error({ err: err instanceof Error ? err.message : "unknown" }, "Exit check failed");
+      })
+      .finally(() => {
+        exitCheckInFlight = false;
+        exitCheckInFlightSince = 0;
+      });
   }, EXIT_CHECK_MS);
 
   return { ok: true };
