@@ -3,7 +3,40 @@
 import { useEffect } from "react";
 
 const MUTATING_METHODS = ["POST", "PUT", "PATCH", "DELETE"];
-const SKIP_PATHS = ["/api/auth/", "/api/csrf"];
+
+// Routes that are legitimately exempt from CSRF (no session yet, or
+// explicitly opted out — see CLAUDE.md § Security & Route Patterns). The
+// patched fetch skips CSRF-header injection for these AND skips the
+// 401 → /login redirect (those routes return 401 for bad credentials,
+// not for session expiry).
+//
+// HISTORY: this list previously used the blanket prefix `/api/auth/`,
+// which silently matched `/api/auth/set-pin` — a mutating route that
+// DOES require CSRF. Every PIN setup attempt 403'd because the header
+// was never injected, and the self-heal retry was gated behind
+// `isMutating` which the prefix also forced false. Reported as "some
+// users getting CSRF issue when setting their pins" — actually every
+// user, just only users who attempted PIN setup ever hit it.
+//
+// Fix: enumerate the actual exempt sub-paths instead of the blanket
+// prefix. New auth routes that need CSRF (e.g., set-pin, change-password)
+// no longer get auto-excluded by mistake.
+//
+// Also dropped `/api/csrf` from the list: a 401 from /api/csrf is the
+// canonical "session expired" signal — it should flow through the
+// normal session-expired redirect, not be silently swallowed. /api/csrf
+// is GET-only so the header-injection skip never applied anyway.
+const CSRF_EXEMPT_PATHS = [
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/logout",
+  "/api/auth/pin-login",
+  "/api/auth/validate-invite",
+];
+function pathIsCsrfExempt(url: string): boolean {
+  return CSRF_EXEMPT_PATHS.some((p) => url.includes(p));
+}
+
 const CSRF_COOKIE = "csrf-token";
 
 let initialized = false;
@@ -89,8 +122,8 @@ export function CsrfInit() {
           : input instanceof URL
             ? input.href
             : (input as Request).url;
-      const shouldSkip = SKIP_PATHS.some((p) => url.includes(p));
-      const isMutating = MUTATING_METHODS.includes(method) && !shouldSkip;
+      const csrfExempt = pathIsCsrfExempt(url);
+      const isMutating = MUTATING_METHODS.includes(method) && !csrfExempt;
 
       let initWithCsrf = init;
       if (isMutating) {
@@ -142,10 +175,12 @@ export function CsrfInit() {
         }
       }
 
-      // Session expired — same logic as before
+      // Session expired — redirect to /login. Skip routes that legitimately
+      // return 401 for bad credentials (login etc. — the user isn't logged
+      // in to begin with). /api/csrf used to be here but its 401 actually
+      // IS a session-expired signal, so it now flows through normally.
       if (response.status === 401 && !sessionExpiredFired) {
-        const isSkipped = SKIP_PATHS.some((p) => url.includes(p));
-        if (!isSkipped) {
+        if (!pathIsCsrfExempt(url)) {
           sessionExpiredFired = true;
           window.dispatchEvent(new CustomEvent("session-expired"));
           setTimeout(() => {
