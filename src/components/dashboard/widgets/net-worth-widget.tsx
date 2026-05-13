@@ -83,18 +83,20 @@ export function NetWorthWidget() {
         <p className="text-sm text-text-muted">
           No portfolio data yet. Connect a broker or set up a paper portfolio.
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Link
-            href="/dashboard/trader"
+            href="/dashboard/settings"
             className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
           >
             Connect broker <ArrowRight className="h-3 w-3" />
           </Link>
+          {/* Points to the portfolio overview's create form (not just
+              the dead-end empty state it used to land on). */}
           <Link
             href="/dashboard/portfolio"
             className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
           >
-            Paper portfolio <ArrowRight className="h-3 w-3" />
+            Create paper portfolio <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
       </div>
