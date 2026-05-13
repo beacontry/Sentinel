@@ -25,9 +25,22 @@ Items shipped in the 2026-05-13 multi-commit UX batch (full retrospective in `CL
 - Articles auto-populate (daily digest → article) (`a640287`)
 - Live news feed widget (`1f48b9e`)
 
-Still TBD from that batch:
-- **Journal v2 redesign** — see § Journal v2 below for the spec sketch
-- **SmartBackButton rollout** to articles/messages/support/forum/posts detail pages (5 mechanical follow-ups, one-line change per page)
+Same-day "keep going" pass continued the batch (also shipped 2026-05-13):
+- SmartBackButton rollout to articles/messages/support/forum/posts (`ca12ebd`)
+- Chart fullscreen extended to Replay + Backtest (`675560a`)
+- Dashboard PositionsWidget crash fix + CSP for Cloudflare Insights (`b5d4124`)
+- Journal v2 phase 1 — auto-stub on filled trades + migration 0032 (`69c5482`)
+- Unusual Activity ticker click → quick-info drawer (`6cb0e07`)
+- Analysis layout: Signals panel removed + resizable panels + chart-fill + Make Default in watchlist dropdown (`890b9f1`)
+- Journal v2 phase 2 — daily pre/post-market prompts cron (`327a164`)
+
+Still TBD from the Journal v2 plan:
+- **Phase 3** — tagging UI (symbol, strategy, emotion: greed/fear/discipline/FOMO/patience), filterable index
+- **Phase 4** — cross-feature linking (Performance → journal entries for that symbol; P&L Calendar → entries for that date)
+- **Phase 5** — AI weekly review cron (Sunday 5pm ET, Groq summary of week's entries + trades, stored as a `weekly-review` type entry)
+- **Phase 6** — Tagged-pattern badges on journal home ("Every time you tag `FOMO`, the trade loses 70% of the time")
+- **Journal page UI polish** for the new types — badge per type, sort prompts to the top while fresh, dim "filled-in" prompts, highlight unfilled ones
+- **Apply migration 0032 on prod** + add the two new cron lines to the droplet crontab
 
 ## Phase status (last updated 2026-05-12 marathon)
 

@@ -808,6 +808,28 @@ function InnerComponent() {
 
 ---
 
+## 2026-05-13 — Migrations summary (0032)
+
+Just one migration this batch:
+
+| # | File | What |
+|---|------|------|
+| 0032 | `journal_v2.sql` | `trade_journal.type` (default 'manual'), `trade_journal.prompt_date` (nullable date), `journal_auto_trade_uniq` partial unique index on (user_id, trader_trade_id) WHERE type='auto-trade', `journal_prompt_uniq` partial unique index on (user_id, type, prompt_date) WHERE prompt_date IS NOT NULL, `journal_type_idx`. Idempotent. Phase 1 (auto-stub on filled trades) + Phase 2 (daily pre/post-market prompts) both rely on these. |
+
+Apply on prod as `postgres`:
+```bash
+scp drizzle/0032_journal_v2.sql deploy@<host>:/tmp/
+ssh deploy@<host> "sudo -u postgres psql sentinel_db -v ON_ERROR_STOP=1 -f /tmp/0032_journal_v2.sql"
+```
+
+Cron schedule additions (droplet crontab, UTC):
+```
+# Journal v2 phase 2 — daily prompts
+0 12 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-prompts?type=pre-market
+0 20 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-prompts?type=post-market
+```
+(12:30 UTC = 8:30 ET / 20:30 UTC = 4:30 ET during EDT; shift one hour in EST.)
+
 ## 2026-05-12 — Migrations summary (0023–0029)
 
 All idempotent. Apply on prod as `postgres` (chmod-700 droplet means app user can't `ALTER TABLE`).
@@ -888,9 +910,24 @@ Pre-existing bugs + UX cleanups discovered while reviewing the dashboard with th
 - **Articles auto-populate** (`a640287`). Articles page was empty because nothing was seeding it. Hooked into the existing market-digest cron — after persisting the digest + sending Discord/email, it now also inserts an article (slug = `market-digest-{YYYY-MM-DD}`, idempotent via unique slug index, author = first admin user, body prefixed with "Sentinel Daily Desk · {date}"). Empty-state copy on `/dashboard/articles` updated to say articles appear daily.
 - **Live news feed widget** (`1f48b9e`). New registerable widget `live-news-feed`. Auto-refreshes via `usePolling` (newsRefresh = 5 min), shows 15 items with scroll overflow, sentiment indicator (bullish ▲ / bearish ▼ / neutral) per item, watchlist symbols first. Users add it via Dashboard → Edit Layout. Sits naturally as a right-column anchor on wide screens, fulfilling the user's "scrolling newsfeed on the right" request without forcing it on everyone.
 
+### Follow-on commits (same-day, "keep going" pass)
+
+- **SmartBackButton rollout** (`ca12ebd`) — applied SmartBackButton to articles/[slug], messages/[id], support/[id], forum/[threadId], posts/[postId]. Browser-back returns the user to wherever they came from (Cmd+K jump, notification click, feed link); direct-link arrivals still get the section index as fallback.
+- **Chart fullscreen extended** (`675560a`) — applied to `/dashboard/replay` (lightweight-charts price+markers) and `/dashboard/backtest` (equity curve). Same Maximize2 / Minimize2 pattern. Esc closes; body scroll locked. `BacktestChart` extended with `height?: number | "fill"` so the ResizeObserver tracks both dimensions when filling a parent.
+- **Dashboard crash + CSP** (`b5d4124`) — `PositionsWidget` was reading `pos.averageCost` / `pos.marketPrice` but `/api/trader/dashboard` returns `entryPrice` / `currentPrice`. `undefined.toFixed()` crashed the whole dashboard mid-widget-rearrange. Fixed the field-name mismatch + defaulted all numeric fields to 0 for partial-API-shape safety. Also added `static.cloudflareinsights.com` to CSP `connect-src` (was listed without the static subdomain, blocking the beacon-loader fetch).
+- **Journal v2 phase 1: auto-stub on filled trades** (`69c5482`). Migration `0032_journal_v2.sql` (idempotent) adds `trade_journal.type` + `prompt_date` columns and two partial unique indexes — `journal_auto_trade_uniq` on (user_id, trader_trade_id) where type='auto-trade' (one stub per trade), and `journal_prompt_uniq` on (user_id, type, prompt_date) (one prompt per type/day, used by phase 2). New `src/lib/journal-auto-stub.ts::createAutoJournalStub()` called from `reconcilePendingTrades()` when a trade transitions PENDING → FILLED. Stub is markdown-formatted with the trade mechanics + leading questions ("Why am I taking this trade?" for entries, "What's the lesson?" for exits). Never throws (logs and returns); idempotent via the unique index.
+- **Unusual Activity ticker click → quick-info drawer** (`6cb0e07`) — New `<SymbolPreviewSheet>` in `src/components/ui/`. Lightweight cousin of `<PositionDetailSheet>`. Opens on ticker click in `/dashboard/unusual-activity` (rows are now cursor-pointer + accent symbol color); shows price + intraday %, current signal with confidence, RSI/volume/SMA stats, sector. Three escape hatches: View full analysis, Trade, Add to watchlist. Reusable on any page with a ticker list.
+- **Analysis layout rewrite** (`890b9f1`) — biggest change of the batch:
+  - **Signals panel removed** (user picked Option A from the redundancy discussion). Left column is now pure watchlist.
+  - **react-resizable-panels v4** drives the desktop layout. Three drag handles: left↔center, center↔right, and chart↔intelligence (vertical) inside the center column. Sizes persist per-device via `id` props on each Group. Mobile (lg:hidden) untouched.
+  - **Empty space fixed.** Both `<TradingViewChart>` and `<PriceChart>` now accept `height="fill"` and the analysis page passes it. ResizeObservers in both components track height when `"fill"` so the chart follows panel-resize drags. Previously TradingView was hardcoded `height={520}` regardless of available space — the user reported "look at all the empty space".
+  - **Make Default in watchlist dropdown** (user picked the suggestion). Each non-default option in `<WatchlistSwitcher>` has a ★ button that PATCHes `/api/watchlists/[id] { setDefault: true }` and refreshes in place. Users no longer need to navigate to `/dashboard/watchlists` to change their default — two clicks from anywhere the switcher appears.
+- **Journal v2 phase 2: daily prompts** (`327a164`). New cron route `GET /api/cron/journal-prompts?type={pre-market|post-market}`. Auth via `x-cron-secret`. Creates stub entries for every user updated in the last 30 days with the two prompt templates baked into the route. Weekend skip. Idempotent via the `journal_prompt_uniq` index from phase 1 migration. Schedule (UTC): `0 12 * * 1-5` pre-market, `0 20 * * 1-5` post-market.
+
 ### Still TBD
-- **Journal v2 redesign** — design conversation before code. Today's journal is a free-form text box; potential expansion: auto-stub from filled trades, daily pre/post-market prompts, AI weekly review, tagging+search, links to/from Performance attribution.
-- **SmartBackButton rollout** to articles/messages/support/forum/posts detail pages (the trade page is done; others are mechanical follow-ups).
+- **Journal v2 phase 3+** — tagging (symbol, strategy, emotion: greed/fear/discipline/FOMO/patience), cross-feature linking (Performance → journal entries for that symbol, P&L Calendar → entries for that date), AI weekly review (Sunday 5pm ET Groq summary of week's entries + trades). Phases 1+2 alone already deliver auto-stubs + daily prompts, the immediate friction reducers.
+- **Journal page UI for the new types** — currently auto-stubs and daily prompts render as regular entries. Polish pass: badge per type, sort prompts to the top while fresh, dim "filled-in" prompts, highlight unfilled ones.
+- **Apply migration 0032 on prod** as `postgres`: `cat drizzle/0032_journal_v2.sql | sudo -u postgres psql sentinel_db`.
 
 ## Static HTML docs (served by Next.js public/)
 
