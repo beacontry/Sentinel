@@ -61,12 +61,26 @@ Each user has their own broker connection (`brokerConnections` table, scoped by 
 
 ## Design System
 
-### Theme: Dark/Light mode with emerald-tinted neutrals
-All tokens defined in `src/app/globals.css` `@theme` block. Light mode is the default. Dark mode activates via `html.dark` class which overrides all color variables in `@layer base`.
+### Theme: 5 themes (light, dark, coral, light-blue, gray)
+All tokens defined in `src/app/globals.css` `@theme` block. Light is the implicit default (no class). Each non-default theme = a single class on `<html>`: `dark`, `coral`, `light-blue`, `gray`. Only one applies at a time; the theme provider strips others before adding the new one.
 
-**ThemeProvider** (`src/components/theme-provider.tsx`): wraps root layout, persists preference to `localStorage("sentinel-theme")`, toggles `dark` class on `<html>`, updates PWA `theme-color` meta tag. Use `useTheme()` hook for `{ theme, toggleTheme }`.
+| Theme | Surface character | Accent |
+|-------|-------------------|--------|
+| light | white on neutral gray, classic | emerald |
+| dark | emerald-tinted near-black | emerald |
+| coral | warm peach surfaces (light variant) | coral (#f97066) |
+| light-blue | cool sky tints (light variant) | blue-500 |
+| gray | true neutral grays (dark variant, no green tint) | emerald |
 
-**Toggle locations:** Landing page navbar (Sun/Moon icon), dashboard sidebar footer ("Light Mode"/"Dark Mode" button).
+Trading semantics (`bullish`, `bearish`, `warning`) stay universal red/green across all themes so P&L is recognizable.
+
+**ThemeProvider** (`src/components/theme-provider.tsx`): wraps root layout, persists preference to `localStorage("sentinel-theme")`, applies the right class on `<html>`, updates PWA `theme-color` meta tag. Use `useTheme()` hook for `{ theme, setTheme, toggleTheme }`. `toggleTheme()` cycles through all 5 in declaration order; `setTheme(t)` jumps directly. `isDarkTheme(theme)` helper exported for embeds (TradingView widget) that need their own dark/light flag — returns true for `dark` and `gray`.
+
+**Theme picker UI** (`src/components/theme-picker.tsx`): replaces the old binary toggle. Two variants:
+- `variant="sidebar"` — full-width button styled to match the existing sidebar footer; upward popover with all 5 themes (swatch + label + active check).
+- `variant="icon"` — 36-40px palette icon button; downward popover. Used in landing nav and mobile contexts.
+
+**Toggle locations:** Landing page navbar (palette icon → 5-option popover), dashboard sidebar footer (full-width "Theme: X" button → 5-option popover).
 
 **Landing page** uses separate `ld-*` tokens (`bg-ld-deep`, `text-ld-accent`, etc.) for its distinct aesthetic. These also switch with the theme via `html.dark` overrides.
 
@@ -851,6 +865,32 @@ Migration `0029` adds 3 columns to `user_risk_profiles`. `RiskLimits` expanded w
 6 phases × ~1 commit each + the docs commit = ~7 commits, ~3 hours real time. All 6 phases ship behind feature flags or are additive (no behavior changes to existing flows except where bugs were fixed). The pending items in each phase are documented in `docs/future-ideas.md` with retrospective notes pointing to commit SHAs.
 
 If anything regresses, individual phase commits revert cleanly.
+
+## 2026-05-13 — UX consolidation + bug fixes (multi-commit batch)
+
+Pre-existing bugs + UX cleanups discovered while reviewing the dashboard with the user.
+
+### Real bugs fixed
+- **CSRF: PIN setup 403** (`10a2c18`). `SKIP_PATHS = ["/api/auth/", "/api/csrf"]` in `src/components/csrf-init.tsx` was a substring-match list, silently exempting `/api/auth/set-pin` (a mutating route that DOES require CSRF) along with the genuinely-exempt login/register/logout. Narrowed to an explicit allow-list. Belt: `pin-setup-banner.tsx` now pre-warms `/api/csrf` on form expand + has its own explicit 403 retry, and translates the technical error into a user-actionable message. Drop `/api/csrf` from the 401-redirect skip too — a 401 there is the canonical session-expired signal.
+- **CSRF audit follow-ups** (`8304ecb`). Switched `pathIsCsrfExempt` from `.includes()` to URL pathname parsing + `Set.has(pathname)` so future routes can't be accidentally exempted by substring overlap. Standardized `csrf-token` cookie `secure` to `FORCE_HTTPS` to match `sentinel-session` (was `NODE_ENV === "production"` — could diverge if env vars were forgotten).
+- **Engine: duplicate-order from overlapping scan ticks** (`11012c3`). Bare `setInterval(() => scanFn().catch())` had no re-entrancy guard. A slow scan let the next tick fire while still in-flight; both concurrent scans called `client.getOrders()` independently and both got an empty-or-stale `pendingBuySymbols` (Alpaca has hundreds-of-ms eventual consistency on the orders endpoint), so the duplicate-buy guard went blind. User saw two SNDK buys at the same price/qty/age. Fix: closure-local in-flight flag with `.finally()` clear + 10-min stale-flag watchdog so a crashed scan can't wedge the scheduler. Same guard added to the 1-minute exit-check interval. Also: `getOrders` failures previously silently swallowed → now log warn + abort the BUY portion of the scan (better to skip than fire blind).
+- **Performance page one-shot fetch** (`d79acff`). Wrapped in `usePolling` with `dashboardRefresh` (60s) so data refreshes as new trades close.
+- **Education: 3 calculators on disk but unimported** (`9075cf6`). `compound-interest`, `fire-number`, `quarterly-tax-estimator` existed but weren't wired into the Calculators tab. All 8 now present.
+
+### UX consolidation
+- **5 themes** (`6e67c04`). See Design System § Theme above. Coral / light-blue / gray added to original light/dark. Theme picker replaces the binary toggle.
+- **Earnings ticker discoverability** (`c3b04ac`). Promoted the "Add symbol" affordance with icon + heading + explanatory text + accent border when watchlist is empty. Adding now actually POSTs to `/api/watchlist` (persistent) instead of just merging in-memory for one query. Enter-to-submit. Toast on result.
+- **Smart back button** (`6c783da`). New `<SmartBackButton fallbackHref>` in `src/components/ui/`. Uses `router.back()` when there's same-origin history, falls back to the explicit href for direct-link arrivals. Applied to `/dashboard/trade/[symbol]` (the reported case where Congress → Trade → back went to Analysis instead of Congress). Other detail pages (articles, messages, support, forum, posts) can adopt this incrementally — one-line change per page.
+- **Analysis page: focus mode + chart fullscreen** (`32e2201`). Two related additions:
+  - **Focus mode**: header toggle adds `html.focus-mode` which collapses the dashboard sidebar (CSS rule on `aside[data-app-sidebar]`). Persists per-device. Auto-cleans on page unmount so the sidebar isn't globally hidden when navigating away.
+  - **Chart fullscreen**: new `<ChartFullscreenOverlay>` component (`src/components/ui/chart-fullscreen-overlay.tsx`). Maximize icon in the chart-mode toolbar opens a fixed-position overlay covering the viewport. Works for both Engine view (PriceChart) and TradingView. Esc + Exit button to close; body scroll locked while open. `TradingViewChart` accepts `height="fill"` for the overlay case.
+- **Education calculators: accordion** (`9075cf6`). Was an always-expanded stack. Now click-to-expand, one open at a time. `CALCULATOR_REGISTRY` array drives the UI — add new calculators by appending one entry.
+- **Articles auto-populate** (`a640287`). Articles page was empty because nothing was seeding it. Hooked into the existing market-digest cron — after persisting the digest + sending Discord/email, it now also inserts an article (slug = `market-digest-{YYYY-MM-DD}`, idempotent via unique slug index, author = first admin user, body prefixed with "Sentinel Daily Desk · {date}"). Empty-state copy on `/dashboard/articles` updated to say articles appear daily.
+- **Live news feed widget** (`1f48b9e`). New registerable widget `live-news-feed`. Auto-refreshes via `usePolling` (newsRefresh = 5 min), shows 15 items with scroll overflow, sentiment indicator (bullish ▲ / bearish ▼ / neutral) per item, watchlist symbols first. Users add it via Dashboard → Edit Layout. Sits naturally as a right-column anchor on wide screens, fulfilling the user's "scrolling newsfeed on the right" request without forcing it on everyone.
+
+### Still TBD
+- **Journal v2 redesign** — design conversation before code. Today's journal is a free-form text box; potential expansion: auto-stub from filled trades, daily pre/post-market prompts, AI weekly review, tagging+search, links to/from Performance attribution.
+- **SmartBackButton rollout** to articles/messages/support/forum/posts detail pages (the trade page is done; others are mechanical follow-ups).
 
 ## Static HTML docs (served by Next.js public/)
 

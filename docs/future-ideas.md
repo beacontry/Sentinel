@@ -10,6 +10,25 @@ the one exception (it's the high-level tracker).
 
 ---
 
+## Phase status (last updated 2026-05-13 UX-batch)
+
+Items shipped in the 2026-05-13 multi-commit UX batch (full retrospective in `CLAUDE.md § 2026-05-13`):
+- CSRF: PIN-setup substring bug fixed (`10a2c18`)
+- CSRF audit follow-ups: exact-path match + cookie attribute parity (`8304ecb`)
+- Engine: duplicate-order from overlapping scan ticks (`11012c3`)
+- Themes: 5-theme picker (light/dark/coral/light-blue/gray) (`6e67c04`)
+- Performance page polling (`d79acff`)
+- Earnings ticker discoverability + persistence (`c3b04ac`)
+- Smart back button (Trade page) (`6c783da`)
+- Analysis focus mode + chart fullscreen overlay (`32e2201`)
+- Education calculator accordion + 3 missing imports (`9075cf6`)
+- Articles auto-populate (daily digest → article) (`a640287`)
+- Live news feed widget (`1f48b9e`)
+
+Still TBD from that batch:
+- **Journal v2 redesign** — see § Journal v2 below for the spec sketch
+- **SmartBackButton rollout** to articles/messages/support/forum/posts detail pages (5 mechanical follow-ups, one-line change per page)
+
 ## Phase status (last updated 2026-05-12 marathon)
 
 | Phase | Theme | Shipped | Still pending |
@@ -286,6 +305,65 @@ don't skip ahead.
   paper (e.g. 3% if paper is 15%). Ratchet up if nothing breaks.
 - **Tested DB backup restore.** Untested backups aren't backups. Dry-run
   restore to a scratch instance once before going live.
+
+---
+
+## Journal v2 — design sketch (user-flagged 2026-05-13)
+
+Today's `/dashboard/journal` is a free-form text editor with no
+opinionated structure. User reported "the journal itself doesn't seem
+to have a role" — meaning it's underutilized because it asks too much
+(write anything in this empty box) and gives back too little.
+
+Design direction (not yet implemented — discuss before coding):
+
+### Make the journal earn its slot
+1. **Auto-generated trade entries.** Every `traderTrades` fill creates a
+   journal stub prefilled with: symbol, entry price, exit price (or "open"),
+   P&L, strategy params, signal that fired. User just adds the WHY
+   (thesis, emotion, lesson). Zero friction to start; the blank-canvas
+   barrier disappears.
+2. **Daily prompts.** Pre-market (8:30 ET): "What's your plan today? Any
+   bias to fight?" Post-close (4:30 ET): "What worked / didn't? Notable
+   lesson?" Two-question stubs auto-create as draft entries the user
+   can ignore or fill in. Habit formation > occasional brilliance.
+3. **Tagging.** `symbol`, `strategy`, `emotion` (greed/fear/discipline/
+   FOMO/patience), `outcome` (win/loss/breakeven). Searchable + filterable.
+4. **Cross-feature linking.** Performance attribution row → click symbol
+   → opens journal entries for that symbol. P&L Calendar day → click →
+   journal entries for that date. Journal entry header shows linked
+   trades inline (no need to context-switch to find what trade you're
+   reviewing).
+5. **AI weekly review.** Each Sunday, generate a summary: "Week in
+   review — 4 wins / 2 losses, net +$X. Notable lesson from your TGT
+   entry on Tuesday: 'overweighted scalp on a thin signal.' Patterns
+   to watch: 3 of 6 trades were entries in the last hour of the day —
+   consider if that's deliberate." Costs ~$0.01/user/week on Groq.
+6. **Tagged-pattern surfaces.** "Every time you tag `FOMO`, the trade
+   loses 70% of the time." Surfaced as a quiet badge on the journal
+   home + on the AI weekly review. Behavioral feedback loop the user
+   doesn't currently get from anywhere.
+
+### Data model sketch
+- New `journal_entries` table: `id, userId, createdAt, updatedAt, body
+  (markdown), tags (jsonb), linkedTradeIds (jsonb), linkedDate (date,
+  nullable for free-form), type ('trade' | 'pre-market' | 'post-market'
+  | 'weekly-review' | 'free-form')`.
+- New `journal_entry_links` join table for many-to-many trade↔entry if
+  jsonb gets unwieldy.
+- AI weekly review stored as a regular entry with `type='weekly-review'`
+  so it appears inline with manual entries and can be edited.
+
+### Implementation phases (rough)
+1. Schema + auto-stub generation on `traderTrades.status='FILLED'`
+2. Daily-prompt cron at 8:30 + 4:30 ET (skip if user already wrote one)
+3. Tagging UI + filterable index
+4. Cross-feature linking (Performance, P&L Calendar)
+5. AI weekly review cron (Sundays 5pm ET)
+6. Tagged-pattern badges on journal home
+
+Phases 1-2 alone would make the journal feel useful. 3-6 are
+follow-ups.
 
 ---
 
