@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
         symbol: symbolParam,
         count: trades.length,
         totalRows,
-        upstreamSource: "official_house", // will become "official_house+senate" after Phase 2
+        upstreamSource: "official_house_senate",
       },
       // Filings update slowly (PTRs lag by up to 45 days). 1-hour cache.
       { headers: { "Cache-Control": "private, max-age=3600" } }

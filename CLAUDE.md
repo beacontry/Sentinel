@@ -396,7 +396,15 @@ Gate ordering inside `canPlaceBuyOrder()`: wash-sale → PDT → notional → ra
 
 **Backfill:** `npx tsx scripts/backfill-congress.ts --years 2026,2025,2024`. Idempotent — re-running just skips duplicates.
 
-**Senate coverage:** deferred — Phase 2 will add `efdsearch.senate.gov` (CSRF + terms-accept flow + HTML/PDF parsers) populating the same table with `chamber='Senate'`. Currently only House (~80% of total disclosed trading by volume).
+**Senate ingester** (`src/lib/congress-senate-ingester.ts`) — Phase 2 shipped 2026-05-13. Lives behind `efdsearch.senate.gov` which requires:
+1. GET `/search/home/` to get a `csrftoken` cookie + `csrfmiddlewaretoken` hidden field
+2. POST `/search/home/` with `prohibition_agreement=1` + the token to establish the session
+3. POST `/search/report/data/` with DataTables-style params + `report_type=11` (PTR) + date range → JSON listing of filings with UUIDs
+4. GET `/search/view/ptr/{uuid}/` → HTML page with the transactions table
+
+Parser uses `node-html-parser` against `<h2 class="filedReport">` (filer), `<h1>` (report date), `<tbody> <tr>` (transactions). Skips paper-filed PDFs (`/view/paper/` links — would need OCR) and rows where the Ticker column is `--` (municipal bonds, mutual funds without symbol). The site is fronted by Akamai which is aggressive about non-browser-shaped traffic; the ingester uses a realistic UA + standard browser headers and sequential per-PTR fetches with 500 ms pacing.
+
+The cron and backfill script handle House + Senate independently — one failing doesn't tank the other. After both phases the unified UI at `/dashboard/congress` shows full Congressional coverage.
 
 ## AI Providers & System Configuration
 
