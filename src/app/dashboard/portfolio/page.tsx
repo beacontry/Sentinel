@@ -13,10 +13,12 @@ import Link from "next/link";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
 import { SymbolLink } from "@/components/ui/symbol-link";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import { PageIntro } from "@/components/layout/page-intro";
-import { Briefcase, TrendingUp, TrendingDown, PieChart, ArrowRight } from "lucide-react";
+import { Briefcase, TrendingUp, TrendingDown, PieChart, ArrowRight, Plus } from "lucide-react";
 import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 import { getSymbolSector } from "@/lib/sectors";
 
@@ -55,8 +57,69 @@ const SECTOR_COLORS: Record<string, string> = {
 
 export default function PortfolioPage() {
   const { pnlFormat } = useDisplayPrefs();
+  const { toast } = useToast();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Inline portfolio creation. User previously hit a dead-end empty
+  // state telling them to "create a paper portfolio" with no UI to
+  // actually do so. Now the empty state IS the create form.
+  const [showCreate, setShowCreate] = useState(false);
+  const [creatingName, setCreatingName] = useState("");
+  const [creatingCash, setCreatingCash] = useState("10000");
+  const [creating, setCreating] = useState(false);
+
+  async function handleCreate() {
+    const name = creatingName.trim();
+    const cash = Number(creatingCash);
+    if (!name) {
+      toast({ type: "error", message: "Give your portfolio a name." });
+      return;
+    }
+    if (!Number.isFinite(cash) || cash < 100 || cash > 1000000) {
+      toast({ type: "error", message: "Initial cash must be between $100 and $1,000,000." });
+      return;
+    }
+    setCreating(true);
+    try {
+      const res = await fetch("/api/portfolio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, initialCash: cash }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast({ type: "error", message: data?.error ?? "Failed to create portfolio" });
+        return;
+      }
+      const data = await res.json();
+      toast({
+        type: "success",
+        message: `Created '${name}' with $${cash.toLocaleString()} cash`,
+      });
+      setShowCreate(false);
+      setCreatingName("");
+      setCreatingCash("10000");
+      // Redirect to the paper-trading manage page so the user can add
+      // positions right away — paper-trading currently redirects to
+      // /trader, but the portfolio ID is needed for trade entry. Send
+      // them to the tax-center where positions can be added (or
+      // refresh the summary to show the new portfolio).
+      void data;
+      // Simple refresh — the new (empty) portfolio will surface in
+      // summary.manual.portfolios.
+      try {
+        const refresh = await fetch("/api/portfolio/summary");
+        if (refresh.ok) setSummary(await refresh.json());
+      } catch {
+        /* non-critical */
+      }
+    } catch {
+      toast({ type: "error", message: "Network error creating portfolio" });
+    } finally {
+      setCreating(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -128,10 +191,15 @@ export default function PortfolioPage() {
   if (!summary) {
     return (
       <div className="p-4 lg:p-6">
-        <EmptyState
-          icon={<Briefcase className="w-12 h-12" />}
-          title="No portfolio data"
-          description="Connect a broker or create a paper portfolio to see your overview."
+        <CreatePortfolioCard
+          showCreate={showCreate}
+          setShowCreate={setShowCreate}
+          creatingName={creatingName}
+          setCreatingName={setCreatingName}
+          creatingCash={creatingCash}
+          setCreatingCash={setCreatingCash}
+          creating={creating}
+          onCreate={handleCreate}
         />
       </div>
     );
@@ -159,10 +227,15 @@ export default function PortfolioPage() {
       />
 
       {!hasManual && !hasBroker && (
-        <EmptyState
-          icon={<Briefcase className="w-12 h-12" />}
-          title="Nothing to show yet"
-          description="Add a paper portfolio or connect a broker to populate this overview."
+        <CreatePortfolioCard
+          showCreate={showCreate}
+          setShowCreate={setShowCreate}
+          creatingName={creatingName}
+          setCreatingName={setCreatingName}
+          creatingCash={creatingCash}
+          setCreatingCash={setCreatingCash}
+          creating={creating}
+          onCreate={handleCreate}
         />
       )}
 
@@ -330,5 +403,105 @@ export default function PortfolioPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// ─── Create portfolio card ────────────────────────────────────────────
+//
+// Replaces the old dead-end EmptyState that told users "create a paper
+// portfolio" with no UI to actually do so. Inline form: name + initial
+// cash, POST /api/portfolio, summary auto-refreshes.
+
+interface CreatePortfolioCardProps {
+  showCreate: boolean;
+  setShowCreate: (v: boolean) => void;
+  creatingName: string;
+  setCreatingName: (v: string) => void;
+  creatingCash: string;
+  setCreatingCash: (v: string) => void;
+  creating: boolean;
+  onCreate: () => Promise<void> | void;
+}
+
+function CreatePortfolioCard({
+  showCreate,
+  setShowCreate,
+  creatingName,
+  setCreatingName,
+  creatingCash,
+  setCreatingCash,
+  creating,
+  onCreate,
+}: CreatePortfolioCardProps) {
+  return (
+    <Card className="border-accent/30 bg-accent/[0.04]">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10 text-accent shrink-0">
+            <Briefcase className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-base font-semibold text-text-primary">
+              Set up a paper portfolio
+            </h3>
+            <p className="mt-0.5 text-sm text-text-secondary">
+              Track manual entries (long-term holdings, hypothetical positions, simulated trades)
+              alongside any live broker connection. Cash + cost basis only; no real money.
+            </p>
+          </div>
+        </div>
+
+        {!showCreate ? (
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setShowCreate(true)}>
+              <Plus className="w-4 h-4 mr-1" />
+              Create paper portfolio
+            </Button>
+            <Link
+              href="/dashboard/settings"
+              className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-accent transition-colors px-3 py-2"
+            >
+              …or connect a live broker <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <Input
+                label="Portfolio name"
+                value={creatingName}
+                onChange={(e) => setCreatingName(e.target.value)}
+                placeholder="e.g. Long-term holds"
+                autoFocus
+              />
+            </div>
+            <div className="sm:w-44">
+              <Input
+                label="Initial cash"
+                value={creatingCash}
+                onChange={(e) => setCreatingCash(e.target.value.replace(/[^\d.]/g, ""))}
+                placeholder="10000"
+                inputMode="decimal"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={onCreate} loading={creating} disabled={!creatingName.trim()}>
+                Create
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowCreate(false);
+                  setCreatingName("");
+                  setCreatingCash("10000");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
