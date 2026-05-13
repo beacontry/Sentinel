@@ -2,7 +2,8 @@
 
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, PenSquare } from "lucide-react";
+import { PenSquare } from "lucide-react";
+import { SmartBackButton } from "@/components/ui/smart-back-button";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -99,14 +100,7 @@ export default function PostDetailPage({
     return (
       <div className="p-4 lg:p-6">
         <div className=" mb-6">
-          <Button
-            variant="ghost"
-            size="md"
-            onClick={() => router.push("/dashboard/posts")}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Posts
-          </Button>
+          <SmartBackButton fallbackHref="/dashboard/posts" label="Back to Posts" iconSize={16} />
         </div>
         <EmptyState
           icon={<PenSquare className="h-12 w-12" />}
@@ -124,14 +118,7 @@ export default function PostDetailPage({
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <div className="">
-        <Button
-          variant="ghost"
-          size="md"
-          onClick={() => router.push("/dashboard/posts")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Posts
-        </Button>
+        <SmartBackButton fallbackHref="/dashboard/posts" label="Back to Posts" iconSize={16} />
       </div>
 
       <PostCard

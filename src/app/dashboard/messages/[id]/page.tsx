@@ -5,12 +5,12 @@
 // user post replies.
 
 import { useEffect, useRef, useState, use } from "react";
-import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import { ArrowLeft, Send } from "lucide-react";
+import { Send } from "lucide-react";
+import { SmartBackButton } from "@/components/ui/smart-back-button";
 
 interface ThreadMeta {
   id: string;
@@ -117,9 +117,7 @@ export default function DmThreadPage({
   if (notFound) {
     return (
       <div className="p-4 lg:p-6 max-w-3xl mx-auto">
-        <Link href="/dashboard/messages" className="text-text-muted hover:text-text-primary">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
+        <SmartBackButton fallbackHref="/dashboard/messages" />
         <p className="mt-6 text-center text-sm text-text-muted">Thread not found.</p>
       </div>
     );
@@ -128,9 +126,7 @@ export default function DmThreadPage({
   return (
     <div className="p-4 lg:p-6 space-y-4 max-w-3xl mx-auto">
       <div className="flex items-center gap-3">
-        <Link href="/dashboard/messages" className="text-text-muted hover:text-text-primary">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
+        <SmartBackButton fallbackHref="/dashboard/messages" />
         <div className="min-w-0 flex-1">
           {loading || !other ? (
             <Skeleton className="h-5 w-32" rounded="sm" />
