@@ -32,7 +32,9 @@ const nextConfig: NextConfig = {
   // rely on dynamic imports, file-system reads, or native bindings that
   // don't survive Next.js's bundling pass.
   //
-  //   pdf-parse        → v2 uses pdfjs-dist with dynamic worker imports
+  //   pdf-parse        → v1.x — pinned because v2 pulls modern pdfjs-dist
+  //                       which depends on DOMMatrix (browser global not
+  //                       available in Node Alpine containers)
   //   adm-zip          → reads compiled buffers; bundler misses inner paths
   //   fast-xml-parser  → bundled fine, but kept here for consistency with
   //                       its sibling ingester deps
@@ -45,7 +47,6 @@ const nextConfig: NextConfig = {
   // the throw happens during module load, before route handler executes).
   serverExternalPackages: [
     "pdf-parse",
-    "pdfjs-dist",
     "adm-zip",
     "fast-xml-parser",
     "node-html-parser",
