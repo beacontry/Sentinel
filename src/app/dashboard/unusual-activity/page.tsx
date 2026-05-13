@@ -9,6 +9,7 @@ import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import { Activity, Filter } from "lucide-react";
+import { SymbolPreviewSheet } from "@/components/ui/symbol-preview-sheet";
 
 interface SymbolActivity {
   symbol: string;
@@ -39,6 +40,9 @@ export default function UnusualActivityPage() {
   const [data, setData] = useState<ActivityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAll, setShowAll] = useState(false);
+  // Quick-info drawer state — opens when the user clicks a ticker row.
+  // Previously the symbol cell was plain text with no affordance.
+  const [previewSymbol, setPreviewSymbol] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -118,8 +122,13 @@ export default function UnusualActivityPage() {
             </thead>
             <tbody>
               {filtered.map((s) => (
-                <tr key={s.symbol} className={`border-b border-border/50 ${s.unusual ? "bg-warning/5" : ""}`}>
-                  <td className="py-2 pr-4 font-mono font-medium text-text-primary">{s.symbol}</td>
+                <tr
+                  key={s.symbol}
+                  className={`border-b border-border/50 cursor-pointer hover:bg-bg-hover transition-colors ${s.unusual ? "bg-warning/5" : ""}`}
+                  onClick={() => setPreviewSymbol(s.symbol)}
+                  title="Click for quick info"
+                >
+                  <td className="py-2 pr-4 font-mono font-medium text-accent hover:underline">{s.symbol}</td>
                   <td className="py-2 pr-4 text-text-secondary">{s.sector}</td>
                   <td className="py-2 pr-4 text-right font-mono">${s.price.toFixed(2)}</td>
                   <td className={`py-2 pr-4 text-right font-mono ${s.priceChange >= 0 ? "text-bullish" : "text-bearish"}`}>
@@ -152,6 +161,14 @@ export default function UnusualActivityPage() {
           </table>
         </div>
       </Card>
+
+      {/* Symbol quick-info drawer — opens on row click. Reusable component
+       * that any page with a ticker list can adopt without per-page setup
+       * beyond passing the selected symbol + close handler. */}
+      <SymbolPreviewSheet
+        symbol={previewSymbol}
+        onClose={() => setPreviewSymbol(null)}
+      />
     </div>
   );
 }
