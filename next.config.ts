@@ -27,6 +27,29 @@ const csp = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  // Packages that should run from node_modules at runtime rather than being
+  // bundled by webpack into the standalone output. Used for libs that
+  // rely on dynamic imports, file-system reads, or native bindings that
+  // don't survive Next.js's bundling pass.
+  //
+  //   pdf-parse        → v2 uses pdfjs-dist with dynamic worker imports
+  //   adm-zip          → reads compiled buffers; bundler misses inner paths
+  //   fast-xml-parser  → bundled fine, but kept here for consistency with
+  //                       its sibling ingester deps
+  //   node-html-parser → Cheerio-style; safer external than bundled
+  //
+  // Without this list, the cron/refresh-congress route 500s on first
+  // request because its `node_modules/{pdf-parse,adm-zip,node-html-parser}`
+  // never made it into the .next/standalone output. Symptom: route
+  // returns a plain Next.js 500 HTML page (no JSON body, no log entry —
+  // the throw happens during module load, before route handler executes).
+  serverExternalPackages: [
+    "pdf-parse",
+    "pdfjs-dist",
+    "adm-zip",
+    "fast-xml-parser",
+    "node-html-parser",
+  ],
   async headers() {
     return [
       {
