@@ -7,12 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  ArrowLeft,
   Calendar,
   User,
   Lock,
   FileText,
 } from "lucide-react";
+import { SmartBackButton } from "@/components/ui/smart-back-button";
 
 interface ArticleDetail {
   id: string;
@@ -81,15 +81,9 @@ export default function ArticleDetailPage() {
   if (error || !article) {
     return (
       <div className="p-4 lg:p-6 max-w-3xl mx-auto">
-        <Button
-          variant="ghost"
-          size="md"
-          onClick={() => router.push("/dashboard/articles")}
-          className="mb-6"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Articles
-        </Button>
+        <div className="mb-6">
+          <SmartBackButton fallbackHref="/dashboard/articles" label="Back to Articles" iconSize={16} />
+        </div>
         <Card className="py-12 text-center">
           <FileText className="w-12 h-12 text-text-muted mx-auto mb-3" />
           <p className="text-text-secondary">{error ?? "Article not found"}</p>
@@ -100,15 +94,8 @@ export default function ArticleDetailPage() {
 
   return (
     <div className="p-4 lg:p-6 max-w-3xl mx-auto space-y-6">
-      {/* Back link */}
-      <Button
-        variant="ghost"
-        size="md"
-        onClick={() => router.push("/dashboard/articles")}
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to Articles
-      </Button>
+      {/* Back link — uses browser history when same-origin (so the user returns to wherever they came from, not always articles list) */}
+      <SmartBackButton fallbackHref="/dashboard/articles" label="Back to Articles" iconSize={16} />
 
       {/* Article Header */}
       <div className="">

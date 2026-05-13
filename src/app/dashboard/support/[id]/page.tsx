@@ -5,14 +5,14 @@
 // or priority from the header.
 
 import { useEffect, useState, use } from "react";
-import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import { ArrowLeft, Send, Shield, User } from "lucide-react";
+import { Send, Shield, User } from "lucide-react";
+import { SmartBackButton } from "@/components/ui/smart-back-button";
 
 interface Ticket {
   id: string;
@@ -131,9 +131,7 @@ export default function SupportTicketPage({
   if (notFound) {
     return (
       <div className="p-4 lg:p-6 max-w-3xl mx-auto">
-        <Link href="/dashboard/support" className="text-text-muted hover:text-text-primary">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
+        <SmartBackButton fallbackHref="/dashboard/support" />
         <p className="mt-6 text-center text-sm text-text-muted">Ticket not found.</p>
       </div>
     );
@@ -142,9 +140,7 @@ export default function SupportTicketPage({
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-3xl mx-auto">
       <div className="flex items-center gap-3">
-        <Link href="/dashboard/support" className="text-text-muted hover:text-text-primary">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
+        <SmartBackButton fallbackHref="/dashboard/support" />
         <p className="text-sm text-text-muted">Support</p>
       </div>
 

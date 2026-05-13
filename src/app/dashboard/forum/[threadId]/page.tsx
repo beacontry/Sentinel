@@ -2,7 +2,8 @@
 
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, MessageSquare, Eye, Send } from "lucide-react";
+import { MessageSquare, Eye, Send } from "lucide-react";
+import { SmartBackButton } from "@/components/ui/smart-back-button";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -144,14 +145,7 @@ export default function ThreadDetailPage({
     return (
       <div className="p-4 lg:p-6">
         <div className=" mb-6">
-          <Button
-            variant="ghost"
-            size="md"
-            onClick={() => router.push("/dashboard/forum")}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Forum
-          </Button>
+          <SmartBackButton fallbackHref="/dashboard/forum" label="Back to Forum" iconSize={16} />
         </div>
         <EmptyState
           icon={<MessageSquare className="h-12 w-12" />}
@@ -169,14 +163,7 @@ export default function ThreadDetailPage({
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <div className="">
-        <Button
-          variant="ghost"
-          size="md"
-          onClick={() => router.push("/dashboard/forum")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Forum
-        </Button>
+        <SmartBackButton fallbackHref="/dashboard/forum" label="Back to Forum" iconSize={16} />
       </div>
 
       {/* Thread Header */}
