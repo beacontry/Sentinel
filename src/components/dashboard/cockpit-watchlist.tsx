@@ -9,9 +9,10 @@
 // projecting the watchlist through the analyzer.
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "../ui/badge";
 import { Skeleton } from "../ui/skeleton";
-import { Clock, Eye, X, ChevronDown, Check } from "lucide-react";
+import { Clock, Eye, X, ChevronDown, Check, Star } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
 export interface WatchlistOption {
@@ -201,7 +202,40 @@ function WatchlistSwitcher({
   onSwitch: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [settingDefault, setSettingDefault] = useState<string | null>(null);
   const active = options.find((o) => o.id === activeId);
+  const router = useRouter();
+
+  /**
+   * "Make default" — promotes the given list to be the default for this
+   * user. Without this affordance users had to navigate to
+   * /dashboard/watchlists to change their default; user feedback flagged
+   * this as undiscoverable. Now it's two-clicks-from-anywhere (open
+   * dropdown → click ★).
+   *
+   * Calls PATCH /api/watchlists/[id] with { setDefault: true } and uses
+   * router.refresh() to repopulate the WatchlistOption[] coming from
+   * the parent so the new DEFAULT badge moves immediately.
+   */
+  async function makeDefault(id: string) {
+    setSettingDefault(id);
+    try {
+      const res = await fetch(`/api/watchlists/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ setDefault: true }),
+      });
+      if (res.ok) {
+        // Refresh in place so the badge moves to the new default.
+        router.refresh();
+      }
+    } catch {
+      // Non-critical — user can retry from the manage page
+    } finally {
+      setSettingDefault(null);
+      setOpen(false);
+    }
+  }
 
   return (
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
@@ -219,29 +253,49 @@ function WatchlistSwitcher({
         <DropdownMenu.Content
           align="start"
           sideOffset={6}
-          className="z-50 min-w-[220px] max-w-[280px] rounded-lg border border-border bg-bg-elevated p-1 animate-scale-in shadow-lg"
+          className="z-50 min-w-[260px] max-w-[320px] rounded-lg border border-border bg-bg-elevated p-1 animate-scale-in shadow-lg"
         >
           {options.map((o) => (
-            <DropdownMenu.Item
+            <div
               key={o.id}
-              onSelect={() => onSwitch(o.id)}
-              className="flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm
-                text-text-secondary hover:bg-bg-hover hover:text-text-primary
-                focus:bg-bg-hover focus:text-text-primary cursor-pointer outline-none"
+              className="flex items-center justify-between gap-2 rounded-md text-sm hover:bg-bg-hover focus-within:bg-bg-hover"
             >
-              <span className="flex items-center gap-2 min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={() => {
+                  onSwitch(o.id);
+                  setOpen(false);
+                }}
+                className="flex items-center gap-2 min-w-0 flex-1 px-3 py-2 text-left
+                  text-text-secondary hover:text-text-primary cursor-pointer outline-none"
+              >
                 <Check
                   className={`h-3.5 w-3.5 shrink-0 ${o.id === activeId ? "text-accent" : "text-transparent"}`}
                 />
-                <span className="truncate">{o.name}</span>
+                <span className="truncate flex-1">{o.name}</span>
                 {o.isDefault && (
                   <Badge variant="default" className="text-[9px] px-1 py-0">DEFAULT</Badge>
                 )}
-              </span>
-              <span className="text-[10px] font-mono text-text-muted shrink-0">
-                {o.itemCount}
-              </span>
-            </DropdownMenu.Item>
+                <span className="text-[10px] font-mono text-text-muted shrink-0">
+                  {o.itemCount}
+                </span>
+              </button>
+              {!o.isDefault && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    makeDefault(o.id);
+                  }}
+                  disabled={settingDefault !== null}
+                  title="Make default — used by every other page as 'your watchlist'"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-elevated hover:text-warning transition-colors disabled:opacity-40 mr-1"
+                  aria-label={`Make ${o.name} the default watchlist`}
+                >
+                  <Star className={`w-3.5 h-3.5 ${settingDefault === o.id ? "animate-pulse text-warning" : ""}`} />
+                </button>
+              )}
+            </div>
           ))}
           <DropdownMenu.Separator className="my-1 h-px bg-border" />
           <DropdownMenu.Item

@@ -25,8 +25,8 @@ import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { AnalysisResult } from "@/types";
-import { SignalFeed, type SignalFeedItem } from "@/components/dashboard/signal-feed";
 import { SignalDetails } from "@/components/dashboard/signal-details";
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
 import { PriceChart, type ChartEvent } from "@/components/dashboard/price-chart";
 import { TradingViewChart } from "@/components/dashboard/tradingview-chart";
 import { IntelligenceTabs } from "@/components/dashboard/intelligence-tabs";
@@ -36,7 +36,6 @@ import {
 } from "@/components/dashboard/cockpit-watchlist";
 import { PageIntro } from "@/components/layout/page-intro";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
@@ -56,20 +55,9 @@ const FOCUS_STORAGE_KEY = "sentinel-focus-mode";
 
 const POPULAR_SYMBOLS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"];
 
-// Min confidence to surface a signal in the panel. Lower noise, focus on
-// conviction. The screener may have hundreds of low-confidence HOLDs that
-// would drown out the signal.
-const SIGNAL_PANEL_MIN_CONFIDENCE = 0.6;
-const SIGNAL_PANEL_MAX = 8;
-
-// Screener result shape (subset of the wire format).
-interface ScreenerCacheItem {
-  symbol: string;
-  signal: SignalFeedItem["signal"];
-  confidence: number;
-  price: number;
-  indicators?: { sma_20?: number | null };
-}
+// (Screener cache constants + ScreenerCacheItem type removed when the
+// Signals panel was deleted on 2026-05-13. Users get signals from
+// /dashboard/screener directly now.)
 
 // Wrap the body in Suspense because useSearchParams() is a client-side
 // hook that opts the route out of static prerendering. Next.js 15
@@ -166,10 +154,6 @@ function AnalysisCockpit() {
     }
   }
 
-  // Phase B.2 — Signals panel pulled from screener cache, not the watchlist
-  const [signalItems, setSignalItems] = useState<SignalFeedItem[]>([]);
-  const [signalsLoading, setSignalsLoading] = useState(true);
-
   // Phase B.1 — Recently viewed (localStorage-backed)
   const { entries: recentEntries, push: pushRecent } = useRecentlyViewed();
 
@@ -237,55 +221,8 @@ function AnalysisCockpit() {
     }
   }, [activeWatchlistId]);
 
-  // ─── Pull screener cache for the Signals panel ──────────────────
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const res = await fetch("/api/screener");
-        if (!res.ok || cancelled) {
-          setSignalsLoading(false);
-          return;
-        }
-        const data = await res.json();
-        const results: ScreenerCacheItem[] = data.results ?? [];
-        // Filter to non-HOLD signals with non-trivial conviction, then take
-        // the top N by confidence. The screener may have hundreds of results.
-        const filtered = results
-          .filter(
-            (r) =>
-              r.signal !== "HOLD" &&
-              r.confidence >= SIGNAL_PANEL_MIN_CONFIDENCE
-          )
-          .sort((a, b) => b.confidence - a.confidence)
-          .slice(0, SIGNAL_PANEL_MAX)
-          .map((r): SignalFeedItem => ({
-            symbol: r.symbol,
-            signal: r.signal,
-            confidence: r.confidence,
-            price: r.price,
-            change:
-              r.indicators?.sma_20 != null
-                ? ((r.price - r.indicators.sma_20) / r.indicators.sma_20) * 100
-                : undefined,
-          }));
-        if (!cancelled) setSignalItems(filtered);
-      } catch {
-        // Non-critical — empty signals just means screener hasn't scanned yet
-      } finally {
-        if (!cancelled) setSignalsLoading(false);
-      }
-    }
-    load();
-    // Refresh every 30s — the screener cache TTL is 5min so we won't see
-    // changes more often than that, but the cheap GET keeps stale data
-    // from hanging around if a fresh scan completes.
-    const interval = setInterval(load, 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
+  // Signals panel removed 2026-05-13 — screener cache fetch deleted with
+  // it. Users get top-conviction signals on /dashboard/screener.
 
   // ─── Analyze a single symbol ────────────────────────────────────
   const analyzeSymbol = useCallback(async (symbol: string) => {
@@ -503,7 +440,7 @@ function AnalysisCockpit() {
         stats={[
           { label: "Active List", value: watchlistOptions.find((w) => w.id === activeWatchlistId)?.name ?? "—", tone: "brand" },
           { label: "Symbols", value: symbols.length },
-          { label: "Market Signals", value: signalItems.length },
+          { label: "Selected", value: selectedSymbol ?? "—" },
           { label: "Desk Tempo", value: isAnyLoading ? "Refreshing" : "Stable", tone: isAnyLoading ? "brand" : "bullish" },
         ]}
         actions={
@@ -532,31 +469,21 @@ function AnalysisCockpit() {
           <div className="shrink-0 border-b border-border bg-bg-secondary">
             <div className="flex items-center gap-2 overflow-x-auto px-4 py-3">
               <span className="text-[10px] uppercase tracking-wider text-text-muted shrink-0">
-                Market Signals
+                Watchlist
               </span>
-              {signalsLoading && signalItems.length === 0 ? (
-                <div className="flex gap-2">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton key={i} width="80px" height="32px" rounded="lg" />
-                  ))}
-                </div>
-              ) : signalItems.length === 0 ? (
-                <span className="text-xs text-text-muted">No signals yet — screener still scanning</span>
+              {symbols.length === 0 ? (
+                <span className="text-xs text-text-muted">Empty — add symbols below</span>
               ) : (
-                signalItems.map((item) => {
-                  const isSelected = selectedSymbol === item.symbol;
-                  const isBull = item.signal === "BUY" || item.signal === "STRONG_BUY";
-                  const isBear = item.signal === "SELL" || item.signal === "STRONG_SELL";
+                symbols.slice(0, 12).map((sym) => {
+                  const isSelected = selectedSymbol === sym;
                   return (
                     <button
-                      key={item.symbol}
-                      onClick={() => handleSelectSignal(item.symbol)}
+                      key={sym}
+                      onClick={() => handleSelectSignal(sym)}
                       className={`shrink-0 flex min-h-[38px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-mono transition-all
                         ${isSelected ? "bg-accent/15 text-accent border-accent/30" : "bg-bg-secondary text-text-secondary border-border hover:border-border-hover"}`}
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full ${isBull ? "bg-bullish" : isBear ? "bg-bearish" : "bg-warning"}`} />
-                      {item.symbol}
-                      <span className="text-[10px] text-text-muted">{Math.round(item.confidence * 100)}%</span>
+                      {sym}
                     </button>
                   );
                 })
@@ -623,192 +550,200 @@ function AnalysisCockpit() {
           </div>
         </div>
 
-        {/* ─── Desktop 3-column ─── */}
-        <div
-          className="hidden lg:grid flex-1 min-h-0"
-          style={{
-            gridTemplateColumns: "18rem minmax(0,1fr) 26rem",
-            gridTemplateRows: "1fr",
-            height: "100%",
-          }}
-        >
-          <div className="flex min-h-0 flex-col border-r border-border bg-bg-secondary">
-            <div className="flex-1 min-h-0 border-b border-border">
-              <SignalFeed
-                signals={signalItems}
-                selectedSymbol={selectedSymbol}
-                onSelectSignal={handleSelectSignal}
-                loading={signalsLoading}
-              />
-            </div>
+        {/* ─── Desktop 3-column with manual resize ───
+         *
+         * Big restructure 2026-05-13:
+         *   - Removed the SignalFeed panel from the left column. Users
+         *     get signals on /screener (the dedicated page) — having
+         *     them on Analysis too was duplication and split attention.
+         *     Left column is now pure watchlist (more breathing room).
+         *   - Replaced fixed 18rem | flex | 26rem grid with
+         *     react-resizable-panels so users can drag handles between
+         *     columns AND between the chart + intelligence panels.
+         *   - Sizes persist per-device via autoSaveId on each PanelGroup.
+         *   - Charts now use height="fill" so they actually grow into
+         *     the resized panel space (the 520px hardcode left half the
+         *     screen blank).
+         */}
+        <div className="hidden lg:block flex-1 min-h-0" style={{ height: "100%" }}>
+          <PanelGroup orientation="horizontal" id="analysis-cockpit-h" className="h-full">
+            {/* Left: Watchlist + add controls */}
+            <Panel defaultSize={20} minSize={14} maxSize={35} id="left">
+              <div className="flex h-full min-h-0 flex-col border-r border-border bg-bg-secondary">
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <CockpitWatchlist
+                    symbols={symbols}
+                    selectedSymbol={selectedSymbol}
+                    onSelectSymbol={handleSelectSignal}
+                    onRemoveSymbol={handleRemoveSymbol}
+                    analyses={watchlistAnalyses}
+                    loading={isAnyLoading}
+                    watchlistOptions={watchlistOptions}
+                    activeWatchlistId={activeWatchlistId}
+                    onSwitchWatchlist={switchToList}
+                    recentEntries={recentEntries}
+                  />
+                </div>
 
-            <div className="flex shrink-0 flex-col overflow-hidden" style={{ maxHeight: "55%" }}>
-              <div className="flex-1 min-h-0 overflow-hidden">
-                <CockpitWatchlist
-                  symbols={symbols}
-                  selectedSymbol={selectedSymbol}
-                  onSelectSymbol={handleSelectSignal}
-                  onRemoveSymbol={handleRemoveSymbol}
-                  analyses={watchlistAnalyses}
-                  loading={isAnyLoading}
-                  watchlistOptions={watchlistOptions}
-                  activeWatchlistId={activeWatchlistId}
-                  onSwitchWatchlist={switchToList}
-                  recentEntries={recentEntries}
-                />
-              </div>
-
-              <div className="shrink-0 space-y-2 border-t border-border p-3">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleAddSymbol(newSymbol);
-                  }}
-                  className="flex gap-2"
-                >
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
-                    <input
-                      type="text"
-                      value={newSymbol}
-                      onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
-                      placeholder="Add to watchlist..."
-                      maxLength={10}
-                      className="w-full rounded-lg border border-border bg-bg-elevated pl-9 pr-3 py-1.5
-                        text-xs text-text-primary placeholder:text-text-muted font-mono
-                        focus:outline-none focus:border-accent/50 min-h-[38px]"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={!newSymbol.trim()}
-                    className="min-h-[38px] rounded-lg border border-border px-2.5 py-1.5 text-text-muted
-                      transition-colors hover:border-accent/30 hover:text-accent disabled:opacity-30
-                      disabled:cursor-not-allowed"
+                <div className="shrink-0 space-y-2 border-t border-border p-3">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleAddSymbol(newSymbol);
+                    }}
+                    className="flex gap-2"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </form>
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
+                      <input
+                        type="text"
+                        value={newSymbol}
+                        onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
+                        placeholder="Add to watchlist..."
+                        maxLength={10}
+                        className="w-full rounded-lg border border-border bg-bg-elevated pl-9 pr-3 py-1.5
+                          text-xs text-text-primary placeholder:text-text-muted font-mono
+                          focus:outline-none focus:border-accent/50 min-h-[38px]"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={!newSymbol.trim()}
+                      className="min-h-[38px] rounded-lg border border-border px-2.5 py-1.5 text-text-muted
+                        transition-colors hover:border-accent/30 hover:text-accent disabled:opacity-30
+                        disabled:cursor-not-allowed"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </form>
 
-                {symbols.length === 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {POPULAR_SYMBOLS.map((sym) => (
+                  {symbols.length === 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {POPULAR_SYMBOLS.map((sym) => (
+                        <button
+                          key={sym}
+                          onClick={() => handleAddSymbol(sym)}
+                          className="rounded-full border border-border px-2.5 py-1 text-[10px] font-mono
+                            text-text-muted transition-colors hover:border-accent/30 hover:text-accent"
+                        >
+                          + {sym}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedSymbol && (
+                    <div className="grid grid-cols-2 gap-2">
                       <button
-                        key={sym}
-                        onClick={() => handleAddSymbol(sym)}
-                        className="rounded-full border border-border px-2.5 py-1 text-[10px] font-mono
-                          text-text-muted transition-colors hover:border-accent/30 hover:text-accent"
+                        onClick={() => {
+                          if (selectedSymbol) analyzeSymbol(selectedSymbol);
+                        }}
+                        disabled={isSelectedLoading}
+                        className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-[16px]
+                          border border-border px-3 py-1.5 text-xs text-text-muted transition-colors
+                          hover:border-accent/30 hover:text-accent disabled:opacity-30"
                       >
-                        + {sym}
+                        <RefreshCw className={`w-3 h-3 ${isSelectedLoading ? "animate-spin" : ""}`} />
+                        Refresh
                       </button>
-                    ))}
-                  </div>
-                )}
-
-                {selectedSymbol && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => {
-                        if (selectedSymbol) analyzeSymbol(selectedSymbol);
-                      }}
-                      disabled={isSelectedLoading}
-                      className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-[16px]
-                        border border-border px-3 py-1.5 text-xs text-text-muted transition-colors
-                        hover:border-accent/30 hover:text-accent disabled:opacity-30"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isSelectedLoading ? "animate-spin" : ""}`} />
-                      Refresh
-                    </button>
-                    <Link
-                      href={`/dashboard/trade/${encodeURIComponent(selectedSymbol)}`}
-                      className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-[16px]
-                        border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent transition-colors
-                        hover:bg-accent/20"
-                    >
-                      Trade
-                    </Link>
-                  </div>
-                )}
+                      <Link
+                        href={`/dashboard/trade/${encodeURIComponent(selectedSymbol)}`}
+                        className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-[16px]
+                          border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent transition-colors
+                          hover:bg-accent/20"
+                      >
+                        Trade
+                      </Link>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          </div>
+            </Panel>
+            <ResizeHandle direction="horizontal" />
 
-          <div
-            className="min-w-0 min-h-0"
-            style={{
-              display: "grid",
-              gridTemplateRows: "65% 35%",
-              height: "100%",
-            }}
-          >
-            <div className="min-h-0 overflow-hidden p-3 flex flex-col">
-              {/* Chart engine toggle + fullscreen button */}
-              {selectedSymbol && (
-                <div className="flex items-center justify-end gap-2 mb-2">
-                  <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
-                    <button
-                      onClick={() => switchChartMode("engine")}
-                      className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
-                        ${chartMode === "engine"
-                          ? "bg-bg-elevated text-text-primary"
-                          : "text-text-muted hover:text-text-secondary"
-                        }`}
-                      title="Sentinel's chart with signal/earnings markers"
-                    >
-                      Engine view
-                    </button>
-                    <button
-                      onClick={() => switchChartMode("tradingview")}
-                      className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
-                        ${chartMode === "tradingview"
-                          ? "bg-bg-elevated text-text-primary"
-                          : "text-text-muted hover:text-text-secondary"
-                        }`}
-                      title="TradingView Advanced Chart with full drawing tools"
-                    >
-                      TradingView
-                    </button>
+            {/* Center: chart + intelligence (vertical sub-split) */}
+            <Panel defaultSize={55} minSize={30} id="center">
+              <PanelGroup orientation="vertical" id="analysis-cockpit-v" className="h-full">
+                <Panel defaultSize={65} minSize={30} id="chart">
+                  <div className="h-full min-h-0 overflow-hidden p-3 flex flex-col">
+                    {/* Chart engine toggle + fullscreen button */}
+                    {selectedSymbol && (
+                      <div className="flex items-center justify-end gap-2 mb-2">
+                        <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
+                          <button
+                            onClick={() => switchChartMode("engine")}
+                            className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
+                              ${chartMode === "engine"
+                                ? "bg-bg-elevated text-text-primary"
+                                : "text-text-muted hover:text-text-secondary"
+                              }`}
+                            title="Sentinel's chart with signal/earnings markers"
+                          >
+                            Engine view
+                          </button>
+                          <button
+                            onClick={() => switchChartMode("tradingview")}
+                            className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
+                              ${chartMode === "tradingview"
+                                ? "bg-bg-elevated text-text-primary"
+                                : "text-text-muted hover:text-text-secondary"
+                              }`}
+                            title="TradingView Advanced Chart with full drawing tools"
+                          >
+                            TradingView
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => setChartFullscreen(true)}
+                          className="rounded-md border border-border bg-bg-secondary p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+                          title="Expand chart to full screen (Esc to exit)"
+                          aria-label="Expand chart to full screen"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                    {selectedSymbol && chartMode === "tradingview" ? (
+                      <div className="flex-1 min-h-0">
+                        <TradingViewChart symbol={selectedSymbol} interval="D" height="fill" />
+                      </div>
+                    ) : selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
+                      <div className="flex-1 min-h-0">
+                        <PriceChart analysis={selectedAnalysis} height="fill" events={chartEvents} />
+                      </div>
+                    ) : isSelectedLoading ? (
+                      <div className="flex h-full items-center justify-center rounded-xl border border-border bg-bg-secondary">
+                        <div className="text-center">
+                          <div className="mx-auto mb-3 h-8 w-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
+                          <p className="text-sm text-text-secondary">Analyzing {selectedSymbol}...</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <DesktopEmptyState
+                        hasSymbols={symbols.length > 0}
+                        selectedSymbol={selectedSymbol}
+                        onAddSymbol={handleAddSymbol}
+                      />
+                    )}
                   </div>
-                  <button
-                    onClick={() => setChartFullscreen(true)}
-                    className="rounded-md border border-border bg-bg-secondary p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-                    title="Expand chart to full screen (Esc to exit)"
-                    aria-label="Expand chart to full screen"
-                  >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-              {selectedSymbol && chartMode === "tradingview" ? (
-                <div className="flex-1 min-h-0">
-                  <TradingViewChart symbol={selectedSymbol} interval="D" height={520} />
-                </div>
-              ) : selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
-                <PriceChart analysis={selectedAnalysis} height={undefined} events={chartEvents} />
-              ) : isSelectedLoading ? (
-                <div className="flex h-full items-center justify-center rounded-xl border border-border bg-bg-secondary">
-                  <div className="text-center">
-                    <div className="mx-auto mb-3 h-8 w-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
-                    <p className="text-sm text-text-secondary">Analyzing {selectedSymbol}...</p>
+                </Panel>
+                <ResizeHandle direction="vertical" />
+                <Panel defaultSize={35} minSize={15} id="intelligence">
+                  <div className="h-full min-h-0 overflow-hidden">
+                    <IntelligenceTabs symbol={selectedSymbol} analysis={selectedAnalysis} />
                   </div>
-                </div>
-              ) : (
-                <DesktopEmptyState
-                  hasSymbols={symbols.length > 0}
-                  selectedSymbol={selectedSymbol}
-                  onAddSymbol={handleAddSymbol}
-                />
-              )}
-            </div>
+                </Panel>
+              </PanelGroup>
+            </Panel>
+            <ResizeHandle direction="horizontal" />
 
-            <div className="min-h-0 overflow-hidden">
-              <IntelligenceTabs symbol={selectedSymbol} analysis={selectedAnalysis} />
-            </div>
-          </div>
-
-          <div className="min-h-0 overflow-y-auto border-l border-border bg-bg-secondary">
-            <SignalDetails analysis={selectedAnalysis} loading={isSelectedLoading} />
-          </div>
+            {/* Right: signal details */}
+            <Panel defaultSize={25} minSize={16} maxSize={40} id="right">
+              <div className="h-full min-h-0 overflow-y-auto border-l border-border bg-bg-secondary">
+                <SignalDetails analysis={selectedAnalysis} loading={isSelectedLoading} />
+              </div>
+            </Panel>
+          </PanelGroup>
         </div>
       </div>
 
@@ -837,6 +772,27 @@ function AnalysisCockpit() {
         )}
       </ChartFullscreenOverlay>
     </div>
+  );
+}
+
+// ─── Resize handle ──────────────────────────────────────────────
+//
+// Draggable divider between panels. Thin (4px) by default so it doesn't
+// chew screen space; the cursor changes on hover and the line widens
+// slightly so the affordance is discoverable. Color uses the existing
+// border token so it disappears into the layout when at rest.
+
+function ResizeHandle({ direction }: { direction: "horizontal" | "vertical" }) {
+  const isHorizontal = direction === "horizontal";
+  return (
+    <PanelResizeHandle
+      className={
+        isHorizontal
+          ? "relative w-1 bg-border hover:bg-accent/60 transition-colors data-[resizing=true]:bg-accent"
+          : "relative h-1 bg-border hover:bg-accent/60 transition-colors data-[resizing=true]:bg-accent"
+      }
+      style={{ cursor: isHorizontal ? "col-resize" : "row-resize" }}
+    />
   );
 }
 
