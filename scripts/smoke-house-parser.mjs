@@ -10,14 +10,14 @@
 // Reads PDFs from /tmp/houseFD/ (or %TMP%\houseFD on Windows). Doesn't
 // hit any DB. Doesn't ingest anything. Just prints what the parser sees.
 
-import { PDFParse } from "pdf-parse";
+import pdfParse from "pdf-parse";
 import fs from "fs";
 import path from "path";
 
 const TXN_REGEX =
-  /(?:(SP|JT|DC|--)\s+)?(.+?)\s*\(([A-Z][A-Z0-9.\-]{0,9})\)\s*(?:\[[A-Z]+\]\s*)?(P|S|E)(?:\s*\(partial\))?\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+\$([\d,]+)\s*-\s*\$([\d,]+)/g;
+  /(?:(SP|JT|DC|--)\s+)?(.+?)\s*\(([A-Z][A-Z0-9.\-]{0,9})\)\s*(?:\[[A-Z]+\]\s*)?(P|S|E)(?:\s*\(partial\))?\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*\$([\d,]+)\s*-\s*\$([\d,]+)/g;
 
-const NAME_REGEX = /Name:\s+(.+?)\s+Status:/;
+const NAME_REGEX = /Name:\s*(.+?)\s*Status:/;
 const FILING_ID_REGEX = /Filing ID\s*#?\s*(\d+)/;
 
 function sanitizeAssetDescription(raw) {
@@ -27,11 +27,11 @@ function sanitizeAssetDescription(raw) {
   const fsMatch = s.match(/F\s+S\s+:\s+\S+\s*(.*)$/);
   if (fsMatch) {
     let rest = fsMatch[1];
-    const soMatch = rest.match(/^S\s+O\s+:.*?(?=\s\b(SP|JT|DC|--)\b\s)/);
+    const soMatch = rest.match(/^S\s+O\s+:.*?(?=\s(SP|JT|DC|--))/);
     if (soMatch) rest = rest.slice(soMatch[0].length);
     if (rest.trim().length > 0) s = rest;
   }
-  s = s.replace(/^\s*(SP|JT|DC|--)\s+/, "");
+  s = s.replace(/^\s*(SP|JT|DC|--)\s*/, "");
   s = s.trim().replace(/\s+/g, " ");
   if (s.length > 200) s = "..." + s.slice(-80);
   return s;
@@ -39,9 +39,8 @@ function sanitizeAssetDescription(raw) {
 
 async function parseFile(pdfPath) {
   const buf = fs.readFileSync(pdfPath);
-  const parser = new PDFParse({ data: new Uint8Array(buf) });
-  try {
-    const { text } = await parser.getText();
+  const { text } = await pdfParse(buf);
+  {
     const flat = text.replace(/[\s\x00-\x1f]+/g, " ");
     const filer = (flat.match(NAME_REGEX) ?? [])[1] ?? "(unknown)";
     const filingId = (flat.match(FILING_ID_REGEX) ?? [])[1] ?? "(unknown)";
@@ -61,8 +60,6 @@ async function parseFile(pdfPath) {
       });
     }
     return { filer, filingId, txns };
-  } finally {
-    await parser.destroy();
   }
 }
 

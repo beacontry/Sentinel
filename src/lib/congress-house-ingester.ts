@@ -28,7 +28,7 @@
  */
 
 import AdmZip from "adm-zip";
-import { PDFParse } from "pdf-parse";
+import pdfParse from "pdf-parse";
 import { XMLParser } from "fast-xml-parser";
 import { db } from "./db";
 import { congressionalTrades } from "./db/schema/congressional-trades";
@@ -84,10 +84,19 @@ interface HouseXmlMember {
 //   8: amount range upper bound (digits + commas, no $)
 // "(partial)" qualifier presence is detected via a second pass on the
 // full match string, not captured here.
+//
+// Whitespace is `\s*` rather than `\s+` between most fields because
+// pdf-parse v1 produces text with adjacent text runs concatenated:
+// `S07/28/202508/11/2025$1,001 - $15,000`. The `(?:(SP|JT|DC|--)\s+)?`
+// owner prefix still requires whitespace (else "SP" gets confused with
+// the start of an asset name).
 const TXN_REGEX =
-  /(?:(SP|JT|DC|--)\s+)?(.+?)\s*\(([A-Z][A-Z0-9.\-]{0,9})\)\s*(?:\[[A-Z]+\]\s*)?(P|S|E)(?:\s*\(partial\))?\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+\$([\d,]+)\s*-\s*\$([\d,]+)/g;
+  /(?:(SP|JT|DC|--)\s+)?(.+?)\s*\(([A-Z][A-Z0-9.\-]{0,9})\)\s*(?:\[[A-Z]+\]\s*)?(P|S|E)(?:\s*\(partial\))?\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*\$([\d,]+)\s*-\s*\$([\d,]+)/g;
 
-const NAME_REGEX = /Name:\s+(.+?)(?:\s+Status:|\s*$)/m;
+// Name regex uses `\s*` because pdf-parse v1 strips the space after
+// "Name:". So input may be either "Name: Hon. Foo Status:" (v2) or
+// "Name:Hon. Foo Status:" (v1).
+const NAME_REGEX = /Name:\s*(.+?)\s*Status:/m;
 const FILING_ID_REGEX = /Filing ID\s*#?\s*(\d+)/;
 
 // ─── Normalization helpers ────────────────────────────────────────────────
@@ -150,14 +159,19 @@ function sanitizeAssetDescription(raw: string): string {
     // Cut subholding sentence at next owner code (SP/JT/DC/--) which is
     // the form's literal separator between rows. Don't stop at the first
     // capitalized word — the subholding itself often contains capitalized
-    // names ("R.W. Allen & Associates, Inc.").
-    const soMatch = rest.match(/^S\s+O\s+:.*?(?=\s\b(SP|JT|DC|--)\b\s)/);
+    // names ("R.W. Allen & Associates, Inc."). pdf-parse v1 may strip the
+    // trailing space after the owner code ("SPThermo"), so lookahead only
+    // requires the leading whitespace + owner code, not whitespace after.
+    const soMatch = rest.match(/^S\s+O\s+:.*?(?=\s(SP|JT|DC|--))/);
     if (soMatch) rest = rest.slice(soMatch[0].length);
     if (rest.trim().length > 0) s = rest;
   }
 
-  // 3) Drop leading owner code if it survived (e.g. "SP " at start)
-  s = s.replace(/^\s*(SP|JT|DC|--)\s+/, "");
+  // 3) Drop leading owner code if it survived. pdf-parse v1 strips the
+  //    space between owner code and asset name, so input may be either
+  //    "SP Netflix, Inc." (v2) or "SPNetflix, Inc." (v1) — both leave
+  //    an owner code prefix the asset description shouldn't include.
+  s = s.replace(/^\s*(SP|JT|DC|--)\s*/, "");
 
   // 4) Collapse + trim
   s = s.trim().replace(/\s+/g, " ");
@@ -245,15 +259,13 @@ export interface ParsedPtr {
 export async function parsePtrPdf(pdfBuffer: Buffer): Promise<ParsedPtr> {
   let text: string;
   try {
-    // pdf-parse v2 uses a class-based API. Convert Node Buffer to Uint8Array
-    // for compatibility with the underlying pdfjs typing.
-    const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
-    try {
-      const result = await parser.getText();
-      text = result.text;
-    } finally {
-      await parser.destroy();
-    }
+    // pdf-parse v1 functional API. We deliberately pinned to v1 because v2
+    // pulls a modern pdfjs-dist that depends on DOMMatrix (browser global,
+    // missing in Node — fails in the prod Alpine container with
+    // "ReferenceError: DOMMatrix is not defined"). v1 ships pdfjs-dist 1.x
+    // which has zero DOM dependencies and works in plain Node.
+    const result = await pdfParse(pdfBuffer);
+    text = result.text;
   } catch (err) {
     log.warn(
       { err: err instanceof Error ? err.message : "unknown" },
