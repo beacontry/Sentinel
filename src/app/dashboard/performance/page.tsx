@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SymbolLink } from "@/components/ui/symbol-link";
@@ -8,6 +8,8 @@ import { BarChart3, Target, TrendingUp, TrendingDown, PieChart } from "lucide-re
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
+import { usePolling } from "@/hooks/usePolling";
+import { POLLING_INTERVALS } from "@/lib/config";
 
 interface PerformanceData {
   overall: {
@@ -56,23 +58,31 @@ export default function PerformancePage() {
   const [attribution, setAttribution] = useState<AttributionData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [perfRes, attrRes] = await Promise.all([
-          fetch("/api/performance"),
-          fetch("/api/performance/attribution"),
-        ]);
-        if (perfRes.ok) setData(await perfRes.json());
-        if (attrRes.ok) setAttribution(await attrRes.json());
-      } catch {
-        // Silent
-      } finally {
-        setLoading(false);
-      }
+  // Periodic refresh — previously one-shot on mount, so data went stale
+  // as soon as a new trade closed. dashboardRefresh (60s) is the right
+  // cadence: trade fills land every few minutes at most, more frequent
+  // polling just burns the DB query budget. usePolling pauses on Page
+  // Visibility hidden so background tabs aren't churning.
+  const refresh = useCallback(async () => {
+    try {
+      const [perfRes, attrRes] = await Promise.all([
+        fetch("/api/performance"),
+        fetch("/api/performance/attribution"),
+      ]);
+      if (perfRes.ok) setData(await perfRes.json());
+      if (attrRes.ok) setAttribution(await attrRes.json());
+    } catch {
+      // Silent — keep showing last successful data.
+    } finally {
+      setLoading(false);
     }
-    load();
   }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  usePolling(refresh, POLLING_INTERVALS.dashboardRefresh);
 
   if (loading) {
     return (
