@@ -21,8 +21,8 @@ interface TradingViewChartProps {
   symbol: string;
   /** "1", "5", "15", "60", "D", "W". Default "D" (daily). */
   interval?: string;
-  /** Container height in pixels. Default 600. */
-  height?: number;
+  /** Container height in pixels. Default 600. Pass `"fill"` (or undefined when wrapped in a sized container) to fill the parent — used by the fullscreen overlay where the parent is the viewport. */
+  height?: number | "fill";
 }
 
 declare global {
@@ -107,10 +107,14 @@ export function TradingViewChart({
     // constructor alive across mounts which is what we want.
   }, [symbol, interval, theme]);
 
+  // height === "fill" → take parent's full height (used by the
+  // fullscreen overlay). Otherwise it's a number of pixels.
+  const heightStyle: string = height === "fill" ? "100%" : `${height}px`;
+
   return (
     <div
       ref={containerRef}
-      style={{ height: `${height}px`, width: "100%" }}
+      style={{ height: heightStyle, width: "100%" }}
       className="rounded-lg overflow-hidden border border-border bg-bg-secondary"
     />
   );
