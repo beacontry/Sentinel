@@ -376,6 +376,28 @@ Gate ordering inside `canPlaceBuyOrder()`: wash-sale → PDT → notional → ra
 
 **Mode-compare backtest** at `/dashboard/backtest/mode-compare?symbol=AAPL` runs all 6 comparable modes (5 base + adaptive; `intraday` + `tactical-smart` excluded) against the same symbol+date-range. Stats table + equity-curve overlay + adaptive's modeTimeline visualization.
 
+## Congressional trades (official source)
+
+`/dashboard/congress` and `/api/congress` read from the local `congressional_trades` table (migration `0031`), which is populated by the daily refresh cron from the official House Clerk bulk PTR archive at `disclosures-clerk.house.gov/public_disc/financial-pdfs/{YEAR}FD.ZIP`. Replaces the previous Finnhub `/stock/congressional-trading` integration that was moved to a paid tier in May 2026.
+
+**Ingestion pipeline** (`src/lib/congress-house-ingester.ts`):
+1. Fetch bulk ZIP (~80 KB)
+2. Parse XML index (`fast-xml-parser`) → filter `FilingType="P"` (Periodic Transaction Report)
+3. For each PTR, fetch PDF + extract text (`pdf-parse` v2 class API)
+4. Strip NUL bytes from extracted text (PDF emits them around form-field markers)
+5. Regex-extract transaction rows: `(OWNER)? ASSET (TICKER) [TYPE] {P|S|E} MM/DD/YYYY MM/DD/YYYY $X - $Y`
+6. Filter out Treasury CUSIPs (`isLikelyStockTicker`)
+7. Sanitize asset descriptions (`sanitizeAssetDescription` — strips form preamble + inter-row footer leakage)
+8. Upsert with `ON CONFLICT DO NOTHING` against the unique constraint `(chamber, filer_name, transaction_date, ticker, transaction_type, amount_from)`
+
+**Concurrency:** 5 PDFs in parallel with 250 ms pacing between batches. ~500 PTRs/year × ~3s avg ≈ 5 min per year.
+
+**Cron:** `GET /api/cron/refresh-congress` (auth via `x-cron-secret` header against `CRON_SECRET` env). Pulls current year + (in Jan-Feb) prior year to cover late filings across the year boundary. Schedule daily at 6 AM ET via external scheduler (Cloudflare cron / GitHub Action / droplet crontab).
+
+**Backfill:** `npx tsx scripts/backfill-congress.ts --years 2026,2025,2024`. Idempotent — re-running just skips duplicates.
+
+**Senate coverage:** deferred — Phase 2 will add `efdsearch.senate.gov` (CSRF + terms-accept flow + HTML/PDF parsers) populating the same table with `chamber='Senate'`. Currently only House (~80% of total disclosed trading by volume).
+
 ## AI Providers & System Configuration
 
 **All AI flows go through Groq (`llama-3.3-70b-versatile`)** — Insights, Quick Insight widget, hybrid AI scoring + sentiment layers, filings chat, market digest, AI chat panel, and the Recent Trades **AI ✨** button. The single-Anthropic-route holdover at `summarize-trade` was migrated 2026-05-12; `@anthropic-ai/sdk` is no longer a dependency. The misleadingly-named `CLAUDE_CONFIG` in `src/lib/config.ts` is still the source of truth for `.model` + `.maxTokens` constants but no longer reads `.apiKey` directly — all key lookups go through `getLlmApiKey()` / `getFinnhubApiKey()` / `getAnthropicApiKey()` in `src/lib/system-config.ts`.
