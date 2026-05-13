@@ -36,13 +36,20 @@ import {
 import { PRESET_LABELS } from "@/lib/strategy-presets";
 import { TraderTaxCallouts } from "@/components/trader/tax-callouts";
 
-const ENGINE_MODES = [
-  "conservative", "moderate", "optimized", "aggressive",
-  "intraday", "tactical", "tactical-smart",
-].map(key => ({
-  value: key,
-  label: `${PRESET_LABELS[key as keyof typeof PRESET_LABELS]?.label ?? key} (${PRESET_LABELS[key as keyof typeof PRESET_LABELS]?.description ?? ""})`,
-}));
+// "Adaptive" doesn't have its own strategy preset — it picks one of the 7
+// base modes per-scan from market regime. Label it inline.
+const ADAPTIVE_MODE_LABEL = "Adaptive (auto-switches based on VIX + SPY regime)";
+
+const ENGINE_MODES: { value: string; label: string }[] = [
+  ...[
+    "conservative", "moderate", "optimized", "aggressive",
+    "intraday", "tactical", "tactical-smart",
+  ].map(key => ({
+    value: key,
+    label: `${PRESET_LABELS[key as keyof typeof PRESET_LABELS]?.label ?? key} (${PRESET_LABELS[key as keyof typeof PRESET_LABELS]?.description ?? ""})`,
+  })),
+  { value: "adaptive", label: ADAPTIVE_MODE_LABEL },
+];
 
 interface TraderData {
   status: {
@@ -181,6 +188,18 @@ interface EngineStatus {
   pdtVulnerable?: boolean;
   pdtDayTradeCount?: number;
   pdtPatternFlagged?: boolean;
+  // Adaptive mode — populated only when mode === "adaptive"
+  effectiveMode?: string | null;
+  adaptiveRegime?: {
+    regime: "risk_on" | "neutral" | "risk_off";
+    vix: number;
+    spyPrice: number;
+    spyMA50: number;
+    spyMA200: number;
+    breadthScore?: number;
+    reasons: string[];
+    updatedAt: string;
+  } | null;
 }
 
 interface TaxStatus {
@@ -566,27 +585,49 @@ export default function TraderPage() {
           </Button>
         </div>
         {engine && (
-          <div className="flex items-center gap-3 text-xs text-text-muted">
-            <Badge variant={engine.running ? "bullish" : engine.halted ? "bearish" : "neutral"}>
-              {engine.running ? `Running (${engine.mode ?? "swing"})` : engine.halted ? "Halted" : "Stopped"}
-            </Badge>
-            {engine.environment && (
-              <Badge variant={engine.environment === "live" ? "bearish" : "neutral"}>
-                {engine.environment.toUpperCase()}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-3 text-xs text-text-muted">
+              <Badge variant={engine.running ? "bullish" : engine.halted ? "bearish" : "neutral"}>
+                {engine.running ? `Running (${engine.mode ?? "swing"})` : engine.halted ? "Halted" : "Stopped"}
               </Badge>
+              {engine.environment && (
+                <Badge variant={engine.environment === "live" ? "bearish" : "neutral"}>
+                  {engine.environment.toUpperCase()}
+                </Badge>
+              )}
+              {engine.scanCount > 0 && <span className="font-mono">{engine.scanCount} scans</span>}
+              {engine.lastScanAt && <span>Last: {timeAgo(engine.lastScanAt)}</span>}
+              {engine.positionCount > 0 && <span className="font-mono">{engine.positionCount} positions</span>}
+              {(engine.dailyLoss ?? 0) !== 0 && (
+                <span className={(engine.dailyLoss ?? 0) < 0 ? "text-bearish" : "text-bullish"}>
+                  Day: ${(engine.dailyLoss ?? 0).toFixed(0)}
+                </span>
+              )}
+              {(engine.consecutiveLosses ?? 0) > 0 && (
+                <span className="font-mono text-warning" title="Consecutive losing trades">
+                  {engine.consecutiveLosses}L
+                </span>
+              )}
+            </div>
+            {/* Adaptive mode: show the effective mode + regime snippet underneath */}
+            {engine.mode === "adaptive" && engine.adaptiveRegime && engine.effectiveMode && (
+              <div className="flex items-center gap-2 text-[11px] text-text-secondary">
+                <span className="font-medium">Adaptive &mdash; currently <span className="text-accent">{engine.effectiveMode}</span></span>
+                <span className="text-text-muted">&middot;</span>
+                <span className="font-mono">VIX {engine.adaptiveRegime.vix.toFixed(1)}</span>
+                <span className="text-text-muted">&middot;</span>
+                <span className="font-mono">
+                  SPY {(((engine.adaptiveRegime.spyPrice - engine.adaptiveRegime.spyMA50) / engine.adaptiveRegime.spyMA50) * 100 >= 0 ? "+" : "")}
+                  {(((engine.adaptiveRegime.spyPrice - engine.adaptiveRegime.spyMA50) / engine.adaptiveRegime.spyMA50) * 100).toFixed(1)}%
+                  {" vs SMA50"}
+                </span>
+                <Badge variant={engine.adaptiveRegime.regime === "risk_on" ? "bullish" : engine.adaptiveRegime.regime === "risk_off" ? "bearish" : "warning"}>
+                  {engine.adaptiveRegime.regime.replace("_", " ")}
+                </Badge>
+              </div>
             )}
-            {engine.scanCount > 0 && <span className="font-mono">{engine.scanCount} scans</span>}
-            {engine.lastScanAt && <span>Last: {timeAgo(engine.lastScanAt)}</span>}
-            {engine.positionCount > 0 && <span className="font-mono">{engine.positionCount} positions</span>}
-            {(engine.dailyLoss ?? 0) !== 0 && (
-              <span className={(engine.dailyLoss ?? 0) < 0 ? "text-bearish" : "text-bullish"}>
-                Day: ${(engine.dailyLoss ?? 0).toFixed(0)}
-              </span>
-            )}
-            {(engine.consecutiveLosses ?? 0) > 0 && (
-              <span className="font-mono text-warning" title="Consecutive losing trades">
-                {engine.consecutiveLosses}L
-              </span>
+            {engine.mode === "adaptive" && !engine.adaptiveRegime && engine.running && (
+              <div className="text-[11px] text-text-muted italic">Adaptive &mdash; computing regime on next scan&hellip;</div>
             )}
           </div>
         )}

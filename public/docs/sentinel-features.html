@@ -270,6 +270,7 @@
         <a href="#page-strategy-builder">Strategy Builder</a>
         <a href="#page-backtest">Backtest</a>
         <a href="#page-backtest-compare">Backtest Compare</a>
+        <a href="#page-mode-compare">Mode Compare</a>
         <a href="#page-replay">Replay</a>
         <a href="#page-optimizer">Optimizer</a>
         <a href="#page-alerts">Alerts</a>
@@ -363,7 +364,7 @@
     <p>Read these before drilling into any page — they explain language used everywhere else in the platform.</p>
 
     <h3>Engine modes</h3>
-    <p>The trading engine has 7 modes, each with different signal logic and risk profile. Switch on the Live Trader page.</p>
+    <p>The trading engine has 8 modes, each with different signal logic and risk profile. Switch on the Live Trader page.</p>
     <ul>
       <li><code>conservative</code> — small positions, strict filters, swing horizon</li>
       <li><code>moderate</code> — default starting mode, balanced filters</li>
@@ -372,6 +373,7 @@
       <li><code>intraday</code> — 5m bars, flattens at 3:00 PM ET. Engine refuses to start in this mode at &lt;$25k equity (PDT)</li>
       <li><code>tactical</code> — market-wide on/off (SPY-driven). Full in / full out, no per-symbol gates</li>
       <li><code>tactical-smart</code> — scored basket with active swapping. Re-ranks weekly</li>
+      <li><code>adaptive</code> — reads market regime (VIX + SPY/SMA50) at every scan and runs as conservative / moderate / optimized / aggressive / tactical underneath. Status banner shows the effective mode. Never auto-selects <code>intraday</code> or <code>tactical-smart</code>.</li>
     </ul>
 
     <h3>Risk profile (single source of truth)</h3>
@@ -664,6 +666,24 @@
     <div class="page-card" id="page-backtest-compare">
       <div class="page-card-head"><span class="page-name">Backtest Compare</span><span class="page-route">/dashboard/backtest/compare?ids=...</span></div>
       <p class="page-purpose">Side-by-side comparison of up to 5 saved strategies — stats columns + an overlaid equity curve normalized to start = 100. URL-driven so links are shareable.</p>
+    </div>
+
+    <div class="page-card" id="page-mode-compare">
+      <div class="page-card-head"><span class="page-name">Mode Compare</span><span class="page-route">/dashboard/backtest/mode-compare?symbol=AAPL</span></div>
+      <p class="page-purpose">Runs all 6 comparable engine modes (conservative through adaptive) against the same symbol + date-range in parallel. See empirically whether adaptive's regime-switching beats sticking with one mode.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Symbol input</strong> + <strong>days back</strong> selector (defaults to 5 years).</li>
+        <li><strong>Stats table</strong>: rows = modes, columns = Return / Win Rate / Trades / Max DD / Sharpe / Sortino / Calmar / MAR.</li>
+        <li><strong>Equity-curve overlay</strong>: 6 normalized-to-100 lines. Adaptive draws thicker so it stands out from the base modes.</li>
+        <li><strong>Adaptive mode timeline</strong> (when adaptive succeeds): chronological strip showing which underlying mode adaptive was running at each regime switch.</li>
+      </ul>
+      <h4>Gotchas</h4>
+      <ul>
+        <li><code>intraday</code> and <code>tactical-smart</code> are excluded — they don't make sense in a daily-bar backtest comparison.</li>
+        <li>Adaptive requires SPY + ^VIX bars for the date range. If the provider can't supply them, the adaptive row shows an error and the other 5 modes still render.</li>
+        <li>Results cached 5 minutes per (symbol, days) tuple — daily bars don't change intraday so re-running with same params returns cached.</li>
+      </ul>
     </div>
 
     <div class="page-card" id="page-replay">

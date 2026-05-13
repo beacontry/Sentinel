@@ -654,8 +654,36 @@ Migration `0029_engine_intelligence.sql` added three columns to `user_risk_profi
 - **Sector exposure cap.** `canPlaceBuyOrder` takes optional `sectorExposureContext` (live position market values keyed by symbol) and refuses BUYs that would push a sector over `cap × equity`. New `buildSectorExposureContext()` helper. `TrackedPosition` now carries `currentPrice` + `marketValue` synced from broker so the cap check is in-memory.
 - **Earnings blackout.** Calls existing `isInEarningsBlackout()` when `earningsBlackoutDays` is set on the risk profile.
 - **P&L heatmap widget.** New `pnl-heatmap-widget` registered. Reads `/api/performance/attribution`. Top-5 symbols by realized $ with proportional bars.
-- **Deferred:** adaptive mode auto-switching (column shipped, no consumer wired yet); engine dry-run mode.
+- **Deferred:** engine dry-run mode. (Adaptive mode auto-switching shipped in Phase 8 — see below.)
+
+## Phase 8 — Adaptive engine mode
+
+`EngineMode` now includes `"adaptive"` (8th option). When a user selects adaptive, the engine reads market regime at each scan boundary and runs as one of conservative / moderate / optimized / aggressive / tactical underneath. The user-selected mode stays `"adaptive"`; strategy decisions go through `getActiveMode(engine)` which returns the effective base mode.
+
+**Classifier**: `src/lib/market-regime.ts` — pure function, input `{ vix, spyPrice, spyMA50, spyMA200, breadthScore? }`, output `{ regime, recommendedMode, reasons }`.
+
+**Regime rules (v1):**
+- `VIX > 28` OR `SPY < SMA50` → risk_off → conservative
+- `18 < VIX <= 28` AND `SPY >= SMA50` → neutral → moderate
+- `VIX <= 18` AND `SPY > SMA50` → risk_on → optimized
+- `VIX <= 14` AND `SPY > SMA200` AND breadth > 75 (live only) → strong risk_on → aggressive
+
+**Never auto-selected:** `intraday` (PDT-sensitive), `tactical-smart` (already adaptive), `adaptive` itself.
+
+**Engine wiring:** `refreshAdaptiveMode(engine)` runs at the top of each scan path (main, tactical-smart, intraday). Fetches ^VIX + SPY bars via the existing market-data provider, computes SPY SMA50/200, calls `detectMarketRegime`, sets `engine.effectiveMode` + `engine.adaptiveRegime`. Emits `ENGINE_MODE_SWITCHED` audit row only when `effectiveMode` actually changes scan-to-scan.
+
+**Backtester:** `runBacktest(symbol, bars, ..., mode?, marketContext?)` accepts optional `mode` + `marketContext: { spyBars, vixBars }`. When `mode === "adaptive"` AND marketContext provided, the backtester re-resolves the effective config per bar (looks up SPY/VIX for that date, runs the classifier, swaps `BacktestConfig`). Returns `modeTimeline: { date, mode }[]` so the UI can visualize regime swings.
+
+**Mode-compare page** at `/dashboard/backtest/mode-compare?symbol=AAPL`: runs all 6 comparable modes (5 base + adaptive; `intraday` + `tactical-smart` excluded) in parallel via `Promise.allSettled`. Returns stats + equity curves + adaptive's modeTimeline.
+
+**Trader page status banner** shows two lines when running adaptive:
+1. `Running (adaptive) · PAPER · 14 scans · 3 positions`
+2. `Adaptive — currently optimized · VIX 18.2 · SPY +1.2% vs SMA50 · risk_on`
+
+**Failure handling:** if VIX/SPY fetch fails, engine keeps the previous `effectiveMode` (does NOT halt — adaptive is a meta-decision, not a safety check). Logs a warning.
+
+**Live vs backtest difference:** live mode uses VIX + SPY + breadth (full breadth scan is too expensive to replay historically). Backtest replays VIX + SPY only — the strong-risk-on → `aggressive` bump simply doesn't fire in backtest. Defensible simplification.
 
 See `public/docs/engine-ruleset.html` (web view of this doc, served at `/docs/engine-ruleset.html` on any deployment) for the same content in HTML form. Both files are intentionally kept in sync — edit one, mirror to the other.
 
-**Last revised:** 2026-05-12 (post-marathon doc sweep).
+**Last revised:** 2026-05-12 (post-marathon doc sweep + Phase 8 adaptive mode).

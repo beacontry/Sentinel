@@ -1,5 +1,8 @@
 import type { Bar } from "@/types";
 import { analyzeBars } from "./indicators/analyzer";
+import { detectMarketRegime, type AdaptiveTarget } from "./market-regime";
+import { STRATEGY_PRESETS } from "./strategy-presets";
+import type { EngineMode } from "./trading-engine";
 
 export interface BacktestTrade {
   entryDate: string;
@@ -28,6 +31,40 @@ export interface BacktestResult {
   calmarRatio: number;
   marRatio: number;
   totalTrades: number;
+  /**
+   * When `mode === "adaptive"` and marketContext was supplied, this captures
+   * which underlying mode adaptive was running at each bar. Used by the
+   * /backtest/mode-compare UI to visualize regime swings.
+   */
+  modeTimeline?: { date: string; mode: AdaptiveTarget }[];
+}
+
+/**
+ * Market-wide context bars for regime-switching backtests. SPY drives the
+ * trend/SMA50 inputs; ^VIX drives the volatility input. Both must align in
+ * date with the target symbol's bars. The backtester gracefully handles
+ * missing-date entries (skips that bar's regime swap, sticks with previous).
+ */
+export interface BacktestMarketContext {
+  spyBars: Bar[];
+  vixBars: Bar[];
+}
+
+/** Maps a base engine mode to its corresponding BacktestConfig. */
+function configForMode(mode: AdaptiveTarget): BacktestConfig {
+  // `tactical` maps to the swing preset (matches trading-engine's modePresetMap).
+  const preset =
+    mode === "tactical"
+      ? STRATEGY_PRESETS.swing
+      : STRATEGY_PRESETS[mode];
+  return {
+    stopLossPct: preset.stopLossPct,
+    takeProfitPct: preset.takeProfitPct,
+    trailingStopPct: preset.trailingStopPct,
+    // Sizing constants are not part of StrategyParams — keep at defaults.
+    maxPositionSize: DEFAULT_CONFIG.maxPositionSize,
+    maxSingleTradeLoss: DEFAULT_CONFIG.maxSingleTradeLoss,
+  };
 }
 
 export interface BacktestConfig {
@@ -59,9 +96,52 @@ export function runBacktest(
   windowSize: number = 100,
   holdPeriod: number = 20,
   stepSize: number = 10,
-  config: Partial<BacktestConfig> = {}
+  config: Partial<BacktestConfig> = {},
+  /**
+   * Optional: pin the backtest to a specific engine mode's preset. When
+   * `mode === "adaptive"`, you MUST also pass `marketContext` so the
+   * regime classifier can switch effective mode per bar. Otherwise this
+   * throws.
+   *
+   * For non-adaptive modes, the preset's stop/TP/trail override
+   * DEFAULT_CONFIG; the `config` param is layered on top for any
+   * fine-grained overrides.
+   */
+  mode?: EngineMode,
+  marketContext?: BacktestMarketContext
 ): BacktestResult {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
+  // Validate adaptive prerequisites up front so the caller sees a clear
+  // error instead of a silent fall-through to default config.
+  if (mode === "adaptive" && !marketContext) {
+    throw new Error(
+      "Adaptive backtest requires marketContext: { spyBars, vixBars }. " +
+      "Without market-wide bars, the regime classifier has nothing to read."
+    );
+  }
+
+  // Map mode → preset (only for non-adaptive modes; adaptive resolves
+  // per-bar inside the loop). User-supplied `config` still wins on conflict
+  // so per-strategy overrides remain supported.
+  const baseCfg: BacktestConfig =
+    mode && mode !== "adaptive" && mode !== "intraday" && mode !== "tactical-smart"
+      ? configForMode(mode as AdaptiveTarget)
+      : DEFAULT_CONFIG;
+  const cfg = { ...baseCfg, ...config };
+
+  // Build SPY-date lookup map for fast per-bar regime queries (adaptive only).
+  // Map keyed by ISO-date string for O(1) lookup.
+  const spyByDate = new Map<string, Bar>();
+  const vixByDate = new Map<string, Bar>();
+  if (marketContext) {
+    for (const b of marketContext.spyBars) spyByDate.set(b.date, b);
+    for (const b of marketContext.vixBars) vixByDate.set(b.date, b);
+  }
+
+  // Effective config used right now. For adaptive: re-evaluated per bar.
+  let effectiveCfg: BacktestConfig = cfg;
+  let lastEffectiveMode: AdaptiveTarget | null = null;
+  const modeTimeline: { date: string; mode: AdaptiveTarget }[] = [];
+
   const trades: BacktestTrade[] = [];
   const initialCash = 10000;
   let cash = initialCash;
@@ -79,6 +159,43 @@ export function runBacktest(
   for (let i = windowSize; i < bars.length; i++) {
     const bar = bars[i];
 
+    // ── Adaptive: refresh effective config based on regime at this bar ──
+    if (mode === "adaptive" && marketContext) {
+      const spyAtBar = spyByDate.get(bar.date);
+      const vixAtBar = vixByDate.get(bar.date);
+      if (spyAtBar && vixAtBar) {
+        // Need 50 bars of SPY history for SMA50; pull from spyBars by date
+        // (best-effort — if we're too early in the SPY series, skip the
+        // regime swap and keep current effectiveCfg).
+        const spyIdx = marketContext.spyBars.findIndex((b) => b.date === bar.date);
+        if (spyIdx >= 50) {
+          const spy50 = marketContext.spyBars.slice(spyIdx - 50, spyIdx);
+          const spyMA50 = spy50.reduce((s, b) => s + b.close, 0) / 50;
+          const spyMA200 = spyIdx >= 200
+            ? marketContext.spyBars.slice(spyIdx - 200, spyIdx).reduce((s, b) => s + b.close, 0) / 200
+            : spyMA50;
+          const report = detectMarketRegime({
+            vix: vixAtBar.close,
+            spyPrice: spyAtBar.close,
+            spyMA50,
+            spyMA200,
+            // breadth omitted — backtest path
+          });
+          // Only swap config if the recommended mode actually changed.
+          if (report.recommendedMode !== lastEffectiveMode) {
+            effectiveCfg = { ...configForMode(report.recommendedMode), ...config };
+            lastEffectiveMode = report.recommendedMode;
+            modeTimeline.push({ date: bar.date, mode: report.recommendedMode });
+          }
+        }
+      }
+    }
+
+    // Re-bind the trailing config used by exit logic to the (possibly
+    // adaptive) effectiveCfg. For non-adaptive modes, effectiveCfg === cfg
+    // forever, so this is a no-op.
+    const activeCfg = mode === "adaptive" ? effectiveCfg : cfg;
+
     // ── In a position: check exits on every bar ──
     if (position) {
       if (bar.high > position.peakPrice) {
@@ -88,13 +205,15 @@ export function runBacktest(
       let exitPrice: number | null = null;
       let exitReason = "";
 
-      // Profit-based trailing stop — exponential decay toward 2% floor
+      // Profit-based trailing stop — exponential decay toward 2% floor.
+      // Uses activeCfg so adaptive's per-bar config swap actually drives the
+      // trail and stop on adaptive backtests.
       const profitPct = (position.peakPrice - position.entryPrice) / position.entryPrice;
       const dynTrailPct = profitPct > 0
-        ? 0.02 + (cfg.trailingStopPct - 0.02) * Math.exp(-3 * profitPct)
-        : cfg.trailingStopPct;
+        ? 0.02 + (activeCfg.trailingStopPct - 0.02) * Math.exp(-3 * profitPct)
+        : activeCfg.trailingStopPct;
 
-      const fixedStop = position.entryPrice * (1 - cfg.stopLossPct);
+      const fixedStop = position.entryPrice * (1 - activeCfg.stopLossPct);
       const trailingStop = position.peakPrice * (1 - dynTrailPct);
       const effectiveStop = Math.max(fixedStop, trailingStop);
 
@@ -106,7 +225,7 @@ export function runBacktest(
 
       // 2. Take-profit hit
       if (!exitPrice) {
-        const tpLevel = position.entryPrice * (1 + cfg.takeProfitPct);
+        const tpLevel = position.entryPrice * (1 + activeCfg.takeProfitPct);
         if (bar.high >= tpLevel) {
           exitPrice = parseFloat(tpLevel.toFixed(2));
           exitReason = "take_profit";
@@ -167,12 +286,13 @@ export function runBacktest(
 
     const entryPrice = bar.close;
 
-    // Risk-based position sizing: max_single_trade_loss / stop_distance
-    const stopDistance = entryPrice * cfg.stopLossPct;
+    // Risk-based position sizing: max_single_trade_loss / stop_distance.
+    // activeCfg honors adaptive's per-bar regime swap.
+    const stopDistance = entryPrice * activeCfg.stopLossPct;
     if (stopDistance <= 0) continue;
-    const riskBasedShares = Math.floor(cfg.maxSingleTradeLoss / stopDistance);
+    const riskBasedShares = Math.floor(activeCfg.maxSingleTradeLoss / stopDistance);
     const affordableShares = Math.floor(cash / entryPrice);
-    const shares = Math.min(riskBasedShares, cfg.maxPositionSize, affordableShares);
+    const shares = Math.min(riskBasedShares, activeCfg.maxPositionSize, affordableShares);
 
     if (shares <= 0) continue;
 
@@ -284,5 +404,7 @@ export function runBacktest(
     calmarRatio,
     marRatio,
     totalTrades: trades.length,
+    // Only populated for adaptive backtests; non-adaptive runs stay clean.
+    ...(mode === "adaptive" && marketContext ? { modeTimeline } : {}),
   };
 }

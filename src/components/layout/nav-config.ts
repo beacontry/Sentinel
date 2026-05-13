@@ -61,7 +61,7 @@ export const NAV_ITEMS: NavItem[] = [
     description: "Execution agent, strategies, backtesting, alerts, and risk tools.",
     icon: Bot,
     matchPaths: ["/dashboard/strategies", "/dashboard/backtest", "/dashboard/optimizer", "/dashboard/alerts", "/dashboard/calculator", "/dashboard/replay", "/dashboard/strategy-builder", "/dashboard/watchlists", "/dashboard/risk-simulator"],
-    keywords: ["agent", "execution", "strategies", "backtest", "optimizer", "alerts", "calculator", "replay", "strategy builder", "watchlists", "risk simulator"],
+    keywords: ["agent", "execution", "strategies", "backtest", "optimizer", "alerts", "calculator", "replay", "strategy builder", "watchlists", "risk simulator", "mode compare"],
   },
   {
     href: "/dashboard/journal",
@@ -171,6 +171,7 @@ export const SUB_NAV: Record<string, SubNavTab[]> = {
     { href: "/dashboard/strategies", label: "Strategies" },
     { href: "/dashboard/strategy-builder", label: "Builder" },
     { href: "/dashboard/backtest", label: "Backtest" },
+    { href: "/dashboard/backtest/mode-compare", label: "Mode Compare" },
     { href: "/dashboard/replay", label: "Replay" },
     { href: "/dashboard/optimizer", label: "Optimizer", adminOnly: true },
     { href: "/dashboard/alerts", label: "Alerts" },
