@@ -12,8 +12,8 @@
 
 import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
+import { SmartBackButton } from "@/components/ui/smart-back-button";
 import {
-  ArrowLeft,
   AlertCircle,
   DollarSign,
   Hash,
@@ -273,9 +273,7 @@ export default function TradePage({
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center gap-3">
-        <Link href="/dashboard/analysis" className="text-text-muted hover:text-text-primary">
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
+        <SmartBackButton fallbackHref="/dashboard/analysis" />
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold tracking-tight font-mono">{symbol}</h1>
           <p className="text-sm text-text-secondary">Manual order ticket</p>
