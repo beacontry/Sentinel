@@ -17,10 +17,11 @@ the one exception (it's the high-level tracker).
 | 1 | Money bugs (UI-lie audit) | Wash-sale + PDT live refresh, bootEquity day-boundary re-snapshot, halt sync, P&L source labels | — |
 | 2 | Frozen-value cleanup | peakPrice reset on partial close, trailingStopPct + takeProfit re-resolve | `pos.entryDate` from broker creation time |
 | 3 | Cache invalidation | Filter-cache 6h TTL, screener/engine `scanStartedAt` | — |
-| 4 | Engine intelligence | Sector exposure cap, earnings blackout, P&L heatmap widget | Adaptive mode auto-switching, engine dry-run mode |
+| 4 | Engine intelligence | Sector exposure cap, earnings blackout, P&L heatmap widget | Engine dry-run mode |
 | 5 | Strategy testing | Compare strategies side-by-side | Engine dry-run, live-vs-backtest divergence tracker, mean reversion mode |
 | 6 | Frontend QoL | `/dashboard/portfolio` overview, `/api/quotes` batch, Trader 2-col XL layout | Persist recently-viewed to DB |
 | 7 | LLM consolidation | All AI on Groq, admin/system-config encrypted-key UI | — |
+| 8 | Adaptive engine mode | 8th `adaptive` mode wired (regime-driven base mode selection), `refreshAdaptiveMode()` at scan boundary, `/backtest/mode-compare` with regime-replay backtester, status banner shows effective mode + regime | User-tunable regime thresholds, per-sector adaptive, mode-flapping debounce |
 
 **Large unbuilt scopes still tracked here:**
 options trading module (XL — separate product), real-time WebSocket quotes
@@ -33,13 +34,14 @@ webhooks (S), native iOS/Android apps (XL), bonds/MFs/international
 
 ## Engine: deferred capabilities
 
-### Adaptive mode auto-switching
-`user_risk_profiles.adaptive_mode_enabled` column already shipped (migration
-`0029`) — no consumer wired. Read VIX + SPY/SMA50 at scan start, define
-regime → mode rules (VIX < 18 + SPY > SMA50 → optimized, etc.). Either
-auto-switch (risky, surprises user) or surface a "regime suggests X mode"
-nudge. **Defer** until 60 days of clean paper validate the regime
-classifications.
+### ~~Adaptive mode auto-switching~~ — Phase 8, shipped 2026-05-12
+8th `"adaptive"` mode now wired: regime classifier at `src/lib/market-regime.ts`,
+`refreshAdaptiveMode()` runs at every scan boundary, audit rows on every
+regime-driven swap. Backtester is regime-aware via optional
+`marketContext: { spyBars, vixBars }`. `/dashboard/backtest/mode-compare`
+runs all 6 comparable modes side-by-side. Still pending:
+user-tunable regime thresholds (currently hardcoded VIX 18/28), per-sector
+adaptive, mode-flapping debounce.
 
 ### Engine dry-run mode
 Add `dryRun: boolean` to `EngineState` + a gate at `placeEngineOrder` that

@@ -41,15 +41,37 @@ import {
 import { eq, and, desc, gt, inArray, lt, isNotNull } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
 import { writeAudit, AuditAction } from "./audit";
+import { detectMarketRegime } from "./market-regime";
 
 const log = createRouteLogger("trading-engine");
 
 // ─── Engine State (globalThis singleton) ─────────────────────────────────────
 
-export type EngineMode = "conservative" | "moderate" | "optimized" | "aggressive" | "intraday" | "tactical" | "tactical-smart";
+export type EngineMode = "conservative" | "moderate" | "optimized" | "aggressive" | "intraday" | "tactical" | "tactical-smart" | "adaptive";
 
 function isIntradayMode(mode: EngineMode): boolean {
   return mode === "intraday";
+}
+
+/**
+ * Resolve which mode the engine is actually executing right now. When the
+ * user has selected `adaptive`, the engine reads market regime each scan
+ * and assigns `engine.effectiveMode` — every callsite that branches on
+ * mode for STRATEGY behavior should call this helper instead of reading
+ * `engine.mode` directly. Identity/UI/persistence callsites still read
+ * `engine.mode` so they reflect the user-selected mode (which is
+ * "adaptive", not the underlying).
+ *
+ * Falls back to `engine.mode` when:
+ *  - User-selected mode is not `adaptive`
+ *  - User selected `adaptive` but `effectiveMode` is not yet populated
+ *    (very first scan before `refreshAdaptiveMode` has run)
+ */
+export function getActiveMode(engine: EngineState): EngineMode {
+  if (engine.mode === "adaptive" && engine.effectiveMode) {
+    return engine.effectiveMode;
+  }
+  return engine.mode;
 }
 
 export interface ExternalSignal {
@@ -122,6 +144,30 @@ export interface EngineState {
   pdtDayTradeCount: number;
   /** Broker-reported PDT flag — true once Alpaca has actually flagged the account. */
   pdtPatternFlagged: boolean;
+  // ── Adaptive mode ──
+  /**
+   * When `mode === "adaptive"`, this is the actual mode being executed
+   * this scan (one of conservative/moderate/optimized/aggressive/tactical).
+   * Refreshed by `refreshAdaptiveMode()` at scan start. Null when mode
+   * is not adaptive, or when adaptive is selected but no regime has been
+   * computed yet (very first scan).
+   */
+  effectiveMode: EngineMode | null;
+  /**
+   * Last regime read used to pick `effectiveMode`. Surfaced through the
+   * dashboard route so the Trader page can render the "Adaptive — currently
+   * optimized · VIX 18.2 · SPY +1.2% vs SMA50 · breadth 72" banner.
+   */
+  adaptiveRegime: {
+    regime: "risk_on" | "neutral" | "risk_off";
+    vix: number;
+    spyPrice: number;
+    spyMA50: number;
+    spyMA200: number;
+    breadthScore?: number;
+    reasons: string[];
+    updatedAt: Date;
+  } | null;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -164,6 +210,8 @@ function createDefaultEngine(): EngineState {
     pdtVulnerable: false,
     pdtDayTradeCount: 0,
     pdtPatternFlagged: false,
+    effectiveMode: null,
+    adaptiveRegime: null,
   };
 }
 
@@ -971,6 +1019,105 @@ const INTRADAY_PARAMS: StrategyParams = {
 // ─── Profit-Based Trailing Stop ──────────────────────────────────────────────
 
 /**
+ * Refresh `engine.effectiveMode` + `engine.adaptiveRegime` by reading
+ * current market regime (VIX + SPY trend). Called once per scan when
+ * `engine.mode === "adaptive"`.
+ *
+ * Live engine uses VIX + SPY only (NOT breadth) — keeping it in sync with
+ * the backtester's regime classifier so paper-vs-live comparisons stay
+ * meaningful. Adding breadth would mean fetching 50 stock bars per scan
+ * (already done in /api/breadth but not cheap to call from the engine
+ * loop). v2 enhancement.
+ *
+ * Failure handling: if VIX/SPY fetch fails, the engine keeps using whatever
+ * effectiveMode was last computed (or falls back to "moderate" on the very
+ * first scan). The engine MUST NOT halt on adaptive-refresh failures —
+ * adaptive is a meta-decision, not a safety check.
+ *
+ * Emits `engine.mode_switched` audit row only when effectiveMode CHANGES
+ * vs the previous scan — avoids noisy logs when regime stays put.
+ */
+async function refreshAdaptiveMode(engine: EngineState): Promise<void> {
+  if (engine.mode !== "adaptive") return;
+
+  const previousEffective = engine.effectiveMode;
+  const provider = getMarketDataProvider();
+
+  try {
+    // Need at least 200 days for SMA200; fetch 250 for headroom.
+    const [vixBars, spyBars] = await Promise.all([
+      provider.fetchBars("^VIX", 5, "1d"),
+      provider.fetchBars("SPY", 250, "1d"),
+    ]);
+
+    if (!vixBars.length || spyBars.length < 50) {
+      log.warn(
+        { vixBars: vixBars.length, spyBars: spyBars.length },
+        "refreshAdaptiveMode: insufficient bars — keeping previous effectiveMode"
+      );
+      return;
+    }
+
+    const vix = vixBars[vixBars.length - 1].close;
+    const spyPrice = spyBars[spyBars.length - 1].close;
+    const spyMA50 = spyBars.slice(-50).reduce((s, b) => s + b.close, 0) / 50;
+    const spyMA200 = spyBars.length >= 200
+      ? spyBars.slice(-200).reduce((s, b) => s + b.close, 0) / 200
+      : spyMA50; // fallback for <200 days history; classifier still works
+
+    const report = detectMarketRegime({ vix, spyPrice, spyMA50, spyMA200 });
+
+    engine.effectiveMode = report.recommendedMode;
+    engine.adaptiveRegime = {
+      regime: report.regime,
+      vix,
+      spyPrice,
+      spyMA50,
+      spyMA200,
+      reasons: report.reasons,
+      updatedAt: new Date(),
+    };
+
+    if (previousEffective !== report.recommendedMode) {
+      log.info(
+        {
+          userId: engine.userId,
+          from: previousEffective,
+          to: report.recommendedMode,
+          regime: report.regime,
+          vix,
+          reasons: report.reasons,
+        },
+        "Adaptive mode switched effective mode"
+      );
+      if (engine.userId) {
+        void writeAudit({
+          actor: { userId: engine.userId },
+          action: AuditAction.ENGINE_MODE_SWITCHED,
+          resourceType: "engine",
+          resourceId: engine.userId,
+          metadata: {
+            adaptive: true,
+            from: previousEffective ?? null,
+            to: report.recommendedMode,
+            regime: report.regime,
+            vix: Math.round(vix * 10) / 10,
+            spyPrice: Math.round(spyPrice * 100) / 100,
+            spyMA50: Math.round(spyMA50 * 100) / 100,
+            reasons: report.reasons,
+          },
+        });
+      }
+    }
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown", userId: engine.userId },
+      "refreshAdaptiveMode failed — keeping previous effectiveMode"
+    );
+  }
+}
+
+/**
  * Tightens the trailing stop proportionally as profit grows.
  * The trail shrinks from baseTrailingPct toward a minimum floor
  * as the profit percentage increases.
@@ -1303,14 +1450,19 @@ async function resolveStrategy(
   }
 
   const engine = getEngine(userId);
+  const activeMode = getActiveMode(engine);
   // For optimized/tactical modes, use latest optimizer results from DB
-  if (engine.mode === "optimized" || engine.mode === "tactical" || engine.mode === "tactical-smart") {
+  if (activeMode === "optimized" || activeMode === "tactical" || activeMode === "tactical-smart") {
     const latest = await getLatestOptimizedParams();
     if (latest) return latest;
   }
 
-  // Fall back to hardcoded preset
-  const modePresetMap: Record<EngineMode, StrategyParams> = {
+  // Fall back to hardcoded preset.
+  // `adaptive` cannot reach here — getActiveMode() collapses it to the
+  // effective mode before this lookup. If somehow engine.mode === "adaptive"
+  // and effectiveMode is not yet set (very first scan), we land at
+  // STRATEGY_PRESETS.optimized via the `??` fallback.
+  const modePresetMap: Record<Exclude<EngineMode, "adaptive">, StrategyParams> = {
     conservative: STRATEGY_PRESETS.conservative,
     moderate: STRATEGY_PRESETS.moderate,
     optimized: STRATEGY_PRESETS.optimized,
@@ -1319,7 +1471,9 @@ async function resolveStrategy(
     tactical: STRATEGY_PRESETS.swing,
     "tactical-smart": STRATEGY_PRESETS.swing,
   };
-  return modePresetMap[engine.mode] ?? STRATEGY_PRESETS.optimized;
+  return activeMode === "adaptive"
+    ? STRATEGY_PRESETS.optimized
+    : (modePresetMap[activeMode] ?? STRATEGY_PRESETS.optimized);
 }
 
 // ─── Exit Check (intraday 1-min price monitoring) ───────────────────────────
@@ -2040,6 +2194,10 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   engine.scanStartedAt = new Date();
   try { SCAN_UNIVERSE = await getSP500Symbols(); } catch { /* keep current */ }
 
+  // Adaptive mode: refresh effectiveMode + regime before per-symbol logic.
+  // No-op when engine.mode !== "adaptive".
+  await refreshAdaptiveMode(engine);
+
   const today = getETDateString();
   if (engine.dailyLossDate !== today) {
     engine.dailyLoss = 0;
@@ -2262,6 +2420,9 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   if (!engine.userId || !engine.running || engine.halted) return;
   if (!isMarketOpen()) return;
   engine.scanStartedAt = new Date();
+  // Adaptive mode refresh — runs even on the tactical-smart scan path so
+  // adaptive engines stay calibrated regardless of which scan loop invokes.
+  await refreshAdaptiveMode(engine);
 
   // Phase 14 — scan latency instrumentation. The 2026-05-11 TGT incident
   // happened because a scan started before 4 PM ET but was still placing
@@ -2756,6 +2917,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
   // Phase 3 — mark scan as in-flight
   engine.scanStartedAt = new Date();
+  // Adaptive mode refresh (intraday scan path).
+  await refreshAdaptiveMode(engine);
 
   if (!engine.userId) {
     log.error("No userId set on engine");
@@ -2768,8 +2931,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     return;
   }
 
-  // Intraday mode: flatten all positions at 3:00 PM ET
-  if (isIntradayMode(engine.mode)) {
+  // Intraday mode: flatten all positions at 3:00 PM ET.
+  // Use active mode — adaptive never picks intraday so this is a no-op for
+  // adaptive users, but using the helper keeps the pattern consistent.
+  if (isIntradayMode(getActiveMode(engine))) {
     const now = getETDate();
     if (now.getHours() >= 15) {
       const positionMap = getPositionMap(engine?.userId ?? engineUserId);
@@ -2883,8 +3048,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     .map((s) => s.symbol);
   const symbols = [...SCAN_UNIVERSE, ...new Set(externalSymbols)];
 
-  // Load optimized signal params for "optimized" mode (tuned EMA/RSI from GA)
-  const optSignalParams = engine.mode === "optimized" ? await getOptimizedSignalParams() : null;
+  // Load optimized signal params for "optimized" mode (tuned EMA/RSI from GA).
+  // Adaptive's effective mode collapses to "optimized" when regime warrants —
+  // getActiveMode lets adaptive users inherit the GA params automatically.
+  const optSignalParams = getActiveMode(engine) === "optimized" ? await getOptimizedSignalParams() : null;
   const hybridOpts = optSignalParams ? { signalParams: optSignalParams } : undefined;
 
   // 4. Get current broker positions + run live-trading safeguard checks
@@ -3261,8 +3428,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
         // Calculate bracket levels
         const stopLossPrice = parseFloat((currentPrice * (1 - strategy.stopLossPct)).toFixed(2));
-        // Adaptive TP: use ATR × multiplier from optimizer if available, else fixed %
-        const tpAtrMult = engine.mode === "optimized" ? await getOptimizedTpAtrMult() : null;
+        // Adaptive TP: use ATR × multiplier from optimizer if available, else fixed %.
+        // (Naming overlap: this "adaptive TP" predates the "adaptive engine
+        // mode" — separate concept. Active mode is used for the gate.)
+        const tpAtrMult = getActiveMode(engine) === "optimized" ? await getOptimizedTpAtrMult() : null;
         const atrVal = analysis.indicators.atr_14;
         const takeProfitPrice = tpAtrMult && atrVal
           ? parseFloat((currentPrice + atrVal * tpAtrMult).toFixed(2))
@@ -4202,6 +4371,8 @@ export function peekEngineStatus(userId: string): {
   running: boolean;
   halted: boolean;
   mode: EngineMode;
+  effectiveMode: EngineMode | null;
+  adaptiveRegime: EngineState["adaptiveRegime"];
   lastScanAt: string | null;
   scanStartedAt: string | null;
   scanCount: number;
@@ -4221,6 +4392,8 @@ export function peekEngineStatus(userId: string): {
     running: engine.running,
     halted: engine.halted,
     mode: engine.mode,
+    effectiveMode: engine.effectiveMode,
+    adaptiveRegime: engine.adaptiveRegime,
     lastScanAt: engine.lastScanAt?.toISOString() ?? null,
     scanStartedAt: engine.scanStartedAt?.toISOString() ?? null,
     scanCount: engine.scanCount,
@@ -4259,6 +4432,8 @@ export function getEngineStatus(userId?: string): {
   pdtVulnerable: boolean;
   pdtDayTradeCount: number;
   pdtPatternFlagged: boolean;
+  effectiveMode: EngineMode | null;
+  adaptiveRegime: EngineState["adaptiveRegime"];
 } {
   const engine = userId ? getEngine(userId) : getEngine();
   return {
@@ -4286,6 +4461,8 @@ export function getEngineStatus(userId?: string): {
     pdtVulnerable: engine.pdtVulnerable,
     pdtDayTradeCount: engine.pdtDayTradeCount,
     pdtPatternFlagged: engine.pdtPatternFlagged,
+    effectiveMode: engine.effectiveMode,
+    adaptiveRegime: engine.adaptiveRegime,
   };
 }
 

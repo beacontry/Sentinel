@@ -358,6 +358,24 @@ Gate ordering inside `canPlaceBuyOrder()`: wash-sale → PDT → notional → ra
 - `maxConsecutiveLosses`: 3
 - MTM checkbox: unchecked unless you actually filed §475(f) at last year-start
 
+## Adaptive engine mode (8th mode, regime-driven)
+
+`EngineMode` now includes `"adaptive"` (`src/lib/trading-engine.ts`). When a user selects adaptive, the engine reads market regime at each scan boundary (VIX + SPY trend) and sets `engine.effectiveMode` to one of `conservative` / `moderate` / `optimized` / `aggressive` / `tactical`. The user-selected mode (`engine.mode`) stays `"adaptive"`; everywhere strategy decisions are made, code goes through `getActiveMode(engine)` which returns the effective mode.
+
+**Regime rules** (centralized in `src/lib/market-regime.ts`):
+- `VIX > 28` OR `SPY < SMA50` → risk_off → `conservative`
+- `VIX > 18 && <= 28` AND `SPY >= SMA50` → neutral → `moderate`
+- `VIX <= 18` AND `SPY > SMA50` → risk_on → `optimized`
+- `VIX <= 14` AND `SPY > SMA200` AND `breadth > 75` (live only) → strong risk_on → `aggressive`
+
+**Never auto-selected**: `intraday` (PDT-sensitive), `tactical-smart` (already adaptive), `adaptive` itself.
+
+**Audit:** every regime-driven mode switch writes an `ENGINE_MODE_SWITCHED` audit row with metadata `{ adaptive: true, from, to, regime, vix, spyPrice, spyMA50, reasons }`. No-op when regime stays put scan-to-scan.
+
+**Live vs backtest:** live engine reads VIX + SPY + breadth. Backtest replays VIX + SPY only (breadth replay is expensive: 50 stocks × N days). The classifier handles missing breadth gracefully — the strong-risk-on `aggressive` bump just doesn't fire in backtest.
+
+**Mode-compare backtest** at `/dashboard/backtest/mode-compare?symbol=AAPL` runs all 6 comparable modes (5 base + adaptive; `intraday` + `tactical-smart` excluded) against the same symbol+date-range. Stats table + equity-curve overlay + adaptive's modeTimeline visualization.
+
 ## AI Providers & System Configuration
 
 **All AI flows go through Groq (`llama-3.3-70b-versatile`)** — Insights, Quick Insight widget, hybrid AI scoring + sentiment layers, filings chat, market digest, AI chat panel, and the Recent Trades **AI ✨** button. The single-Anthropic-route holdover at `summarize-trade` was migrated 2026-05-12; `@anthropic-ai/sdk` is no longer a dependency. The misleadingly-named `CLAUDE_CONFIG` in `src/lib/config.ts` is still the source of truth for `.model` + `.maxTokens` constants but no longer reads `.apiKey` directly — all key lookups go through `getLlmApiKey()` / `getFinnhubApiKey()` / `getAnthropicApiKey()` in `src/lib/system-config.ts`.
@@ -562,7 +580,7 @@ ssh deploy@<host> "sudo -u postgres psql sentinel_db -v ON_ERROR_STOP=1 -f /tmp/
 - `tests/unit/spaced-repetition.test.ts` (11 tests) — SM-2 algorithm
 
 ### Backtest Page
-- **Strategy presets** are filtered to the 7 engine-runnable modes (`conservative`, `moderate`, `aggressive`, `optimized`, `intraday`, `tactical`, `tactical-smart`) plus `custom` and `auto` — backtest and Live Trader share the same preset universe so what you tune is what you can deploy.
+- **Strategy presets** are filtered to the 7 engine-runnable base modes (`conservative`, `moderate`, `aggressive`, `optimized`, `intraday`, `tactical`, `tactical-smart`) plus `adaptive` (8th, regime-driven), `custom`, and `auto` — backtest and Live Trader share the same preset universe so what you tune is what you can deploy.
 - **Date-range mode**: `/api/backtest/[symbol]` accepts `startDate`/`endDate` (`YYYY-MM-DD`) in addition to `days`. Provider `fetchBars()` accepts an optional `endDate`; historical fetches (>24h in the past) bypass the disk cache. Daily bars only — Yahoo retains ~60 days of intraday history, so multi-year 5m backtests aren't possible without a paid feed.
 
 ### Sub-Navigation Groups
