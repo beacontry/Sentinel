@@ -323,12 +323,12 @@ All brokers support: `getAccount()`, `getPositions()`, `getOrders()`, `placeOrde
 | Section | Pages | Purpose |
 |---------|-------|---------|
 | **Dashboard** | Home (multi-layout, resizable widgets) | Command center with watchlist, signals, P&L |
-| **Analysis** | Analysis, Heatmap, Correlation, Relative Strength, Multi-TF, Breadth, Sector Rotation, Unusual Activity, Risk | Chart structure and market views. Toggle between engine view (with signal markers) and TradingView Advanced Chart |
+| **Analysis** | Analysis, Heatmap, Correlation, Relative Strength, Multi-TF, Breadth, Sector Rotation, Unusual Activity, Risk | Chart structure and market views. Toggle between engine view (with signal markers) and TradingView Advanced Chart. **Focus mode** collapses the sidebar; **Maximize** button expands either chart to fill the viewport (Esc to exit) |
 | **Screener** | Screener | Scan market for setups, feeds signals to engine |
 | **Trader** | Live Trader, Strategies, Backtest, **Compare** (`/backtest/compare`), Optimizer, Alerts, Calculator, Replay, Risk Sim, **Trade ticket** (`/trade/[symbol]`) | Execution and strategy management. Manual order ticket supports market/limit/stop/stop-limit/bracket + fractional shares (dollar-based buys) — engine-gated so the in-memory position map can't drift. **AI ✨** button on every Recent Trades row generates a Groq-powered plain-English journal summary, cached on the row |
 | **Journal** | Journal, Performance (now with P&L attribution by symbol), P&L Calendar (clickable days with trade drill-down), Tax Center, Tax Report, Drawdown, Reports | Trade review and tracking |
-| **Research** | News (per-headline sentiment badges), Articles, Filings, Insights, **Congress** (federal Periodic Transaction Reports), Education (14 guides + 8 calculators + 95 glossary terms + spaced-repetition review) | Market research and personal-finance education |
-| **Macro** | Calendar, Earnings, Currency, Policy | Economic events and FX |
+| **Research** | News (per-headline sentiment badges), Articles (auto-populated daily by the market-digest cron), Filings, Insights, **Congress** (federal Periodic Transaction Reports), Education (15 guides + 8 calculators (now accordion) + 100 glossary terms + spaced-repetition review) | Market research and personal-finance education |
+| **Macro** | Calendar, Earnings (prominent "Add ticker" affordance — persists to watchlist), Currency, Policy | Economic events and FX |
 | **Community** | Feed, Forum, Posts, Leaderboard, **Messages** (private DMs) | Social trading |
 | **Help** | **Support** (ticketed customer support with admin reply view) | Bug reports, questions, requests |
 | **Admin** | Admin (Users, Invites), Audit Log (hash-chained), **System Configuration** (`/dashboard/admin/system-config` — encrypted server-wide API keys: Groq, Finnhub, Anthropic; Test-before-save flow; rotate without SSH), Settings (Display preferences: P&L $/%, time format, color-blind palette, default landing page, daily-digest email opt-in) | User management, audit, server-wide config |
