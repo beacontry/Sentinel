@@ -3171,6 +3171,897 @@ const socialSecurityClaiming: Guide = {
   ],
 };
 
+// ═══ Guides for minors / custodial investing ═══════════════════════════════
+
+const ugmaUtma: Guide = {
+  slug: "ugma-utma-custodial-accounts",
+  title: "UGMA & UTMA: Custodial Accounts for Minors",
+  topic: "education-funding",
+  difficulty: "intro",
+  summary:
+    "How custodial accounts work, the difference between UGMA and UTMA, when the kid takes control, and the FAFSA cost most people don't know about.",
+  readingMinutes: 9,
+  lastReviewed: "2026-05-13",
+  keyFacts: [
+    { label: "Account Type", value: "Custodial — minor owns, adult manages" },
+    { label: "Annual Limit", value: "None (but gift tax: $19K/donor/year in 2026)" },
+    { label: "Age of Termination", value: "18, 21, or 25 — varies by state" },
+    { label: "Tax Treatment", value: "Subject to Kiddie Tax (see separate guide)" },
+    { label: "FAFSA Impact", value: "Counts as STUDENT asset — assessed at 20%" },
+    { label: "Reversibility", value: "Irrevocable — you cannot take the money back" },
+  ],
+  sections: [
+    {
+      id: "what-they-are",
+      heading: "What custodial accounts actually are",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "A custodial account is a brokerage account that legally belongs to a minor but is managed by an adult custodian (usually a parent or grandparent) until the minor reaches the age of termination. UGMA and UTMA are the two state-law frameworks that govern these accounts in the US.",
+        },
+        {
+          type: "paragraph",
+          text: "The key thing to internalize before opening one: the money is the child's the moment you transfer it in. You're not 'saving for them' — you're giving them money and managing it on their behalf. When they hit the age of termination, the account converts to their full control. You cannot take it back, redirect it, or hold it hostage if they want to spend it on a sports car instead of college.",
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "Irrevocability is the part everyone underestimates",
+          body: "Custodial accounts are common because they're easy. They're easy because they have very few protections for the donor. If your relationship with your child sours, if they make decisions you disagree with, or if they file for bankruptcy at 22 — the account is theirs. Not yours. There is no clawback.",
+        },
+      ],
+    },
+    {
+      id: "ugma-vs-utma",
+      heading: "UGMA vs UTMA — what actually differs",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "UGMA (Uniform Gifts to Minors Act, 1956) was the original framework. UTMA (Uniform Transfers to Minors Act, 1986) is the more modern version that most states now use. South Carolina and Vermont are the last UGMA-only states; everyone else offers UTMA.",
+        },
+        {
+          type: "table",
+          caption: "UGMA vs UTMA at a glance",
+          headers: ["Feature", "UGMA", "UTMA"],
+          rows: [
+            ["Year enacted", "1956", "1986"],
+            ["Assets allowed", "Cash, stocks, bonds, mutual funds only", "Anything — real estate, art, intellectual property, etc."],
+            ["Age of termination", "Usually 18", "18, 21, or 25 depending on state"],
+            ["Available in", "All states (legacy)", "All states except SC and VT"],
+          ],
+          align: ["left", "left", "left"],
+        },
+        {
+          type: "paragraph",
+          text: "For pure brokerage-account use, the two are functionally identical. If you're holding stocks, bonds, ETFs, and mutual funds — which is 99% of custodial accounts in the wild — UGMA and UTMA behave the same way. The UTMA advantages (broader assets, higher age of termination in some states) matter only if you're transferring property other than securities.",
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Most brokerages just call them all 'UTMA' now",
+          body: "Fidelity, Schwab, Vanguard, etc. typically open UTMAs by default (or UGMAs in SC/VT). You don't have to pick — they handle the state law for you. The defaults are sensible.",
+        },
+      ],
+    },
+    {
+      id: "age-of-termination",
+      heading: "When does the kid take control?",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "This is the single most important variable for parents to understand. The age at which the account converts to the minor's full control is set by your state's UTMA statute, NOT by you. Some states fix it at 18 (matching the age of majority); others allow the custodian to extend to 21 or 25 at account opening.",
+        },
+        {
+          type: "table",
+          caption: "Age of termination by state (representative — verify with your state's statute)",
+          headers: ["Age", "States"],
+          rows: [
+            ["18", "California (default), Nevada, Oklahoma, South Dakota, Vermont (UGMA)"],
+            ["21 (default in most states)", "New York, Texas, Florida, Illinois, Pennsylvania, Massachusetts, Ohio, Virginia, and most others"],
+            ["Custodian can extend to 21 at opening", "Most states with default 18"],
+            ["Custodian can extend to 25 at opening", "California, Florida, Illinois, Maine, Massachusetts, Nevada, New Hampshire, New Jersey, Tennessee, Virginia"],
+          ],
+          align: ["left", "left"],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "You can ONLY extend at account opening",
+          body: "If you open a UTMA at default age (often 21) and decide three years later you'd prefer 25, you cannot retroactively change it. Lock in the maximum your state allows when you open the account — you can always hand the money over earlier if circumstances change.",
+        },
+        {
+          type: "paragraph",
+          text: "At the age of termination, the brokerage simply re-titles the account in the child's name. There's no court process, no signature from you, no negotiation. The brokerage may notify the now-adult that the account is theirs and request updated paperwork, but legally the transfer is automatic.",
+        },
+      ],
+    },
+    {
+      id: "tax-treatment",
+      heading: "How custodial accounts are taxed",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Income generated inside a custodial account — dividends, interest, capital gains — is the child's income, reported under the child's Social Security number. But the IRS doesn't let you arbitrage tax brackets by parking your investments in your toddler's name. The Kiddie Tax (see separate guide) taxes unearned income above a small threshold at the parent's marginal rate.",
+        },
+        {
+          type: "key-value",
+          caption: "2026 Kiddie Tax brackets for unearned income (estimates)",
+          pairs: [
+            { label: "First $1,350", value: "Tax-free (offset by child's standard deduction)" },
+            { label: "Next $1,350", value: "Taxed at child's rate (typically 10%)" },
+            { label: "Above $2,700", value: "Taxed at PARENT's marginal rate" },
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "Practical implication: for accounts under ~$30K invested in dividend stocks or bonds, the Kiddie Tax is essentially a wash. For accounts over $50K throwing off $3K+ in dividends/interest annually, you're paying your top bracket on the overage — not the kid's 10%. That's still a tax-free first $1,350 you wouldn't get in a taxable brokerage in your name, but it's not the dramatic tax shelter people imagine.",
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Growth stocks are more tax-efficient than dividend stocks here",
+          body: "Unrealized capital gains aren't unearned income until you sell. Stocking the UTMA with low-dividend growth ETFs (e.g. broad-market index funds, growth tilts) defers the Kiddie Tax until eventual sale. Bond funds, REITs, and high-dividend payers throw off Kiddie-Tax-eligible income every year.",
+        },
+      ],
+    },
+    {
+      id: "fafsa",
+      heading: "The FAFSA gotcha (this is the big one)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Custodial-account assets count as the STUDENT'S assets on the FAFSA — not the parents'. This sounds neutral but is genuinely awful for financial aid purposes, because the FAFSA assesses student assets at 20% per year, vs parent assets at a maximum of 5.64% per year.",
+        },
+        {
+          type: "paragraph",
+          text: "A $40,000 UTMA balance therefore reduces the student's annual financial aid by ~$8,000 — every year of college. The same $40,000 held in a 529 plan owned by the parent reduces it by ~$2,256. Over four years, that's a $23,000 swing in expected aid.",
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "If you might qualify for need-based aid, this matters a lot",
+          body: "Households making under ~$120K with 1+ kids approaching college age should think hard about UTMA balances. Need-based aid (Pell Grants, subsidized loans, institutional grants) is sensitive to reported assets. Even merit-based aid at some schools incorporates FAFSA data.",
+        },
+        {
+          type: "paragraph",
+          text: "If you've already funded a UTMA and the FAFSA timing is unfortunate, there's a legal workaround: spend down the UTMA on the child's behalf BEFORE filing the FAFSA. Pay for the kid's school-related computer, summer camp, instrument, tutoring, tuition for a year. UTMA funds can legally be spent on anything that benefits the child, even before they turn 18 — the custodian's fiduciary obligation is to the child, not to keeping the assets parked.",
+        },
+      ],
+    },
+    {
+      id: "when-it-makes-sense",
+      heading: "When custodial accounts make sense",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Households unlikely to qualify for need-based financial aid (>$200K income / >$1M assets).",
+            "Gifts from grandparents who want to give the child money but not directly through the parents.",
+            "Cases where the goal is broader than college — first car, wedding, house down payment, business seed.",
+            "Annual gift-tax exclusion ($19K/donor/year in 2026) management — UTMAs are a clean way to use the exclusion without retaining control.",
+            "When the kid is mature enough that handing them control at 18-21 isn't a foreseeable disaster.",
+          ],
+        },
+        {
+          type: "list",
+          items: [
+            "Custodial accounts are NOT a substitute for a 529 if the goal is purely college. The 529's tax + FAFSA advantages dominate for college-only purposes.",
+            "Custodial accounts are NOT a substitute for a Custodial Roth IRA if the child has earned income — see that separate guide.",
+            "Custodial accounts are NOT a substitute for a trust if you want to retain control past age 25. If you want to defer access until 30+ or attach conditions (graduation, sobriety, etc.), use a trust drafted by an attorney. UTMAs cannot be conditional.",
+          ],
+        },
+      ],
+    },
+  ],
+  quiz: [
+    {
+      question:
+        "You opened a UTMA for your child five years ago and now want to extend the age of termination from 18 to 25. What can you do?",
+      options: [
+        "File a paper amendment with the brokerage to extend it",
+        "Get a court order from family court to modify the trust",
+        "Nothing — the age is locked at account opening and cannot be retroactively extended",
+        "Roll the UTMA into a new UTMA opened with age 25",
+      ],
+      correctIndex: 2,
+      explanation:
+        "UTMA age of termination is set at account opening per state statute and cannot be extended later. Roll-out to a new account would still be the child's money and a transfer would be a taxable event. If you want flexibility, lock in your state's maximum age when opening.",
+    },
+    {
+      question:
+        "A grandparent funds a $50,000 UTMA for your high-school-junior child. Compared to the same $50,000 in a parent-owned 529, how does this affect FAFSA need-based aid eligibility?",
+      options: [
+        "Identically — both count toward parental assets",
+        "Better in the UTMA — student assets are sheltered",
+        "Roughly $2,800/year worse in the UTMA (20% assessment vs ~5.64%)",
+        "Doesn't matter — FAFSA only counts retirement accounts",
+      ],
+      correctIndex: 2,
+      explanation:
+        "Student-owned assets (UTMA) are assessed at 20% per year on the FAFSA. Parent-owned assets (529) at a maximum of 5.64%. On $50K, that's ~$10K vs ~$2,820 in reduced aid annually. Over four years, ~$28K difference.",
+    },
+    {
+      question:
+        "Your UTMA throws off $4,500 of dividend income in 2026 from a $90K balance. How is that taxed under the Kiddie Tax?",
+      options: [
+        "All $4,500 at the child's (low) marginal rate",
+        "All $4,500 at the parent's marginal rate",
+        "First $1,350 tax-free, next $1,350 at child's rate, remaining $1,800 at parent's rate",
+        "First $2,700 tax-free, remaining $1,800 at child's rate",
+      ],
+      correctIndex: 2,
+      explanation:
+        "2026 Kiddie Tax brackets (estimated): first $1,350 covered by standard deduction, next $1,350 at child's rate (10%), anything above the $2,700 combined threshold at the parent's marginal rate. Custodial accounts are not the dramatic tax shelter people sometimes claim — they're a slight benefit on the first ~$2,700 of unearned income.",
+    },
+    {
+      question:
+        "Which is true about UGMA vs UTMA for a brokerage account holding only stocks and ETFs?",
+      options: [
+        "UGMA has lower tax rates",
+        "UTMA gives the parent more legal control after age of termination",
+        "They behave essentially identically — the difference matters only for non-security assets like real estate",
+        "UGMA accounts are federal; UTMA accounts are state-administered",
+      ],
+      correctIndex: 2,
+      explanation:
+        "For ordinary brokerage holdings (stocks, bonds, ETFs, mutual funds), UGMA and UTMA are functionally identical. UTMA's advantages — allowing real estate, art, IP, and higher age-of-termination options — only matter for non-security assets or when a parent wants the option to extend to 21/25.",
+    },
+    {
+      question:
+        "Your child has a $30K UTMA balance. They're now 17 and planning to apply to need-based-aid-friendly colleges next year. What's a legal way to reduce the FAFSA hit?",
+      options: [
+        "Move the money to your own taxable brokerage account",
+        "Spend down UTMA funds on legitimate child-benefit expenses (school computer, instrument, tutoring, summer programs) before filing the FAFSA",
+        "Have the child sign a waiver giving the money back to you",
+        "Convert the UTMA into a 529 in your name",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Options A and C are illegal (transferring child's assets back is a breach of fiduciary duty); D is technically possible via a UTMA-to-529 rollover but the FAFSA still considers the 529 as a student-owned asset if it originated from the UTMA. Legitimate spend-down on child-benefit expenses is legal and effective — UTMA funds were always allowed to be used for the child's benefit.",
+    },
+  ],
+};
+
+const custodialRothIra: Guide = {
+  slug: "custodial-roth-ira-for-minors",
+  title: "Custodial Roth IRA: Tax-Free Growth from Age 0",
+  topic: "retirement",
+  difficulty: "intermediate",
+  summary:
+    "The most underused account in personal finance — a Roth IRA opened in a minor's name, funded with their earned income. Sixty-plus years of tax-free compounding.",
+  readingMinutes: 8,
+  lastReviewed: "2026-05-13",
+  keyFacts: [
+    { label: "2026 Contribution Limit", value: "Lesser of $7,000 or child's earned income" },
+    { label: "Eligibility", value: "Child must have W-2 or 1099 income — verifiable" },
+    { label: "Account Type", value: "Custodial Roth IRA (becomes the child's outright at age of majority)" },
+    { label: "Tax Treatment", value: "After-tax in, tax-free forever out" },
+    { label: "Most Famous Example", value: "$3,500 contributed at age 10 → ~$215K by age 65 at 7% return" },
+    { label: "FAFSA Impact", value: "Retirement assets are EXCLUDED from FAFSA" },
+  ],
+  sections: [
+    {
+      id: "what-it-is",
+      heading: "What a Custodial Roth IRA actually is",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "A Custodial Roth IRA is structurally identical to a regular Roth IRA — same contribution limits ($7,000 in 2026), same income phase-outs, same withdrawal rules — except it's opened in a minor's name with a parent or guardian as the custodian. When the child reaches the age of majority in your state (usually 18 or 21), the account becomes theirs outright with no tax event.",
+        },
+        {
+          type: "paragraph",
+          text: "It is, by significant margin, the most powerful retirement tool available to anyone who has it. Every additional year of tax-free compounding turns into geometric returns at the back end. A $3,500 contribution at age 10 — left untouched, compounding at a realistic 7% net of inflation — grows to roughly $215,000 by age 65. That's a 60x return entirely tax-free, on $3,500 the kid earned mowing lawns one summer.",
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "The math is the marketing",
+          body: "Time is the engine of compound growth. A 10-year-old has a 55-year runway. A 25-year-old just out of college has 40. The difference between starting at 10 vs 25 isn't 15 years of contributions — it's that the first 15 years of compounding work the hardest, because they compound on the longest tail.",
+        },
+      ],
+    },
+    {
+      id: "earned-income-requirement",
+      heading: "The non-negotiable requirement: earned income",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Roth IRA contributions must be 'earned income' under IRS rules. Allowance doesn't count. Gifts don't count. Investment income doesn't count. The child must have actually earned the money through work — wages from an employer (W-2), or self-employment income (1099 or just reported on Schedule C).",
+        },
+        {
+          type: "key-value",
+          caption: "What counts as earned income for a minor",
+          pairs: [
+            { label: "Babysitting / lawn-mowing for neighbors", value: "Yes — Schedule C self-employment income" },
+            { label: "Working for your family business", value: "Yes — must be real, age-appropriate work at market rate" },
+            { label: "W-2 from a part-time job", value: "Yes — easiest case to document" },
+            { label: "Modeling / acting income", value: "Yes — IRS has rulings on this since the 1980s" },
+            { label: "Allowance, gifts, birthday money", value: "No — not earned income" },
+            { label: "Investment dividends from a UTMA", value: "No — investment income, not earned" },
+            { label: "Stipends for academic awards", value: "Generally no — usually treated as scholarship income" },
+          ],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Document everything, even for tiny amounts",
+          body: "The IRS can audit a Roth IRA contribution years later. Keep records: invoices the kid wrote for neighbors, deposit receipts, a simple log of dates worked and amounts received. For W-2 income, the pay stubs are your documentation. For Schedule C income under $400/year, technically no return is required but it's wise to keep the records anyway.",
+        },
+        {
+          type: "paragraph",
+          text: "The contribution limit is the LESSER of $7,000 (2026 limit) or the child's earned income. If your 8-year-old earned $850 from helping at a family business this summer, the maximum Roth IRA contribution is $850. Not $7,000. You can't pre-fund the limit based on future expected earnings.",
+        },
+      ],
+    },
+    {
+      id: "family-business-strategy",
+      heading: "The family business angle",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "If you own a business (sole proprietor, LLC, S-Corp), you can legitimately employ your minor children for age-appropriate work at market-rate wages. This is the most common path to fully funding a Custodial Roth IRA every year from when the kid can do useful work — typically age 7-8 onward.",
+        },
+        {
+          type: "paragraph",
+          text: "The IRS allows this and it has additional tax benefits beyond the Roth: wages paid to your own children under 18 by a parent-owned sole prop or LLC (not S-Corp) are exempt from FICA payroll taxes. The child's wages are also deductible as a business expense for you. And if the child stays under the standard deduction ($15,750 in 2026 estimated for single filers), they pay no federal income tax on the wages.",
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Triple tax efficiency",
+          body: "Your kid earns $7,000 from your business → you deduct $7,000 as a business expense (saving your marginal rate) → the kid pays no income tax (under standard deduction) → the kid contributes $7,000 to a Custodial Roth → it grows tax-free for 60 years. The total tax saved across the family unit is significant, and the contribution is fully Roth.",
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "It has to be real work at a real wage",
+          body: "The IRS has audited and disallowed obviously bogus arrangements (paying a 4-year-old $20K/year to 'consult'). Work must be age-appropriate, hours must be reasonable, the wage must be defensible as market-rate for the work. Filing paperwork, basic organizing, social media tasks, stuffing envelopes, modeling for your business's marketing — all fine. 'Strategic advisor' for a kindergartener — not fine.",
+        },
+      ],
+    },
+    {
+      id: "fafsa",
+      heading: "The FAFSA bonus",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Retirement accounts (Roth IRA, Traditional IRA, 401(k), 403(b), etc.) are EXPLICITLY excluded from FAFSA asset reporting. This is the underrated half of the Custodial Roth advantage: not only is the growth tax-free, but the entire balance doesn't reduce your child's financial aid eligibility.",
+        },
+        {
+          type: "paragraph",
+          text: "A $50,000 UTMA reduces your child's annual aid by ~$10,000. A $50,000 Custodial Roth IRA reduces it by $0. If you're picking between funding a UTMA vs a Custodial Roth IRA and the child has any earned income at all, the Roth is mathematically dominant for need-based-aid-eligible households.",
+        },
+      ],
+    },
+    {
+      id: "withdrawal-flexibility",
+      heading: "Withdrawal flexibility (don't sleep on this)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Roth IRA contributions (not earnings) can be withdrawn anytime, tax-free and penalty-free. So if your now-adult child decides at 28 to use $20,000 of contributions for a house down payment, that's allowed. The earnings continue compounding tax-free.",
+        },
+        {
+          type: "paragraph",
+          text: "There's also a first-time homebuyer exception that lets the now-adult child withdraw up to $10,000 of EARNINGS (not just contributions) for a first home purchase without the 10% early-withdrawal penalty (still taxable if under 59½, but no penalty).",
+        },
+        {
+          type: "paragraph",
+          text: "This combination — total liquidity on contributions + the first-home earnings exception — makes the Custodial Roth more flexible than people often realize. It is not a 'locked away until 65' account. It's an enormously tax-advantaged account that can also serve as an emergency fund and home-purchase fund.",
+        },
+      ],
+    },
+    {
+      id: "opening-one",
+      heading: "How to actually open one",
+      blocks: [
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "Pick a brokerage that offers Custodial Roth IRAs — Fidelity, Schwab, and Vanguard all do for free with no minimums (as of 2026).",
+            "You'll need the child's SSN, your SSN, and proof of the child's earned income (pay stub, Schedule C summary, invoices).",
+            "Account opens in the child's name with you as custodian. You make all investment decisions until age of majority.",
+            "Set up auto-contributions or annual lump-sum contributions up to the limit OR the child's earned income, whichever is less.",
+            "Invest in a broad-market index fund (VTI, VTSAX, SWTSX). Don't overthink it — at this time horizon, low-cost diversified equity exposure is the right answer.",
+            "At age of majority, the brokerage converts the account to the child's name. They retain all the same tax advantages.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Start the 5-year clock as early as possible",
+          body: "The Roth's 5-year clock starts the year of the first contribution. Even a $100 contribution in year one starts the clock for tax-free earnings withdrawals — separate from the contribution-anytime rule. Future-you (or future-them) will thank you.",
+        },
+      ],
+    },
+  ],
+  quiz: [
+    {
+      question:
+        "Your 8-year-old earned $1,200 babysitting cousins over the summer (paid in cash, not on a W-2). What's the maximum Roth IRA contribution allowed for them in 2026?",
+      options: [
+        "$0 — Roth IRA requires W-2 income only",
+        "$1,200 — limited by their earned income",
+        "$7,000 — the standard limit",
+        "$3,500 — half the limit, since they're a minor",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Roth IRA contributions are capped at the LESSER of $7,000 (2026 limit) or the child's earned income. Self-employment income (Schedule C — babysitting, lawn mowing, etc.) is fully eligible — it doesn't have to be W-2. Keep records of the work; the IRS can audit Roth contributions retroactively.",
+    },
+    {
+      question:
+        "Compared to a UTMA, how does a Custodial Roth IRA affect a college-age student's FAFSA?",
+      options: [
+        "Worse — student retirement assets are assessed at 35%",
+        "Same — both are student-owned assets",
+        "Better — Roth IRA principal counts, earnings excluded",
+        "Better — retirement accounts are entirely excluded from FAFSA reporting",
+      ],
+      correctIndex: 3,
+      explanation:
+        "All retirement accounts (Roth IRA, Traditional IRA, 401(k), etc.) are explicitly excluded from FAFSA asset reporting. A $50K Custodial Roth reduces aid by $0, vs $10K/year for a UTMA. This makes the Custodial Roth dominant for need-based-aid-eligible households when the child has earned income.",
+    },
+    {
+      question:
+        "A parent who owns a sole proprietorship employs their 12-year-old child to file paperwork for $7,000/year. Which is true about the tax treatment?",
+      options: [
+        "The wages are subject to standard FICA payroll taxes",
+        "The wages are exempt from FICA, deductible to the business, and below the standard deduction (so no federal income tax for the child)",
+        "The IRS prohibits employing minors under 14",
+        "The wages must be reported as gift income, not earned income",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Wages paid to your own child under 18 by a sole proprietorship or single-member LLC (NOT S-Corp or partnership with non-parent owners) are exempt from FICA. They're deductible to the business at your marginal rate. The child pays no federal income tax up to the standard deduction (~$15,750 in 2026 estimated). And the child can contribute the full amount to a Custodial Roth IRA. All legal — but the work must be real and age-appropriate.",
+    },
+    {
+      question:
+        "Your child contributed $5,000 to their Custodial Roth at age 16. At age 28, they want to withdraw $4,000 for a wedding. Is this allowed?",
+      options: [
+        "No — Roth IRA funds are locked until age 59½ except for medical hardship",
+        "Yes — they can withdraw contributions (not earnings) anytime, tax-free and penalty-free",
+        "Yes, but a 10% penalty applies",
+        "Yes, but only if they pay tax on the withdrawal",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Roth IRA contributions (the principal — not the earnings) can be withdrawn anytime, with no tax and no penalty. This is one of the most flexible features of the Roth. Earnings are different — those have age and 5-year-rule restrictions. The contribution-anytime rule is what makes the Custodial Roth function as a dual-purpose retirement + emergency account.",
+    },
+    {
+      question:
+        "Which of these is NOT considered earned income for the purposes of funding a Custodial Roth IRA?",
+      options: [
+        "Wages from working at a parent's business doing age-appropriate tasks",
+        "Self-employment income from babysitting neighbors",
+        "$3,000 of dividends from a UTMA brokerage account",
+        "1099 income from modeling for a local advertising campaign",
+      ],
+      correctIndex: 2,
+      explanation:
+        "Dividend, interest, and capital-gain income from investments is UNEARNED income — it doesn't qualify for Roth IRA contributions. The other three are all earned income (W-2 wages, self-employment, or 1099). The Roth rule is simple: the income has to come from labor (the child's work), not from capital.",
+    },
+  ],
+};
+
+const coverdellEsa: Guide = {
+  slug: "coverdell-esa-vs-529",
+  title: "Coverdell ESA vs 529: When Each Wins",
+  topic: "education-funding",
+  difficulty: "intermediate",
+  summary:
+    "The $2,000-a-year cousin to the 529. Coverdell wins on K-12 flexibility and investment choice; 529 wins on contribution limits and state tax breaks. Why most families use both.",
+  readingMinutes: 7,
+  lastReviewed: "2026-05-13",
+  keyFacts: [
+    { label: "Coverdell Contribution Limit", value: "$2,000 / beneficiary / year (all contributors combined)" },
+    { label: "Coverdell Income Phase-Out", value: "MAGI $95K–$110K single, $190K–$220K MFJ" },
+    { label: "Coverdell Investment Choice", value: "Any brokerage holding — stocks, bonds, ETFs, MFs" },
+    { label: "Coverdell Use", value: "K-12 + college + post-secondary trade/vocational" },
+    { label: "529 Contribution Limit", value: "$19K/year (gift tax limit) or $95K front-loaded; lifetime ~$300-550K" },
+    { label: "529 Investment Choice", value: "Plan-specific menus (~10-30 fund choices)" },
+  ],
+  sections: [
+    {
+      id: "what-coverdell-is",
+      heading: "What a Coverdell ESA is",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "A Coverdell Education Savings Account (ESA) is a tax-advantaged investment account for education expenses, originally created in 1997 and named for the late senator Paul Coverdell. Like the Roth IRA, contributions are after-tax. Like the Roth, growth is tax-free. Like the 529, withdrawals are tax-free when used for qualifying education expenses.",
+        },
+        {
+          type: "paragraph",
+          text: "The hard constraint: $2,000 contribution limit per beneficiary per year, across ALL contributors combined. This makes it impossible for Coverdell alone to fund a four-year private college (which now runs $80,000+/year). Most families that use Coverdells use them as a SUPPLEMENT to a 529, not a replacement.",
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "$2,000/year is the everyone-combined cap",
+          body: "If grandparents A contribute $2,000 in January and grandparents B contribute another $1,000 in March, the second contribution creates a 6% excise tax penalty until withdrawn. Coordinate among contributors.",
+        },
+      ],
+    },
+    {
+      id: "key-differences",
+      heading: "Coverdell vs 529 — the actual differences",
+      blocks: [
+        {
+          type: "table",
+          caption: "Side-by-side feature comparison (2026)",
+          headers: ["Feature", "Coverdell ESA", "529 Plan"],
+          rows: [
+            ["Annual contribution limit", "$2,000/beneficiary (all contributors)", "$19K/donor (gift tax limit); $95K 5-year front-load"],
+            ["Lifetime contribution limit", "Effectively $36K ($2K × 18 years)", "$300K–$550K depending on state"],
+            ["Contributor income limit", "Phases out at $95K–$110K single / $190K–$220K MFJ", "None"],
+            ["Use for K-12 tuition", "Yes, up to full amount", "Yes, but $10K/year cap"],
+            ["Use for K-12 expenses (books, computers, etc.)", "Yes — broad", "Tuition only (the $10K cap)"],
+            ["Use for college", "Yes — full QHEE list", "Yes — full QHEE list"],
+            ["Use for trade school / apprenticeships", "Yes", "Yes (since 2019)"],
+            ["Investment choices", "Any brokerage holding", "Plan-specific menu (10-30 funds typically)"],
+            ["Federal tax treatment", "Tax-free growth + qualified withdrawals", "Tax-free growth + qualified withdrawals"],
+            ["State tax deduction", "Usually none", "Many states offer in-state plan deduction"],
+            ["Age limit", "Must be used by age 30 (or rolled to family member)", "No age limit"],
+            ["FAFSA treatment (parent-owned)", "Parent asset (~5.64%)", "Parent asset (~5.64%)"],
+          ],
+          align: ["left", "left", "left"],
+        },
+      ],
+    },
+    {
+      id: "when-coverdell-wins",
+      heading: "When the Coverdell is the right answer",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "You want to use the funds for K-12 private school tuition AND books/computers/uniforms/etc. — Coverdell covers everything; 529 only covers tuition for K-12.",
+            "You want full investment choice (individual stocks, low-cost ETFs not in your 529 plan, etc.) rather than the plan-curated menu.",
+            "You're already maxing the 529 contribution and want to layer additional tax-advantaged growth.",
+            "The beneficiary is under 18 and you specifically want a tightly-bounded account, not the much-larger 529 capacity.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Income phase-out is real",
+          body: "If your household MAGI exceeds the phase-out, you cannot contribute to a Coverdell directly. Workaround: GIFT $2,000 to the child each year (or grandparent gifts to the grandchild) and have the recipient contribute. There's no income limit on the beneficiary or non-parent contributors as long as the limit isn't exceeded.",
+        },
+      ],
+    },
+    {
+      id: "when-529-wins",
+      heading: "When the 529 is the right answer",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "You need to save more than $2,000/year — the most common case.",
+            "You want your state's income-tax deduction for in-state 529 contributions (a 5-6% immediate return in high-tax states).",
+            "You want to front-load via the 5-year gift averaging ($95K up front in 2026), useful for grandparents wanting to make a large early gift.",
+            "You're not sure if the beneficiary will use the funds by age 30 — 529s have no age limit, Coverdells force a transfer or distribution.",
+            "You want the (post-Secure Act 2.0) option to roll up to $35,000 of unused 529 funds into a Roth IRA for the beneficiary.",
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "The 529 Roth-rollover feature deserves emphasis. Starting in 2024 (and refined since), if a 529 has been open 15+ years and the beneficiary has earned income, up to $35,000 of unused 529 balance can be rolled into the beneficiary's Roth IRA over their lifetime (subject to annual Roth limits). This effectively converts 'oversaved' college money into retirement savings without the 10% non-qualified withdrawal penalty. Coverdells don't have this — leftover Coverdell funds either transfer to a sibling or get distributed with tax + 10% penalty on the earnings.",
+        },
+      ],
+    },
+    {
+      id: "common-strategy",
+      heading: "The common strategy: use both",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "For households that can afford it, the practical play is to fund both. The 529 carries the bulk (state tax deduction + larger amounts + Roth rollover safety net). The Coverdell carries K-12 expenses and any non-traditional investment choices you want.",
+        },
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "529 — fund up to your state's tax-deduction cap each year (usually $5K-20K), invested in low-cost age-based or static index portfolio.",
+            "Coverdell — additional $2,000/year if you want K-12 flexibility or specific investment access.",
+            "Custodial Roth IRA — if the child has earned income (separate dominant strategy for retirement).",
+            "UTMA — last priority for additional after-tax investing if the previous three are exhausted (and FAFSA isn't a concern).",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Stacking order matters",
+          body: "529 first (state tax break is immediate). Coverdell next if K-12 expenses are anticipated. Custodial Roth if earned income exists. UTMA last. Most families don't have the cash flow to do all four — the 529 alone usually suffices for college-only saving.",
+        },
+      ],
+    },
+  ],
+  quiz: [
+    {
+      question:
+        "Your MAGI is $250K (MFJ). Can you directly contribute to a Coverdell ESA for your child in 2026?",
+      options: [
+        "Yes — Coverdell has no income limit",
+        "No — you're above the $190K-$220K phase-out range",
+        "Yes, but only up to $1,000",
+        "Yes, but you must contribute via a 529 rollover",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Coverdell contributor income phase-out is $190K-$220K for MFJ in 2026. Above $220K, you cannot contribute directly. Workaround: gift $2,000 to a grandparent or to the child, and have them make the contribution — there's no income limit on non-parent contributors.",
+    },
+    {
+      question:
+        "Which of these is a use that's allowed for Coverdell ESA funds but NOT for 529 plan funds?",
+      options: [
+        "Paying for private elementary school tuition (over $10K/year)",
+        "Paying for college tuition",
+        "Paying for graduate school",
+        "Paying for trade-school tuition",
+      ],
+      correctIndex: 0,
+      explanation:
+        "529s limit K-12 use to $10,000/year of TUITION (only). Coverdell covers full K-12 tuition with no annual cap AND covers K-12 books, computers, uniforms, transportation, etc. — none of which are 529-eligible at the K-12 level. The other options are all allowed under both.",
+    },
+    {
+      question:
+        "Your 529 balance is $80K for a kid who got a full scholarship. What can you do with the excess starting in 2026 (assuming the 529 has been open 15+ years)?",
+      options: [
+        "Nothing — withdraw with 10% penalty on earnings",
+        "Roll up to $35K total over their lifetime into the beneficiary's Roth IRA, subject to annual Roth limits",
+        "Roll the entire $80K into the beneficiary's Roth IRA tax-free",
+        "Transfer to a sibling tax-free with no limit",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Option B is the SECURE 2.0 provision (in effect since 2024). Up to $35,000 LIFETIME can be rolled from a 529 to the beneficiary's Roth IRA, but limited each year to the Roth contribution limit ($7K in 2026), and only if the 529 has been open 15+ years. Option D is also true — you can change the 529 beneficiary to a sibling at any time with no tax — but only B is the new Roth-rollover provision.",
+    },
+    {
+      question:
+        "A grandparent funds a $2,000 Coverdell ESA in January. In March, the parents try to contribute another $1,000. What happens?",
+      options: [
+        "Allowed — the limit is per-contributor",
+        "Allowed — each parent has their own $2,000 limit",
+        "The $1,000 over-contribution triggers a 6% excise tax annually until withdrawn",
+        "The parents' contribution is automatically reduced to $0",
+      ],
+      correctIndex: 2,
+      explanation:
+        "Coverdell's $2,000 limit is PER BENEFICIARY across ALL contributors combined. The $1,000 over-contribution faces a 6% excise tax penalty annually until the excess is withdrawn. Contributors must coordinate. The 529 has no similar issue — multiple contributors can each contribute up to the gift-tax limit ($19K in 2026).",
+    },
+    {
+      question:
+        "Your 529 plan has 25 fund choices. Your beneficiary wants exposure to a specific small-cap value ETF (VBR) that's not in the plan menu. Best option?",
+      options: [
+        "Override the plan and buy VBR through the 529",
+        "Coverdell ESA — broker-of-choice gives access to any ETF",
+        "Roll the 529 into a UTMA",
+        "Open a second 529 at a different state's plan",
+      ],
+      correctIndex: 1,
+      explanation:
+        "529s are limited to their plan's curated menu. Coverdell ESAs at a discount broker (Fidelity, Schwab, Vanguard) give you the same investment universe as a regular brokerage account — any individual stock, ETF, mutual fund, or bond. This is one of the underrated Coverdell advantages. Option D is also valid but uses an entire $19K/year limit on a different plan; Coverdell is the smaller, more targeted answer.",
+    },
+  ],
+};
+
+const kiddieTax: Guide = {
+  slug: "kiddie-tax-explained",
+  title: "Kiddie Tax: When Your Kid's Account Bites You",
+  topic: "tax",
+  difficulty: "intermediate",
+  summary:
+    "The IRS rule that taxes unearned income on a child's account at the PARENT's marginal rate above small thresholds. The gotcha that makes UTMAs less of a tax shelter than people think.",
+  readingMinutes: 6,
+  lastReviewed: "2026-05-13",
+  keyFacts: [
+    { label: "Applies To", value: "Unearned income (dividends, interest, capital gains) of dependents under 19 (24 if full-time student)" },
+    { label: "Standard Deduction (2026 est.)", value: "$1,350 of unearned income tax-free" },
+    { label: "Child's-Rate Band", value: "Next $1,350 taxed at child's rate (typically 10%)" },
+    { label: "Parent's-Rate Threshold", value: "Above $2,700 total unearned income — parent's marginal rate applies" },
+    { label: "Does NOT Apply To", value: "Earned income (wages, self-employment) — child's full rate" },
+    { label: "Reported Where", value: "Child's own Form 1040 + Form 8615 (or parent elects Form 8814)" },
+  ],
+  sections: [
+    {
+      id: "history",
+      heading: "Why the Kiddie Tax exists",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Before 1986, high-income parents arbitraged tax brackets by parking large investments in their minor children's names. The kid's marginal rate (often 10% or 15%) was way below the parent's (28-50% at the time). $100,000 invested in growth stocks for a 5-year-old saved tens of thousands of dollars in tax each year vs the same investment in the parent's name.",
+        },
+        {
+          type: "paragraph",
+          text: "Congress closed this with the Kiddie Tax provision in the Tax Reform Act of 1986. It's been tweaked several times — the most recent significant change was in 2019, when the Trump-era TCJA briefly pegged kid's unearned income above the threshold at trust rates (which is even worse than parent rates for high earners), and then walked that back to today's parent-rate framework.",
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "The Kiddie Tax neutralizes the bracket-shifting incentive",
+          body: "For unearned income above the threshold, the kid's account is taxed AS IF the income belonged to the parent. There's no longer a tax benefit to titling investments in the minor's name from a parent's perspective. The remaining benefits of custodial accounts are: tax-free first $1,350 of unearned income, gift-tax management, and FAFSA timing — NOT bracket arbitrage.",
+        },
+      ],
+    },
+    {
+      id: "how-it-works",
+      heading: "How it actually works — the 2026 brackets",
+      blocks: [
+        {
+          type: "key-value",
+          caption: "2026 Kiddie Tax brackets for unearned income (estimated, inflation-adjusted from 2025)",
+          pairs: [
+            { label: "$0 — $1,350", value: "Tax-free (offset by child's standard deduction for unearned income)" },
+            { label: "$1,350 — $2,700", value: "Taxed at child's marginal rate (typically 10%)" },
+            { label: "$2,700+", value: "Taxed at PARENT's marginal rate (could be 22-37%)" },
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "These thresholds adjust annually for inflation. The numbers above are best estimates for 2026 — verify with the IRS or your tax software before filing. The 2025 actual figures were $1,300 and $2,600.",
+        },
+        {
+          type: "paragraph",
+          text: "The Kiddie Tax applies to dependents who are EITHER under 19 OR under 24 and a full-time student for at least 5 months of the year. The student exception was added because Congress wanted to keep the rule effective through college, when many 19-22-year-old students still have substantial unearned income from parent-funded accounts.",
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Capital gains count",
+          body: "It's not just dividends and interest. Realized capital gains in a custodial account also count as unearned income for Kiddie Tax purposes. A buy-and-hold-forever strategy defers the tax indefinitely; a tax-loss-harvest-in-November strategy may inadvertently trigger Kiddie Tax in years with large realized gains.",
+        },
+      ],
+    },
+    {
+      id: "examples",
+      heading: "Worked examples",
+      blocks: [
+        {
+          type: "heading",
+          level: 4,
+          text: "Example 1: Small UTMA ($30K balance)",
+        },
+        {
+          type: "paragraph",
+          text: "A $30,000 UTMA invested in a broad-market index fund yielding ~1.5% in dividends generates ~$450 of unearned income annually. That's below the $1,350 standard deduction. Federal tax: $0. The Kiddie Tax is functionally invisible at this balance.",
+        },
+        {
+          type: "heading",
+          level: 4,
+          text: "Example 2: Medium UTMA ($80K balance)",
+        },
+        {
+          type: "paragraph",
+          text: "$80,000 in a high-dividend or bond-heavy portfolio yielding 4%: $3,200 of unearned income. First $1,350 tax-free, next $1,350 at the child's 10% rate ($135), remaining $500 at the parent's rate. If the parent is in the 24% bracket: $120 of additional tax. Total federal tax: $255. Effective rate: 7.97%.",
+        },
+        {
+          type: "heading",
+          level: 4,
+          text: "Example 3: Large UTMA ($200K balance with realized gains)",
+        },
+        {
+          type: "paragraph",
+          text: "$200,000 in a portfolio that throws off $3,000 in dividends + $7,000 in realized capital gains: $10,000 of unearned income. First $1,350 tax-free, next $1,350 at child's rate ($135), remaining $7,300 at the parent's marginal rate. If parent is in the 32% bracket: $2,336 on the overage. Total federal: $2,471. Same realized gains in a taxable account in the parent's name would be at the parent's long-term capital gains rate (15% or 20%) — possibly LOWER than the Kiddie Tax outcome.",
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "Large UTMAs are sometimes worse than taxable accounts in your name",
+          body: "Because Kiddie Tax assesses at the PARENT'S ordinary rate (not their capital gains rate), realizing large gains in a UTMA can result in HIGHER tax than realizing them in your own taxable account. The break-even depends on your bracket. For high earners with large UTMAs and gain-heavy portfolios, the math is unfavorable.",
+        },
+      ],
+    },
+    {
+      id: "what-to-do",
+      heading: "Strategy implications",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Keep UTMA balances modest — under ~$50K — if you want the tax shelter to be a clean win.",
+            "Invest UTMA in tax-efficient holdings — broad-market index ETFs, growth-tilted funds — that defer realization rather than throw off annual dividends.",
+            "Avoid putting bonds, REITs, MLPs, and other high-yield assets in a UTMA. Park those in tax-deferred accounts in your own name.",
+            "Time realizations carefully: a year of low parent income (e.g. between jobs, sabbatical) is a much cheaper time to harvest UTMA gains, since the parent's rate that applies is lower that year.",
+            "Consider whether the Custodial Roth IRA is a better destination for the same dollars — Roth has NO Kiddie Tax issue and grows tax-free forever.",
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "The Kiddie Tax doesn't apply to earned income. If you can route money through a child's Custodial Roth IRA backed by legitimate earned income, you skip the Kiddie Tax entirely AND get the long-term Roth advantage. This is why the Custodial Roth IRA is dominant when the child has any earned income at all.",
+        },
+      ],
+    },
+    {
+      id: "filing-mechanics",
+      heading: "How to actually file it",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Kiddie Tax is reported on the child's own Form 1040 with Form 8615 attached. The child files their own return — even at age 8 — when their unearned income exceeds the threshold. The child's filing fully reports their income; the Kiddie Tax portion just applies the parent's rate to the relevant slice.",
+        },
+        {
+          type: "paragraph",
+          text: "There's a parent-election alternative on Form 8814 that lets the parent report the child's investment income on the parent's own return. This is usually worse — it can push the parent into a higher bracket and may eliminate some of the child's standard deduction. Only useful when the child's unearned income is below ~$13,000 and the parent's marginal rate is below the child's effective Kiddie Tax rate.",
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Tax software handles this fine",
+          body: "TurboTax, H&R Block, FreeTaxUSA, etc. all handle Form 8615 correctly when you enter the child's 1099-DIV / 1099-INT / 1099-B information. The IRS made the calculation purely formulaic in 2019 — there's no judgment call. The hardest part is remembering that the kid has to file at all.",
+        },
+      ],
+    },
+  ],
+  quiz: [
+    {
+      question:
+        "Your 14-year-old's UTMA had $3,000 of dividend income in 2026 (your marginal rate: 32%). Roughly how much federal tax is owed?",
+      options: [
+        "$960 — all $3,000 at the parent's rate",
+        "$300 — all $3,000 at the child's rate",
+        "$231 — first $1,350 free, next $1,350 at child's rate ($135), remaining $300 at parent's 32% ($96)",
+        "$0 — under the de minimis threshold",
+      ],
+      correctIndex: 2,
+      explanation:
+        "The Kiddie Tax applies in tiers: first $1,350 tax-free (standard deduction for unearned income), next $1,350 at the child's rate (10% for low-income kid), remainder at the parent's marginal rate. The $300 over the $2,700 threshold gets the 32% parent rate ($96 of tax), bringing the total to $231.",
+    },
+    {
+      question:
+        "Which type of income on a 17-year-old's account is NOT subject to the Kiddie Tax?",
+      options: [
+        "Bond interest from a custodial account",
+        "Dividends from a UTMA-held stock portfolio",
+        "Wages from a part-time job at a coffee shop",
+        "Realized capital gains from selling appreciated stock in the UTMA",
+      ],
+      correctIndex: 2,
+      explanation:
+        "The Kiddie Tax applies to UNEARNED income only — dividends, interest, capital gains. Earned income (wages, self-employment) is taxed entirely at the child's own marginal rate, no parent-rate kicker. This is why funneling earned income into a Custodial Roth IRA is so much more efficient than parking gifted assets in a UTMA.",
+    },
+    {
+      question:
+        "The Kiddie Tax applies to which children, generally?",
+      options: [
+        "Anyone under 18",
+        "Dependents under 19, OR under 24 and a full-time student",
+        "Anyone in K-12 school",
+        "Only children with unearned income over $10,000",
+      ],
+      correctIndex: 1,
+      explanation:
+        "The Kiddie Tax applies to dependents under 19, OR under 24 if they're a full-time student for at least five months of the tax year. Congress extended it to cover the college years specifically because that's when many parent-funded investment accounts start throwing off material dividends and gains. Once the dependency / student-status conditions fail, the kid is taxed at their own rates.",
+    },
+    {
+      question:
+        "You're considering whether to put $20,000 in a high-yield bond fund in your UTMA (4% interest, ~$800/year). Your parent's marginal rate is 24%. What's the better account for this asset?",
+      options: [
+        "UTMA — bond interest is tax-favored for children",
+        "Your own taxable brokerage — bond interest doesn't trigger Kiddie Tax there",
+        "Custodial Roth IRA — but only if the child has earned income to back the contribution",
+        "529 Plan — bonds aren't allowed in UTMAs",
+      ],
+      correctIndex: 2,
+      explanation:
+        "Bond interest is exactly the wrong asset for a UTMA — it's always unearned, throws off taxable income annually, and at moderate balances starts hitting the parent's marginal rate via Kiddie Tax. The Custodial Roth IRA shelters bond interest from tax entirely, tax-free forever. If no earned income is available, the parent's own tax-deferred 401(k) or IRA is the better home for bonds (asset location). Bonds in a UTMA combine the worst of both worlds.",
+    },
+    {
+      question:
+        "Your child has $9,000 of capital gains in their UTMA this year. Why is this worse than realizing the same gains in your own taxable brokerage account, if you're a high earner?",
+      options: [
+        "It isn't worse — capital gains in a UTMA are always at the child's rate",
+        "The Kiddie Tax applies your ORDINARY rate (e.g. 32%) to the overage — not your long-term capital gains rate (15% or 20%)",
+        "Realizing gains in a UTMA triggers a $500 IRS reporting penalty",
+        "UTMA gains can't be offset by losses elsewhere in your portfolio",
+      ],
+      correctIndex: 1,
+      explanation:
+        "The Kiddie Tax assesses the parent's ORDINARY marginal rate, not the parent's preferential long-term capital gains rate. A 32%-bracket parent realizing the same long-term gains in their own taxable account would pay 15% LTCG (or 20% if over the threshold). Realized in the UTMA, the overage is taxed at 32%. This is why letting a UTMA accumulate large realized gains is a tax-inefficient strategy for high earners.",
+    },
+  ],
+};
+
 // ─── Registry ────────────────────────────────────────────────────────────
 
 export const GUIDES: Guide[] = [
@@ -3188,6 +4079,10 @@ export const GUIDES: Guide[] = [
   rothConversionLadder,
   assetLocation,
   socialSecurityClaiming,
+  ugmaUtma,
+  custodialRothIra,
+  coverdellEsa,
+  kiddieTax,
 ];
 
 export function getGuideBySlug(slug: string): Guide | undefined {
