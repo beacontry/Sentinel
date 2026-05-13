@@ -24,3 +24,4 @@ export * from "./schema/audit";
 export * from "./schema/support";
 export * from "./schema/dm";
 export * from "./schema/system-config";
+export * from "./schema/congressional-trades";
