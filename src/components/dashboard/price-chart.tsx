@@ -23,9 +23,16 @@ export interface ChartEvent {
   label: string;
 }
 
+/**
+ * height can be a number (pixels) or the literal "fill" which means
+ * "take 100% of the parent". When "fill", we read the parent's
+ * clientHeight at mount and the ResizeObserver below tracks both
+ * dimensions on subsequent layout changes (e.g. panel resize handle
+ * dragged on the Analysis page).
+ */
 interface PriceChartProps {
   analysis: AnalysisResult;
-  height?: number;
+  height?: number | "fill";
   events?: ChartEvent[];
 }
 
@@ -85,6 +92,10 @@ function makeChartOptions(container: HTMLElement, height: number) {
 }
 
 export function PriceChart({ analysis, height = 400, events }: PriceChartProps) {
+  // Resolve "fill" to a concrete number at the call site to keep
+  // makeChartOptions() simple. Falls back to 400 if the parent has no
+  // height yet (e.g. mounted inside a not-yet-laid-out flex container).
+
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const overlaySeriesRef = useRef<ReturnType<IChartApi["addSeries"]>[]>([]);
@@ -104,7 +115,9 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
     overlaySeriesRef.current = [];
 
     const container = containerRef.current;
-    const chart = createChart(container, makeChartOptions(container, height));
+    const concreteHeight =
+      height === "fill" ? container.clientHeight || 400 : height;
+    const chart = createChart(container, makeChartOptions(container, concreteHeight));
     chartRef.current = chart;
 
     const times = analysis.bars.map((b) => toTime(b.date));
@@ -161,7 +174,14 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
 
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        chart.applyOptions({ width: entry.contentRect.width });
+        // When height==='fill', track both dimensions so the chart
+        // follows panel-resize drags. When height is fixed, only
+        // width-track (height is owned by the caller).
+        const opts: { width: number; height?: number } = { width: entry.contentRect.width };
+        if (height === "fill" && entry.contentRect.height) {
+          opts.height = entry.contentRect.height;
+        }
+        chart.applyOptions(opts);
       }
     });
     resizeObserver.observe(container);
