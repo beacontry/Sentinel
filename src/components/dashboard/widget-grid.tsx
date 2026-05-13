@@ -58,6 +58,7 @@ import { PortfolioWidget } from "./widgets/portfolio-widget";
 import { NetWorthWidget } from "./widgets/net-worth-widget";
 import { ContinueReadingWidget } from "./widgets/continue-reading-widget";
 import { PnlHeatmapWidget } from "./widgets/pnl-heatmap-widget";
+import { LiveNewsFeedWidget } from "./widgets/live-news-feed-widget";
 
 // Map widget IDs to their React components
 const WIDGET_COMPONENTS: Record<string, React.ComponentType> = {
@@ -66,6 +67,7 @@ const WIDGET_COMPONENTS: Record<string, React.ComponentType> = {
   "recent-signals-widget": RecentSignalsWidget,
   "pnl-widget": PnlWidget,
   "news-widget": NewsWidget,
+  "live-news-feed-widget": LiveNewsFeedWidget,
   "positions-widget": PositionsWidget,
   "quick-insight-widget": QuickInsightWidget,
   "signal-feed-widget": SignalFeedWidget,
