@@ -212,6 +212,35 @@ Park until Finnhub upgrade is worth the spend.
 Alpaca's SIP feed is $99/mo. Order-book panel on Analysis page. M effort.
 Pair with WebSocket quotes — both need SIP.
 
+User asked 2026-05-13 whether the embedded TradingView widget could
+give us L2 data for free. Short answer: no. Free TradingView gives
+top-of-book (last + best bid/ask) only. Real Level 2 / Market Depth
+requires one of:
+
+| Path | Cost | Notes |
+|------|-----:|-------|
+| Alpaca SIP feed (above) | $99/mo per user | Already on Sentinel's broker stack; if a user is trading through Alpaca paid, the data is there to surface |
+| TradingView Premium | $59.95/mo + per-exchange | Plus $24-60/mo PER exchange (NYSE OpenBook, NASDAQ TotalView). Useful in the embedded widget but billing complexity per user |
+| Polygon.io paid tiers | $199/mo+ | Real-time L2, simpler API, decoupled from broker |
+| IEX Cloud paid tier | varies | Their free tier stops at L1 |
+| Direct exchange feeds | $500-5000/mo | Commercial-grade only |
+
+What free retail platforms DO have:
+- Their broker's native app/web (Alpaca, Schwab, IBKR) usually bundles
+  real-time L2 once the user is authenticated. NOT exposed through the
+  REST APIs to third parties.
+
+Recommendation: don't build a Sentinel L2 panel. The user-experience
+gain doesn't justify the per-user subscription cost — most retail
+traders use L2 only on entry/exit and almost never on swing positions.
+If a Sentinel user genuinely needs L2 they should view it in their
+broker's app for that one ticker. We keep TradingView's free embedded
+chart for charting and stay out of the data-feed-reseller business.
+
+Revisit if (a) we add a "Pro" tier subscription, (b) Alpaca's SIP feed
+becomes free or substantially cheaper, or (c) the user mix shifts
+toward true intraday scalping where L2 matters per-trade.
+
 ### Native iOS / Android apps
 XL — full RN / Swift / Kotlin build + App Store ops. PWA push (already
 shipped) covers ~80% of use cases. Reconsider only at significant volume.

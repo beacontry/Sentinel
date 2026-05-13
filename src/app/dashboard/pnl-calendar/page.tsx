@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalHeader, ModalTitle } from "@/components/ui/modal";
@@ -18,6 +19,7 @@ import {
   DollarSign,
   Trophy,
   BarChart3,
+  BookOpen,
 } from "lucide-react";
 import type { PnlCalendarDay } from "@/types";
 
@@ -348,6 +350,18 @@ export default function PnlCalendarPage() {
                 </table>
               </div>
             )}
+
+            {/* Journal cross-link — Phase 4. Surface journal entries
+                authored on this day (pre/post-market prompts +
+                trade stubs + manual notes). */}
+            <Link
+              href={`/dashboard/journal?date=${encodeURIComponent(openDay.date)}`}
+              onClick={() => setOpenDay(null)}
+              className="inline-flex items-center gap-1.5 text-xs text-accent hover:text-accent-hover transition-colors"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              View journal entries for this day →
+            </Link>
           </div>
         )}
       </Modal>

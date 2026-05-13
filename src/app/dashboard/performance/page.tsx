@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, useEffect } from "react";
+import Link from "next/link";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SymbolLink } from "@/components/ui/symbol-link";
@@ -320,7 +321,7 @@ function AttributionCard({ data }: { data: AttributionData }) {
           return (
             <div
               key={r.symbol}
-              className="grid grid-cols-[80px_1fr_auto] gap-3 items-center text-sm"
+              className="grid grid-cols-[80px_1fr_auto_auto] gap-3 items-center text-sm"
             >
               <SymbolLink symbol={r.symbol} className="font-medium" />
               <div className="relative h-6 rounded-md bg-bg-elevated overflow-hidden">
@@ -345,6 +346,16 @@ function AttributionCard({ data }: { data: AttributionData }) {
                   {r.pctOfTotal.toFixed(1)}%
                 </div>
               </div>
+              {/* Journal cross-link — Phase 4. Jump to all journal
+                  entries for this symbol so the user can read their
+                  thesis/reflection while looking at the realized $ result. */}
+              <Link
+                href={`/dashboard/journal?symbol=${encodeURIComponent(r.symbol)}`}
+                title={`Open journal entries for ${r.symbol}`}
+                className="text-[10px] text-text-muted hover:text-accent transition-colors px-1"
+              >
+                Journal
+              </Link>
             </div>
           );
         })}
