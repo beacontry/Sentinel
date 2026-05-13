@@ -19,6 +19,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { refreshHouseRecent } from "@/lib/congress-house-ingester";
+import { refreshSenateRecent } from "@/lib/congress-senate-ingester";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("cron-refresh-congress");
@@ -36,24 +37,34 @@ export async function GET(request: NextRequest) {
 
   const stats = {
     houseYears: [] as Awaited<ReturnType<typeof refreshHouseRecent>>,
+    senateYears: [] as Awaited<ReturnType<typeof refreshSenateRecent>>,
+    houseError: null as string | null,
+    senateError: null as string | null,
     durationMs: 0,
     success: false,
   };
 
+  // House ingest — independent of Senate; one failing doesn't tank the other.
   try {
     stats.houseYears = await refreshHouseRecent();
-    stats.success = true;
   } catch (err) {
-    log.error(
-      { err: err instanceof Error ? err.message : "unknown" },
-      "Congress refresh failed"
-    );
-    return NextResponse.json(
-      { error: "House ingest failed", message: err instanceof Error ? err.message : "unknown" },
-      { status: 500 }
-    );
-  } finally {
-    stats.durationMs = Date.now() - startedAt;
+    stats.houseError = err instanceof Error ? err.message : "unknown";
+    log.error({ err: stats.houseError }, "House ingest failed");
+  }
+
+  // Senate ingest
+  try {
+    stats.senateYears = await refreshSenateRecent();
+  } catch (err) {
+    stats.senateError = err instanceof Error ? err.message : "unknown";
+    log.error({ err: stats.senateError }, "Senate ingest failed");
+  }
+
+  stats.success = !stats.houseError || !stats.senateError;
+  stats.durationMs = Date.now() - startedAt;
+
+  if (!stats.success) {
+    return NextResponse.json(stats, { status: 500 });
   }
 
   log.info(stats, "Congress refresh: complete");
