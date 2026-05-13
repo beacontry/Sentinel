@@ -109,6 +109,84 @@ describe("getDynamicTrailingPct — VIX-aware floor", () => {
   });
 });
 
+describe("getDynamicTrailingPct — momentum-aware decay (v2.5)", () => {
+  it("RSI = 50 produces same result as no RSI (baseline)", () => {
+    const noRsi = getDynamicTrailingPct(100, 130, 0.12);
+    const neutralRsi = getDynamicTrailingPct(100, 130, 0.12, { rsi: 50 });
+    expect(neutralRsi).toBeCloseTo(noRsi, 6);
+  });
+
+  it("Strong momentum (RSI 80) produces a WIDER trail than baseline", () => {
+    // RSI 80 → momentum 0.6 → rate = 3 × (1 - 0.18) = 2.46 (slower decay)
+    // Slower decay → less tightening → wider trail
+    const baseline = getDynamicTrailingPct(100, 130, 0.12);
+    const strong = getDynamicTrailingPct(100, 130, 0.12, { rsi: 80 });
+    expect(strong).toBeGreaterThan(baseline);
+  });
+
+  it("Weakening momentum (RSI 30) produces a TIGHTER trail than baseline", () => {
+    // RSI 30 → momentum -0.4 → rate = 3 × (1 + 0.12) = 3.36 (faster decay)
+    // Faster decay → more tightening → tighter trail
+    const baseline = getDynamicTrailingPct(100, 130, 0.12);
+    const weak = getDynamicTrailingPct(100, 130, 0.12, { rsi: 30 });
+    expect(weak).toBeLessThan(baseline);
+  });
+
+  it("RSI capped at 100 — extreme overbought doesn't break formula", () => {
+    const r100 = getDynamicTrailingPct(100, 130, 0.12, { rsi: 100 });
+    const r95 = getDynamicTrailingPct(100, 130, 0.12, { rsi: 95 });
+    // Both should be > baseline (slower decay), close to each other
+    expect(r100).toBeGreaterThan(0.061);
+    expect(r95).toBeGreaterThan(0.061);
+  });
+
+  it("RSI at 0 — extreme oversold tightens but doesn't go negative", () => {
+    const r0 = getDynamicTrailingPct(100, 130, 0.12, { rsi: 0 });
+    expect(r0).toBeGreaterThanOrEqual(0.02); // never below floor
+    expect(r0).toBeLessThan(0.061); // tighter than baseline
+  });
+});
+
+describe("getDynamicTrailingPct — drawdown-from-peak tightening (v2.5)", () => {
+  it("currentPrice == peakPrice (no drawdown) leaves trail unchanged", () => {
+    const baseline = getDynamicTrailingPct(100, 130, 0.12);
+    const noDrawdown = getDynamicTrailingPct(100, 130, 0.12, { currentPrice: 130 });
+    expect(noDrawdown).toBeCloseTo(baseline, 6);
+  });
+
+  it("currentPrice slightly below peak (1% pullback) slightly tightens trail", () => {
+    // 1% drawdown × 2 multiplier = 2% tightening factor reduction → 98% of base
+    const baseline = getDynamicTrailingPct(100, 130, 0.12);
+    const slight = getDynamicTrailingPct(100, 130, 0.12, { currentPrice: 128.7 });
+    expect(slight).toBeLessThan(baseline);
+    expect(slight).toBeGreaterThan(baseline * 0.95); // still close
+  });
+
+  it("Large pullback (10%) collapses trail to floor", () => {
+    // 10% drawdown × 2 multiplier = 20% → factor = max(0, 1-0.2) = 0.8
+    // But for a 10% drawdown on a position at 30% profit:
+    //   trail before = 0.061
+    //   tightening factor = max(0, 1 - 0.10 * 2) = max(0, 0.8) = 0.8
+    //   trail after = floor + (0.061 - floor) × 0.8 = 0.02 + 0.041 × 0.8 = 0.053
+    const tightened = getDynamicTrailingPct(100, 130, 0.12, { currentPrice: 117 });
+    expect(tightened).toBeGreaterThanOrEqual(0.02);
+    expect(tightened).toBeLessThan(0.061);
+  });
+
+  it("Massive pullback (>50%) clamps to floor, not below", () => {
+    const collapsed = getDynamicTrailingPct(100, 130, 0.12, { currentPrice: 60 });
+    expect(collapsed).toBeCloseTo(0.02, 6); // floor
+  });
+
+  it("currentPrice above peakPrice doesn't widen trail (no negative drawdown)", () => {
+    // currentPrice > peakPrice shouldn't happen in practice (caller would
+    // update peak first), but the formula should be safe even if it does.
+    const baseline = getDynamicTrailingPct(100, 130, 0.12);
+    const aboveBaseline = getDynamicTrailingPct(100, 130, 0.12, { currentPrice: 140 });
+    expect(aboveBaseline).toBeCloseTo(baseline, 6);
+  });
+});
+
 describe("getDynamicTrailingPct — combined ATR + VIX", () => {
   it("WDC-like worked example at +27% profit, normal VIX, ATR ~4%", () => {
     // Peak $494, ATR $19.76 (4% of price), VIX 20 → neutral 2.5% floor

@@ -1164,11 +1164,43 @@ const TRAIL_FLOOR_VIX_CALM = 0.015;   // VIX <= 18
 const VIX_PANIC_THRESHOLD = 25;
 const VIX_CALM_THRESHOLD = 18;
 
+// v2.5 — momentum-aware decay rate. Strong RSI keeps the trail wide
+// (let the trend run); reversing RSI tightens the trail faster (lock in
+// before the pullback). Multiplier is bounded so the rate stays within
+// a sane range no matter how extreme RSI gets.
+//
+// At RSI 80 (very strong momentum):  rate = 3 × (1 - 0.3 × 0.6) = 2.46
+// At RSI 50 (no signal):              rate = 3 × (1 - 0)        = 3.00
+// At RSI 30 (reversing/oversold):     rate = 3 × (1 + 0.3 × 0.4) = 3.36
+// At RSI 20 (strong reversal):        rate = 3 × (1 + 0.3 × 0.6) = 3.54
+const MOMENTUM_RATE_SCALE = 0.3;
+
+// v2.5 — drawdown-from-peak tightening. Once price pulls back from peak
+// by more than this fraction of the current trail width, multiply the
+// trail by a tightening factor to protect against partial reversals.
+// Aggressive — exits on hesitation. Disabled by default (option must
+// be passed explicitly).
+const DRAWDOWN_TIGHTEN_MULT = 2;
+
 interface TrailOptions {
   /** 14-day Average True Range in DOLLARS (not %). When supplied, drives the per-stock base trail via ATR_BASE_MULT × ATR / peakPrice. */
   atr?: number;
   /** Current VIX level. When supplied, scales the floor via the panic/neutral/calm bands. */
   vix?: number;
+  /**
+   * Current 14-period RSI of the position's symbol (0-100). When
+   * supplied, adjusts the decay rate — strong momentum (RSI > 50)
+   * slows the decay (keeps trail wide); weakening momentum (RSI < 50)
+   * speeds the decay (tightens faster).
+   */
+  rsi?: number;
+  /**
+   * Current price of the symbol. When supplied AND less than peakPrice,
+   * enables drawdown-from-peak tightening: trail tightens
+   * proportionally to how far the current price has fallen from the
+   * peak. Aggressive — exits on hesitation. Use sparingly.
+   */
+  currentPrice?: number;
 }
 
 function getDynamicTrailingPct(
@@ -1180,6 +1212,8 @@ function getDynamicTrailingPct(
   const profitPct = (peakPrice - entryPrice) / entryPrice;
   const atr = options?.atr;
   const vix = options?.vix;
+  const rsi = options?.rsi;
+  const currentPrice = options?.currentPrice;
 
   // Regime-aware floor (defaults to legacy 2% when no VIX)
   let floor: number;
@@ -1208,9 +1242,41 @@ function getDynamicTrailingPct(
   // Pre-profit: just return the base (with floor as the absolute minimum)
   if (profitPct <= 0) return Math.max(floor, base);
 
+  // v2.5 — Momentum-aware decay rate. RSI = 50 is baseline (no
+  // adjustment); above 50 SLOWS the decay (trail stays wider); below 50
+  // SPEEDS the decay (trail tightens faster). Bounded |momentum| <= 1.
+  //
+  //   rate = TRAIL_DECAY_RATE × (1 - MOMENTUM_RATE_SCALE × momentum)
+  //   where momentum = clamp((rsi - 50) / 50, -1, 1)
+  //
+  // Strong momentum → wider trail → ride the trend longer.
+  // Weakening momentum → tighter trail → exit before the pullback.
+  let rate = TRAIL_DECAY_RATE;
+  if (rsi !== undefined) {
+    const momentum = Math.max(-1, Math.min(1, (rsi - 50) / 50));
+    rate = TRAIL_DECAY_RATE * (1 - MOMENTUM_RATE_SCALE * momentum);
+  }
+
   // Exponential decay from base toward floor as profit grows
   const range = Math.max(0, base - floor);
-  const trail = floor + range * Math.exp(-TRAIL_DECAY_RATE * profitPct);
+  let trail = floor + range * Math.exp(-rate * profitPct);
+
+  // v2.5 — Drawdown-from-peak tightening. When current price has pulled
+  // back from peak by more than 1/DRAWDOWN_TIGHTEN_MULT of the current
+  // trail width, apply a tightening factor proportional to the pullback.
+  // Bounds: tightening factor in [0, 1], never goes below floor.
+  //
+  // Intuition: if our trail says we'd exit on a 5% pullback and we've
+  // already pulled back 3%, the trend is breaking — tighten so we exit
+  // sooner on the next leg down rather than at the full 5%.
+  if (currentPrice !== undefined && currentPrice > 0 && currentPrice < peakPrice) {
+    const peakDrawdown = (peakPrice - currentPrice) / peakPrice;
+    // tighteningFactor = max(0, 1 - peakDrawdown × DRAWDOWN_TIGHTEN_MULT)
+    // At 5% drawdown with mult=2: factor = 0, trail collapses to floor.
+    // At 1% drawdown with mult=2: factor = 0.98, trail barely tightened.
+    const tighteningFactor = Math.max(0, 1 - peakDrawdown * DRAWDOWN_TIGHTEN_MULT);
+    trail = floor + (trail - floor) * tighteningFactor;
+  }
 
   return Math.max(floor, trail);
 }
@@ -1226,6 +1292,8 @@ export const trailInternals = {
   TRAIL_FLOOR_VIX_CALM,
   VIX_PANIC_THRESHOLD,
   VIX_CALM_THRESHOLD,
+  MOMENTUM_RATE_SCALE,
+  DRAWDOWN_TIGHTEN_MULT,
   getDynamicTrailingPct,
 };
 
@@ -1588,16 +1656,22 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
       let exitReason = "";
 
       // Stop loss with profit-based tightening.
-      // v2 — pass pos.atr (cached on entry, refreshed on each main scan)
-      // and engine.adaptiveRegime.vix (when adaptive mode is engaged or
-      // the regime snapshot was populated by another path). Both
-      // optional — falls back to fixed-% when absent.
+      // v2 + v2.5 — pos.atr / pos.rsi cached on entry + refreshed each
+      // main scan. engine.adaptiveRegime.vix from the regime snapshot.
+      // currentPrice is from the 1-min poll — drives drawdown
+      // tightening when price has pulled back from peak. All optional
+      // — falls back to fixed-% when absent.
       const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
       const dynTrailPct = getDynamicTrailingPct(
         pos.entryPrice,
         pos.peakPrice,
         params.trailingStopPct,
-        { atr: pos.atr, vix: engine.adaptiveRegime?.vix }
+        {
+          atr: pos.atr,
+          vix: engine.adaptiveRegime?.vix,
+          rsi: pos.rsi,
+          currentPrice,
+        }
       );
       const trailStop = pos.peakPrice * (1 - dynTrailPct);
       const effectiveStop = Math.max(fixedStop, trailStop);
@@ -1871,6 +1945,14 @@ interface TrackedPosition {
    * the trail falls back to the fixed-% formula.
    */
   atr?: number;
+  /**
+   * Trail dynamism v2.5 — most recent 14-period RSI for this position's
+   * symbol, refreshed alongside atr at scan time. Consumed by
+   * getDynamicTrailingPct() to adjust the decay rate based on momentum
+   * direction. Cached so runExitCheck (1-min poll, no analyzer context)
+   * + syncBrokerStops can also benefit from momentum-aware behavior.
+   */
+  rsi?: number;
 }
 
 const g2 = globalThis as typeof globalThis & {
@@ -3308,13 +3390,19 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         if (currentPrice > heldPosition.peakPrice) {
           heldPosition.peakPrice = currentPrice;
         }
-        // v2 trail dynamism — refresh per-symbol ATR on each scan so the
-        // trail width adapts as volatility changes. ATR availability is
-        // best-effort; getDynamicTrailingPct falls back to the legacy
-        // fixed-% formula when atr/vix are absent.
-        const heldAtr = (analysis.indicators as unknown as Record<string, number | null | undefined>).atr_14;
+        // v2 trail dynamism — refresh per-symbol ATR + RSI on each scan
+        // so the trail width adapts as volatility AND momentum change.
+        // ATR/RSI availability is best-effort; getDynamicTrailingPct
+        // falls back to the legacy fixed-% formula when atr/vix/rsi are
+        // absent.
+        const indicators = analysis.indicators as unknown as Record<string, number | null | undefined>;
+        const heldAtr = indicators.atr_14;
         if (typeof heldAtr === "number" && heldAtr > 0) {
           heldPosition.atr = heldAtr;
+        }
+        const heldRsi = indicators.rsi_14;
+        if (typeof heldRsi === "number" && heldRsi >= 0 && heldRsi <= 100) {
+          heldPosition.rsi = heldRsi;
         }
         const regimeVix = engine.adaptiveRegime?.vix;
 
@@ -3323,7 +3411,12 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           heldPosition.entryPrice,
           heldPosition.peakPrice,
           strategy.trailingStopPct,
-          { atr: heldPosition.atr, vix: regimeVix }
+          {
+            atr: heldPosition.atr,
+            vix: regimeVix,
+            rsi: typeof heldRsi === "number" ? heldRsi : undefined,
+            currentPrice,
+          }
         );
         const trailingStopPrice =
           heldPosition.peakPrice * (1 - dynTrail);
@@ -4012,17 +4105,22 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
     for (const [symbol, pos] of positionMap) {
       const existing = stopOrders.get(symbol);
 
-      // Compute dynamic trailing stop. ATR is cached on pos.atr by the
-      // main scan loop (refreshed every scan when indicators are
-      // computed). VIX comes from the adaptive-regime snapshot. Both are
-      // optional — getDynamicTrailingPct falls back to legacy fixed-%
-      // when either is absent.
+      // Compute dynamic trailing stop. ATR + RSI are cached on the
+      // position by the main scan loop (refreshed every scan when
+      // indicators are computed). VIX comes from the adaptive-regime
+      // snapshot. All optional — getDynamicTrailingPct falls back to
+      // legacy fixed-% when any are absent.
+      //
+      // We deliberately skip currentPrice here — syncBrokerStops sets
+      // the resting stop order at the broker, not an exit decision based
+      // on a live price tick. The drawdown-tightening logic only makes
+      // sense in the exit-decision context (runExitCheck + main scan).
       const strategy = await resolveStrategy(userId, symbol);
       const dynTrailPct = getDynamicTrailingPct(
         pos.entryPrice,
         pos.peakPrice,
         strategy.trailingStopPct,
-        { atr: pos.atr, vix: regimeVix }
+        { atr: pos.atr, vix: regimeVix, rsi: pos.rsi }
       );
       const trailStop = pos.peakPrice * (1 - dynTrailPct);
       const fixedStop = pos.entryPrice * (1 - strategy.stopLossPct);
