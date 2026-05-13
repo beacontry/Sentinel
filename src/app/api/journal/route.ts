@@ -21,6 +21,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const symbolFilter = searchParams.get("symbol");
   const tagFilter = searchParams.get("tag");
+  // Phase 4 — date filter: returns entries created OR prompt-dated on
+  // the given YYYY-MM-DD. Both checks needed so a "show me Tuesday's
+  // entries" link surfaces BOTH the daily prompts (prompt_date) AND
+  // any trade-stubs or manual entries authored that day (created_at).
+  const dateFilter = searchParams.get("date");
 
   try {
     const conditions = [eq(tradeJournal.userId, session.userId)];
@@ -32,6 +37,14 @@ export async function GET(request: Request) {
     if (tagFilter) {
       conditions.push(
         sql`${tradeJournal.tags}::jsonb @> ${JSON.stringify([tagFilter])}::jsonb`
+      );
+    }
+
+    if (dateFilter && /^\d{4}-\d{2}-\d{2}$/.test(dateFilter)) {
+      // Match either prompt_date = X OR created_at::date = X. Parameterized
+      // via Drizzle's sql builder so user input can't inject.
+      conditions.push(
+        sql`(${tradeJournal.promptDate} = ${dateFilter}::date OR ${tradeJournal.createdAt}::date = ${dateFilter}::date)`
       );
     }
 
