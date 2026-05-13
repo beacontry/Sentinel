@@ -1,8 +1,14 @@
 // GET /api/congress
 //
 // Recent Congressional trading disclosures, optionally filtered by symbol.
-// Backed by Finnhub's /stock/congressional-trading endpoint (which is on
-// our existing FINNHUB_API_KEY tier, so no new credentials required).
+// Backed by the local `congressional_trades` table, which is populated
+// from official sources (House Clerk bulk PTR archive; Senate eFD coming
+// in Phase 2) by the daily refresh cron.
+//
+// History: this route used to call Finnhub's congressional-trading
+// endpoint directly. Finnhub moved that endpoint to a paid tier
+// 2026-05-XX so we migrated to scraping the official disclosure
+// sources ourselves. The federal sources can't change pricing on us.
 //
 // Filings come from the federal Periodic Transaction Report (PTR) system —
 // every member of Congress is required to disclose trades within 45 days.
@@ -11,10 +17,28 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getFinnhubClient } from "@/lib/finnhub";
+import { db, withTimeout, isStatementTimeout } from "@/lib/db";
+import { congressionalTrades } from "@/lib/db/schema/congressional-trades";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("congress-api");
+
+const SYMBOL_RE = /^[A-Z]{1,10}$/;
+
+interface CongressTradeResponse {
+  symbol: string;
+  transactionDate: string;
+  filingDate: string;
+  name: string;
+  position: string; // "House" | "Senate"
+  ownerType: string;
+  amountFrom: number;
+  amountTo: number;
+  transactionType: string;
+  party?: string;
+  sourceUrl?: string;
+}
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -23,104 +47,95 @@ export async function GET(request: NextRequest) {
   }
 
   const url = request.nextUrl;
-  const symbolParam = url.searchParams.get("symbol")?.trim().toUpperCase();
+  const rawSymbol = url.searchParams.get("symbol")?.trim().toUpperCase();
+  const symbolParam = rawSymbol && SYMBOL_RE.test(rawSymbol) ? rawSymbol : null;
   const limit = Math.min(200, Math.max(10, Number(url.searchParams.get("limit")) || 100));
 
-  const finnhub = getFinnhubClient();
-  if (!finnhub.isConfigured) {
-    return NextResponse.json(
-      {
-        trades: [],
-        error: "Finnhub API key not configured — Congressional trade data unavailable.",
-      },
-      { headers: { "Cache-Control": "private, no-store" } }
-    );
-  }
-
-  // Hard 6s upper bound on the upstream call. The Finnhub client has its
-  // own 10s timeout AND a 60-req/min rate limiter that can wait up to ~60s
-  // when other Finnhub callers (news, sentiment, etc.) saturate the bucket.
-  // Combined, the route could hang long enough for Caddy/Cloudflare to
-  // return their own 502 with HTML body — which the UI then sees as a
-  // generic "Server returned 502" because it can't parse Caddy's HTML.
-  // Capping at 6s here keeps the failure inside our handler so we can
-  // return a clean JSON error.
-  const ROUTE_TIMEOUT_MS = 6000;
   try {
-    const response = await Promise.race([
-      finnhub.getCongressionalTrading(symbolParam || undefined),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`Finnhub API error: 504 Timeout after ${ROUTE_TIMEOUT_MS}ms`)),
-          ROUTE_TIMEOUT_MS
+    const rows = await withTimeout(5000, async (tx) => {
+      const where = symbolParam
+        ? and(eq(congressionalTrades.ticker, symbolParam))
+        : undefined;
+      return tx
+        .select({
+          ticker: congressionalTrades.ticker,
+          transactionDate: congressionalTrades.transactionDate,
+          filingDate: congressionalTrades.filingDate,
+          filerName: congressionalTrades.filerName,
+          chamber: congressionalTrades.chamber,
+          ownerType: congressionalTrades.ownerType,
+          amountFrom: congressionalTrades.amountFrom,
+          amountTo: congressionalTrades.amountTo,
+          transactionType: congressionalTrades.transactionType,
+          party: congressionalTrades.party,
+          sourceUrl: congressionalTrades.sourceUrl,
+        })
+        .from(congressionalTrades)
+        .where(where)
+        .orderBy(
+          desc(congressionalTrades.transactionDate),
+          desc(congressionalTrades.filingDate)
         )
-      ),
-    ]);
-    const trades = (response.data ?? [])
-      // Sort newest-filing first (transactionDate is what users care about,
-      // but filings can be backdated months — secondary sort on filingDate)
-      .sort((a, b) => {
-        const txDelta =
-          new Date(b.transactionDate).getTime() - new Date(a.transactionDate).getTime();
-        if (txDelta !== 0) return txDelta;
-        return new Date(b.filingDate).getTime() - new Date(a.filingDate).getTime();
-      })
-      .slice(0, limit);
+        .limit(limit);
+    });
+
+    // Shape to match the existing UI contract — same JSON keys the page
+    // already expects from the Finnhub-era response. ownerType, ticker
+    // (renamed from symbol on the way out for backward compat), etc.
+    const trades: CongressTradeResponse[] = rows.map((r) => ({
+      symbol: r.ticker ?? "",
+      transactionDate: String(r.transactionDate),
+      filingDate: r.filingDate ? String(r.filingDate) : String(r.transactionDate),
+      name: r.filerName,
+      position: r.chamber, // House | Senate
+      ownerType: r.ownerType ?? "Self",
+      amountFrom: r.amountFrom ? Number(r.amountFrom) : 0,
+      amountTo: r.amountTo ? Number(r.amountTo) : 0,
+      transactionType: r.transactionType,
+      party: r.party ?? undefined,
+      sourceUrl: r.sourceUrl ?? undefined,
+    }));
+
+    // Total row count — useful for the UI's "ingest is empty" empty state
+    // (vs "the filter matched zero").
+    const totalRow = await withTimeout(2000, async (tx) => {
+      return tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(congressionalTrades);
+    });
+    const totalRows = totalRow[0]?.n ?? 0;
 
     return NextResponse.json(
       {
         trades,
-        symbol: symbolParam || null,
+        symbol: symbolParam,
         count: trades.length,
+        totalRows,
+        upstreamSource: "official_house", // will become "official_house+senate" after Phase 2
       },
       // Filings update slowly (PTRs lag by up to 45 days). 1-hour cache.
       { headers: { "Cache-Control": "private, max-age=3600" } }
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    log.error({ err: message, symbol: symbolParam }, "Congress fetch error");
-
-    // Extract upstream status from the Finnhub error message. The client
-    // throws `Finnhub API error: 403 Forbidden` (etc.) so we parse that
-    // back out and surface it. Lets the UI render something actionable
-    // ("Finnhub returned 403 — this endpoint may require a paid tier")
-    // instead of a generic "Failed to load."
-    const upstreamMatch = message.match(/Finnhub API error: (\d+)/);
-    const upstreamStatus = upstreamMatch ? parseInt(upstreamMatch[1], 10) : null;
-
-    let userMessage = "Could not reach Congressional trade feed.";
-    let upstreamCategory: "paid_tier" | "rate_limit" | "timeout" | "server_error" | "unknown" = "unknown";
-    if (upstreamStatus === 401 || upstreamStatus === 403) {
-      userMessage =
-        `Finnhub returned ${upstreamStatus} — Congressional trading may now ` +
-        `require a paid Finnhub tier. The endpoint was free as of late 2025; ` +
-        `Finnhub has been moving alternative-data endpoints to paid plans.`;
-      upstreamCategory = "paid_tier";
-    } else if (upstreamStatus === 429) {
-      userMessage = "Finnhub rate-limited the request. Try again in a minute.";
-      upstreamCategory = "rate_limit";
-    } else if (upstreamStatus === 504) {
-      userMessage =
-        "Finnhub took too long to respond (>6s). The endpoint may be slow or " +
-        "the request was queued behind other Finnhub calls.";
-      upstreamCategory = "timeout";
-    } else if (upstreamStatus && upstreamStatus >= 500) {
-      userMessage = `Finnhub returned ${upstreamStatus} — their server-side issue. Try again shortly.`;
-      upstreamCategory = "server_error";
-    } else if (upstreamStatus) {
-      userMessage = `Finnhub returned ${upstreamStatus}.`;
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        {
+          trades: [],
+          error: "Database query timed out.",
+          upstreamCategory: "timeout",
+        },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
     }
-
+    const message = err instanceof Error ? err.message : "Unknown error";
+    log.error({ err: message, symbol: symbolParam }, "Congress query error");
     return NextResponse.json(
       {
         trades: [],
-        error: userMessage,
-        upstreamStatus,
-        upstreamCategory,
+        error: "Could not read congressional_trades table — has the ingester run?",
+        upstreamCategory: "server_error",
       },
-      // 502 maps the upstream failure cleanly; client treats this as a
-      // surfaceable error (data.error is rendered as-is).
-      { status: 502 }
+      { status: 500 }
     );
   }
 }
