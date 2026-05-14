@@ -75,7 +75,7 @@ class YahooProvider implements MarketDataProvider {
     try {
       const res = await fetch(url, {
         signal: controller.signal,
-        headers: { "User-Agent": "Sentinel/1.0" },
+        headers: { "User-Agent": "Beacontry/1.0" },
       });
       if (!res.ok) {
         throw new Error(`Yahoo Finance error: ${res.status}`);
@@ -132,7 +132,7 @@ class YahooProvider implements MarketDataProvider {
     try {
       const res = await fetch(url, {
         signal: controller.signal,
-        headers: { "User-Agent": "Sentinel/1.0" },
+        headers: { "User-Agent": "Beacontry/1.0" },
       });
       if (!res.ok) return null;
       const json = await res.json();

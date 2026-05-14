@@ -182,7 +182,7 @@ export async function fetchAllPolicyFeeds(): Promise<RawPolicyEntry[]> {
       try {
         const res = await fetch(feed.url, {
           signal: controller.signal,
-          headers: { "User-Agent": "Sentinel/1.0" },
+          headers: { "User-Agent": "Beacontry/1.0" },
         });
         if (!res.ok) {
           log.warn({ feed: feed.name, status: res.status }, "Feed fetch failed");

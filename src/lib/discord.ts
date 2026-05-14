@@ -68,7 +68,7 @@ function buildEmbed(result: AnalysisResult): DiscordEmbed {
     description: result.plainEnglish,
     color: signalColors[result.signal] ?? 0x6b7280,
     fields,
-    footer: { text: "Sentinel \u2022 Technical Analysis" },
+    footer: { text: "Beacontry \u2022 Technical Analysis" },
     timestamp: result.timestamp,
   };
 }
@@ -86,7 +86,7 @@ export async function sendDiscordWebhook(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        username: "Sentinel",
+        username: "Beacontry",
         embeds: [embed],
       }),
       signal: controller.signal,

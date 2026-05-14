@@ -7,7 +7,7 @@
 // a small color-coded badge inline next to the headline so the user can
 // scan a list at a glance.
 //
-// Not as accurate as Sentinel's full hybrid sentiment layer (which uses
+// Not as accurate as Beacontry's full hybrid sentiment layer (which uses
 // Claude/Groq + aggregates across articles). That's intentional: the
 // hybrid layer powers signal-adjustment math where accuracy matters;
 // this surfaces a directional hint where speed + zero cost matter.
