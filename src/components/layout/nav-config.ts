@@ -23,12 +23,39 @@ export interface NavItem {
   /** Additional paths that should highlight this nav item */
   matchPaths?: string[];
   keywords?: string[];
+  /** If set, item is hidden from users without this role.
+   *  Pages still server-side enforce — this is UX-only filtering. */
+  adminOnly?: boolean;
 }
 
 export interface SubNavTab {
   href: string;
   label: string;
   adminOnly?: boolean;
+}
+
+/**
+ * Filter NAV_ITEMS based on the current user's role. Admins see
+ * everything; non-admins don't see admin-only items at all (preferred
+ * over showing a "permission denied" page they'd just bounce off).
+ */
+export function visibleNavItems(role: string | null | undefined): NavItem[] {
+  if (role === "admin") return NAV_ITEMS;
+  return NAV_ITEMS.filter((item) => !item.adminOnly);
+}
+
+/**
+ * Filter SUB_NAV tabs by role. Same UX rationale: don't show what
+ * the user can't access. Returns a new array so callers can render
+ * safely.
+ */
+export function visibleSubNav(
+  tabs: SubNavTab[] | undefined,
+  role: string | null | undefined
+): SubNavTab[] {
+  if (!tabs) return [];
+  if (role === "admin") return tabs;
+  return tabs.filter((tab) => !tab.adminOnly);
 }
 
 /** Flat 10-item sidebar */
@@ -102,6 +129,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Users,
     matchPaths: ["/dashboard/settings"],
     keywords: ["users", "admin", "management", "settings"],
+    adminOnly: true,
   },
   {
     href: "/dashboard/settings",

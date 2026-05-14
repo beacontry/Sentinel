@@ -40,7 +40,7 @@ interface TierGateProps {
   fallback?: React.ReactNode;
 }
 
-/** Hook returns the current user's tier. 60s in-memory cache. */
+/** Hook returns the current user's tier + role + Stripe state. 60s cache. */
 export function useTier(): {
   tier: Tier;
   loading: boolean;
@@ -49,13 +49,23 @@ export function useTier(): {
    *  at least once). False for free users + admin-granted paid tiers that
    *  never touched Stripe. Used to gate "Manage subscription" buttons. */
   hasStripeCustomer: boolean;
+  /** "admin" | "user" | null (anonymous). Used to hide admin nav items
+   *  from non-admins (cleaner than a permission-denied page). */
+  role: string | null;
 } {
   const [state, setState] = useState<{
     tier: Tier;
     loading: boolean;
     authenticated: boolean;
     hasStripeCustomer: boolean;
-  }>({ tier: "free", loading: true, authenticated: false, hasStripeCustomer: false });
+    role: string | null;
+  }>({
+    tier: "free",
+    loading: true,
+    authenticated: false,
+    hasStripeCustomer: false,
+    role: null,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +78,7 @@ export function useTier(): {
           loading: false,
           authenticated: !!d.authenticated,
           hasStripeCustomer: !!d.hasStripeCustomer,
+          role: d.role ?? null,
         });
       })
       .catch(() => {
@@ -77,6 +88,7 @@ export function useTier(): {
           loading: false,
           authenticated: false,
           hasStripeCustomer: false,
+          role: null,
         });
       });
     return () => {
