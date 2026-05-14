@@ -380,61 +380,84 @@ export default function LandingPage() {
           </p>
         </div>
 
-        <div className="mx-auto grid max-w-[1180px] items-stretch gap-6 px-4 sm:grid-cols-2 lg:grid-cols-3 lg:px-7">
-          {/* Trader — middle tier, highlighted as "most popular" */}
+        <div className="mx-auto grid max-w-[1280px] items-stretch gap-5 px-4 sm:grid-cols-2 lg:grid-cols-4 lg:px-7">
+          {/* Four-tier structure (2026-05-14):
+                Free        — research + education (no engine, no AI)
+                Trader $20  — full platform without AI (most popular)
+                Premium $45 — Trader + AI + future premium data
+                Open Source — self-hosted, BYO infra */}
           {[
+            {
+              name: "Free",
+              tag: "Hosted",
+              price: "$0",
+              cadence: "",
+              annual: "Public data + education",
+              desc: "Browse, learn, research. No trading.",
+              features: [
+                "All 14 guides + 95 glossary terms",
+                "8 financial calculators",
+                "Congressional trades + Reddit",
+                "SEC filings + earnings calendar",
+                "1 watchlist, 10 symbols",
+                "Read-only community access",
+                "No engine, no AI",
+              ],
+              cta: "Sign up free",
+              highlight: false,
+            },
             {
               name: "Trader",
               tag: "Most popular",
-              price: "$29",
+              price: "$20",
               cadence: "/ month",
-              annual: "$290/yr — saves 2 months",
-              desc: "Everything an active retail trader needs.",
+              annual: "$200/yr — saves 2 months",
+              desc: "Full platform without AI features.",
               features: [
                 "Full engine (paper + live trading)",
-                "Unlimited watchlists",
-                "All education + spaced-rep review",
-                "Alerts: push, email, Discord",
-                "TradingView + Reddit + Congress feeds",
-                "Tax center + automated journal",
-                "1 broker connection",
+                "All 8 modes + GA optimizer + adaptive",
+                "Multi-broker (up to 3)",
+                "Finnhub data (news, sentiment, options)",
+                "Audit log + tax center + journal",
+                "Unlimited watchlists + alerts",
+                "Full community access",
               ],
               cta: "Start with Trader",
               highlight: true,
             },
             {
-              name: "Pro",
-              tag: "Power users",
-              price: "$79",
+              name: "Premium",
+              tag: "AI + future data",
+              price: "$45",
               cadence: "/ month",
-              annual: "$790/yr — saves 2 months",
-              desc: "GA optimizer + adaptive mode + multi-broker.",
+              annual: "$450/yr — saves 2 months",
+              desc: "Trader + AI + premium data (coming).",
               features: [
                 "Everything in Trader, plus:",
-                "Adaptive (regime-driven) engine mode",
-                "Genetic-algorithm strategy optimizer",
-                "Multi-broker (up to 3 connections)",
-                "Audit log access",
-                "Priority email support",
-                "Saved-strategy library",
+                "AI chat assistant (Groq Llama 3.3)",
+                "AI signal scoring + journal review",
+                "Daily AI market digest",
+                "L2 / order book (roadmap)",
+                "Real-time SIP feed (roadmap)",
+                "Dark pool data (roadmap)",
               ],
-              cta: "Step up to Pro",
+              cta: "Step up to Premium",
               highlight: false,
             },
             {
-              name: "Self-hosted",
-              tag: "Open source",
+              name: "Open Source",
+              tag: "Self-host",
               price: "Free",
               cadence: "",
               annual: "Your data, your hardware",
-              desc: "Bring your own Postgres + Alpaca keys.",
+              desc: "BYO Postgres + broker + API keys.",
               features: [
-                "Full source code",
+                "Full source code (FSL-1.1)",
+                "Same engine, your control",
+                "BYO Finnhub + Groq + broker",
                 "No telemetry, no SaaS lock-in",
-                "Self-managed updates",
                 "Privacy-first deployments",
                 "No SLA, no hosted support",
-                "Same engine, your control",
               ],
               cta: "View on GitHub",
               highlight: false,
@@ -476,14 +499,14 @@ export default function LandingPage() {
               </ul>
 
               <Link
-                href={tier.name === "Self-hosted" ? "https://github.com/beacontry/Sentinel" : "/register"}
+                href={tier.name === "Open Source" ? "https://github.com/beacontry/Sentinel" : "/register"}
                 className={`mt-8 inline-flex items-center justify-center gap-2 rounded-[10px] px-5 py-3 text-[0.92rem] font-semibold transition-all duration-200 hover:-translate-y-0.5 ${
                   tier.highlight
                     ? "bg-ld-accent text-white hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]"
                     : "border border-ld-border text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06]"
                 }`}
               >
-                {tier.cta} {tier.name !== "Self-hosted" && <ArrowRight className="h-4 w-4" />}
+                {tier.cta} {tier.name !== "Open Source" && <ArrowRight className="h-4 w-4" />}
               </Link>
             </article>
           ))}
