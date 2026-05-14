@@ -37,6 +37,12 @@ export const users = pgTable("users", {
   // they agreed to — bumping TERMS_VERSION in code forces re-prompt.
   termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
   termsAcceptedVersion: text("terms_accepted_version"),
+  // 2026-05-14 — subscription tier (Phase 1: enforced via gates, no
+  // Stripe yet). Values: 'free' | 'trader' | 'premium' | 'enterprise'.
+  // DB-level CHECK constraint enforces the enum.
+  tier: text("tier").notNull().default("free"),
+  tierChangedAt: timestamp("tier_changed_at", { withTimezone: true }),
+  tierExpiresAt: timestamp("tier_expires_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

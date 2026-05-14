@@ -25,6 +25,8 @@ interface User {
   name: string;
   email: string;
   role: string;
+  tier?: string;
+  tierExpiresAt?: string | null;
   createdAt: string;
 }
 
@@ -497,6 +499,7 @@ export default function AdminPage() {
                   <th className="pb-3 pr-4 font-medium">Name</th>
                   <th className="pb-3 pr-4 font-medium">Email</th>
                   <th className="pb-3 pr-4 font-medium">Role</th>
+                  <th className="pb-3 pr-4 font-medium">Tier</th>
                   <th className="pb-3 pr-4 font-medium">Created</th>
                   <th className="pb-3 font-medium text-right">Actions</th>
                 </tr>
@@ -524,6 +527,44 @@ export default function AdminPage() {
                         )}
                         {user.role}
                       </Badge>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <select
+                        value={user.tier ?? "free"}
+                        onChange={async (e) => {
+                          const newTier = e.target.value;
+                          if (newTier === user.tier) return;
+                          const ok = confirm(
+                            `Change ${user.name}'s tier to ${newTier}?`
+                          );
+                          if (!ok) return;
+                          const res = await fetch(
+                            `/api/admin/users/${user.id}/tier`,
+                            {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ tier: newTier }),
+                            }
+                          );
+                          if (res.ok) {
+                            loadUsers();
+                          } else {
+                            const data = await res.json().catch(() => ({}));
+                            alert(
+                              typeof data.error === "string"
+                                ? data.error
+                                : "Failed to update tier"
+                            );
+                          }
+                        }}
+                        className="rounded-md border border-border bg-bg-elevated px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-accent/50"
+                        aria-label={`Tier for ${user.name}`}
+                      >
+                        <option value="free">Free</option>
+                        <option value="trader">Trader</option>
+                        <option value="premium">Premium</option>
+                        <option value="enterprise">Enterprise</option>
+                      </select>
                     </td>
                     <td className="py-3 pr-4 font-mono text-text-secondary text-xs">
                       {new Date(user.createdAt).toLocaleDateString("en-US", {

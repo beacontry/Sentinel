@@ -9,6 +9,7 @@ import { chatMessageSchema } from "@/lib/validators";
 import { CLAUDE_CONFIG } from "@/lib/config";
 import { createRouteLogger } from "@/lib/logger";
 import { rateLimit } from "@/lib/rate-limiter";
+import { checkTier } from "@/lib/tiers";
 
 const log = createRouteLogger("chat");
 
@@ -16,7 +17,12 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
 
-  // Cap Anthropic spend per user — 30 chat completions per hour.
+  // Premium tier required — AI chat is the headline Premium feature.
+  // Returns 402 with upgrade payload if Trader / Free.
+  const tierFail = await checkTier(auth.userId, "premium");
+  if (tierFail) return tierFail;
+
+  // Cap LLM spend per user — 30 chat completions per hour.
   const limit = rateLimit(`chat:${auth.userId}`, 30, 3600);
   if (!limit.allowed) {
     return NextResponse.json(

@@ -6,6 +6,7 @@ import { CLAUDE_CONFIG } from "@/lib/config";
 import { getLlmApiKey } from "@/lib/system-config";
 import { getFilingContent } from "@/lib/sec-filings";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers";
 
 const log = createRouteLogger("filings-chat");
 
@@ -28,6 +29,10 @@ When answering questions about filings:
 export async function POST(request: Request) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+
+  // Premium tier — AI filing-chat uses Groq tokens, premium-only.
+  const tierFail = await checkTier(auth.userId, "premium");
+  if (tierFail) return tierFail;
 
   // Rate limit: 10 req/min per user
   const { allowed } = rateLimit(`filing-chat:${auth.userId}`, 10, 60);
