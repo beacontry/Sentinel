@@ -518,24 +518,25 @@
 
     <div class="page-card" id="page-analysis">
       <div class="page-card-head"><span class="page-name">Analysis (technical cockpit)</span><span class="page-route">/dashboard/analysis</span></div>
-      <p class="page-purpose">Chart + signal evaluation for a single symbol. The deepest research surface for one ticker at a time. Three-column layout with drag-to-resize panel handles.</p>
+      <p class="page-purpose">Chart + signal evaluation for a single symbol. The deepest research surface for one ticker at a time. <strong>Chart on top spanning the full width (~48vh), three panels stacked underneath</strong> (watchlist / intelligence tabs / signal details) — layout shipped 2026-05-13 after iterating away from the older 3-column-with-chart-in-the-middle design.</p>
       <h4>Key UI surfaces</h4>
       <ul>
-        <li><strong>Left column</strong> — your watchlist (with the active-list switcher dropdown + ★ Make Default affordance to promote any list without leaving the page) + add-symbol form.</li>
-        <li><strong>Center column</strong> — chart (top) + intelligence tabs (bottom), vertically resizable.</li>
-        <li><strong>Right column</strong> — Signal box (current SignalBadge + confidence + indicator breakdown).</li>
+        <li><strong>Chart row (top)</strong> — Engine view / TradingView toggle + fullscreen button. Height clamps between 340–580px depending on viewport so the panels below stay visible without scroll.</li>
+        <li><strong>Left panel (row 2)</strong> — your watchlist (with the active-list switcher dropdown + ★ Make Default affordance to promote any list without leaving the page) + add-symbol form + Recently Viewed list.</li>
+        <li><strong>Center panel (row 2)</strong> — Intelligence tabs (Indicators / Fundamentals / News / Insiders / Calls / <strong>Reddit</strong> / Backtest).</li>
+        <li><strong>Right panel (row 2)</strong> — Signal details: SignalBadge + confidence bar + price + Signal DNA + indicators (3-col tile grid: RSI / MACD / EMA) + risk (3-col tile grid: Stop / Target / R:R) + hybrid layers + collapsible What-If simulator + side-by-side Simulate/Execute buttons + collapsible Market Context (analyst consensus, insider activity, social buzz, peer stocks).</li>
         <li><strong>Chart toggle</strong> — switch between "Engine view" (lightweight-charts with BUY/SELL markers + earnings markers) and "TradingView Advanced Chart" (full drawing tools).</li>
-        <li><strong>Intelligence tabs</strong> — Technical, Options Flow, Earnings Calls, Analyst, AI Summary, Filings, Backtest.</li>
+        <li><strong>Reddit tab</strong> — recent Reddit posts mentioning the symbol across the admin-managed subreddit list (default: r/stocks, r/investing, r/SecurityAnalysis, r/wallstreetbets). Each post shows subreddit pill, time-ago, sentiment chip, and link-out. RSS-sourced (Reddit blocks JSON from datacenter IPs); admins can add/remove subreddits at <code>/dashboard/admin → Reddit Feed Sources</code>.</li>
         <li><strong>5-timeframe snapshot</strong> — 1m / 5m / 15m / 1h / 1d signals side-by-side.</li>
       </ul>
       <h4>Buttons &amp; controls</h4>
       <ul>
         <li><strong>Focus mode</strong> (page header) — toggles a class on <code>&lt;html&gt;</code> that hides the dashboard sidebar to maximize the research workspace. Persists across visits via localStorage. Auto-cleans the class on page unmount.</li>
         <li><strong>Maximize</strong> (chart toolbar) — expands the active chart to fill the viewport. Esc or the Exit button to close. Works for both Engine view and TradingView.</li>
-        <li><strong>Resize handles</strong> — thin draggable bars between left↔center, center↔right, and chart↔intelligence. Sizes persist per-device.</li>
         <li><strong>Trade</strong> button (sidebar) — jumps to <code>/trade/{SYM}</code> with the symbol pre-filled.</li>
         <li><strong>Refresh</strong> — re-runs the analyzer with fresh bars. Bypasses cache.</li>
         <li><strong>Chart mode persists per-device</strong> in <code>sentinel-chart-mode</code> localStorage key.</li>
+        <li><strong>Expandable sections (right panel)</strong> — "What-If Simulation" and "Market Context" both collapsed by default to keep the panel compact; click the chevron header to expand.</li>
       </ul>
       <div class="gotcha"><strong>Gotcha:</strong> deep links like <code>?symbol=HPE</code> work — used by Cmd+K, congress page, performance attribution, and every <code>&lt;SymbolLink&gt;</code> in the app. The Signals panel that used to live on the left column was removed (2026-05-13) — get screener signals on <code>/dashboard/screener</code>.</div>
     </div>
@@ -1100,6 +1101,7 @@
         <li><strong>Position Drift Audit</strong> — DB-recorded position state vs live broker reality, per user.</li>
         <li><strong>User Engines</strong> — start / stop / halt other users' trading engines. Toggle live-trading-enabled per user.</li>
         <li><strong>System Configuration</strong> card → links to <a href="#page-admin-system-config" style="color:var(--accent)">/dashboard/admin/system-config</a>.</li>
+        <li><strong>Reddit Feed Sources</strong> — admin list of subreddits the Analysis → Reddit tab queries. Add / toggle / reweight / delete a sub without a code change. Each mutation writes a hash-chained <code>reddit_subreddit.updated</code> audit row.</li>
         <li><strong>Invitations</strong> — send by email (creates token, sends signup link via Resend). Copy link manually if email is unconfigured. Sent / Registered / Expired status badges.</li>
       </ul>
     </div>

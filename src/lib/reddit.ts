@@ -32,6 +32,7 @@
 import { XMLParser } from "fast-xml-parser";
 import { scoreHeadline } from "./headline-sentiment";
 import { createRouteLogger } from "./logger";
+import { getRedditOAuthCreds } from "./system-config";
 
 const log = createRouteLogger("reddit");
 
@@ -202,9 +203,190 @@ function parseIso(ts: string | undefined): number {
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : Math.floor(Date.now() / 1000);
 }
 
+// ─── OAuth bearer-token cache (24h validity) ──────────────────────────────
+//
+// Reddit's client-credentials flow:
+//   POST https://www.reddit.com/api/v1/access_token
+//     Authorization: Basic <base64(client_id:client_secret)>
+//     body: grant_type=client_credentials
+//
+// Returns { access_token, token_type, expires_in: 86400, scope }.
+// We cache for 23h to leave headroom against the 24h expiry.
+
+interface TokenCacheEntry {
+  token: string;
+  expiry: number; // unix ms
+}
+
+const tokenGlobal = globalThis as typeof globalThis & {
+  __redditToken?: TokenCacheEntry | null;
+};
+
+const TOKEN_TTL_MS = 23 * 60 * 60 * 1000;
+
+async function getRedditAccessToken(): Promise<string | null> {
+  const cached = tokenGlobal.__redditToken;
+  if (cached && cached.expiry > Date.now()) return cached.token;
+
+  const creds = await getRedditOAuthCreds();
+  if (!creds) {
+    tokenGlobal.__redditToken = null;
+    return null;
+  }
+
+  const basic = Buffer.from(`${creds.clientId}:${creds.clientSecret}`).toString("base64");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const res = await fetch("https://www.reddit.com/api/v1/access_token", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${basic}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": USER_AGENT,
+      },
+      body: "grant_type=client_credentials",
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      log.warn({ status: res.status }, "Reddit OAuth token mint non-OK");
+      return null;
+    }
+    const json = (await res.json()) as { access_token?: string; expires_in?: number };
+    if (!json.access_token) {
+      log.warn({}, "Reddit OAuth token mint missing access_token");
+      return null;
+    }
+    tokenGlobal.__redditToken = {
+      token: json.access_token,
+      expiry: Date.now() + TOKEN_TTL_MS,
+    };
+    return json.access_token;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown";
+    log.warn({ err: message }, "Reddit OAuth token mint failed");
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // ─── Fetch one sub for one symbol ─────────────────────────────────────────
 
 const FETCH_TIMEOUT_MS = 5000;
+
+interface RedditJsonChild {
+  kind: "t3";
+  data: {
+    id: string;
+    subreddit: string;
+    title: string;
+    selftext?: string;
+    author: string;
+    permalink: string;
+    score: number;
+    num_comments: number;
+    created_utc: number;
+    link_flair_text?: string | null;
+    stickied?: boolean;
+  };
+}
+
+interface RedditJsonResponse {
+  data?: {
+    children?: RedditJsonChild[];
+  };
+}
+
+/**
+ * OAuth/JSON path. Returns posts with full score/comments/flair/sticky
+ * data. Used when REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET are configured.
+ * Returns null on token failure so the caller can fall back to RSS.
+ */
+async function fetchSubredditMentionsJson(
+  sub: string,
+  symbol: string,
+  limit: number,
+  token: string
+): Promise<RedditPost[] | null> {
+  const params = new URLSearchParams({
+    q: `${symbol} OR $${symbol}`,
+    sort: "new",
+    restrict_sr: "on",
+    limit: String(Math.min(limit * 2, 50)),
+    t: "month",
+  });
+  // The OAuth API lives at oauth.reddit.com (separate origin from
+  // www.reddit.com — the request must NOT include the trailing /.json
+  // suffix since the API returns JSON natively under this origin).
+  const url = `https://oauth.reddit.com/r/${encodeURIComponent(sub)}/search?${params}`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "User-Agent": USER_AGENT,
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    if (res.status === 401) {
+      // Token expired mid-window (rare with 23h TTL but possible).
+      // Drop the cache so the next call mints a fresh one, and fall
+      // back to RSS for THIS call so we don't make the user wait.
+      tokenGlobal.__redditToken = null;
+      log.warn({ sub, symbol }, "Reddit OAuth token rejected — falling back to RSS");
+      return null;
+    }
+    if (!res.ok) {
+      log.warn({ sub, symbol, status: res.status }, "Reddit OAuth JSON fetch non-OK");
+      return null;
+    }
+    const json = (await res.json()) as RedditJsonResponse;
+    const children = json.data?.children ?? [];
+    const posts: RedditPost[] = [];
+    const symbolU = symbol.toUpperCase();
+    const tickerRe = new RegExp(`\\b\\$?${symbolU}\\b`, "i");
+
+    for (const c of children) {
+      if (c.kind !== "t3" || !c.data) continue;
+      const d = c.data;
+      if (d.stickied) continue;
+
+      const titleU = d.title.toUpperCase();
+      const bodyU = (d.selftext ?? "").toUpperCase();
+      if (!tickerRe.test(titleU) && !tickerRe.test(bodyU)) continue;
+
+      posts.push({
+        id: d.id,
+        subreddit: d.subreddit.toLowerCase(),
+        title: d.title,
+        excerpt: (d.selftext ?? "").slice(0, 280),
+        author: d.author,
+        permalink: d.permalink,
+        url: `https://www.reddit.com${d.permalink}`,
+        score: d.score,
+        numComments: d.num_comments,
+        createdUtc: d.created_utc,
+        flair: d.link_flair_text ?? null,
+        isStickied: false,
+        sentiment: scoreHeadline(d.title),
+      });
+    }
+    return posts;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown";
+    log.warn({ sub, symbol, err: message }, "Reddit OAuth JSON fetch failed");
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 async function fetchSubredditMentions(
   sub: string,
@@ -213,6 +395,20 @@ async function fetchSubredditMentions(
 ): Promise<RedditPost[]> {
   const cached = cacheGet(symbol, sub);
   if (cached) return cached;
+
+  // Prefer OAuth path when credentials are configured — returns full
+  // score / comments / flair payload. RSS is the fallback both for
+  // unauthed setups AND for transient OAuth failures (token rejected,
+  // 5xx, etc.).
+  const token = await getRedditAccessToken();
+  if (token) {
+    const jsonPosts = await fetchSubredditMentionsJson(sub, symbol, limit, token);
+    if (jsonPosts !== null) {
+      cacheSet(symbol, sub, jsonPosts);
+      return jsonPosts;
+    }
+    // null = fall through to RSS
+  }
 
   const params = new URLSearchParams({
     q: `${symbol} OR $${symbol}`,
