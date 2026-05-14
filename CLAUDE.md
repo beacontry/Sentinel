@@ -162,13 +162,15 @@ Invite and alert emails are sent through **[Resend](https://resend.com)** via `s
 
 **Required env vars** (`/opt/apps/sentinel/.env` on prod):
 ```bash
-RESEND_API_KEY=re_...                                        # Sending-only API key from Resend → API Keys
-EMAIL_FROM=Sentinel <noreply@guardcybersolutionsllc.com>     # Must use a Resend-verified domain
+RESEND_API_KEY=re_...   # Sending-only API key from Resend → API Keys
+# EMAIL_FROM intentionally unset on prod — `src/lib/email.ts` defaults to
+# "Beacontry <hello@beacontry.com>". Override only if self-hosting under a
+# different verified domain.
 ```
 
 **Graceful fallback** — if `RESEND_API_KEY` is missing, both helpers log `"Email not configured"` and return `{ success: false }`. The invite route still creates the DB record and returns the signup URL so admins can copy/paste the link manually. **Never throws**, so the app stays usable when email is mis-configured.
 
-**Verified domain** — the apex `guardcybersolutionsllc.com` is verified in Resend (shared across all GuardCyber apps). DKIM signs as `d=guardcybersolutionsllc.com` so the strict DMARC (`p=reject; adkim=s`) on the apex is satisfied. SPF lives on the `send.<domain>` envelope subdomain, but DMARC alignment is satisfied via DKIM regardless. **No per-app DNS work** is needed for new tenants — only a `RESEND_API_KEY` and `EMAIL_FROM` env var.
+**Verified domain** — `beacontry.com` is verified in Resend (DKIM-signed). The in-code `EMAIL_FROM` default (`Beacontry <hello@beacontry.com>`) aligns with that DKIM so DMARC passes without per-app DNS work. The legacy GuardCyber apex (`guardcybersolutionsllc.com`) remains verified for other GuardCyber-stack apps; Beacontry no longer uses it as of 2026-05-14.
 
 **Rotating the key:**
 1. Resend → API Keys → revoke old key → create new "sentinel-prod" key (Sending access only)
@@ -182,7 +184,7 @@ EMAIL_FROM=Sentinel <noreply@guardcybersolutionsllc.com>     # Must use a Resend
      -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache \
      -v /opt/apps/sentinel/cache:/data/cache:Z \
      --restart always -m 2g \
-     ghcr.io/ixiondt/sentinel:latest
+     ghcr.io/beacontry/sentinel:latest
    ```
 
 **Inbound mail** (bounces, replies to `noreply@`, anyone emailing the domain): Cloudflare Email Routing forwards everything to the admin inbox via a catch-all rule. See GuardCyber `README.md` § Email Infrastructure for the shared setup.
@@ -224,7 +226,7 @@ Live trading is gated behind `ALLOW_LIVE_TRADING=1` in the server environment. W
      -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache \
      -v /opt/apps/sentinel/cache:/data/cache:Z \
      --restart always -m 2g \
-     ghcr.io/ixiondt/sentinel:latest'
+     ghcr.io/beacontry/sentinel:latest'
    ```
 4. Trader page → Start. Watch the persistent red LIVE banner appear. First scan should populate audit log with `engine.started` (metadata.environment = "live") and the boot equity snapshot.
 5. Monitor the **Audit Log** page (`/dashboard/admin/audit`) on first session — every order, halt, and rejection is logged with hash chain.
@@ -278,7 +280,7 @@ sudo podman run -d --name sentinel-app --network=host \
   -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache \
   -v /opt/apps/sentinel/cache:/data/cache:Z \
   --restart always -m 2g \
-  ghcr.io/ixiondt/sentinel:latest
+  ghcr.io/beacontry/sentinel:latest
 ```
 
 After: engine refuses to start on any live broker connection (emits `engine.live_blocked` audit event on attempts). Re-activate the paper connection (`isActive=true` via Settings or `UPDATE broker_connections SET is_active=true WHERE environment='paper' AND user_id=...`) and start the engine. The live connection row stays in the DB — flipping back later is just reversing this procedure.
@@ -825,8 +827,8 @@ ssh deploy@<host> "sudo -u postgres psql sentinel_db -v ON_ERROR_STOP=1 -f /tmp/
 Cron schedule additions (droplet crontab, UTC):
 ```
 # Journal v2 phase 2 — daily prompts
-0 12 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-prompts?type=pre-market
-0 20 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-prompts?type=post-market
+0 12 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://beacontry.com/api/cron/journal-prompts?type=pre-market
+0 20 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://beacontry.com/api/cron/journal-prompts?type=post-market
 ```
 (12:30 UTC = 8:30 ET / 20:30 UTC = 4:30 ET during EDT; shift one hour in EST.)
 
@@ -943,10 +945,10 @@ Pre-existing bugs + UX cleanups discovered while reviewing the dashboard with th
 Append to droplet crontab as `sn-deploy` (UTC):
 ```cron
 # Daily journal prompts
-0 12 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-prompts?type=pre-market
-0 20 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-prompts?type=post-market
+0 12 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://beacontry.com/api/cron/journal-prompts?type=pre-market
+0 20 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://beacontry.com/api/cron/journal-prompts?type=post-market
 # AI weekly review
-0 22 * * 0  curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-weekly-review
+0 22 * * 0  curl -fsS -H "x-cron-secret: $CRON_SECRET" https://beacontry.com/api/cron/journal-weekly-review
 ```
 
 ## 2026-05-13 (audit batch) — Beginner-friendliness + correctness sweep
