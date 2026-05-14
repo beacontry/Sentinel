@@ -98,10 +98,28 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    log.error({ err: message }, "Social sentiment fetch error");
+    // Finnhub deprecated social-sentiment for the free tier; the endpoint
+    // now intermittently returns 403/5xx. Surface a clean empty shape
+    // instead of a 500 so the Analysis page can render "no data" without
+    // four retries hammering the route. We still log at warn so a real
+    // outage is visible.
+    log.warn({ err: message, symbol: upperSymbol }, "Social sentiment unavailable");
     return NextResponse.json(
-      { error: "Failed to fetch social sentiment" },
-      { status: 500 }
+      {
+        symbol: upperSymbol,
+        configured: true,
+        reddit: { mentions: 0, positiveScore: 0, negativeScore: 0 },
+        twitter: { mentions: 0, positiveScore: 0, negativeScore: 0 },
+        totalMentions: 0,
+        avgScore: 0.5,
+        trend: "flat" as const,
+        unavailable: true,
+      },
+      {
+        // 30s — short enough that a recovered upstream is picked up quickly,
+        // long enough to dampen the 4×-retry storm we just saw.
+        headers: { "Cache-Control": "private, max-age=30" },
+      }
     );
   }
 }

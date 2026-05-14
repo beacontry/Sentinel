@@ -52,10 +52,19 @@ export async function GET(
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    log.error({ err: message, symbol: sym }, "Transcripts fetch error");
+    // Finnhub returns 403 on the transcripts endpoint for free-tier
+    // accounts and intermittent 5xx for everyone. Degrade gracefully —
+    // the Analysis page's Calls tab renders "no transcripts available"
+    // on an empty array, which is the truthful answer here. Returning
+    // 502 made every Analysis page load surface a red error toast.
+    log.warn({ err: message, symbol: sym }, "Transcripts unavailable");
     return NextResponse.json(
-      { transcripts: [], error: "Failed to fetch transcripts" },
-      { status: 502 }
+      { symbol: sym, transcripts: [], unavailable: true },
+      {
+        status: 200,
+        // Short cache so a recovered upstream is picked up quickly.
+        headers: { "Cache-Control": "private, max-age=60" },
+      }
     );
   }
 }

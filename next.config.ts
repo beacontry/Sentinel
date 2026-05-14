@@ -13,7 +13,10 @@ const csp = [
   // images for ticker logos. Whitelist all three origins.
   `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://s3.tradingview.com${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "img-src 'self' data: https://s3.tradingview.com https://*.tradingview.com",
+  // Finnhub serves stock logos from static2.finnhub.io (and historically
+  // static.finnhub.io). Wildcard the subdomain so the company-profile card
+  // and any future Finnhub image surface render without a CSP block.
+  "img-src 'self' data: https://s3.tradingview.com https://*.tradingview.com https://*.finnhub.io",
   "font-src 'self' https://fonts.gstatic.com",
   // Cloudflare Insights uses TWO origins: `cloudflareinsights.com` for
   // the beacon, and `static.cloudflareinsights.com` for the

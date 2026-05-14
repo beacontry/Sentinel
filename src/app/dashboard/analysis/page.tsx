@@ -557,34 +557,127 @@ function AnalysisCockpit() {
           </div>
         </div>
 
-        {/* ─── Desktop 3-column ───
+        {/* ─── Desktop layout: chart on top, panels below ───
          *
-         * History note: 2026-05-13 morning shipped react-resizable-panels
-         * for manual resize between columns. Spent the afternoon
-         * debugging cascade issues with the PriceChart sizing + Mac
-         * scrollbar compensation + nested PanelGroup orientation. Real
-         * culprit turned out to be PriceChart's missing height style
-         * (separate fix). Reverted to plain CSS Grid here — same
-         * layout users already had pre-refactor, dramatically simpler,
-         * no v4-panels edge cases. If we want drag-to-resize later
-         * we'll revisit with explicit sizing on every nested level.
+         * 2026-05-13 evening: user wanted the chart promoted from the
+         * center column (cramped between watchlist and signal panel)
+         * to a full-width top row, with everything else underneath.
+         * Two-row grid:
          *
-         *   - Removed the SignalFeed panel (user picked Option A in the
-         *     redundancy discussion). Left column is pure watchlist.
-         *   - Charts use height='fill' so they grow into the column's
-         *     allocated space (the 520px hardcode left half the
-         *     screen blank — fixed in PriceChart and TradingViewChart).
+         *   Row 1 (60%):  ████████████ chart ████████████
+         *   Row 2 (40%):  [watchlist] [intelligence] [signal details]
+         *
+         * Earlier layout history: 2026-05-13 morning shipped
+         * react-resizable-panels, reverted same afternoon (PriceChart
+         * sizing chase). This is the third iteration of this page's
+         * layout in 24h, finally driven by an actual user-facing
+         * complaint ("look at all the empty space" → chart too narrow).
+         *
+         *   - SignalFeed panel was removed earlier (user picked Option A).
+         *   - Charts use height='fill' so they grow into the row's
+         *     allocated space (PriceChart + TradingViewChart both honor it).
          */}
         <div
           className="hidden lg:grid flex-1 min-h-0"
           style={{
             gridTemplateColumns: "18rem minmax(0,1fr) 26rem",
-            gridTemplateRows: "1fr",
+            gridTemplateRows: "minmax(0, 60%) minmax(0, 40%)",
+            gridTemplateAreas: `
+              "chart chart chart"
+              "watchlist intel details"
+            `,
             height: "100%",
           }}
         >
-          {/* Left: Watchlist + add controls */}
-          <div className="flex min-h-0 flex-col border-r border-border bg-bg-secondary">
+          {/* ───── Row 1: Chart spans all 3 columns ───── */}
+          <div
+            className="min-w-0 min-h-0 overflow-hidden p-3 flex flex-col border-b border-border"
+            style={{ gridArea: "chart" }}
+          >
+            {/* Chart engine toggle + fullscreen button */}
+            {selectedSymbol && (
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="text-xs text-text-muted">
+                  <span className="font-mono font-semibold text-text-primary">{selectedSymbol}</span>
+                  {selectedAnalysis && typeof selectedAnalysis.price === "number" && (
+                    <span className="ml-2">
+                      ${selectedAnalysis.price.toFixed(2)}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
+                    <button
+                      onClick={() => switchChartMode("engine")}
+                      className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
+                        ${chartMode === "engine"
+                          ? "bg-bg-elevated text-text-primary"
+                          : "text-text-muted hover:text-text-secondary"
+                        }`}
+                      title="Sentinel's chart with signal/earnings markers"
+                    >
+                      Engine view
+                    </button>
+                    <button
+                      onClick={() => switchChartMode("tradingview")}
+                      className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
+                        ${chartMode === "tradingview"
+                          ? "bg-bg-elevated text-text-primary"
+                          : "text-text-muted hover:text-text-secondary"
+                        }`}
+                      title="TradingView Advanced Chart with full drawing tools"
+                    >
+                      TradingView
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setChartFullscreen(true)}
+                    className="rounded-md border border-border bg-bg-secondary p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+                    title="Expand chart to full screen (Esc to exit)"
+                    aria-label="Expand chart to full screen"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* While the overlay is open, render a placeholder
+             * instead of the live chart — only ONE
+             * TradingView/PriceChart instance exists at a time
+             * so the in-page panel doesn't drift. */}
+            {chartFullscreen ? (
+              <div className="flex-1 min-h-0 flex items-center justify-center rounded-lg border border-dashed border-border bg-bg-secondary">
+                <p className="text-xs text-text-muted">Chart open in fullscreen — Esc to return</p>
+              </div>
+            ) : selectedSymbol && chartMode === "tradingview" ? (
+              <div className="flex-1 min-h-0">
+                <TradingViewChart symbol={selectedSymbol} interval="D" height="fill" />
+              </div>
+            ) : selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
+              <div className="flex-1 min-h-0">
+                <PriceChart analysis={selectedAnalysis} height="fill" events={chartEvents} />
+              </div>
+            ) : isSelectedLoading ? (
+              <div className="flex h-full items-center justify-center rounded-xl border border-border bg-bg-secondary">
+                <div className="text-center">
+                  <div className="mx-auto mb-3 h-8 w-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
+                  <p className="text-sm text-text-secondary">Analyzing {selectedSymbol}...</p>
+                </div>
+              </div>
+            ) : (
+              <DesktopEmptyState
+                hasSymbols={symbols.length > 0}
+                selectedSymbol={selectedSymbol}
+                onAddSymbol={handleAddSymbol}
+              />
+            )}
+          </div>
+
+          {/* ───── Row 2 — Left: Watchlist + add controls ───── */}
+          <div
+            className="flex min-h-0 flex-col border-r border-border bg-bg-secondary"
+            style={{ gridArea: "watchlist" }}
+          >
                 {/* Add to watchlist (top) — moved here from the bottom
                  * 2026-05-13. Sits above the watchlist list so users
                  * don't have to scroll past everything to add a symbol.
@@ -684,92 +777,19 @@ function AnalysisCockpit() {
                 )}
           </div>
 
-          {/* Center: chart (65%) + intelligence (35%) split */}
+          {/* ───── Row 2 — Center: Intelligence tabs ───── */}
           <div
-            className="min-w-0 min-h-0"
-            style={{
-              display: "grid",
-              gridTemplateRows: "65% 35%",
-              height: "100%",
-            }}
+            className="min-w-0 min-h-0 overflow-hidden"
+            style={{ gridArea: "intel" }}
           >
-            <div className="min-h-0 overflow-hidden p-3 flex flex-col">
-                    {/* Chart engine toggle + fullscreen button */}
-                    {selectedSymbol && (
-                      <div className="flex items-center justify-end gap-2 mb-2">
-                        <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
-                          <button
-                            onClick={() => switchChartMode("engine")}
-                            className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
-                              ${chartMode === "engine"
-                                ? "bg-bg-elevated text-text-primary"
-                                : "text-text-muted hover:text-text-secondary"
-                              }`}
-                            title="Sentinel's chart with signal/earnings markers"
-                          >
-                            Engine view
-                          </button>
-                          <button
-                            onClick={() => switchChartMode("tradingview")}
-                            className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
-                              ${chartMode === "tradingview"
-                                ? "bg-bg-elevated text-text-primary"
-                                : "text-text-muted hover:text-text-secondary"
-                              }`}
-                            title="TradingView Advanced Chart with full drawing tools"
-                          >
-                            TradingView
-                          </button>
-                        </div>
-                        <button
-                          onClick={() => setChartFullscreen(true)}
-                          className="rounded-md border border-border bg-bg-secondary p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-                          title="Expand chart to full screen (Esc to exit)"
-                          aria-label="Expand chart to full screen"
-                        >
-                          <Maximize2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                    {/* While the overlay is open, render a placeholder
-                     * instead of the live chart — only ONE
-                     * TradingView/PriceChart instance exists at a time
-                     * so the in-page panel doesn't drift. */}
-                    {chartFullscreen ? (
-                      <div className="flex-1 min-h-0 flex items-center justify-center rounded-lg border border-dashed border-border bg-bg-secondary">
-                        <p className="text-xs text-text-muted">Chart open in fullscreen — Esc to return</p>
-                      </div>
-                    ) : selectedSymbol && chartMode === "tradingview" ? (
-                      <div className="flex-1 min-h-0">
-                        <TradingViewChart symbol={selectedSymbol} interval="D" height="fill" />
-                      </div>
-                    ) : selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
-                      <div className="flex-1 min-h-0">
-                        <PriceChart analysis={selectedAnalysis} height="fill" events={chartEvents} />
-                      </div>
-                    ) : isSelectedLoading ? (
-                      <div className="flex h-full items-center justify-center rounded-xl border border-border bg-bg-secondary">
-                        <div className="text-center">
-                          <div className="mx-auto mb-3 h-8 w-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
-                          <p className="text-sm text-text-secondary">Analyzing {selectedSymbol}...</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <DesktopEmptyState
-                        hasSymbols={symbols.length > 0}
-                        selectedSymbol={selectedSymbol}
-                        onAddSymbol={handleAddSymbol}
-                      />
-                    )}
-            </div>
-
-            <div className="min-h-0 overflow-hidden">
-              <IntelligenceTabs symbol={selectedSymbol} analysis={selectedAnalysis} />
-            </div>
+            <IntelligenceTabs symbol={selectedSymbol} analysis={selectedAnalysis} />
           </div>
 
-          {/* Right: signal details */}
-          <div className="min-h-0 overflow-y-auto border-l border-border bg-bg-secondary">
+          {/* ───── Row 2 — Right: Signal details ───── */}
+          <div
+            className="min-h-0 overflow-y-auto border-l border-border bg-bg-secondary"
+            style={{ gridArea: "details" }}
+          >
             <SignalDetails analysis={selectedAnalysis} loading={isSelectedLoading} />
           </div>
         </div>
