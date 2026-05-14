@@ -130,8 +130,8 @@ export default function LandingPage() {
       <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-all duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-[0_10px_30px_rgba(0,0,0,0.24)]" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
         <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
           <Link href="/" className="flex items-center gap-3 text-[1.25rem] font-bold tracking-tight">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-white">
-              <BeacontryMark className="h-5 w-5" aria-label="Beacontry" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-white">
+              <BeacontryMark variant="full" className="h-8 w-8" aria-label="Beacontry" />
             </div>
             Beacontry
           </Link>

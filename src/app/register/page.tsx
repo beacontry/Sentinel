@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Shield } from "lucide-react";
+import { BeacontryMark } from "@/components/brand/beacontry-mark";
 
 export default function RegisterPage() {
   return (
@@ -94,7 +94,7 @@ function RegisterForm() {
           <div className="mb-8">
             <Link href="/" className="inline-flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
-                <Shield className="h-4 w-4" />
+                <BeacontryMark variant="full" className="h-6 w-6" aria-label="Beacontry" />
               </div>
               <span className="text-xl font-semibold text-text-primary">Beacontry</span>
             </Link>
@@ -133,7 +133,7 @@ function RegisterForm() {
           <div className="mb-8">
             <Link href="/" className="inline-flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
-                <Shield className="h-4 w-4" />
+                <BeacontryMark variant="full" className="h-6 w-6" aria-label="Beacontry" />
               </div>
               <span className="text-xl font-semibold text-text-primary">Beacontry</span>
             </Link>
@@ -159,7 +159,7 @@ function RegisterForm() {
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
-              <Shield className="h-4 w-4" />
+              <BeacontryMark variant="full" className="h-6 w-6" aria-label="Beacontry" />
             </div>
             <span className="text-xl font-semibold text-text-primary">Beacontry</span>
           </Link>
