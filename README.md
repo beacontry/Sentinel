@@ -1,12 +1,26 @@
-# Sentinel
+# 🔦 Beacontry
 
-Trading intelligence platform that combines scanning, analysis, automated execution, and portfolio management into one workspace.
+> Open-source trading intelligence platform. Scanning, analysis, automated
+> execution, and portfolio management in one workspace — fully transparent,
+> fully inspectable, fully yours.
 
-**Live**: [sentinel.guardcybersolutionsllc.com](https://sentinel.guardcybersolutionsllc.com)
+**Live**: [beacontry.com](https://beacontry.com) · also reachable at the legacy alias [sentinel.guardcybersolutionsllc.com](https://sentinel.guardcybersolutionsllc.com)
+
+**Docs**: [Features reference](https://beacontry.com/docs/sentinel-features.html) · [Engine ruleset](https://beacontry.com/docs/engine-ruleset.html)
 
 ## Overview
 
-Sentinel scans the entire S&P 500, generates technical signals, optimizes strategies using genetic algorithms, and executes trades through Alpaca. Everything from screener to execution runs in a single application.
+Beacontry scans the entire S&P 500, generates confidence-scored signals
+from a hybrid pipeline (technical + sentiment + options flow + analyst +
+AI scoring + Reddit chatter), optimizes strategies using genetic
+algorithms, and executes trades through your broker. Everything from
+screener to execution runs in one application — and every decision is
+inspectable.
+
+> **Internal naming note:** "Sentinel" remains the internal name for the
+> trading-engine code module — type names, DB tables (`trader_*`), env
+> vars, internal logs, etc. "Beacontry" is the public-facing brand the
+> engine is shipped under. Both names refer to the same platform.
 
 ### Core Loop
 
