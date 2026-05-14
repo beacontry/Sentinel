@@ -366,10 +366,25 @@ async function applyTierFromSubscription(
   //   - canceled: ended (handled by .deleted webhook usually, but
   //     subscription.updated can also fire with status=canceled)
   //   - unpaid / incomplete / incomplete_expired: never granted tier
+  //
   // tier_expires_at is set to current_period_end so that if Stripe
   // stops talking to us, the user automatically drops to free at the
   // right boundary (via effectiveTier() in tiers.ts).
-  const periodEndUnix = (subscription as Stripe.Subscription & { current_period_end?: number }).current_period_end;
+  //
+  // API version 2026-03-31.preview + later (which includes our pinned
+  // 2026-04-22.dahlia) moved `current_period_end` off the Subscription
+  // object onto SubscriptionItem to support multi-cadence subscriptions.
+  // For our one-item-per-subscription model the value is identical;
+  // read from items[0] (new location) first, fall back to the deprecated
+  // subscription-level field if it ever returns (old API versions still
+  // populate both for compatibility).
+  const itemExt = item as Stripe.SubscriptionItem & {
+    current_period_end?: number;
+  };
+  const subExt = subscription as Stripe.Subscription & {
+    current_period_end?: number;
+  };
+  const periodEndUnix = itemExt.current_period_end ?? subExt.current_period_end;
   const periodEnd = periodEndUnix ? new Date(periodEndUnix * 1000) : null;
 
   let tierExpiresAt: Date | null = null;
