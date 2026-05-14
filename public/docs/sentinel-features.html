@@ -401,6 +401,19 @@
     <h3>Display preferences</h3>
     <p>Settings → Display Preferences card covers: P&amp;L format, time format (12h/24h), color-blind palette (Wong blue/orange instead of green/red), default landing page after login, daily-digest email opt-in. All localStorage-backed, cross-tab synced.</p>
 
+    <h3>Themes (5 options)</h3>
+    <p>Theme picker in the sidebar footer + landing nav lets you choose between <strong>Light</strong> (default — white surfaces, emerald accent), <strong>Dark</strong> (emerald-tinted near-black), <strong>Coral</strong> (warm peach surfaces, coral accent), <strong>Light Blue</strong> (sky-tinted, blue accent), and <strong>Gray</strong> (true neutral grays, emerald accent retained). Each theme is a single class on <code>&lt;html&gt;</code>; trading semantics (bullish/bearish/warning) stay universal red/green across all themes so P&amp;L is recognizable. Preference persists in <code>sentinel-theme</code> localStorage key + updates the PWA <code>theme-color</code> meta tag.</p>
+
+    <h3>Focus mode + chart fullscreen</h3>
+    <p><strong>Focus mode</strong> (Analysis page header) collapses the dashboard sidebar to maximize the research workspace. Persists per-device; auto-cleans on page unmount so the sidebar isn't globally hidden when navigating away.</p>
+    <p><strong>Chart fullscreen</strong> (Maximize icon in chart toolbars on Analysis, Replay, and Backtest) expands a single chart to fill the viewport. Esc or the Exit button to close. Works for both lightweight-charts views and the embedded TradingView widget.</p>
+
+    <h3>Smart back button</h3>
+    <p>Detail pages (Trade ticket, Articles, Messages, Support tickets, Forum threads, Posts) use <code>&lt;SmartBackButton fallbackHref&gt;</code> for their back arrow. When there's same-origin browser history, it pops the stack — returning the user to wherever they came from (Cmd+K jump, notification, feed link). Direct-link arrivals (bookmarks, email) fall through to the explicit href.</p>
+
+    <h3>Symbol quick-info drawer</h3>
+    <p>Ticker rows on Unusual Activity (and elsewhere) open a slide-out preview drawer (<code>&lt;SymbolPreviewSheet&gt;</code>) with price + change + signal + RSI + volume + sector + escape hatches (View Analysis / Trade / Add to Watchlist). Quicker than navigating away.</p>
+
     <h3>AI is on Groq</h3>
     <p>Every AI feature (Insights, Quick Insight widget, hybrid signal scoring, sentiment, filings chat, market digest, AI chat, the Recent Trades <strong>AI ✨</strong> button) runs on Groq (<code>llama-3.3-70b-versatile</code>). Admins rotate the key at <a href="#page-admin-system-config" style="color:var(--accent)">System Configuration</a> — no SSH required. AI keys are server-wide.</p>
 
@@ -470,7 +483,8 @@
       <h2>Dashboard widgets</h2>
     </div>
 
-    <p>15 widgets registered. Each has a default size (small / medium / large / full-width) and a category (markets / trading / social / research). Add via the "+ Widget" button on the dashboard home.</p>
+    <p>16 widgets registered. Each has a default size (small / medium / large / full-width) and a category (markets / trading / social / research). Add via the "+ Widget" button on the dashboard home.</p>
+    <p>Layout uses CSS grid with <code>grid-auto-rows: min-content</code> + <code>grid-auto-flow: dense</code> — widgets size to content (no forced row equalization) and the layout packs tightly to fill gaps. Drag-to-rearrange in Edit Layout mode.</p>
 
     <table>
       <thead><tr><th>Widget</th><th>Size</th><th>Shows</th></tr></thead>
@@ -479,7 +493,8 @@
         <tr><td><strong>Market Overview</strong></td><td>md</td><td>Top gainers and losers from the screener cache.</td></tr>
         <tr><td><strong>Recent Signals</strong></td><td>md</td><td>Latest BUY/SELL signals from the screener. Linked to /dashboard/analysis.</td></tr>
         <tr><td><strong>P&amp;L Summary</strong></td><td>sm</td><td>Today's realized + unrealized P&amp;L from the engine.</td></tr>
-        <tr><td><strong>News Feed</strong></td><td>md</td><td>Latest financial headlines with sentiment badges (bullish ▲ / bearish ▼ / neutral).</td></tr>
+        <tr><td><strong>News Feed</strong></td><td>md</td><td>Static 5-item snapshot of latest headlines with sentiment badges.</td></tr>
+        <tr><td><strong>Live News Feed</strong></td><td>lg</td><td>Auto-refreshing scrolling newsfeed (5 min poll). 15 items with sentiment indicator + watchlist-symbol priority + scroll overflow. The "right rail newsfeed" pattern.</td></tr>
         <tr><td><strong>Open Positions</strong></td><td>md</td><td>Current open positions from the live broker. Click row → position detail sheet.</td></tr>
         <tr><td><strong>Quick Insight</strong></td><td>sm</td><td>AI-powered 2-3 sentence "why is this stock moving" for a chosen symbol. Cached 5min.</td></tr>
         <tr><td><strong>Signal Feed</strong></td><td>md</td><td>Community shared signals (when social ships in volume).</td></tr>
@@ -487,7 +502,7 @@
         <tr><td><strong>Performance Stats</strong></td><td>sm</td><td>Win rate, accuracy, total trades.</td></tr>
         <tr><td><strong>Upcoming Earnings</strong></td><td>sm</td><td>Next 5 earnings dates from your watchlist (Finnhub-sourced).</td></tr>
         <tr><td><strong>Portfolio Summary</strong></td><td>sm</td><td>Paper portfolio value + daily change.</td></tr>
-        <tr><td><strong>Net Worth</strong></td><td>sm</td><td>Aggregated value across paper portfolios + live broker positions.</td></tr>
+        <tr><td><strong>Net Worth</strong></td><td>sm</td><td>Aggregated value across paper portfolios + live broker positions. "Create paper portfolio →" link if you have neither.</td></tr>
         <tr><td><strong>Continue Reading</strong></td><td>sm</td><td>Next education guide to pick up where you left off.</td></tr>
         <tr><td><strong>P&amp;L by Symbol</strong></td><td>md</td><td>Top symbols driving your lifetime realized P&amp;L. Proportional bars. Same data as /dashboard/performance.</td></tr>
       </tbody>
@@ -503,22 +518,26 @@
 
     <div class="page-card" id="page-analysis">
       <div class="page-card-head"><span class="page-name">Analysis (technical cockpit)</span><span class="page-route">/dashboard/analysis</span></div>
-      <p class="page-purpose">Chart + signal evaluation for a single symbol. The deepest research surface for one ticker at a time.</p>
+      <p class="page-purpose">Chart + signal evaluation for a single symbol. The deepest research surface for one ticker at a time. Three-column layout with drag-to-resize panel handles.</p>
       <h4>Key UI surfaces</h4>
       <ul>
-        <li><strong>Symbol selector</strong> — dropdown of recent + watchlist symbols. Or type a ticker into Cmd+K and jump.</li>
+        <li><strong>Left column</strong> — your watchlist (with the active-list switcher dropdown + ★ Make Default affordance to promote any list without leaving the page) + add-symbol form.</li>
+        <li><strong>Center column</strong> — chart (top) + intelligence tabs (bottom), vertically resizable.</li>
+        <li><strong>Right column</strong> — Signal box (current SignalBadge + confidence + indicator breakdown).</li>
         <li><strong>Chart toggle</strong> — switch between "Engine view" (lightweight-charts with BUY/SELL markers + earnings markers) and "TradingView Advanced Chart" (full drawing tools).</li>
-        <li><strong>Signal box</strong> — current SignalBadge (STRONG_BUY/BUY/HOLD/SELL/STRONG_SELL) + confidence % + indicator breakdown.</li>
         <li><strong>Intelligence tabs</strong> — Technical, Options Flow, Earnings Calls, Analyst, AI Summary, Filings, Backtest.</li>
         <li><strong>5-timeframe snapshot</strong> — 1m / 5m / 15m / 1h / 1d signals side-by-side.</li>
       </ul>
       <h4>Buttons &amp; controls</h4>
       <ul>
+        <li><strong>Focus mode</strong> (page header) — toggles a class on <code>&lt;html&gt;</code> that hides the dashboard sidebar to maximize the research workspace. Persists across visits via localStorage. Auto-cleans the class on page unmount.</li>
+        <li><strong>Maximize</strong> (chart toolbar) — expands the active chart to fill the viewport. Esc or the Exit button to close. Works for both Engine view and TradingView.</li>
+        <li><strong>Resize handles</strong> — thin draggable bars between left↔center, center↔right, and chart↔intelligence. Sizes persist per-device.</li>
         <li><strong>Trade</strong> button (sidebar) — jumps to <code>/trade/{SYM}</code> with the symbol pre-filled.</li>
         <li><strong>Refresh</strong> — re-runs the analyzer with fresh bars. Bypasses cache.</li>
         <li><strong>Chart mode persists per-device</strong> in <code>sentinel-chart-mode</code> localStorage key.</li>
       </ul>
-      <div class="gotcha"><strong>Gotcha:</strong> deep links like <code>?symbol=HPE</code> work — used by Cmd+K, congress page, performance attribution, and every <code>&lt;SymbolLink&gt;</code> in the app.</div>
+      <div class="gotcha"><strong>Gotcha:</strong> deep links like <code>?symbol=HPE</code> work — used by Cmd+K, congress page, performance attribution, and every <code>&lt;SymbolLink&gt;</code> in the app. The Signals panel that used to live on the left column was removed (2026-05-13) — get screener signals on <code>/dashboard/screener</code>.</div>
     </div>
 
     <div class="page-card" id="page-multi-timeframe">
@@ -579,6 +598,11 @@
     <div class="page-card" id="page-unusual-activity">
       <div class="page-card-head"><span class="page-name">Unusual Activity</span><span class="page-route">/dashboard/unusual-activity</span></div>
       <p class="page-purpose">Volume spike detection — symbols where today's volume is 2x+ the 20-day average. Surfaces "something is happening here" candidates for further research.</p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Symbol rows are clickable</strong> — opens a slide-out quick-info drawer (<code>&lt;SymbolPreviewSheet&gt;</code>) with current price + intraday change + signal + RSI + sector. Three escape hatches: View full analysis, Trade, Add to watchlist.</li>
+        <li><strong>Show all / Show unusual</strong> toggle filters between the full universe scan and the >2× volume subset.</li>
+      </ul>
     </div>
   </section>
 
@@ -770,18 +794,51 @@
     </div>
 
     <div class="page-card" id="page-journal">
-      <div class="page-card-head"><span class="page-name">Journal</span><span class="page-route">/dashboard/journal</span></div>
-      <p class="page-purpose">Trade-by-trade notes, tags, screenshots. The "what was I thinking" record. Engine trades pre-populate; you add the narrative.</p>
+      <div class="page-card-head"><span class="page-name">Journal (v2)</span><span class="page-route">/dashboard/journal</span></div>
+      <p class="page-purpose">Trade-by-trade notes, tags, behavioral feedback. The "what was I thinking" record. Journal v2 (2026-05-13) replaces the old blank-canvas approach with auto-stubs, daily prompts, categorized tagging, and AI weekly review.</p>
+      <h4>Entry types</h4>
+      <ul>
+        <li><strong>Manual</strong> — you wrote it. Default for new entries.</li>
+        <li><strong>Trade stub</strong> — auto-generated when a trade fills. Pre-fills symbol, P&amp;L, signal context. You add the WHY.</li>
+        <li><strong>Pre-market prompt</strong> — daily 8:30 ET stub with 4 questions (plan, bias, watchlist, what you're NOT trading).</li>
+        <li><strong>Post-market prompt</strong> — daily 4:30 ET stub with 4 reflection questions.</li>
+        <li><strong>Weekly review</strong> — AI-generated Sunday recap (Week in numbers / What worked / What didn't / Pattern across the week / One question for next week). Costs ~$0.005/user/week on Groq.</li>
+      </ul>
+      <h4>Tagging</h4>
+      <ul>
+        <li>30 tags across 4 categories: <strong>Emotion</strong> (discipline, patience, confidence, fear, greed, FOMO, revenge, boredom), <strong>Strategy</strong> (breakout, mean-rev, trend, swing, intraday, news, earnings, technical), <strong>Execution</strong> (followed plan, perfect, early exit, late entry, size too big/small, stop too tight/wide), <strong>Outcome</strong> (win, loss, breakeven, stopped out, full target, partial).</li>
+        <li>Tag IDs are namespaced (<code>emotion_*</code>, <code>strat_*</code>, etc) so the patterns API can group cheaply.</li>
+        <li>Entry-card badges color-coded by category.</li>
+      </ul>
+      <h4>Behavioral patterns</h4>
+      <ul>
+        <li>Quiet card at the top of the journal showing per-tag win rate vs your baseline. Tag has to hit n=5 to surface.</li>
+        <li>Bullish-colored chip if &gt;+5pp above baseline, bearish if &gt;-5pp below.</li>
+        <li>Click a chip to filter entries to that tag.</li>
+        <li>Renders nothing when no tag has enough data — quiet by design.</li>
+      </ul>
+      <h4>Cross-feature linking</h4>
+      <ul>
+        <li><code>?symbol=AAPL</code> URL param filters to that symbol on mount. Used by Performance attribution rows.</li>
+        <li><code>?date=2026-05-13</code> URL param filters to that date (matches both <code>prompt_date</code> and <code>created_at::date</code>). Used by P&amp;L Calendar day modal.</li>
+        <li>Auto-trade entries get an "Open chart →" link to <code>/dashboard/analysis</code>.</li>
+      </ul>
+      <h4>UI polish</h4>
+      <ul>
+        <li>Unfilled stubs/prompts sort to the top of the entry list with an accent border + "Needs review" badge + italic muted notes.</li>
+        <li>Per-type icon + label badge on each entry.</li>
+        <li>Edit/delete buttons inline.</li>
+      </ul>
     </div>
 
     <div class="page-card" id="page-performance">
       <div class="page-card-head"><span class="page-name">Performance</span><span class="page-route">/dashboard/performance</span></div>
-      <p class="page-purpose">Signal accuracy (true/false positives), win rate, P&amp;L attribution by symbol.</p>
+      <p class="page-purpose">Signal accuracy (true/false positives), win rate, P&amp;L attribution by symbol. Auto-refreshes every 60s.</p>
       <h4>Key UI surfaces</h4>
       <ul>
         <li><strong>Headline cards</strong> — total trades, win rate, average win/loss, profit factor.</li>
         <li><strong>By-symbol accuracy table</strong> — true positives / false positives / false negatives per ticker.</li>
-        <li><strong>Top-10 contributors</strong> — proportional bars showing which symbols drove your realized P&amp;L.</li>
+        <li><strong>Top-10 contributors</strong> — proportional bars showing which symbols drove your realized P&amp;L. Each row has a <strong>Journal</strong> link → <code>/dashboard/journal?symbol=X</code> so you can read your notes for that symbol.</li>
       </ul>
     </div>
 
@@ -798,6 +855,12 @@
     <div class="page-card" id="page-pnl-calendar">
       <div class="page-card-head"><span class="page-name">P&amp;L Calendar</span><span class="page-route">/dashboard/pnl-calendar</span></div>
       <p class="page-purpose">Daily P&amp;L as a green/red heatmap calendar. Click any day to drill into that day's trades.</p>
+      <h4>Day drill-down modal</h4>
+      <ul>
+        <li>Headline tiles: P&amp;L, trades count, win rate.</li>
+        <li>Trades table for that day.</li>
+        <li><strong>View journal entries for this day →</strong> link → <code>/dashboard/journal?date=YYYY-MM-DD</code>. Surfaces the pre/post-market prompts, trade stubs, and manual entries authored that day.</li>
+      </ul>
     </div>
 
     <div class="page-card" id="page-tax-center">
@@ -840,7 +903,12 @@
 
     <div class="page-card" id="page-articles">
       <div class="page-card-head"><span class="page-name">Articles</span><span class="page-route">/dashboard/articles</span></div>
-      <p class="page-purpose">Curated longer-form trading + finance articles with reading progress tracking.</p>
+      <p class="page-purpose">Curated longer-form trading + finance articles with reading progress tracking. As of 2026-05-13, auto-populated daily by the market-digest cron — each day's AI-generated digest also lands here as a free article with slug <code>market-digest-{YYYY-MM-DD}</code>.</p>
+      <h4>Categories</h4>
+      <ul>
+        <li><strong>Daily Digest</strong> — auto-populated, one per trading day.</li>
+        <li><strong>Manual</strong> — admins write/upload longer pieces via the admin tools (future expansion).</li>
+      </ul>
     </div>
 
     <div class="page-card" id="page-filings">
@@ -867,12 +935,17 @@
 
     <div class="page-card" id="page-education">
       <div class="page-card-head"><span class="page-name">Education hub</span><span class="page-route">/dashboard/education</span></div>
-      <p class="page-purpose">Three-tab hub: Glossary (95 terms across 6 categories) | Guides (14 long-form) | Calculators (8 interactive).</p>
+      <p class="page-purpose">Three-tab hub: Glossary (~100 terms across 6 categories) | Guides (15+ long-form) | Calculators (8 interactive, accordion-style).</p>
+      <h4>Calculators tab</h4>
+      <ul>
+        <li>8 calculators in an accordion (click to expand, one open at a time): Employer 401(k) match optimizer, Roth vs Traditional, Compound interest, FIRE number, College funding compare, Term vs whole life, Tax loss harvesting, Quarterly tax estimator.</li>
+        <li>Each calculator inputs are editable; outputs are illustrative.</li>
+      </ul>
     </div>
 
     <div class="page-card" id="page-education-guides">
       <div class="page-card-head"><span class="page-name">Education guides</span><span class="page-route">/dashboard/education/guides</span></div>
-      <p class="page-purpose">Index of 14 long-form guides: Roth IRA, 401k, backdoor Roth, §475(f) MTM, wash-sale, estate planning, trader tax status, etc.</p>
+      <p class="page-purpose">Index of 15+ long-form guides: Roth IRA, 401k, backdoor Roth, §475(f) MTM, wash-sale, estate planning, trader tax status, UGMA/UTMA, Coverdell ESA, kiddie tax, FERS refund-vs-defer, etc.</p>
       <h4>Per-guide page features</h4>
       <ul>
         <li><strong>Key facts</strong> sidebar — quick reference at top of each guide.</li>
@@ -905,6 +978,13 @@
     <div class="page-card" id="page-earnings">
       <div class="page-card-head"><span class="page-name">Earnings</span><span class="page-route">/dashboard/earnings</span></div>
       <p class="page-purpose">Upcoming + recent earnings dates from watchlist symbols. Whisper number, consensus, surprise %.</p>
+      <h4>Add ticker</h4>
+      <ul>
+        <li>Prominent "Track earnings for a new symbol" card at the top (accent-bordered when your watchlist is empty).</li>
+        <li>Comma-separated input: e.g. <code>TSLA, NFLX, AMD</code>. Press Enter or click "Add to watchlist".</li>
+        <li>Symbols are persisted to your watchlist (POST <code>/api/watchlist</code>) — they re-appear on every visit, not just this session.</li>
+        <li>Toast on success / partial / error.</li>
+      </ul>
     </div>
 
     <div class="page-card" id="page-currency">
