@@ -19,7 +19,7 @@ interface TickerEntry {
 }
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
-const UA = "Sentinel sentinel@example.com";
+const UA = "Beacontry hello@beacontry.com";
 
 const g = globalThis as typeof globalThis & {
   __filingCache?: Map<string, CacheEntry>;

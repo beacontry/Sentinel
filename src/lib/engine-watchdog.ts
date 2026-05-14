@@ -69,7 +69,7 @@ async function writeAlert(args: {
   if (args.severity === "error") {
     try {
       await sendPushToUser(args.userId, {
-        title: `Sentinel: ${args.kind.replace(/_/g, " ")}`,
+        title: `Beacontry: ${args.kind.replace(/_/g, " ")}`,
         body: args.message,
         url: "/dashboard/trader",
       });

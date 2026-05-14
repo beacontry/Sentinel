@@ -121,7 +121,7 @@ async function fetchSP500FromWikipedia(): Promise<string[]> {
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "Sentinel/1.0" },
+      headers: { "User-Agent": "Beacontry/1.0" },
     });
     if (!res.ok) throw new Error(`Wikipedia returned ${res.status}`);
 
