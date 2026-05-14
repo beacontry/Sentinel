@@ -25,6 +25,15 @@ import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import type { JournalEntry, JournalEntryType } from "@/types";
 
+interface JournalPattern {
+  tag: string;
+  n: number;
+  wins: number;
+  winRate: number;
+  avgPnl: number | null;
+  deviation: number;
+}
+
 /**
  * Per-type metadata: badge label, color tone, icon. Drives the
  * type-aware UI polish on the journal index — auto-stubs and daily
@@ -223,6 +232,23 @@ function JournalPage() {
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [filterDate, setFilterDate] = useState(initialDate);
 
+  // Phase 6 — tagged-pattern behavioral feedback. Per-tag win rate
+  // computed from journal entries linked to filled trades. Loaded
+  // once on mount; the data only changes when new trades close +
+  // journals are tagged, so polling is overkill.
+  const [patterns, setPatterns] = useState<JournalPattern[]>([]);
+  const [patternBaseline, setPatternBaseline] = useState<number>(0.5);
+  useEffect(() => {
+    fetch("/api/journal/patterns")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setPatterns(data.patterns ?? []);
+        setPatternBaseline(data.baseline?.winRate ?? 0.5);
+      })
+      .catch(() => {});
+  }, []);
+
   // Form state
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -384,6 +410,55 @@ function JournalPage() {
           { label: "Avg Rating", value: entries.filter((e) => e.rating && e.rating > 0).length > 0 ? (entries.reduce((sum, e) => sum + (e.rating ?? 0), 0) / entries.filter((e) => e.rating && e.rating > 0).length).toFixed(1) : "--" },
         ]}
       />
+
+      {/* Phase 6 — tagged-pattern behavioral badges. Surfaces tags whose
+       * win rate deviates meaningfully from the user's baseline. Only
+       * shows tags with n >= 5 (server-side filter) and renders nothing
+       * when there's no data — quiet by design, not noisy. */}
+      {patterns.length > 0 && (
+        <Card>
+          <CardHeader className="p-0 pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-accent" />
+              Behavioral patterns
+            </CardTitle>
+          </CardHeader>
+          <p className="text-xs text-text-muted mb-3">
+            Win rate per tag, computed from journal entries linked to filled trades.
+            Your baseline: {(patternBaseline * 100).toFixed(0)}% win rate. Tags below show how each behavior deviates.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {patterns.slice(0, 8).map((p) => {
+              const label = TAG_LABELS[p.tag] ?? p.tag;
+              const wrPct = (p.winRate * 100).toFixed(0);
+              const devPct = (p.deviation * 100).toFixed(0);
+              const isBetter = p.deviation > 0.05;
+              const isWorse = p.deviation < -0.05;
+              const tone = isBetter
+                ? "border-bullish/30 bg-bullish/5 text-bullish"
+                : isWorse
+                  ? "border-bearish/30 bg-bearish/5 text-bearish"
+                  : "border-border bg-bg-elevated text-text-secondary";
+              return (
+                <button
+                  key={p.tag}
+                  type="button"
+                  onClick={() => setFilterTag(filterTag === p.tag ? null : p.tag)}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors hover:opacity-80 ${tone}`}
+                  title={`Click to filter entries tagged "${label}"`}
+                >
+                  <span className="font-medium">{label}</span>
+                  <span className="font-mono">{wrPct}% win</span>
+                  <span className="text-[10px] opacity-75">
+                    n={p.n}
+                    {isBetter || isWorse ? ` · ${p.deviation > 0 ? "+" : ""}${devPct}pp` : ""}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card>
