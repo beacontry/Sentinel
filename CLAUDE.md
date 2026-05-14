@@ -924,10 +924,30 @@ Pre-existing bugs + UX cleanups discovered while reviewing the dashboard with th
   - **Make Default in watchlist dropdown** (user picked the suggestion). Each non-default option in `<WatchlistSwitcher>` has a ★ button that PATCHes `/api/watchlists/[id] { setDefault: true }` and refreshes in place. Users no longer need to navigate to `/dashboard/watchlists` to change their default — two clicks from anywhere the switcher appears.
 - **Journal v2 phase 2: daily prompts** (`327a164`). New cron route `GET /api/cron/journal-prompts?type={pre-market|post-market}`. Auth via `x-cron-secret`. Creates stub entries for every user updated in the last 30 days with the two prompt templates baked into the route. Weekend skip. Idempotent via the `journal_prompt_uniq` index from phase 1 migration. Schedule (UTC): `0 12 * * 1-5` pre-market, `0 20 * * 1-5` post-market.
 
-### Still TBD
-- **Journal v2 phase 3+** — tagging (symbol, strategy, emotion: greed/fear/discipline/FOMO/patience), cross-feature linking (Performance → journal entries for that symbol, P&L Calendar → entries for that date), AI weekly review (Sunday 5pm ET Groq summary of week's entries + trades). Phases 1+2 alone already deliver auto-stubs + daily prompts, the immediate friction reducers.
-- **Journal page UI for the new types** — currently auto-stubs and daily prompts render as regular entries. Polish pass: badge per type, sort prompts to the top while fresh, dim "filled-in" prompts, highlight unfilled ones.
-- **Apply migration 0032 on prod** as `postgres`: `cat drizzle/0032_journal_v2.sql | sudo -u postgres psql sentinel_db`.
+### Phase 3+ follow-up batch (also shipped 2026-05-13)
+
+- **Phase 3 — categorized tags** (`eec626d`). Flat 9-tag PREDEFINED_TAGS replaced with `TAG_CATEGORIES` array: emotion (8 — discipline / patience / confidence / fear / greed / FOMO / revenge / boredom), strategy (8 — breakout / mean-rev / trend / swing / intraday / news / earnings / technical), execution (8 — followed plan / perfect / early exit / late entry / size too big / too small / stop too tight / too wide), outcome (6 — win / loss / breakeven / stopped out / full target / partial). 30 tags total. New IDs namespaced (`emotion_*`, `strat_*`, `exec_*`, `outcome_*`); legacy IDs (`followed_plan`, `fomo`, etc.) remain in `TAG_LABELS` for backwards-compat. Entry form groups tags by category; entry badges use category-aware color (emotion=warning, strategy=default, execution=neutral, outcome=bullish).
+- **Phase 4 — cross-feature linking** (`eec626d`). Journal page reads `?symbol=` and `?date=` URL params on mount, pre-fills filter state (Suspense-wrapped for Next 15). `/api/journal` accepts `?date=YYYY-MM-DD` filter that matches both `prompt_date` and `created_at::date`. Performance attribution rows get a "Journal" link → `/dashboard/journal?symbol=X`. P&L Calendar day modal gets a "View journal entries for this day" affordance → `/dashboard/journal?date=YYYY-MM-DD`. Auto-trade journal entries show an "Open chart →" link to `/dashboard/analysis?symbol=...`.
+- **Phase 5 — AI weekly review cron** (`eec626d`). New `GET /api/cron/journal-weekly-review` (x-cron-secret auth). For each active user (updated < 30 days), pulls trades closed in the last 7 days from `trader_trades` + journal entries from the last 7 days, sends to Groq llama-3.3-70b with a structured prompt (Week in numbers / What worked / What didn't / Pattern across the week / One question for next week). Output stored as a `weekly-review` journal entry. Idempotent via `journal_prompt_uniq` index. ~$0.005/user/week. Schedule (UTC): `0 22 * * 0` (Sunday 5pm ET during EDT).
+- **Phase 6 — tagged-pattern behavioral badges** (`ba1df05`). New `GET /api/journal/patterns` route: unnest entry tags via `jsonb_array_elements_text`, INNER JOIN `trader_trades` on `trader_trade_id` WHERE pnl IS NOT NULL, GROUP BY tag, HAVING COUNT >= 5. Returns per-tag win rate + n + deviation from the user's baseline. Journal home renders top 8 deviating tags as colored chips (bullish if >+5pp better than baseline, bearish if >-5pp worse, neutral otherwise). Clicking a chip filters the entry list to that tag. Card hides itself when no tags hit the n threshold — quiet by design.
+- **UI polish** (`eec626d`). Per-type badge on each journal entry (Manual / Trade stub / Pre-market / Post-market / Weekly review) with icon + tone. `isStubBoilerplate()` heuristic: entry notes ≤ 600 chars + `updatedAt === createdAt` = still boilerplate. Unfilled stubs/prompts sort to the top of the entry list with accent border + "Needs review" badge + italic muted notes; filled-in entries fall back to default styling.
+- **Migration 0032 applied to prod** (2026-05-13, this session). `type` + `prompt_date` columns added; `journal_auto_trade_uniq`, `journal_prompt_uniq`, `journal_type_idx` indexes created. Verified via `\d trade_journal`.
+
+### Other 2026-05-13 polish
+
+- **Widget grid empty space** (`5f26141`). Dashboard widget cards had `h-full` which forced short widgets to stretch to match tall siblings → giant empty cards. Removed `h-full`. Grid now has `[grid-auto-rows:min-content] [grid-auto-flow:dense]` so widgets size to content and the layout packs tightly.
+- **Portfolio empty-state loop** (`330a027`). `/dashboard/portfolio` empty state said "Add a paper portfolio or connect a broker" with no UI to actually do so. New `<CreatePortfolioCard>` renders an inline form (name + initial cash $100-$1M) that POSTs `/api/portfolio` and refreshes. Net Worth widget link reworded to "Create paper portfolio →" so users know where they're going.
+- **L2 data future-idea doc** (`eec626d`). Full cost-tier breakdown in `docs/future-ideas.md § Real-time SIP feed`: Alpaca SIP $99/mo, TradingView Premium $60/mo + per-exchange $24-60/mo, Polygon $199/mo+, IEX paid tier, direct exchange feeds $500-5000/mo. Recommendation parked: don't build, user should view in broker's native app. Revisit if Pro tier ships.
+
+### Cron schedule additions
+Append to droplet crontab as `sn-deploy` (UTC):
+```cron
+# Daily journal prompts
+0 12 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-prompts?type=pre-market
+0 20 * * 1-5 curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-prompts?type=post-market
+# AI weekly review
+0 22 * * 0  curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-weekly-review
+```
 
 ## Static HTML docs (served by Next.js public/)
 
