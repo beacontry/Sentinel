@@ -57,6 +57,20 @@ const KEY_HELP: Record<string, { name: string; description: string; provider: st
     provider: "console.anthropic.com",
     rotation: "Safe to leave blank.",
   },
+  REDDIT_CLIENT_ID: {
+    name: "Reddit Client ID",
+    description:
+      "First half of a Reddit OAuth client-credentials pair (register a 'script' or 'installed' app at reddit.com/prefs/apps). When both halves are set, the Analysis → Reddit tab pulls full post data (score, comments, flair) via oauth.reddit.com instead of the RSS fallback. Without it, RSS still works on datacenter IPs but score-sorting is unavailable.",
+    provider: "reddit.com/prefs/apps",
+    rotation: "Pair both halves. Either alone is a no-op — the OAuth path silently falls back to RSS.",
+  },
+  REDDIT_CLIENT_SECRET: {
+    name: "Reddit Client Secret",
+    description:
+      "Second half of the Reddit OAuth pair. See Reddit Client ID above. Tokens mint on first use and cache for 23h.",
+    provider: "reddit.com/prefs/apps",
+    rotation: "Pair both halves. Either alone is a no-op — the OAuth path silently falls back to RSS.",
+  },
 };
 
 function relativeTime(iso: string | null): string {

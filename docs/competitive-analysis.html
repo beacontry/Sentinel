@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentinel — Competitive Analysis, Pricing & Marketing Strategy</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  :root {
+    --bg-root:     oklch(8% 0.01 165);
+    --bg-primary:  oklch(10% 0.01 165);
+    --bg-surface:  oklch(14% 0.012 165);
+    --bg-elevated: oklch(18% 0.014 165);
+    --bg-hover:    oklch(22% 0.015 165);
+
+    --text-primary:   oklch(96% 0.005 165);
+    --text-secondary: oklch(72% 0.01 165);
+    --text-muted:     oklch(52% 0.01 165);
+
+    --border:       oklch(24% 0.015 165);
+    --border-hover: oklch(32% 0.02 165);
+
+    --accent:       oklch(72% 0.17 165);
+    --accent-dim:   oklch(60% 0.12 165);
+    --accent-bg:    oklch(72% 0.17 165 / 0.08);
+    --accent-bg-md: oklch(72% 0.17 165 / 0.14);
+
+    --bullish:    oklch(75% 0.18 150);
+    --bullish-bg: oklch(75% 0.18 150 / 0.12);
+    --bearish:    oklch(68% 0.2 25);
+    --bearish-bg: oklch(68% 0.2 25 / 0.12);
+    --warning:    oklch(78% 0.16 80);
+    --warning-bg: oklch(78% 0.16 80 / 0.12);
+    --info:       oklch(72% 0.12 240);
+    --info-bg:    oklch(72% 0.12 240 / 0.12);
+
+    --radius-lg: 12px;
+    --radius-md: 8px;
+    --radius-sm: 6px;
+    --radius-full: 9999px;
+  }
+
+  html { font-size: 16px; scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg-root);
+    color: var(--text-primary);
+    line-height: 1.65;
+    min-height: 100vh;
+  }
+
+  code, .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; }
+  code {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+  }
+
+  strong { color: var(--text-primary); font-weight: 600; }
+  em { color: var(--text-secondary); font-style: italic; }
+
+  /* ---- layout ---- */
+  .page-wrap { max-width: 980px; margin: 0 auto; padding: 48px 24px 96px; }
+  @media (max-width: 640px) { .page-wrap { padding: 24px 16px 64px; } }
+
+  /* ---- hero ---- */
+  .hero { text-align: center; padding: 56px 0 40px; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--accent); background: var(--accent-bg);
+    border: 1px solid oklch(72% 0.17 165 / 0.2);
+    padding: 6px 14px; border-radius: var(--radius-full); margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 16px;
+  }
+  .hero p { font-size: 1.05rem; color: var(--text-secondary); max-width: 680px; margin: 0 auto; }
+  .hero-meta {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;
+    color: var(--text-muted); margin-top: 20px;
+  }
+
+  /* ---- toc ---- */
+  .toc {
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 22px 26px; margin-bottom: 48px;
+  }
+  .toc-title {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 14px;
+  }
+  .toc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 6px 28px;
+  }
+  .toc a {
+    color: var(--text-secondary); text-decoration: none;
+    font-size: 0.9rem; padding: 4px 0; transition: color 0.15s;
+    display: flex; align-items: baseline; gap: 8px;
+  }
+  .toc a:hover { color: var(--accent); }
+  .toc a .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem; color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ---- sections ---- */
+  .section { margin-bottom: 56px; scroll-margin-top: 32px; }
+  .section-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 22px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 600;
+    color: var(--accent); background: var(--accent-bg);
+    padding: 5px 9px; border-radius: var(--radius-sm); flex-shrink: 0;
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .section h2 {
+    font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em;
+  }
+  .section h3 {
+    font-size: 1.05rem; font-weight: 600;
+    margin: 32px 0 10px;
+    color: var(--text-primary);
+  }
+  .section h4 {
+    font-size: 0.92rem; font-weight: 600;
+    margin: 22px 0 8px;
+    color: var(--text-primary);
+  }
+  .section p, .section li {
+    color: var(--text-secondary); font-size: 0.93rem; line-height: 1.7;
+  }
+  .section p { margin-bottom: 12px; }
+  .section ul, .section ol { padding-left: 22px; margin: 8px 0 16px; }
+  .section ol { padding-left: 28px; }
+  .section li { margin-bottom: 6px; }
+  .section li::marker { color: var(--accent-dim); }
+  .section ol li::marker { color: var(--text-muted); font-weight: 600; }
+
+  /* ---- tables ---- */
+  .table-wrap {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin: 16px 0 24px;
+  }
+  .table-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+  }
+  thead tr {
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    text-align: left;
+    padding: 12px 16px;
+    font-weight: 600;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  td {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-secondary);
+    vertical-align: top;
+  }
+  td:first-child { color: var(--text-primary); font-weight: 500; }
+  .mono-cell { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; }
+  .price-cell { color: var(--accent); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+  /* ---- callout ---- */
+  .callout {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-md);
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 0.9rem;
+  }
+  .callout-warn {
+    background: var(--warning-bg);
+    border-left-color: var(--warning);
+  }
+  .callout-warn .callout-title { color: var(--warning); }
+  .callout-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--accent); margin-bottom: 6px;
+  }
+
+  /* ---- picks (top-pick blocks) ---- */
+  .picks { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+  .pick {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px 18px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .pick-rank {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.5rem; font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+    min-width: 32px;
+  }
+  .pick-body { flex: 1; }
+  .pick-name { color: var(--text-primary); font-weight: 600; margin-bottom: 4px; }
+  .pick-desc { font-size: 0.88rem; color: var(--text-secondary); }
+
+  /* ---- tag pills ---- */
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 16px; }
+  .pill {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 500;
+    letter-spacing: 0.04em;
+    padding: 3px 9px;
+    border-radius: var(--radius-full);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+  .pill-bullish { background: var(--bullish-bg); color: var(--bullish); border-color: oklch(75% 0.18 150 / 0.25); }
+  .pill-bearish { background: var(--bearish-bg); color: var(--bearish); border-color: oklch(68% 0.2 25 / 0.25); }
+  .pill-warning { background: var(--warning-bg); color: var(--warning); border-color: oklch(78% 0.16 80 / 0.25); }
+  .pill-info    { background: var(--info-bg);    color: var(--info);    border-color: oklch(72% 0.12 240 / 0.25); }
+
+  /* ---- footer ---- */
+  footer {
+    margin-top: 80px; padding-top: 24px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+
+  /* ---- print ---- */
+  @media print {
+    :root {
+      --bg-root: white;
+      --bg-primary: white;
+      --bg-surface: #fafafa;
+      --bg-elevated: #f0f0f0;
+      --text-primary: #000;
+      --text-secondary: #333;
+      --text-muted: #666;
+      --border: #ddd;
+      --accent: #0a7a4f;
+      --accent-dim: #0a7a4f;
+      --accent-bg: #e6f4ed;
+    }
+    body { background: white; color: #000; }
+    .toc { page-break-after: always; }
+    .section { page-break-inside: avoid; }
+    .pick, .table-wrap, .callout { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-wrap">
+
+  <!-- ─── HERO ─── -->
+  <header class="hero">
+    <div class="hero-badge">Strategy Doc · Internal</div>
+    <h1>Sentinel — Competitive Analysis, Pricing &amp; Go-to-Market</h1>
+    <p>
+      Where Sentinel sits in the retail trading-intel landscape, what to charge,
+      and how to bring it to market. Drafted as a working strategy doc, not a
+      polished pitch deck.
+    </p>
+    <div class="hero-meta">2026-05-14 · drafted in conversation with Claude Opus 4.7</div>
+  </header>
+
+  <!-- ─── TOC ─── -->
+  <nav class="toc">
+    <div class="toc-title">Contents</div>
+    <div class="toc-grid">
+      <a href="#landscape"><span class="num">01</span>Competitive landscape</a>
+      <a href="#edges"><span class="num">02</span>What Sentinel has that they don't</a>
+      <a href="#gaps"><span class="num">03</span>What competitors have that we don't</a>
+      <a href="#pricing"><span class="num">04</span>Pricing recommendation</a>
+      <a href="#marketing"><span class="num">05</span>Marketing strategy</a>
+      <a href="#next30"><span class="num">06</span>Next 30 days</a>
+    </div>
+  </nav>
+
+  <!-- ─── 1. LANDSCAPE ─── -->
+  <section class="section" id="landscape">
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <h2>Competitive landscape</h2>
+    </div>
+
+    <p>
+      Sentinel doesn't fit neatly in one bucket — it spans charting/research,
+      autonomous trading, journal, and education. That's both a strength
+      (consolidates 3–4 subscriptions) and a weakness (no single tagline).
+      Closest peers by feature overlap:
+    </p>
+
+    <div class="table-wrap"><div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Competitor</th><th>Pricing</th><th>Primary value</th><th>Overlap</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>TradingView</td>      <td class="price-cell">$15–60/mo</td>  <td>Charting + community + alerts + paper trading</td>            <td>~40% — strong charts, huge social, weak engine</td></tr>
+          <tr><td>Trade Ideas</td>      <td class="price-cell">$84–228/mo</td> <td>"Holly AI" scanner + chatroom</td>                              <td>~50% — AI signals, but black-box and US-equity-only</td></tr>
+          <tr><td>Trendspider</td>      <td class="price-cell">$48–148/mo</td> <td>Multi-timeframe automated TA + alerts</td>                      <td>~55% — strong on technicals, weak on portfolio/risk</td></tr>
+          <tr><td>Tickeron</td>         <td class="price-cell">$60–300/mo</td> <td>Pattern recognition + autopilot trading</td>                    <td>~45% — claims AI signals, weak transparency</td></tr>
+          <tr><td>Composer.trade</td>   <td class="price-cell">Free + $30+</td><td>No-code strategy builder + auto-execute</td>                    <td>~60% — strategies + Alpaca, no hybrid AI/sentiment layer</td></tr>
+          <tr><td>Stock Rover</td>      <td class="price-cell">$8–30/mo</td>   <td>Fundamentals + screening + portfolio analytics</td>             <td>~30% — different strength (fundamental screening)</td></tr>
+          <tr><td>Quiver Quantitative</td><td class="price-cell">$10–50/mo</td><td>Alt-data (Congress, lobbying, gov contracts)</td>               <td>~25% — only on alt-data side, you already match</td></tr>
+          <tr><td>Benzinga Pro</td>     <td class="price-cell">$37–200/mo</td> <td>News + analyst ratings + chatroom</td>                          <td>~20% — news only, no engine</td></tr>
+          <tr><td>Capitalise.ai</td>    <td class="price-cell">$100–300/mo</td><td>Natural-language strategy automation</td>                       <td>~50% — closest direct rival on auto-execute side</td></tr>
+          <tr><td>TraderSync</td>       <td class="price-cell">$30–80/mo</td>  <td>Trade journal + analytics</td>                                  <td>~35% — you have journal + much more</td></tr>
+        </tbody>
+      </table>
+    </div></div>
+
+    <p>
+      <strong>Bloomberg Terminal</strong> at $25K/year is the institutional
+      benchmark, but that's a different universe.
+    </p>
+
+    <div class="callout">
+      <div class="callout-title">Two most direct competitors</div>
+      <strong>Trendspider</strong> (overlapping technicals + alerts) and
+      <strong>Composer.trade</strong> (overlapping no-code strategy + Alpaca
+      execution). These are the two products you're most likely to be
+      compared with on a sales call.
+    </div>
+  </section>
+
+  <!-- ─── 2. EDGES ─── -->
+  <section class="section" id="edges">
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <h2>What Sentinel has that competitors don't</h2>
+    </div>
+
+    <p>Real differentiators, ordered roughly by retail-trader impact:</p>
+
+    <ol>
+      <li>
+        <strong>Hybrid signal pipeline in one place</strong> — technical +
+        sentiment + options flow + analyst consensus + AI scoring + Reddit
+        chatter, all feeding one decision. Trade Ideas does AI but black-box.
+        Trendspider does technicals only. Benzinga does news only.
+        <em>Nobody integrates all five layers at the retail price point.</em>
+      </li>
+      <li>
+        <strong>Bring-your-own-broker</strong> — multi-broker (Alpaca, Tradier,
+        IBKR), each user supplies their own keys. Trade Ideas couples to
+        TradeStation; Tickeron pushes its broker.
+        <em>Most trading-intel tools are quasi-broker-affiliated; you're not.</em>
+      </li>
+      <li>
+        <strong>Genetic-algorithm strategy optimizer</strong> — runs concurrent
+        positions, blended fitness, optimizes per-symbol. QuantConnect has GA
+        but requires Python coding. You expose it as a one-click "optimize."
+        <em>No retail tool ships GA optimization as a feature.</em>
+      </li>
+      <li>
+        <strong>Audit-grade compliance built in</strong> — hash-chained audit
+        log, MFA, encrypted credentials at rest, per-user risk profile,
+        statement timeouts on every query.
+        <em>Most retail trading tools have NO audit trail at all</em> — you'd
+        be the only retail option that could pass an enterprise security
+        review.
+      </li>
+      <li>
+        <strong>Trader Tax Status + MTM + wash-sale tracking</strong> —
+        automated. Tax Center merges manual portfolios + engine trades + lot
+        cost basis. Competitors leave you with TaxAct + a spreadsheet.
+        <em>Niche-defining feature</em> for active traders crossing 3+ day-trades per week.
+      </li>
+      <li>
+        <strong>Education + spaced-repetition + AI quizzes</strong> baked into
+        the same platform — 14 typed guides, 8 calculators, 95 glossary terms,
+        SM-2 algorithm. Nobody combines education + execution like this.
+      </li>
+      <li>
+        <strong>Journal v2 with auto-stub + daily prompts + AI weekly review</strong>
+        — auto-creates entries on filled trades, pre/post-market prompts,
+        Sunday AI recap. TraderSync nails journal; you match it AND tie
+        entries to live engine trades.
+      </li>
+      <li>
+        <strong>Adaptive engine mode (regime-driven)</strong> — VIX + SPY
+        trend switches strategy automatically. <em>Nobody else exposes this
+        as an end-user feature</em> — it's institutional fund stuff dressed
+        for retail.
+      </li>
+      <li>
+        <strong>Phase 3 live-trading safeguards</strong> — account-switch
+        detection, order rate limiting, daily notional caps, consecutive-loss
+        halt. Retail tools assume "if you set it up, you accept the risk."
+        You have circuit breakers.
+      </li>
+      <li>
+        <strong>Five themes including colorblind mode</strong> — minor, but
+        polish nobody else bothers with.
+      </li>
+    </ol>
+  </section>
+
+  <!-- ─── 3. GAPS ─── -->
+  <section class="section" id="gaps">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <h2>What competitors have that Sentinel doesn't</h2>
+    </div>
+
+    <p>Honest about the gaps — these are what's holding adoption back:</p>
+
+    <ol>
+      <li><strong>Massive existing community</strong> — TradingView has 50M+ users. Trade Ideas has an active chatroom. Sentinel's community is empty (no critical mass to drive forum/feed/DM activity).</li>
+      <li><strong>Mobile-native apps</strong> — TradingView/TOS/Webull have polished iOS+Android apps. Sentinel is web/PWA. Mobile traders won't try a web-only tool.</li>
+      <li><strong>Real-time L2 / order-book data</strong> — competitors paying for SIP feeds. Sentinel is on Yahoo/Finnhub free tiers — delayed quotes, no Level 2.</li>
+      <li><strong>Crypto support</strong> — no Binance/Coinbase integration. Half the retail trading market is now crypto.</li>
+      <li><strong>Options analytics</strong> — Tastytrade, TOS, Tradier have full option chains, Greeks, P&amp;L diagrams. Sentinel touches options minimally.</li>
+      <li><strong>Established brand + track record</strong> — competitors have years of marketing, case studies, testimonials. You have zero name recognition.</li>
+      <li><strong>Customer support team</strong> — competitors have ticket queues, live chat, sales reps. You're solo-built.</li>
+      <li><strong>Free tier subsidized by order flow</strong> — Robinhood/Webull/eToro give away their entire platform because they sell order flow. You can't compete on free.</li>
+      <li><strong>Heat maps, market profile, advanced charting libraries</strong> — TradingView's chart engine is best-in-class. You embed it (smart) but if they raise embed pricing or rate-limit, you're exposed.</li>
+      <li><strong>Integrations marketplace</strong> — Zapier, Slack, Discord (you have Discord — partial credit), TradingView alerts, etc. Most competitors have integration libraries.</li>
+      <li><strong>Established backtest dataset depth</strong> — competitors have years of tick data, alt-data backtests. Yahoo daily + Alpaca paper history is good but not deep.</li>
+    </ol>
+  </section>
+
+  <!-- ─── 4. PRICING ─── -->
+  <section class="section" id="pricing">
+    <div class="section-header">
+      <span class="section-num">04</span>
+      <h2>Pricing recommendation</h2>
+    </div>
+
+    <p>
+      Sentinel sits in the <strong>mid-premium</strong> tier of retail
+      trading-intel tools. Cheaper than Trade Ideas / Trendspider Premium,
+      more capable than Stock Rover / TradingView Pro. Concrete tiering:
+    </p>
+
+    <h3>Recommended tier structure</h3>
+
+    <div class="table-wrap"><div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Tier</th><th>Price</th><th>Target user</th><th>Includes</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>Free</td>
+            <td class="price-cell">$0</td>
+            <td>Curious retail trader, students</td>
+            <td>Public watchlists, signals widget with delayed data, limited education, 1 watchlist, paper trading only</td>
+          </tr>
+          <tr>
+            <td>Trader</td>
+            <td class="price-cell">$29 / mo<br><span class="mono" style="color:var(--text-muted);font-size:0.7rem">$290 / yr — 17% off</span></td>
+            <td>Active retail trader (bulk)</td>
+            <td>Full engine (paper + live), unlimited watchlists, all education, alerts (push + email + Discord), TradingView embed, Reddit feed, Congress, filings, tax center, journal, backtest, 1 broker connection</td>
+          </tr>
+          <tr>
+            <td>Pro</td>
+            <td class="price-cell">$79 / mo<br><span class="mono" style="color:var(--text-muted);font-size:0.7rem">$790 / yr</span></td>
+            <td>Power user, 6-fig+ account, multi-strategy</td>
+            <td>Everything in Trader + adaptive mode + GA optimizer + multi-broker (up to 3) + audit log access + priority email + saved-strategy library + portfolio aggregation</td>
+          </tr>
+          <tr>
+            <td>Self-hosted</td>
+            <td class="price-cell">$0 / open core</td>
+            <td>Developers, hobbyists, privacy-first</td>
+            <td>Bring your own Postgres + Alpaca keys + host wherever. No hosted support, no SLA.</td>
+          </tr>
+          <tr>
+            <td>Team / Enterprise</td>
+            <td class="price-cell">$299+ / seat / mo<br><span class="mono" style="color:var(--text-muted);font-size:0.7rem">custom</span></td>
+            <td>Trading firms, family offices, prop shops</td>
+            <td>Multi-user RBAC, dedicated tenant, SLA, white-label, custom data sources</td>
+          </tr>
+        </tbody>
+      </table>
+    </div></div>
+
+    <h3>Pricing rationale</h3>
+    <ul>
+      <li><strong>$29/mo Trader tier</strong> is the sweet spot: cheaper than Trendspider Essential ($48), competitive with TradingView Pro ($30), but strictly more in execution + journal + tax + AI. Easy "I'll try it" price.</li>
+      <li><strong>$79/mo Pro</strong> undercuts Trade Ideas Standard ($84) while shipping the GA optimizer + adaptive mode that competitors charge $150–228/mo for.</li>
+      <li><strong>Annual discount of 17%</strong> (≈2 months free) is standard SaaS — reduces churn dramatically.</li>
+      <li><strong>Free self-hosted</strong> is your moat against Trade Ideas / Composer — they CAN'T copy that without giving up their business model.</li>
+      <li><strong>Don't ship a pure-free hosted tier</strong> — your costs (Finnhub API, server, Alpaca, Anthropic for AI scoring) make free uneconomic. The Free tier is essentially a demo for marketing.</li>
+    </ul>
+
+    <div class="callout callout-warn">
+      <div class="callout-title">What NOT to charge for separately</div>
+      Don't charge per-data-source (Congress, sentiment, etc.) — bundle. Quiver charges $10/mo for Congress alone; you commodify them all together. Don't paywall education — it's marketing. Don't paywall the journal — journal users churn less.
+    </div>
+  </section>
+
+  <!-- ─── 5. MARKETING ─── -->
+  <section class="section" id="marketing">
+    <div class="section-header">
+      <span class="section-num">05</span>
+      <h2>Marketing strategy</h2>
+    </div>
+
+    <h3>Positioning</h3>
+    <p>Lead with <strong>one</strong> of these three positioning angles. Pick the one that feels truest:</p>
+
+    <ol>
+      <li><strong>"The transparent alternative to black-box AI signal tools"</strong> — direct contrast with Trade Ideas / Tickeron. Every signal shows its math. Every hybrid layer is inspectable. Pitch to traders burned by AI tools that didn't deliver.</li>
+      <li><strong>"Built for the trader who wants to know exactly what fired"</strong> — emphasizes audit trail, hash-chained log, the "Signal DNA" feature. Pitch to professional retail (6-fig accounts, day-traders, PDT-qualified).</li>
+      <li><strong>"The Quantopian successor that respects your data"</strong> — exploits the Quantopian-shutdown orphan market (still angry 4 years later). Open code, self-hostable, BYO broker. Pitch to dev-curious traders.</li>
+    </ol>
+
+    <div class="callout">
+      <div class="callout-title">My recommendation</div>
+      <strong>#3 first, #1 second.</strong> The Quantopian crowd is your warmest audience and they're vocal on Twitter / Reddit.
+    </div>
+
+    <h3>Launch sequence (90 days)</h3>
+
+    <h4>Days 1–14: Foundation</h4>
+    <ul>
+      <li>Pick a name + buy the domain (after the brainstorm closes)</li>
+      <li>Build a marketing site (1 page) — hero, 6-feature grid, pricing, "join waitlist" form. Don't overthink it. Vercel free tier.</li>
+      <li>Basic SEO — schema markup, Open Graph cards, robots.txt</li>
+      <li>Open-source the engine on GitHub (or at least make a public mirror). README with screenshots.</li>
+      <li>Set up a Discord server. Add the existing market-digest webhook to seed activity.</li>
+    </ul>
+
+    <h4>Days 15–30: Show, don't tell</h4>
+    <ul>
+      <li><strong>Show HN: I built an open-source trading intelligence platform</strong> — this is your launch. Hacker News is exactly your target dev-curious trader. Aim for front page; expect 30–50K visits if it lands.</li>
+      <li>Cross-post to <code>r/algotrading</code> + <code>r/quantfinance</code> + <code>r/datascience</code>. Lead with the GA optimizer + adaptive mode. Avoid <code>r/wallstreetbets</code> (wrong audience).</li>
+      <li>Long-form Substack: "I built a trading platform with a hash-chained audit log; here's why retail tools need this." Cross-post to Medium.</li>
+    </ul>
+
+    <h4>Days 31–60: Establish credibility</h4>
+    <ul>
+      <li><strong>Public paper-trading transparency</strong> — run the engine on a paper account, post weekly P&amp;L + actual signal log (with "Signal DNA"). Be honest about losses. Hide live account. Costs nothing, builds enormous trust.</li>
+      <li>Twitter / X presence — daily "Sentinel saw X today" thread. FinTwit is where retail traders actually live.</li>
+      <li>YouTube: 1 video — "I built a trading bot that uses Reddit chatter + Congress trades + technical signals." 15–20 min long. Show the dashboard, click through, narrate.</li>
+      <li>Outreach: comment substantively on 5 high-traffic FinTwit accounts per day. Don't shill — engage.</li>
+    </ul>
+
+    <h4>Days 61–90: Convert</h4>
+    <ul>
+      <li>Open beta — invite-only at first (use the existing invite system), small cohort. Get 50 active users. Free during beta, $29/mo after 30 days.</li>
+      <li>Beta users post screenshots → social proof.</li>
+      <li>Case study: "Beta user X grew their paper account 14% in 60 days using adaptive mode + Reddit sentiment." Real numbers.</li>
+      <li>Referral program: 1 month free for each successful signup. Most underpriced growth channel for SaaS under $50/mo.</li>
+    </ul>
+
+    <h3>Channels — order of likely ROI</h3>
+    <ol>
+      <li><strong>Hacker News launch</strong> — best first move; one good Show HN can drive 10K+ signups</li>
+      <li><strong>Twitter / X (FinTwit)</strong> — daily presence, engagement-led, slow burn but compounds</li>
+      <li><strong>YouTube long-form</strong> — 1 video can drive months of conversions if it ranks</li>
+      <li><strong>Reddit (algotrading / quantfinance / securityanalysis)</strong> — value-first posts, never shilling</li>
+      <li><strong>Substack + cross-post</strong> — long-form positioning, less viral but high-quality leads</li>
+      <li><strong>Referral program</strong> — built-in viral coefficient</li>
+      <li><strong>GitHub stars</strong> — passive signal of credibility for engineering audience</li>
+      <li><strong>Paid ads</strong> — <em>DON'T start here.</em> Skip for the first 6 months. ROI on Google Ads for fintech tools below $50/mo is brutal.</li>
+    </ol>
+
+    <h3>What NOT to do</h3>
+    <div class="pills">
+      <span class="pill pill-bearish">No paid ads in first 6 months</span>
+      <span class="pill pill-bearish">No content gating</span>
+      <span class="pill pill-bearish">No "80% win rate!" claims</span>
+      <span class="pill pill-bearish">Don't price below $20/mo</span>
+      <span class="pill pill-bearish">Don't ignore journal/education in marketing</span>
+    </div>
+    <p>
+      Don't price too low to "compete" — $9.99/mo positions you as cheap, not
+      premium. The premium fee is what makes the audit/compliance pitch
+      credible. Sophisticated audiences smell wild win-rate claims and walk.
+    </p>
+  </section>
+
+  <!-- ─── 6. NEXT 30 DAYS ─── -->
+  <section class="section" id="next30">
+    <div class="section-header">
+      <span class="section-num">06</span>
+      <h2>What I'd actually do in the next 30 days</h2>
+    </div>
+
+    <p>The minimum viable launch path:</p>
+
+    <div class="picks">
+      <div class="pick">
+        <div class="pick-rank">1</div>
+        <div class="pick-body">
+          <div class="pick-name">Land a final name</div>
+          <div class="pick-desc">
+            Pick from the brainstorm. My top three: <strong>Pharos</strong> via
+            parent/product split, <strong>Vigilant Sentinel</strong> as a
+            two-word brand, or <strong>Watchfire</strong> as a single English
+            word that already means "signal beacon kept by watchmen."
+          </div>
+        </div>
+      </div>
+
+      <div class="pick">
+        <div class="pick-rank">2</div>
+        <div class="pick-body">
+          <div class="pick-name">Buy the domain + set up email</div>
+          <div class="pick-desc">
+            Whichever name lands. Add to Resend / Cloudflare same-day so
+            <code>hello@</code> and the marketing footer work day one.
+          </div>
+        </div>
+      </div>
+
+      <div class="pick">
+        <div class="pick-rank">3</div>
+        <div class="pick-body">
+          <div class="pick-name">Single landing page</div>
+          <div class="pick-desc">
+            Hero + 6-feature grid + pricing + waitlist form. One page,
+            shipped this week, not next month.
+          </div>
+        </div>
+      </div>
+
+      <div class="pick">
+        <div class="pick-rank">4</div>
+        <div class="pick-body">
+          <div class="pick-name">Open-source the engine on GitHub</div>
+          <div class="pick-desc">
+            With a great README + screenshots. This is your credibility moat
+            against Trade Ideas / Tickeron — they can't copy it.
+          </div>
+        </div>
+      </div>
+
+      <div class="pick">
+        <div class="pick-rank">5</div>
+        <div class="pick-body">
+          <div class="pick-name">Write the Show HN post</div>
+          <div class="pick-desc">
+            3–4 hours of effort, potentially the single most impactful
+            marketing move you'll make this year. Lead with the GA optimizer
+            + adaptive mode + audit log. Include before/after paper P&amp;L.
+          </div>
+        </div>
+      </div>
+
+      <div class="pick">
+        <div class="pick-rank">6</div>
+        <div class="pick-body">
+          <div class="pick-name">Run paper trading publicly for 2 weeks</div>
+          <div class="pick-desc">
+            Generate the screenshots you'll need for credibility. Post the
+            signal log + P&amp;L weekly. Be honest about losses.
+          </div>
+        </div>
+      </div>
+
+      <div class="pick">
+        <div class="pick-rank">7</div>
+        <div class="pick-body">
+          <div class="pick-name">Stop. Don't pre-build the rest.</div>
+          <div class="pick-desc">
+            Let the Show HN launch teach you what actually resonates. Build
+            the next channel based on that signal, not based on a plan made
+            before contact with the market.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Sentinel · competitive analysis &amp; go-to-market · 2026-05-14 · v1
+  </footer>
+
+</div>
+
+</body>
+</html>

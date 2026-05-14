@@ -50,6 +50,15 @@ export const KNOWN_KEYS = [
   "GROQ_API_KEY",
   "FINNHUB_API_KEY",
   "ANTHROPIC_API_KEY",
+  // Reddit OAuth client-credentials — admin registers a "script" or
+  // "installed" app at reddit.com/prefs/apps and stores both halves
+  // here. When set, the Reddit ticker-mention feed prefers the JSON
+  // endpoint (returns score / comments / flair / stickied) over the
+  // RSS fallback (which datacenter IPs can still reach but lacks
+  // score data). Both halves required — set one and the lookup
+  // silently falls back to RSS.
+  "REDDIT_CLIENT_ID",
+  "REDDIT_CLIENT_SECRET",
 ] as const;
 
 export type KnownKey = (typeof KNOWN_KEYS)[number];
@@ -342,6 +351,23 @@ export async function testConfig(
         const body = await res.text().catch(() => "");
         return { ok: false, error: `Anthropic ${res.status}: ${body.slice(0, 200)}` };
       }
+      case "REDDIT_CLIENT_ID":
+      case "REDDIT_CLIENT_SECRET": {
+        // Reddit credentials come as a pair — neither half tests on its
+        // own. The admin UI surfaces this by labeling both rows; saving
+        // either alone is technically valid but doesn't unlock the OAuth
+        // path until the second one lands. Best we can do here is shallow
+        // shape validation: client_id is 14 chars, client_secret is 27.
+        // Real "does this work" verification requires both → tested when
+        // the engine actually mints a token at first use.
+        if (key === "REDDIT_CLIENT_ID" && value.length < 8) {
+          return { ok: false, error: "Reddit client_id looks too short (expected ~14 chars)" };
+        }
+        if (key === "REDDIT_CLIENT_SECRET" && value.length < 16) {
+          return { ok: false, error: "Reddit client_secret looks too short (expected ~27 chars)" };
+        }
+        return { ok: true };
+      }
       default: {
         const exhaustive: never = key;
         return { ok: false, error: `Unhandled key: ${String(exhaustive)}` };
@@ -370,4 +396,18 @@ export function getFinnhubApiKey(): Promise<string | null> {
 /** Convenience: resolve the active Anthropic key (rarely used; here for parity). */
 export function getAnthropicApiKey(): Promise<string | null> {
   return getConfig("ANTHROPIC_API_KEY");
+}
+
+/**
+ * Resolve Reddit OAuth client credentials. Returns null when either half
+ * is missing — the Reddit lib then falls back to the RSS endpoint. Both
+ * client_id and client_secret are required to mint a bearer token.
+ */
+export async function getRedditOAuthCreds(): Promise<{ clientId: string; clientSecret: string } | null> {
+  const [clientId, clientSecret] = await Promise.all([
+    getConfig("REDDIT_CLIENT_ID"),
+    getConfig("REDDIT_CLIENT_SECRET"),
+  ]);
+  if (!clientId || !clientSecret) return null;
+  return { clientId, clientSecret };
 }

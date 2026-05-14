@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// Default Reddit OAuth credentials are NOT configured — tests run the
+// RSS path. Individual tests that want to exercise the OAuth path can
+// override this via vi.mocked(...).mockResolvedValueOnce(...).
+vi.mock("@/lib/system-config", () => ({
+  getRedditOAuthCreds: vi.fn(async () => null),
+}));
+
 import { getRedditMentions, clearRedditCache } from "@/lib/reddit";
+import { getRedditOAuthCreds } from "@/lib/system-config";
 
 // Reddit lib unit tests. We mock `globalThis.fetch` to return Atom XML
 // (the RSS endpoint is what we actually hit — the .json endpoint is
@@ -71,6 +80,13 @@ function mockOk(body: string): Response {
 
 beforeEach(() => {
   clearRedditCache();
+  // Drop the OAuth token cache between tests so each test gets a clean
+  // mint attempt. The token lives on globalThis.__redditToken so tests
+  // don't leak state.
+  (globalThis as { __redditToken?: unknown }).__redditToken = null;
+  // Default the OAuth creds mock back to "not configured" — individual
+  // tests opt into OAuth by overriding this.
+  vi.mocked(getRedditOAuthCreds).mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -313,5 +329,121 @@ describe("getRedditMentions", () => {
 
     const result = await getRedditMentions("AAPL", ["stocks"]);
     expect(result.posts[0].id).toBe("abc123");
+  });
+
+  // ─── OAuth (JSON) path ────────────────────────────────────────────────
+  // When REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET are configured, the lib
+  // mints a bearer token and hits oauth.reddit.com for the JSON endpoint
+  // (which returns score / comments / flair / stickied). RSS is still the
+  // fallback for unauthed setups + transient token failures.
+
+  describe("OAuth path", () => {
+    it("prefers JSON endpoint when credentials are configured", async () => {
+      vi.mocked(getRedditOAuthCreds).mockResolvedValue({
+        clientId: "test_id_123",
+        clientSecret: "test_secret_abcdefghij",
+      });
+
+      const fetchMock = vi.fn(async (url: string | URL) => {
+        const u = url.toString();
+        if (u.includes("/api/v1/access_token")) {
+          return new Response(JSON.stringify({ access_token: "tok_123", expires_in: 86400 }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (u.includes("oauth.reddit.com")) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                children: [
+                  {
+                    kind: "t3",
+                    data: {
+                      id: "j1",
+                      title: "AAPL strong earnings",
+                      subreddit: "stocks",
+                      selftext: "",
+                      author: "trader",
+                      permalink: "/r/stocks/comments/j1/x/",
+                      score: 1500,
+                      num_comments: 42,
+                      created_utc: 1_700_000_000,
+                      link_flair_text: "DD",
+                      stickied: false,
+                    },
+                  },
+                ],
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          );
+        }
+        return new Response("", { status: 404 });
+      }) as FetchMock;
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      const result = await getRedditMentions("AAPL", ["stocks"]);
+
+      expect(result.posts).toHaveLength(1);
+      // Score + comments + flair come through (only the JSON path supplies these)
+      expect(result.posts[0].score).toBe(1500);
+      expect(result.posts[0].numComments).toBe(42);
+      expect(result.posts[0].flair).toBe("DD");
+
+      // The RSS endpoint should NOT have been called
+      const calledRss = fetchMock.mock.calls.some((c) =>
+        String(c[0]).includes("search.rss")
+      );
+      expect(calledRss).toBe(false);
+    });
+
+    it("falls back to RSS on token 401", async () => {
+      vi.mocked(getRedditOAuthCreds).mockResolvedValue({
+        clientId: "test_id_123",
+        clientSecret: "test_secret_abcdefghij",
+      });
+
+      const fetchMock = vi.fn(async (url: string | URL) => {
+        const u = url.toString();
+        if (u.includes("/api/v1/access_token")) {
+          return new Response(JSON.stringify({ access_token: "tok_bad", expires_in: 86400 }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (u.includes("oauth.reddit.com")) {
+          // Token rejected — should clear cache + fall back to RSS for this call
+          return new Response("Unauthorized", { status: 401 });
+        }
+        // RSS fallback path
+        return mockOk(atomFeed([{ id: "rss1", title: "AAPL via RSS", subreddit: "stocks" }]));
+      }) as FetchMock;
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      const result = await getRedditMentions("AAPL", ["stocks"]);
+
+      expect(result.posts).toHaveLength(1);
+      // RSS-sourced posts have score = 0 (the marker that the OAuth path
+      // wasn't used). The UI hides score badges when 0.
+      expect(result.posts[0].score).toBe(0);
+      expect(result.posts[0].id).toBe("rss1");
+    });
+
+    it("uses RSS when credentials are NOT configured (default)", async () => {
+      // getRedditOAuthCreds returns null per beforeEach — no token mint
+      // attempt should happen.
+      const fetchMock = vi.fn(async () =>
+        mockOk(atomFeed([{ id: "rss-only", title: "AAPL news", subreddit: "stocks" }]))
+      ) as FetchMock;
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+      await getRedditMentions("AAPL", ["stocks"]);
+
+      const calledTokenMint = fetchMock.mock.calls.some((c) =>
+        String(c[0]).includes("access_token")
+      );
+      expect(calledTokenMint).toBe(false);
+    });
   });
 });

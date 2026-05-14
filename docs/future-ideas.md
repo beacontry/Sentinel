@@ -10,37 +10,22 @@ the one exception (it's the high-level tracker).
 
 ---
 
-## Phase status (last updated 2026-05-13 UX-batch)
+## Phase status (last updated 2026-05-14 pruning pass)
 
-Items shipped in the 2026-05-13 multi-commit UX batch (full retrospective in `CLAUDE.md § 2026-05-13`):
-- CSRF: PIN-setup substring bug fixed (`10a2c18`)
-- CSRF audit follow-ups: exact-path match + cookie attribute parity (`8304ecb`)
-- Engine: duplicate-order from overlapping scan ticks (`11012c3`)
-- Themes: 5-theme picker (light/dark/coral/light-blue/gray) (`6e67c04`)
-- Performance page polling (`d79acff`)
-- Earnings ticker discoverability + persistence (`c3b04ac`)
-- Smart back button (Trade page) (`6c783da`)
-- Analysis focus mode + chart fullscreen overlay (`32e2201`)
-- Education calculator accordion + 3 missing imports (`9075cf6`)
-- Articles auto-populate (daily digest → article) (`a640287`)
-- Live news feed widget (`1f48b9e`)
+The 2026-05-13 UX-batch and the same-day "keep going" pass are now fully
+shipped — see `CLAUDE.md § 2026-05-13` for the per-commit retrospective.
+All Journal v2 phases (1–6) shipped 2026-05-13 including tagging UI,
+cross-feature linking, AI weekly review cron, and tagged-pattern badges
+(commits `69c5482`, `327a164`, `eec626d`, `ba1df05`). Migration `0032`
+applied on prod. Cron lines added.
 
-Same-day "keep going" pass continued the batch (also shipped 2026-05-13):
-- SmartBackButton rollout to articles/messages/support/forum/posts (`ca12ebd`)
-- Chart fullscreen extended to Replay + Backtest (`675560a`)
-- Dashboard PositionsWidget crash fix + CSP for Cloudflare Insights (`b5d4124`)
-- Journal v2 phase 1 — auto-stub on filled trades + migration 0032 (`69c5482`)
-- Unusual Activity ticker click → quick-info drawer (`6cb0e07`)
-- Analysis layout: Signals panel removed + resizable panels + chart-fill + Make Default in watchlist dropdown (`890b9f1`)
-- Journal v2 phase 2 — daily pre/post-market prompts cron (`327a164`)
-
-Still TBD from the Journal v2 plan:
-- **Phase 3** — tagging UI (symbol, strategy, emotion: greed/fear/discipline/FOMO/patience), filterable index
-- **Phase 4** — cross-feature linking (Performance → journal entries for that symbol; P&L Calendar → entries for that date)
-- **Phase 5** — AI weekly review cron (Sunday 5pm ET, Groq summary of week's entries + trades, stored as a `weekly-review` type entry)
-- **Phase 6** — Tagged-pattern badges on journal home ("Every time you tag `FOMO`, the trade loses 70% of the time")
-- **Journal page UI polish** for the new types — badge per type, sort prompts to the top while fresh, dim "filled-in" prompts, highlight unfilled ones
-- **Apply migration 0032 on prod** + add the two new cron lines to the droplet crontab
+Round-2 compaction (2026-05-14): SignalDetails right-panel compacted
+(indicators + risk 3-col tile grids, market context + what-if collapsed
+by default, hybrid layers self-hide on empty, header + price merged,
+side-by-side action buttons). What-If results 2x2 → 4x1 on desktop.
+Reddit ticker-mention feed (Analysis → Reddit tab) shipped with admin-
+configurable subreddit list at `/dashboard/admin → Reddit Feed Sources`
+and migration `0033`.
 
 ## Phase status (last updated 2026-05-12 marathon)
 

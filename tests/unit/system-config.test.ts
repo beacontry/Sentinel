@@ -192,9 +192,15 @@ describe("system-config", () => {
   // ─── KNOWN_KEYS const stability ───────────────────────────────
 
   describe("KNOWN_KEYS", () => {
-    it("includes Groq, Finnhub, and Anthropic in stable order", async () => {
+    it("includes Groq, Finnhub, Anthropic, and Reddit OAuth in stable order", async () => {
       const { KNOWN_KEYS } = await loadModule();
-      expect(KNOWN_KEYS).toEqual(["GROQ_API_KEY", "FINNHUB_API_KEY", "ANTHROPIC_API_KEY"]);
+      expect(KNOWN_KEYS).toEqual([
+        "GROQ_API_KEY",
+        "FINNHUB_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "REDDIT_CLIENT_ID",
+        "REDDIT_CLIENT_SECRET",
+      ]);
     });
   });
 });

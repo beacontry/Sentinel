@@ -36,11 +36,19 @@ function truncateName(name: string, max: number = 20): string {
   return name.slice(0, max - 1) + "\u2026";
 }
 
+// How many transactions to show before the "+N more" expand affordance.
+// Was 5 — dropped to 3 to keep the Signal-Details right panel compact
+// when Market Context is expanded. Most insider activity rows convey
+// the trend at a glance via the summary chip above; the per-name detail
+// is the deep-dive view, gated behind one click.
+const COLLAPSED_LIMIT = 3;
+
 export function InsiderActivity({ symbol }: InsiderActivityProps) {
   const [transactions, setTransactions] = useState<InsiderTransaction[]>([]);
   const [summary, setSummary] = useState<InsiderSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     if (!symbol) return;
@@ -96,9 +104,11 @@ export function InsiderActivity({ symbol }: InsiderActivityProps) {
         </div>
       )}
 
-      {/* Transaction list (last 5 to keep compact) */}
+      {/* Transaction list — collapsed to 3 by default, expand via the
+       * "+N more" link below the list. Caps at 25 even when expanded so
+       * a noisy insider page doesn't blow out the panel height. */}
       <div className="space-y-1">
-        {transactions.slice(0, 5).map((t, i) => (
+        {transactions.slice(0, expanded ? 25 : COLLAPSED_LIMIT).map((t, i) => (
           <div
             key={i}
             className="flex items-center justify-between px-2 py-1.5 rounded-md bg-bg-elevated text-xs"
@@ -128,10 +138,16 @@ export function InsiderActivity({ symbol }: InsiderActivityProps) {
         ))}
       </div>
 
-      {transactions.length > 5 && (
-        <p className="text-[10px] text-text-muted text-center">
-          +{transactions.length - 5} more transactions
-        </p>
+      {transactions.length > COLLAPSED_LIMIT && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="block w-full text-[10px] text-accent text-center hover:underline focus-visible:underline focus:outline-none"
+        >
+          {expanded
+            ? "Show less"
+            : `+${transactions.length - COLLAPSED_LIMIT} more transaction${transactions.length - COLLAPSED_LIMIT === 1 ? "" : "s"}`}
+        </button>
       )}
     </div>
   );

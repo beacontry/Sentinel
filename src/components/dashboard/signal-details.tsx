@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AnalysisResult } from "@/types";
 import { SignalBadge } from "../ui/signal-badge";
 import { Badge } from "../ui/badge";
@@ -316,38 +316,11 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
         </div>
       </div>
 
-      {/* Hybrid layers (sentiment, options flow, AI)
-       *
-       * Hide the whole section when there's nothing to actually show.
-       * Previously rendered placeholder "Sentiment: --" / "Options Flow: --"
-       * chips that took space without conveying info — when those data
-       * sources land in the engine pipeline, this block lights up
-       * automatically. */}
-      {(analysis.unusualVolume || analysis.fibonacci) && (
-        <div className="px-4 py-3 border-b border-border">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-3.5 h-3.5 text-accent" />
-            <p className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
-              Hybrid Layers
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {analysis.unusualVolume && (
-              <Badge variant="warning" className="text-[10px]">
-                Unusual Volume{" "}
-                {analysis.volumeRatio
-                  ? `${analysis.volumeRatio.toFixed(1)}x`
-                  : ""}
-              </Badge>
-            )}
-            {analysis.fibonacci && (
-              <Badge variant="default" className="text-[10px]">
-                Fib Levels Active
-              </Badge>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Hybrid layers — sentiment, options flow, AI, Reddit chatter.
+       * Self-hides when there's nothing to actually show. The Reddit chip
+       * is conditional on the symbol having recent mentions; see
+       * HybridLayersSection below for the fetch. */}
+      <HybridLayersSection analysis={analysis} />
 
       {/* What-If Simulation — collapsible, default closed.
        *
@@ -416,6 +389,113 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
 
       {/* Market Context */}
       <MarketContextSection symbol={analysis.symbol} />
+    </div>
+  );
+}
+
+// ─── Hybrid Layers (auto-hides when empty) ──────────────────────────
+//
+// Renders chips for the cross-cutting signal layers that aren't core
+// technicals: unusual volume, fibonacci levels, and Reddit chatter
+// (the integration shipped on the Reddit tab; this surfaces it inside
+// the signal-decision UI so a reader sees at a glance that retail
+// is talking about the name).
+//
+// The whole section self-hides when there's nothing to show — no
+// placeholder "Sentiment: --" chips ever again.
+
+function HybridLayersSection({ analysis }: { analysis: AnalysisResult }) {
+  const symbol = analysis.symbol;
+  const [redditCounts, setRedditCounts] = useState<{
+    total: number;
+    bullish: number;
+    bearish: number;
+    neutral: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!symbol) return;
+    let cancelled = false;
+
+    async function fetchReddit() {
+      try {
+        const res = await fetch(`/api/reddit/${encodeURIComponent(symbol)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const posts: Array<{ sentiment: "bullish" | "bearish" | "neutral" }> =
+          data.posts ?? [];
+        if (cancelled) return;
+        if (posts.length === 0) {
+          setRedditCounts({ total: 0, bullish: 0, bearish: 0, neutral: 0 });
+          return;
+        }
+        let bullish = 0;
+        let bearish = 0;
+        let neutral = 0;
+        for (const p of posts) {
+          if (p.sentiment === "bullish") bullish++;
+          else if (p.sentiment === "bearish") bearish++;
+          else neutral++;
+        }
+        setRedditCounts({ total: posts.length, bullish, bearish, neutral });
+      } catch {
+        // Silent — the chip just doesn't appear. The Reddit tab itself
+        // handles its own error states.
+      }
+    }
+
+    fetchReddit();
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol]);
+
+  const hasReddit = redditCounts !== null && redditCounts.total > 0;
+  const hasAny = analysis.unusualVolume || analysis.fibonacci || hasReddit;
+  if (!hasAny) return null;
+
+  // Pick the chip variant based on which sentiment dominates. Mixed
+  // (within 1 of each other) renders neutral so we don't overclaim.
+  let redditVariant: "bullish" | "bearish" | "default" = "default";
+  if (redditCounts) {
+    const diff = redditCounts.bullish - redditCounts.bearish;
+    if (diff >= 2) redditVariant = "bullish";
+    else if (diff <= -2) redditVariant = "bearish";
+  }
+
+  return (
+    <div className="px-4 py-3 border-b border-border">
+      <div className="flex items-center gap-2 mb-2">
+        <Sparkles className="w-3.5 h-3.5 text-accent" />
+        <p className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+          Hybrid Layers
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {analysis.unusualVolume && (
+          <Badge variant="warning" className="text-[10px]">
+            Unusual Volume{" "}
+            {analysis.volumeRatio
+              ? `${analysis.volumeRatio.toFixed(1)}x`
+              : ""}
+          </Badge>
+        )}
+        {analysis.fibonacci && (
+          <Badge variant="default" className="text-[10px]">
+            Fib Levels Active
+          </Badge>
+        )}
+        {hasReddit && redditCounts && (
+          <span
+            title={`${redditCounts.bullish} bullish · ${redditCounts.bearish} bearish · ${redditCounts.neutral} neutral posts`}
+          >
+            <Badge variant={redditVariant} className="text-[10px]">
+              Reddit · {redditCounts.total} mentions
+              {redditCounts.bullish > redditCounts.bearish ? " ↑" : redditCounts.bearish > redditCounts.bullish ? " ↓" : ""}
+            </Badge>
+          </span>
+        )}
+      </div>
     </div>
   );
 }
