@@ -1390,7 +1390,16 @@ function tradingDaysBetween(from: Date, to: Date): number {
 
 // ─── Broker Client Resolution ────────────────────────────────────────────────
 
-async function resolveBrokerClient(
+/**
+ * Resolve the user's active broker connection into an instantiated client.
+ *
+ * Exported as of 2026-05-13 so non-engine surfaces (e.g. the Portfolio
+ * summary route) can fetch live positions directly when the in-memory
+ * `getBrokerPositionCache` is cold (e.g. engine never started this
+ * session). Otherwise the Portfolio page shows $0 even though the user
+ * has a connected broker — confusing dead-end.
+ */
+export async function resolveBrokerClient(
   userId: string
 ): Promise<{ client: BrokerClient; connectionId: string; environment: "paper" | "live" } | null> {
   const connections = await db

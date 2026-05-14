@@ -4,7 +4,10 @@ import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { portfolios } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { getPortfolioValue } from "@/lib/portfolio-sim";
-import { getBrokerPositionCache } from "@/lib/trading-engine";
+import {
+  getBrokerPositionCache,
+  resolveBrokerClient,
+} from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("portfolio-summary");
@@ -56,9 +59,53 @@ export async function GET() {
       return { portfolioBreakdown, manualTotal };
     });
 
-    // Live broker positions (in-memory cache — synchronous lookup)
+    // Live broker positions — try the engine's in-memory cache first
+    // (synchronous, populated when the engine is running). Fall back to
+    // a direct broker API call when the cache is cold so a user with a
+    // connected broker but no running engine still sees their positions
+    // here.
+    //
+    // Without the fallback, the Portfolio page showed $0.00 for Broker
+    // (Live) until the user started the engine — confusing dead-end
+    // reported 2026-05-13.
+    let brokerPositions: { symbol: string; qty: number; marketValue: number; unrealizedPnl: number }[] = [];
+    let cacheAge: number | null = null;
+    let brokerSource: "cache" | "live" | "none" = "none";
+
     const brokerCache = getBrokerPositionCache(session.userId);
-    const brokerPositions = brokerCache?.positions ?? [];
+    if (brokerCache && brokerCache.positions.length > 0) {
+      brokerPositions = brokerCache.positions.map((p) => ({
+        symbol: p.symbol,
+        qty: p.qty,
+        marketValue: p.marketValue,
+        unrealizedPnl: p.unrealizedPnl,
+      }));
+      cacheAge = Math.floor((Date.now() - brokerCache.fetchedAt.getTime()) / 1000);
+      brokerSource = "cache";
+    } else {
+      // Cache cold — try a live fetch. Best-effort: log + continue with
+      // empty if the broker is unreachable. Don't block the summary on
+      // broker downtime.
+      try {
+        const resolved = await resolveBrokerClient(session.userId);
+        if (resolved) {
+          const live = await resolved.client.getPositions();
+          brokerPositions = live.map((p) => ({
+            symbol: p.symbol,
+            qty: p.qty,
+            marketValue: p.marketValue,
+            unrealizedPnl: p.unrealizedPnl,
+          }));
+          cacheAge = 0;
+          brokerSource = "live";
+        }
+      } catch (err) {
+        log.warn(
+          { err: err instanceof Error ? err.message : "unknown", userId: session.userId },
+          "Live broker fetch failed in portfolio summary — falling back to empty",
+        );
+      }
+    }
     const brokerTotal = brokerPositions.reduce(
       (acc, p) => acc + p.marketValue,
       0,
@@ -74,15 +121,11 @@ export async function GET() {
       },
       broker: {
         total: brokerTotal,
-        positions: brokerPositions.map((p) => ({
-          symbol: p.symbol,
-          qty: p.qty,
-          marketValue: p.marketValue,
-          unrealizedPnl: p.unrealizedPnl,
-        })),
-        cacheAge: brokerCache
-          ? Math.floor((Date.now() - brokerCache.fetchedAt.getTime()) / 1000)
-          : null,
+        positions: brokerPositions,
+        cacheAge,
+        // `source` is informational — UI can show "live" / "cached
+        // (Xs ago)" / "none" to help users debug an unexpected $0.
+        source: brokerSource,
       },
     });
   } catch (err) {
