@@ -59,6 +59,11 @@ export const KNOWN_KEYS = [
   // silently falls back to RSS.
   "REDDIT_CLIENT_ID",
   "REDDIT_CLIENT_SECRET",
+  // Stripe — billing. Test-mode keys for development; live-mode keys
+  // for production. Webhook signing secret is per-endpoint, so rotate
+  // it whenever you re-create the webhook in Stripe Dashboard.
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
 ] as const;
 
 export type KnownKey = (typeof KNOWN_KEYS)[number];
@@ -351,6 +356,33 @@ export async function testConfig(
         const body = await res.text().catch(() => "");
         return { ok: false, error: `Anthropic ${res.status}: ${body.slice(0, 200)}` };
       }
+      case "STRIPE_SECRET_KEY": {
+        // /v1/balance is the cheapest authenticated endpoint that
+        // proves a Stripe key works. Returns 401 on bad key, 200 with
+        // a balance object on good. We don't care about the value.
+        const res = await fetch("https://api.stripe.com/v1/balance", {
+          headers: { Authorization: `Bearer ${value}` },
+          signal: controller.signal,
+        });
+        if (res.ok) return { ok: true };
+        if (res.status === 401) {
+          return { ok: false, error: "Stripe rejected key (401)" };
+        }
+        return { ok: false, error: `Stripe ${res.status}` };
+      }
+      case "STRIPE_WEBHOOK_SECRET": {
+        // No live-test for a webhook secret — it's only used inside
+        // constructEvent() to verify signed payloads. Shape check is
+        // the best we can do without sending ourselves a webhook.
+        // Stripe webhook secrets are `whsec_` prefixed + 32-64 char tail.
+        if (!value.startsWith("whsec_")) {
+          return { ok: false, error: "Expected whsec_ prefix" };
+        }
+        if (value.length < 24) {
+          return { ok: false, error: "Webhook secret looks too short" };
+        }
+        return { ok: true };
+      }
       case "REDDIT_CLIENT_ID":
       case "REDDIT_CLIENT_SECRET": {
         // Reddit credentials come as a pair — neither half tests on its
@@ -396,6 +428,16 @@ export function getFinnhubApiKey(): Promise<string | null> {
 /** Convenience: resolve the active Anthropic key (rarely used; here for parity). */
 export function getAnthropicApiKey(): Promise<string | null> {
   return getConfig("ANTHROPIC_API_KEY");
+}
+
+/** Convenience: resolve the Stripe secret key (test or live, depending on env). */
+export function getStripeSecretKey(): Promise<string | null> {
+  return getConfig("STRIPE_SECRET_KEY");
+}
+
+/** Convenience: resolve the Stripe webhook signing secret. */
+export function getStripeWebhookSecret(): Promise<string | null> {
+  return getConfig("STRIPE_WEBHOOK_SECRET");
 }
 
 /**

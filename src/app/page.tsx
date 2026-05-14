@@ -520,7 +520,7 @@ export default function LandingPage() {
           {/* Four-tier structure (2026-05-14):
                 Free            — research + education (no engine, no AI)
                 Trader $20      — full platform without AI (most popular)
-                Premium $45     — Trader + AI + future premium data
+                Premium $40     — Trader + AI + future premium data
                 Self-Hosted     — source-available (FSL-1.1), BYO infra.
                                   Renamed from "Open Source" 2026-05-14 —
                                   FSL is technically "source-available"
@@ -568,9 +568,9 @@ export default function LandingPage() {
             {
               name: "Premium",
               tag: "AI + future data",
-              price: "$45",
+              price: "$40",
               cadence: "/ month",
-              annual: "$450/yr — saves 2 months",
+              annual: "$400/yr — saves 2 months",
               desc: "Trader + AI + premium data (coming).",
               features: [
                 "Everything in Trader, plus:",
