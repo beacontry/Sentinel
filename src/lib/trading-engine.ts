@@ -1299,69 +1299,40 @@ export const trailInternals = {
 };
 
 // ─── Market Hours ────────────────────────────────────────────────────────────
+//
+// Consolidated 2026-05-13 into src/lib/market-hours.ts. The shared module
+// adds two things this file was missing:
+//
+//   - US trading holidays (Thanksgiving, Christmas, July 4 etc.) — previously
+//     the engine would scan on holidays and burn API quota on stale data.
+//   - Half-day early closes (Black Friday, Christmas Eve, July 3 sometimes)
+//     — previously the engine would scan until 4pm on days the market
+//     closed at 1pm.
+//
+// Re-exported here so external callers that imported isMarketOpen from
+// trading-engine keep working.
+
+import {
+  isMarketOpen as isMarketOpenShared,
+  msUntilMarketOpen as msUntilMarketOpenShared,
+  getETDateString as getETDateStringShared,
+  getETDate as getETDateShared,
+} from "./market-hours";
 
 function getETDate(): Date {
-  // Build a Date object representing "now" in America/New_York
-  const nowStr = new Date().toLocaleString("en-US", {
-    timeZone: "America/New_York",
-  });
-  return new Date(nowStr);
+  return getETDateShared();
 }
 
 function getETDateString(): string {
-  const d = getETDate();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return getETDateStringShared();
 }
 
 export function isMarketOpen(): boolean {
-  const now = getETDate();
-  const day = now.getDay(); // 0=Sun, 6=Sat
-  if (day === 0 || day === 6) return false;
-
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
-  const timeMinutes = hours * 60 + minutes;
-
-  // 9:30 AM = 570, 4:00 PM = 960
-  return timeMinutes >= 570 && timeMinutes < 960;
+  return isMarketOpenShared();
 }
 
-/**
- * Returns milliseconds until the next market open (9:30 AM ET on a weekday).
- * Returns 0 if the market is currently open.
- */
 function msUntilMarketOpen(): number {
-  const now = getETDate();
-  const day = now.getDay();
-  const timeMinutes = now.getHours() * 60 + now.getMinutes();
-
-  // Market is currently open
-  if (day >= 1 && day <= 5 && timeMinutes >= 570 && timeMinutes < 960) return 0;
-
-  // Find the next weekday 9:30 AM ET
-  const target = new Date(now);
-  target.setHours(9, 30, 0, 0);
-
-  if (day >= 1 && day <= 5 && timeMinutes < 570) {
-    // Today before open — target is today 9:30
-  } else if (day === 5 && timeMinutes >= 960) {
-    // Friday after close — next Monday
-    target.setDate(target.getDate() + 3);
-  } else if (day === 6) {
-    // Saturday — next Monday
-    target.setDate(target.getDate() + 2);
-  } else if (day === 0) {
-    // Sunday — next Monday
-    target.setDate(target.getDate() + 1);
-  } else {
-    // Weekday after close — tomorrow
-    target.setDate(target.getDate() + 1);
-  }
-
-  return Math.max(0, target.getTime() - now.getTime());
+  return msUntilMarketOpenShared();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

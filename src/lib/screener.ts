@@ -4,6 +4,11 @@ import { getMarketDataProvider } from "./market-data";
 import { analyzeHybrid } from "./hybrid";
 import { SCREENER_CONFIG } from "./config";
 import { pushScreenerSignals, isTraderConfigured, type TraderPushResult } from "./trader-client";
+import {
+  isMarketOpen as isMarketOpenShared,
+  msUntilMarketOpen,
+  msUntilNextMarketOpen,
+} from "./market-hours";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("screener");
@@ -59,6 +64,10 @@ const g = globalThis as typeof globalThis & {
   __screenerCache?: ScreenerCache;
   __screenerScheduler?: ReturnType<typeof setInterval> | null;
   __screenerSchedulerStarted?: boolean;
+  /** Precise setTimeout scheduled for the next market-open daily scan.
+   * Lives alongside the 60s polling interval (which handles intraday
+   * refreshes + recovery). */
+  __screenerDailyTimeout?: ReturnType<typeof setTimeout> | null;
 };
 g.__screenerCache ??= { results: [], scannedAt: new Date(0), scanStartedAt: null, scanning: false, scanInFlight: null, traderPushResults: [] };
 
@@ -145,20 +154,13 @@ export function filterResults(
 }
 
 // ─── Market hours check ─────────────────────────────────────────────
+//
+// Delegates to src/lib/market-hours.ts (shared with trading-engine).
+// Adds holiday-aware + half-day-close handling that this file was
+// missing — previously the scheduler would daily-scan on Thanksgiving
+// and Christmas, burning Yahoo / Finnhub quota for stale data.
 
-function isMarketOpen(): boolean {
-  const now = new Date();
-  // Convert to ET using Intl
-  const etStr = now.toLocaleString("en-US", { timeZone: SCREENER_CONFIG.timezone });
-  const et = new Date(etStr);
-  const day = et.getDay();
-  // Weekends
-  if (day === 0 || day === 6) return false;
-  const minutes = et.getHours() * 60 + et.getMinutes();
-  const open = SCREENER_CONFIG.marketOpenHour * 60 + SCREENER_CONFIG.marketOpenMinute;
-  const close = SCREENER_CONFIG.marketCloseHour * 60 + SCREENER_CONFIG.marketCloseMinute;
-  return minutes >= open && minutes <= close;
-}
+const isMarketOpen = isMarketOpenShared;
 
 // ─── Scan engine ────────────────────────────────────────────────────
 
@@ -383,6 +385,59 @@ async function runIntradayScanInternal(): Promise<ScreenerResult[]> {
 }
 
 // ─── Auto-scan scheduler ───────────────────────────────────────────
+//
+// Two-timer design (2026-05-13 tightening):
+//
+//   1. **Precise setTimeout** for the next market-open daily scan.
+//      Fires AT 9:30 ET (within ms) instead of within a 0-60s window
+//      from the old 60s-polling logic. After firing, re-schedules
+//      itself for the next trading day's open. Holiday-aware via
+//      msUntilNextMarketOpen() — Thanksgiving + Christmas + half-days
+//      skip cleanly.
+//
+//   2. **60s polling** for intraday scans + missed-daily recovery.
+//      The setTimeout above handles the happy path; the polling
+//      catches edge cases (server started after 9:30, scheduler
+//      restarted mid-day, etc.) and also drives the 5-min intraday
+//      refresh.
+
+async function runDailyScan(reason: string): Promise<void> {
+  log.info({ reason }, "Screener scheduler: daily scan");
+  try {
+    await scanAllSymbols();
+  } catch (err) {
+    log.error({ err: err instanceof Error ? err.message : String(err) }, "Screener scheduler: daily scan failed");
+  }
+}
+
+function scheduleNextDailyScan(): void {
+  if (g.__screenerDailyTimeout) clearTimeout(g.__screenerDailyTimeout);
+
+  // msUntilNextMarketOpen returns time until the next 9:30 ET that's
+  // a trading day. If market is open right now, returns time until
+  // TOMORROW's open (or next trading day's, skipping weekends/holidays).
+  // If market is closed, returns time until the next open.
+  const ms = msUntilNextMarketOpen();
+  const targetTime = new Date(Date.now() + ms);
+  log.info(
+    { ms, minutes: Math.round(ms / 60_000), targetEt: targetTime.toLocaleString("en-US", { timeZone: "America/New_York" }) },
+    "Screener scheduler: next daily scan scheduled"
+  );
+
+  g.__screenerDailyTimeout = setTimeout(() => {
+    g.__screenerDailyTimeout = null;
+    if (!isMarketOpen()) {
+      // Safety check — clock skew, holiday-detection mismatch, etc.
+      // Re-schedule rather than scan stale data.
+      log.warn("Screener scheduler: daily-scan timer fired but market is not open — re-scheduling");
+      scheduleNextDailyScan();
+      return;
+    }
+    void runDailyScan("scheduled at market open").finally(() => {
+      scheduleNextDailyScan();
+    });
+  }, ms);
+}
 
 export function startScreenerScheduler(): void {
   if (g.__screenerSchedulerStarted) return;
@@ -390,34 +445,31 @@ export function startScreenerScheduler(): void {
 
   log.info("Screener scheduler: starting");
 
-  // Run the scheduler loop every 60 seconds to check what needs to happen
+  // 1) Precise setTimeout for the next daily scan at market open.
+  //    If the server boots WHILE market is open and we haven't scanned
+  //    yet today, the 60s polling below will catch that case on first
+  //    tick. Otherwise this timeout fires precisely at 9:30 ET.
+  scheduleNextDailyScan();
+
+  // 2) 60s polling for intraday refresh + missed-daily recovery.
   g.__screenerScheduler = setInterval(async () => {
     const cache = g.__screenerCache!;
     if (cache.scanning) return;
-
     if (!isMarketOpen()) return;
 
     const now = new Date();
     const ageMs = now.getTime() - cache.scannedAt.getTime();
 
-    // Check if we need a daily scan (first scan of the day)
-    const etStr = now.toLocaleString("en-US", { timeZone: SCREENER_CONFIG.timezone });
+    // Missed-daily recovery: server started after 9:30 with no scan
+    // yet today. The setTimeout couldn't fire because it was scheduled
+    // for tomorrow's open. Trigger a daily scan here.
+    const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
     const et = new Date(etStr);
-    const scanDateStr = cache.scannedAt.toLocaleDateString("en-US", { timeZone: SCREENER_CONFIG.timezone });
+    const scanDateStr = cache.scannedAt.toLocaleDateString("en-US", { timeZone: "America/New_York" });
     const todayStr = et.toLocaleDateString("en-US");
-    const isNewDay = scanDateStr !== todayStr;
-    const justAfterOpen = et.getHours() === SCREENER_CONFIG.marketOpenHour &&
-      et.getMinutes() >= SCREENER_CONFIG.marketOpenMinute &&
-      et.getMinutes() <= SCREENER_CONFIG.marketOpenMinute + 2;
-
-    if (isNewDay && justAfterOpen) {
-      // Daily scan with daily bars at market open
-      log.info("Screener scheduler: daily scan at market open");
-      try {
-        await scanAllSymbols();
-      } catch (err) {
-        log.error({ err: err instanceof Error ? err.message : String(err) }, "Screener scheduler: daily scan failed");
-      }
+    if (scanDateStr !== todayStr) {
+      log.info("Screener scheduler: missed-daily recovery — no scan yet today");
+      await runDailyScan("missed-daily recovery");
       return;
     }
 
