@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, Shield, Search, Cpu, Zap, TrendingUp, Target, BarChart3, LineChart, Bell, Brain } from "lucide-react";
+import { ArrowRight, Search, Cpu, Zap, TrendingUp, Target, BarChart3, LineChart, Bell, Brain, Check, Lock, GitBranch, Server } from "lucide-react";
 import { ThemePicker } from "@/components/theme-picker";
+import { BeacontryMark } from "@/components/brand/beacontry-mark";
 
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
@@ -19,8 +20,47 @@ export default function LandingPage() {
   const navLinks = [
     { label: "Features", href: "#features" },
     { label: "How It Works", href: "#process" },
-    { label: "Platform", href: "#platform" },
+    { label: "Pricing", href: "#pricing" },
+    { label: "Why Beacontry", href: "#trust" },
   ];
+
+  // Waitlist form state — sits in the final CTA section. Public unauth
+  // endpoint at /api/waitlist; rate-limited per IP, honeypot-protected.
+  const [waitlistEmail, setWaitlistEmail] = useState("");
+  const [waitlistStatus, setWaitlistStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  const [waitlistError, setWaitlistError] = useState<string | null>(null);
+  // Hidden honeypot field. Real users never see this; bots filling
+  // every input get caught and silently ignored server-side.
+  const [waitlistHoneypot, setWaitlistHoneypot] = useState("");
+
+  async function submitWaitlist(e: React.FormEvent) {
+    e.preventDefault();
+    if (!waitlistEmail.trim() || waitlistStatus === "submitting") return;
+    setWaitlistStatus("submitting");
+    setWaitlistError(null);
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: waitlistEmail.trim(),
+          source: "landing-hero",
+          website: waitlistHoneypot,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setWaitlistError(typeof data.error === "string" ? data.error : "Couldn't save. Try again.");
+        setWaitlistStatus("error");
+        return;
+      }
+      setWaitlistStatus("success");
+      setWaitlistEmail("");
+    } catch {
+      setWaitlistError("Network error. Try again.");
+      setWaitlistStatus("error");
+    }
+  }
 
   const heroPoints = [
     "Self-optimizing strategies",
@@ -90,8 +130,8 @@ export default function LandingPage() {
       <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-all duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-[0_10px_30px_rgba(0,0,0,0.24)]" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
         <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
           <Link href="/" className="flex items-center gap-3 text-[1.25rem] font-bold tracking-tight">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ld-accent">
-              <Shield className="h-4 w-4 text-white" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-white">
+              <BeacontryMark className="h-5 w-5" aria-label="Beacontry" />
             </div>
             Beacontry
           </Link>
@@ -325,7 +365,187 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── CTA ── */}
+      {/* ── Pricing ── */}
+      <section id="pricing" className="bg-ld-panel py-28 lg:py-28">
+        <div className="animate-fade-in-up mx-auto mb-16 max-w-[760px] px-4 text-center">
+          <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-ld-accent">{"// pricing"}</p>
+          <h2 className="text-[clamp(1.9rem,4vw,2.9rem)] font-bold leading-tight tracking-tight">
+            Simple pricing. Real power.
+          </h2>
+          <p className="mx-auto mt-4 max-w-[820px] text-lg leading-relaxed text-ld-text-secondary">
+            Bring your own broker. Annual saves ~17%. Cancel anytime.
+          </p>
+        </div>
+
+        <div className="mx-auto grid max-w-[1180px] items-stretch gap-6 px-4 sm:grid-cols-2 lg:grid-cols-3 lg:px-7">
+          {/* Trader — middle tier, highlighted as "most popular" */}
+          {[
+            {
+              name: "Trader",
+              tag: "Most popular",
+              price: "$29",
+              cadence: "/ month",
+              annual: "$290/yr — saves 2 months",
+              desc: "Everything an active retail trader needs.",
+              features: [
+                "Full engine (paper + live trading)",
+                "Unlimited watchlists",
+                "All education + spaced-rep review",
+                "Alerts: push, email, Discord",
+                "TradingView + Reddit + Congress feeds",
+                "Tax center + automated journal",
+                "1 broker connection",
+              ],
+              cta: "Start with Trader",
+              highlight: true,
+            },
+            {
+              name: "Pro",
+              tag: "Power users",
+              price: "$79",
+              cadence: "/ month",
+              annual: "$790/yr — saves 2 months",
+              desc: "GA optimizer + adaptive mode + multi-broker.",
+              features: [
+                "Everything in Trader, plus:",
+                "Adaptive (regime-driven) engine mode",
+                "Genetic-algorithm strategy optimizer",
+                "Multi-broker (up to 3 connections)",
+                "Audit log access",
+                "Priority email support",
+                "Saved-strategy library",
+              ],
+              cta: "Step up to Pro",
+              highlight: false,
+            },
+            {
+              name: "Self-hosted",
+              tag: "Open source",
+              price: "Free",
+              cadence: "",
+              annual: "Your data, your hardware",
+              desc: "Bring your own Postgres + Alpaca keys.",
+              features: [
+                "Full source code",
+                "No telemetry, no SaaS lock-in",
+                "Self-managed updates",
+                "Privacy-first deployments",
+                "No SLA, no hosted support",
+                "Same engine, your control",
+              ],
+              cta: "View on GitHub",
+              highlight: false,
+            },
+          ].map((tier, i) => (
+            <article
+              key={tier.name}
+              className={`animate-fade-in-up stagger-${i + 1} relative flex flex-col rounded-2xl border bg-ld-card p-8 transition-all duration-250 hover:-translate-y-1 hover:shadow-[0_22px_60px_rgba(0,0,0,0.32)] ${
+                tier.highlight
+                  ? "border-ld-accent/40 ring-1 ring-ld-accent/20"
+                  : "border-ld-border hover:border-ld-border-accent"
+              }`}
+            >
+              {tier.highlight && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-ld-accent px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-white">
+                  {tier.tag}
+                </div>
+              )}
+              {!tier.highlight && (
+                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ld-text-muted">{tier.tag}</p>
+              )}
+
+              <h3 className="mt-3 text-xl font-bold">{tier.name}</h3>
+              <p className="mt-2 text-[0.9rem] text-ld-text-secondary">{tier.desc}</p>
+
+              <div className="mt-5 flex items-baseline gap-1">
+                <span className="text-[2.5rem] font-extrabold leading-none">{tier.price}</span>
+                {tier.cadence && <span className="text-ld-text-muted">{tier.cadence}</span>}
+              </div>
+              <p className="mt-1 text-[0.8rem] text-ld-text-muted">{tier.annual}</p>
+
+              <ul className="mt-6 flex-1 space-y-2.5 text-[0.92rem]">
+                {tier.features.map((feat) => (
+                  <li key={feat} className="flex items-start gap-2 text-ld-text-secondary">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-ld-accent" />
+                    <span>{feat}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <Link
+                href={tier.name === "Self-hosted" ? "https://github.com/ixiondt/Sentinel" : "/register"}
+                className={`mt-8 inline-flex items-center justify-center gap-2 rounded-[10px] px-5 py-3 text-[0.92rem] font-semibold transition-all duration-200 hover:-translate-y-0.5 ${
+                  tier.highlight
+                    ? "bg-ld-accent text-white hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]"
+                    : "border border-ld-border text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06]"
+                }`}
+              >
+                {tier.cta} {tier.name !== "Self-hosted" && <ArrowRight className="h-4 w-4" />}
+              </Link>
+            </article>
+          ))}
+        </div>
+
+        <p className="mx-auto mt-10 max-w-[680px] px-4 text-center text-[0.85rem] text-ld-text-muted">
+          Need team / firm / white-label? <a href="mailto:hello@beacontry.com" className="text-ld-accent hover:underline">Get in touch</a> for Team and Enterprise pricing.
+        </p>
+      </section>
+
+      {/* ── Trust / "Why Beacontry" ── */}
+      <section id="trust" className="py-28 lg:py-28">
+        <div className="animate-fade-in-up mx-auto mb-16 max-w-[760px] px-4 text-center">
+          <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-ld-accent">{"// what makes us different"}</p>
+          <h2 className="text-[clamp(1.9rem,4vw,2.9rem)] font-bold leading-tight tracking-tight">
+            Trust isn&apos;t a feature.
+            <br />
+            It&apos;s a property of how Beacontry is built.
+          </h2>
+          <p className="mx-auto mt-4 max-w-[820px] text-lg leading-relaxed text-ld-text-secondary">
+            Other AI signal tools are black boxes. We&apos;re not. Here&apos;s how that shows up.
+          </p>
+        </div>
+
+        <div className="mx-auto grid max-w-[1180px] gap-6 px-4 sm:grid-cols-2 lg:px-7">
+          {[
+            {
+              icon: GitBranch,
+              title: "Open source engine",
+              desc: "The signal pipeline, optimizer, and audit log are public code. Read what your engine actually does — line by line. No vendor lock-in, no algorithmic opacity.",
+            },
+            {
+              icon: Lock,
+              title: "Hash-chained audit log",
+              desc: "Every order, halt, risk-profile change, and admin action writes a tamper-evident row whose hash links to the previous. Verify the chain at any time. Most retail tools log nothing.",
+            },
+            {
+              icon: Server,
+              title: "Bring your own broker",
+              desc: "Multi-broker (Alpaca, Tradier, IBKR). You supply your own keys, encrypted at rest with AES-256-GCM. We never custody assets, never see your account beyond your credentials.",
+            },
+            {
+              icon: Cpu,
+              title: "Inspectable signal DNA",
+              desc: "Every signal shows its math: which indicators fired, which hybrid layers contributed, the exact confidence calculation. No 'trust the AI' — every decision is auditable.",
+            },
+          ].map((trust, i) => {
+            const Icon = trust.icon;
+            return (
+              <article
+                key={trust.title}
+                className={`animate-fade-in-up stagger-${i + 1} rounded-2xl border border-ld-border bg-ld-card p-8 transition-all duration-250 hover:-translate-y-1 hover:border-ld-accent/22 hover:shadow-[0_22px_60px_rgba(0,0,0,0.32)]`}
+              >
+                <div className="mb-4 grid h-[50px] w-[50px] place-items-center rounded-xl bg-ld-accent/[0.16] text-ld-accent">
+                  <Icon className="h-6 w-6" />
+                </div>
+                <h3 className="text-lg font-bold">{trust.title}</h3>
+                <p className="mt-3 text-[0.94rem] leading-relaxed text-ld-text-secondary">{trust.desc}</p>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ── Final CTA with waitlist ── */}
       <section className="bg-ld-panel py-28 lg:py-28">
         <div className="animate-fade-in-up mx-auto max-w-[660px] px-4 text-center">
           <h2 className="text-[clamp(1.9rem,4vw,2.9rem)] font-bold leading-tight tracking-tight">
@@ -335,6 +555,8 @@ export default function LandingPage() {
             Connect your broker, choose a mode, and let Beacontry handle the rest.
             Every trade logged. Every stop synced. Full control when you want it.
           </p>
+
+          {/* Existing buttons — go register or log in */}
           <div className="mt-8 flex flex-wrap justify-center gap-4">
             <Link href="/register" className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-8 py-4 text-base font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
               Start Trading <ArrowRight className="h-4 w-4" />
@@ -342,6 +564,61 @@ export default function LandingPage() {
             <Link href="/login" className="rounded-[10px] border border-ld-border px-8 py-4 text-base font-semibold text-ld-text transition-all duration-200 hover:-translate-y-0.5 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
               Sign In
             </Link>
+          </div>
+
+          {/* Waitlist — for visitors who aren't ready to sign up but want
+              to be notified. Currently invite-only registration means
+              walk-ups would bounce on the register page anyway. */}
+          <div className="mx-auto mt-12 max-w-[480px] rounded-2xl border border-ld-border bg-ld-card p-6">
+            <p className="font-mono text-xs uppercase tracking-[0.14em] text-ld-text-muted">
+              Or join the waitlist
+            </p>
+            <p className="mt-2 text-[0.92rem] text-ld-text-secondary">
+              Not ready yet? Drop your email and we&apos;ll let you know when public signup opens.
+            </p>
+
+            {waitlistStatus === "success" ? (
+              <div className="mt-5 flex items-center justify-center gap-2 rounded-[10px] bg-ld-accent/10 border border-ld-accent/30 px-4 py-3 text-ld-accent">
+                <Check className="h-4 w-4" />
+                <span className="font-medium">You&apos;re on the list. We&apos;ll be in touch.</span>
+              </div>
+            ) : (
+              <form onSubmit={submitWaitlist} className="mt-5 flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="email"
+                  value={waitlistEmail}
+                  onChange={(e) => setWaitlistEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  required
+                  className="flex-1 rounded-[10px] border border-ld-border bg-ld-deep px-4 py-3 text-[0.94rem] text-ld-text placeholder:text-ld-text-muted focus:border-ld-accent focus:outline-none focus:ring-1 focus:ring-ld-accent/40"
+                  autoComplete="email"
+                  aria-label="Email address"
+                />
+                {/* Honeypot — hidden from sighted users, ignored by screen readers.
+                    Bots that auto-fill form fields trip this and get silently dropped server-side. */}
+                <input
+                  type="text"
+                  name="website"
+                  value={waitlistHoneypot}
+                  onChange={(e) => setWaitlistHoneypot(e.target.value)}
+                  tabIndex={-1}
+                  autoComplete="off"
+                  aria-hidden="true"
+                  style={{ position: "absolute", left: "-10000px", top: "auto", width: "1px", height: "1px", overflow: "hidden" }}
+                />
+                <button
+                  type="submit"
+                  disabled={waitlistStatus === "submitting" || !waitlistEmail.trim()}
+                  className="rounded-[10px] bg-ld-accent px-5 py-3 text-[0.92rem] font-semibold text-white transition-all duration-200 hover:bg-ld-accent-dim disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {waitlistStatus === "submitting" ? "Joining…" : "Notify me"}
+                </button>
+              </form>
+            )}
+
+            {waitlistError && (
+              <p className="mt-3 text-[0.85rem] text-red-400">{waitlistError}</p>
+            )}
           </div>
         </div>
       </section>

@@ -6,10 +6,10 @@ import { useEffect, useState } from "react";
 import {
   LogOut,
   Menu,
-  Radar,
   Sparkles,
   X,
 } from "lucide-react";
+import { BeacontryMark } from "@/components/brand/beacontry-mark";
 import {
   NAV_ITEMS,
   isActivePath,
@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div style={{ padding: "14px 16px 10px" }}>
               <Link href="/dashboard" className="flex items-center gap-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
-                  <Radar className="h-4 w-4" />
+                  <BeacontryMark className="h-4 w-4" aria-label="Beacontry" />
                 </div>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Beacontry</div>
@@ -181,7 +181,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div style={{ padding: "8px 16px 10px" }}>
               <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-2.5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
-                  <Radar className="h-4 w-4" />
+                  <BeacontryMark className="h-4 w-4" aria-label="Beacontry" />
                 </div>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Beacontry</div>

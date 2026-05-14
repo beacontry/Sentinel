@@ -27,6 +27,72 @@ Reddit ticker-mention feed (Analysis → Reddit tab) shipped with admin-
 configurable subreddit list at `/dashboard/admin → Reddit Feed Sources`
 and migration `0033`.
 
+## 2026-05-14 — Brand transition (Sentinel → Beacontry)
+
+`beacontry.com` purchased + DNS / Cloudflare / Email Routing / DNSSEC
+all configured. App now serves on BOTH hostnames simultaneously:
+- `https://beacontry.com` (new brand)
+- `https://sentinel.guardcybersolutionsllc.com` (kept alive as legacy alias)
+
+User-visible UI rebranded across ~30 files (page titles, manifest, login,
+register, terms, risk, dashboard copy, email templates, Discord embed text,
+public HTML docs, outbound User-Agents to Yahoo / Finnhub / SEC / Reddit
+/ congress.house.gov). Internal code names (variables, DB tables, env
+vars, localStorage keys, code comments) deliberately kept as "Sentinel"
+to avoid invalidating existing user prefs and breaking migrations.
+
+### Pending actions after rebrand (still TODO — user-driven)
+
+These two are gated on actions outside the repo. Surface them in future
+sessions until done:
+
+1. **Update `EMAIL_FROM` env var on prod droplet.** Code default is now
+   `Beacontry <hello@beacontry.com>` but the existing env-file value
+   (`Sentinel <noreply@guardcybersolutionsllc.com>`) overrides. Without
+   the change, outbound emails still come from the old brand. Recreate
+   command:
+   ```bash
+   ssh deploy@192.241.132.219
+   sudo sed -i 's/^EMAIL_FROM=.*/EMAIL_FROM=Beacontry <hello@beacontry.com>/' \
+     /opt/apps/sentinel/.env
+   sudo podman stop sentinel-app && sudo podman rm sentinel-app && \
+     sudo podman run -d --name sentinel-app --network=host \
+       --env-file /opt/apps/sentinel/.env \
+       -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 \
+       -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache \
+       -v /opt/apps/sentinel/cache:/data/cache:Z \
+       --restart always -m 2g \
+       ghcr.io/ixiondt/sentinel:latest
+   ```
+   ⚠ Also requires `beacontry.com` to be verified as a sender domain in
+   Resend (`resend.com/domains` → add → DNS records auto-detect via the
+   Cloudflare zone we set up). Until verified, Resend rejects sends from
+   `@beacontry.com` with 403; the catch-and-log path keeps the app from
+   crashing but emails silently fail.
+
+2. **Revoke the Cloudflare API token `beacontry-setup`.** Created
+   2026-05-14 for the automated DNS/Email Routing setup. Token was
+   pasted into chat history; revocation eliminates long-term risk.
+   Profile → API Tokens → find `beacontry-setup` → Roll or Delete.
+
+### Today's deploy recap (for context)
+
+Shipped 2026-05-14 in addition to the brand transition:
+- Reddit ticker mention feed (Analysis → Reddit tab) + admin-managed
+  subreddit list + OAuth client-credentials path
+- SignalDetails right-panel compaction (two rounds)
+- Earnings page tracked-symbols chip strip + 90-day lookahead
+- Hybrid Layers Reddit-sentiment chip
+- Insider Activity collapse with "+N more" expand
+- Various CSRF / CSP / correctness fixes from the small-wins batch
+- bought beacontry.com + Cloudflare zone + Email Routing + DNSSEC + dual
+  Caddy hostname serving + SSL strict
+- 7 commits, ~50 files touched
+
+Next sessions should default to checking the two pending actions above
+and confirming the env var + token revocation have happened before
+proposing more brand-transition work.
+
 ## Phase status (last updated 2026-05-12 marathon)
 
 | Phase | Theme | Shipped | Still pending |
