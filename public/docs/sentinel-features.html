@@ -640,7 +640,7 @@
         <li><strong>Open Orders table</strong> — pending/working orders from the broker.</li>
         <li><strong>Recent Trades list</strong> — date, symbol, side, qty, price, P&amp;L. Each row has an <strong>AI ✨</strong> button (see below).</li>
         <li><strong>Signals list</strong> — latest from the screener or manual triggers.</li>
-        <li><strong>Risk Overrides panel</strong> — read-only by default. Click Settings icon to edit. Source of truth for max position size, daily loss halt, sector cap, earnings blackout, MTM election, consecutive-loss threshold.</li>
+        <li><strong>Risk Overrides panel</strong> — read-only by default. Click Settings icon to edit. Source of truth for max position size, daily loss halt, sector cap, earnings blackout, MTM election, consecutive-loss threshold. Each field has a <strong>?</strong> info icon next to the label — hover for a one-line explanation of the concept and typical values (added 2026-05-13).</li>
         <li><strong>PDT warning panel</strong> (yellow) — appears when account equity &lt; $25k. Shows current day-trade count.</li>
         <li><strong>Tax Status card</strong> — MTM election checkbox. Drives wash-sale protection on/off.</li>
         <li><strong>Tax callouts</strong> — harvestable unrealized losses surfaced inline.</li>
@@ -682,6 +682,8 @@
         <li><strong>Symbol</strong> — single symbol or a watchlist.</li>
         <li><strong>Strategy</strong> — pick one of the 7 engine modes, a saved strategy, custom (manual params), or auto (optimizer-picked).</li>
         <li><strong>Date range</strong> — <code>days</code> back or <code>startDate</code>/<code>endDate</code> mode. Daily bars only (Yahoo intraday only retains ~60 days).</li>
+        <li><strong>Stop Loss / Trail Stop / Take Profit / Hold Period</strong> — each has a ? info icon explaining the concept and typical values (added 2026-05-13).</li>
+        <li><strong>Auto-tune (⚡)</strong> button — now has a hover tooltip explaining the ATR-based tuning logic.</li>
         <li><strong>Run</strong> — kicks off the backtest. Equity curve animates in as it processes.</li>
       </ul>
       <div class="gotcha"><strong>Long-range 5m backtests aren't possible</strong> without a paid intraday data feed. Daily bars are the supported window.</div>
@@ -773,8 +775,9 @@
       <ul>
         <li><strong>Symbol header</strong> — current price + intraday change.</li>
         <li><strong>Side toggle</strong> — BUY / SELL.</li>
-        <li><strong>Order type</strong> — Market / Limit / Stop / Stop-Limit.</li>
-        <li><strong>TIF</strong> — Day / GTC / IOC / FOK.</li>
+        <li><strong>Order type</strong> — Market / Limit / Stop / Stop-Limit. Each option in the dropdown carries a one-line plain-English explanation, and the field label has a ? info icon (added 2026-05-13).</li>
+        <li><strong>TIF</strong> — Day / GTC / IOC / FOK. Same hover-help treatment as Order Type.</li>
+        <li><strong>Limit / Stop price fields</strong> — show inline help explaining what each price means and when to set above vs below current.</li>
         <li><strong>Bracket toggle</strong> (BUY-only, share-mode only) — atomic entry + stop-loss + take-profit.</li>
         <li><strong>Notional toggle</strong> (Alpaca only) — dollar-based buys, fractional shares. Market + day/ioc only.</li>
       </ul>
@@ -1250,7 +1253,7 @@
 
   <!-- ===== FOOTER ===== -->
   <footer class="footer">
-    <p><span class="brand">Sentinel</span> &mdash; Platform Reference v1 &middot; 2026-05-12</p>
+    <p><span class="brand">Sentinel</span> &mdash; Platform Reference v1 &middot; 2026-05-13</p>
     <p style="margin-top:6px">Engine internals: <a href="engine-ruleset.html">engine-ruleset.html</a> &middot; Financial education: <a href="/dashboard/education">/dashboard/education</a></p>
     <p style="margin-top:14px;font-size:0.78rem">This is a user reference for an authorized in-house deployment of Sentinel. Sentinel is not a registered investment adviser; nothing here is financial advice. AI summaries and signal evaluations are tools — final trading decisions are yours.</p>
   </footer>

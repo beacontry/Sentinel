@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState, useEffect, useCallback } from "react";
+import { usePolling } from "@/hooks/usePolling";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -271,11 +272,10 @@ export default function AdminPage() {
     loadEngines();
   }, [loadUsers, loadInvites, loadEngines]);
 
-  // Refresh engine rows every 30s so admin sees state changes
-  useEffect(() => {
-    const t = setInterval(loadEngines, 30_000);
-    return () => clearInterval(t);
-  }, [loadEngines]);
+  // Refresh engine rows every 30s so admin sees state changes. usePolling
+  // also pauses when the tab is hidden so we don't burn API calls in
+  // backgrounded admin tabs.
+  usePolling(loadEngines, 30_000);
 
   async function handleSendInvite(e: React.FormEvent) {
     e.preventDefault();

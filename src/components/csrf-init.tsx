@@ -57,6 +57,16 @@ function pathIsCsrfExempt(url: string): boolean {
     // so the CSRF header is still injected.
     return false;
   }
+  // Normalize a single trailing slash so /api/auth/login/ matches
+  // /api/auth/login. Some clients (older proxies, redirect chains) can
+  // produce trailing-slash variants of the auth routes — if those are
+  // treated as non-exempt the CSRF header would be injected and the
+  // login/logout/register endpoints would reject with 403 because they
+  // don't validate CSRF (and the user has no token yet). Equivalent
+  // safety: a leading-slash prefix that strips one trailing slash.
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    pathname = pathname.slice(0, -1);
+  }
   return CSRF_EXEMPT_PATHS.has(pathname);
 }
 

@@ -225,9 +225,16 @@ export default function AlertsPage() {
           </CardTitle>
         </CardHeader>
         {rules.length === 0 ? (
-          <p className="text-sm text-text-muted py-4 text-center">
-            No alert rules yet
-          </p>
+          <div className="py-8 text-center">
+            <p className="text-sm text-text-muted">No alert rules yet</p>
+            <p className="text-xs text-text-muted mt-1 max-w-md mx-auto">
+              Create a rule to get notified when a price crosses a level, RSI flips overbought, a signal fires, or volume spikes.
+            </p>
+            <Button size="sm" variant="secondary" className="mt-4" onClick={() => setShowCreate(true)}>
+              <Plus className="w-3.5 h-3.5" />
+              Create your first alert
+            </Button>
+          </div>
         ) : (
           <div className="space-y-2">
             {rules.map((rule) => (
@@ -307,9 +314,12 @@ export default function AlertsPage() {
           )}
         </CardHeader>
         {history.length === 0 ? (
-          <p className="text-sm text-text-muted py-4 text-center">
-            No alerts triggered yet
-          </p>
+          <div className="py-6 text-center">
+            <p className="text-sm text-text-muted">No alerts triggered yet</p>
+            <p className="text-xs text-text-muted mt-1">
+              When one of your rules fires, the event appears here and (if enabled) goes to email / push.
+            </p>
+          </div>
         ) : (
           <div className="space-y-2">
             {history.map((entry) => (

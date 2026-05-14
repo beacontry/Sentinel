@@ -76,11 +76,12 @@ export default function FeedPage() {
         <div className="rounded-xl border border-border bg-bg-surface p-12 text-center">
           <Rss className="w-12 h-12 text-text-muted mx-auto mb-4" />
           <h3 className="font-display text-lg font-semibold mb-2">
-            No signals yet
+            No shared signals yet
           </h3>
-          <p className="text-sm text-text-secondary max-w-sm mx-auto">
-            Be the first to share a signal! Analyze a stock from your dashboard
-            and click Share.
+          <p className="text-sm text-text-secondary max-w-md mx-auto">
+            Be the first to share. Open any symbol on the{" "}
+            <a href="/dashboard/analysis" className="text-accent hover:underline">Analysis page</a>{" "}
+            and tap Share — your signal appears here for the community to see.
           </p>
         </div>
       ) : (
