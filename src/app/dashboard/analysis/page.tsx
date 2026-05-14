@@ -703,7 +703,19 @@ function AnalysisCockpit() {
                         </button>
                       </div>
                     )}
-                    {selectedSymbol && chartMode === "tradingview" ? (
+                    {/* Suppress the in-page chart while the fullscreen
+                     * overlay is open. Two simultaneous TradingView mounts
+                     * + body scroll-lock briefly changing viewport width
+                     * caused the in-page panel to desync (chart enormous,
+                     * watchlist squished). With this, only ONE chart
+                     * exists at a time. The placeholder div keeps the
+                     * flex layout intact so the panel doesn't collapse
+                     * during the overlay session. */}
+                    {chartFullscreen ? (
+                      <div className="flex-1 min-h-0 flex items-center justify-center rounded-lg border border-dashed border-border bg-bg-secondary">
+                        <p className="text-xs text-text-muted">Chart open in fullscreen — Esc to return</p>
+                      </div>
+                    ) : selectedSymbol && chartMode === "tradingview" ? (
                       <div className="flex-1 min-h-0">
                         <TradingViewChart symbol={selectedSymbol} interval="D" height="fill" />
                       </div>
