@@ -46,13 +46,27 @@ export function ChartFullscreenOverlay({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Lock body scroll while open
+  // Lock body scroll while open.
+  //
+  // Subtle bug guarded against: setting body.overflow = "hidden" removes
+  // the OS scrollbar, which can momentarily widen the viewport by
+  // 12-17px. Any responsive layout that reads container width on resize
+  // (e.g. our react-resizable-panels PanelGroup on the Analysis page)
+  // could lock in the wider sizes and end up out of balance when the
+  // scrollbar returns. Fix: pad the body with the scrollbar's width
+  // while locked, so the visible width stays constant.
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
     document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
     };
   }, [open]);
 
