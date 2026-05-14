@@ -22,6 +22,19 @@ inspectable.
 > vars, internal logs, etc. "Beacontry" is the public-facing brand the
 > engine is shipped under. Both names refer to the same platform.
 
+## License
+
+Beacontry is released under the **[Functional Source License v1.1 (FSL-1.1-ALv2)](./LICENSE)**.
+
+Plain-English summary (not the actual license — read `LICENSE` for the binding text):
+
+- ✅ **Use it for yourself.** Personal use, internal company use, dev/test/research use — all free, all allowed. Run it on your own broker keys, build your own strategies, fork it for your own learning.
+- ✅ **Read every line.** The code is public. You can audit signal logic, verify the audit chain, modify the engine.
+- ❌ **Do not host it as a competing commercial service.** Reselling Beacontry as a hosted trading-intel platform to others requires a commercial license from us. Email `hello@beacontry.com` if that's your use case.
+- ⏳ **In 2 years, each released version auto-converts to Apache 2.0** — fully permissive. If we ever stop maintaining the project, the community can pick up old versions under permissive terms.
+
+This is the same license model Sentry uses for its core platform. It lets us source-publish for trust and inspectability while keeping a commercial moat.
+
 ### Core Loop
 
 ```
