@@ -34,10 +34,17 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Look 30 days ahead and 7 days back
+    // Look 90 days ahead and 30 days back.
+    // Was 30/7. Widened 2026-05-13 because:
+    //   - Most companies announce earnings dates ~30 days out, so a 30-day
+    //     window meant freshly-added watchlist symbols often showed empty
+    //     until their date got published. Users reported "I added these
+    //     tickers but they don't appear."
+    //   - 30 days back catches the previous quarter's beat/miss context
+    //     when reviewing recent watchlist activity.
     const now = new Date();
-    const from = new Date(now.getTime() - 7 * 86400000).toISOString().slice(0, 10);
-    const to = new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
+    const from = new Date(now.getTime() - 30 * 86400000).toISOString().slice(0, 10);
+    const to = new Date(now.getTime() + 90 * 86400000).toISOString().slice(0, 10);
 
     const results = await Promise.allSettled(
       symbols.map((s) => client.getEarningsCalendar(from, to, s))

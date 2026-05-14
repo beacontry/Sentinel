@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { Calendar, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 
 interface Earning {
@@ -39,7 +39,13 @@ export default function EarningsPage() {
   const [symbolInput, setSymbolInput] = useState("");
   const [activeTab, setActiveTab] = useState("calendar");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
-  const [watchlistSize, setWatchlistSize] = useState<number | null>(null);
+  // The actual watchlist contents we queried Finnhub against. Surfaced
+  // to the UI so users can see "we are tracking X, Y, Z" — answers the
+  // "what is this page looking at?" question when symbols don't show
+  // up in the calendar because they have no scheduled earnings yet.
+  const [trackedSymbols, setTrackedSymbols] = useState<string[]>([]);
+  // `true` when the watchlist was empty and we fell back to DEFAULT_SYMBOLS.
+  const [usingDefaults, setUsingDefaults] = useState(false);
   const { toast } = useToast();
 
   async function loadEarnings() {
@@ -55,9 +61,10 @@ export default function EarningsPage() {
         }
       } catch { /* fallback */ }
 
-      setWatchlistSize(symbols.length);
-
-      if (symbols.length === 0) symbols = DEFAULT_SYMBOLS.split(",");
+      const isFallback = symbols.length === 0;
+      setUsingDefaults(isFallback);
+      if (isFallback) symbols = DEFAULT_SYMBOLS.split(",");
+      setTrackedSymbols(symbols);
 
       const res = await fetch(`/api/earnings?symbols=${encodeURIComponent(symbols.join(","))}`);
       if (res.ok) {
@@ -66,6 +73,34 @@ export default function EarningsPage() {
       }
     } catch { /* handled */ }
     setLoading(false);
+  }
+
+  // Remove a symbol from the user's default watchlist and reload.
+  // Refuses to delete from the DEFAULT_SYMBOLS fallback set (those aren't
+  // saved anywhere) — silently no-ops with a toast hint.
+  async function removeSymbol(symbol: string) {
+    if (usingDefaults) {
+      toast({
+        type: "info",
+        message: "Add a symbol first — these are the default suggestions.",
+      });
+      return;
+    }
+    try {
+      const res = await fetch("/api/watchlist", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol }),
+      });
+      if (res.ok) {
+        toast({ type: "success", message: `Removed ${symbol}` });
+        await loadEarnings();
+      } else {
+        toast({ type: "error", message: `Could not remove ${symbol}` });
+      }
+    } catch {
+      toast({ type: "error", message: `Could not remove ${symbol}` });
+    }
   }
 
   /**
@@ -182,7 +217,7 @@ export default function EarningsPage() {
        */}
       <Card
         className={
-          watchlistSize === 0
+          usingDefaults
             ? "border-accent/40 bg-accent/5"
             : undefined
         }
@@ -197,9 +232,9 @@ export default function EarningsPage() {
                 Track earnings for a new symbol
               </h3>
               <p className="text-xs text-text-muted mt-0.5">
-                {watchlistSize === 0
-                  ? "Your watchlist is empty — add symbols to start tracking their earnings dates."
-                  : "Symbols are saved to your watchlist and appear here every visit."}
+                {usingDefaults
+                  ? "Your watchlist is empty — showing popular defaults below. Add symbols to start tracking them yourself."
+                  : "Symbols are saved to your default watchlist and appear here every visit."}
               </p>
             </div>
           </div>
@@ -226,6 +261,83 @@ export default function EarningsPage() {
           </div>
         </div>
       </Card>
+
+      {/* Tracked-symbols chip strip
+       *
+       * Answers "what is this page actually looking at?" — without this,
+       * a user adds symbols, sees the success toast, and then can't find
+       * them in the calendar because Finnhub has no scheduled earnings
+       * date for them yet (most companies announce ~30 days out, our
+       * window is 30 days back to 90 days forward). Showing the
+       * watchlist as chips makes the answer obvious + lets users remove
+       * stale entries inline. */}
+      {trackedSymbols.length > 0 && (
+        <Card>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="text-sm font-semibold text-text-primary">
+                Tracked symbols
+                <span className="ml-2 font-mono text-xs font-normal text-text-muted">
+                  {trackedSymbols.length}
+                </span>
+              </h3>
+              <p className="text-xs text-text-muted">
+                {usingDefaults
+                  ? "Default suggestions (your watchlist is empty)"
+                  : "Pulled from your default watchlist"}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {trackedSymbols.map((s) => {
+                // Find this symbol's next upcoming earning, if any. The
+                // chip shows the next date when known so users can tell
+                // at a glance who has a date and who doesn't.
+                const next = earnings
+                  .filter((e) => e.symbol === s && e.date >= today)
+                  .sort((a, b) => a.date.localeCompare(b.date))[0];
+                return (
+                  <span
+                    key={s}
+                    className="group inline-flex items-center gap-1.5 rounded-full border border-border bg-bg-surface px-2.5 py-1 text-xs"
+                    title={next ? `Next earnings: ${next.date}` : "No scheduled earnings in the next 90 days"}
+                  >
+                    <span className="font-mono font-medium text-text-primary">{s}</span>
+                    {next ? (
+                      <span className="font-mono text-[10px] text-accent">
+                        {next.date.slice(5)}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-text-muted italic">
+                        no date
+                      </span>
+                    )}
+                    {!usingDefaults && (
+                      <button
+                        onClick={() => removeSymbol(s)}
+                        className="ml-0.5 -mr-0.5 rounded-full p-0.5 text-text-muted opacity-0 transition-opacity hover:bg-bg-hover hover:text-bearish group-hover:opacity-100 focus-visible:opacity-100"
+                        aria-label={`Remove ${s}`}
+                        title={`Remove ${s} from watchlist`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+            {/* Help text — explains the "no date" chips */}
+            {trackedSymbols.some(
+              (s) => !earnings.some((e) => e.symbol === s && e.date >= today)
+            ) && (
+              <p className="text-[11px] text-text-muted leading-relaxed">
+                Symbols showing <span className="italic">no date</span> are tracked but
+                don&apos;t have an earnings date announced in the next 90 days.
+                They&apos;ll appear in the calendar automatically once a date is published.
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
 
       <Tabs
         tabs={[
