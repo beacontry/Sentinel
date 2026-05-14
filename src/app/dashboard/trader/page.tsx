@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
+import { TraderTierRequired } from "@/components/tiers/trader-tier-required";
 import {
   Bot,
   Wifi,
@@ -412,6 +413,12 @@ export default function TraderPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.trader} />
+      {/* Free-tier paywall banner — auto-hides for trader+ users. Renders
+          above the existing UI so free users see the upgrade prompt first,
+          then the page content (read-only widgets like risk profile editor
+          and watchlist still work fine for free; only engine + broker
+          mutations are blocked at the API layer). */}
+      <TraderTierRequired />
       <PageIntro
         eyebrow="Execution Desk"
         title="Live Trader"

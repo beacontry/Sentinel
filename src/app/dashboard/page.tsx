@@ -4,6 +4,7 @@ import { useState } from "react";
 import { WidgetGrid, type WidgetEntry } from "@/components/dashboard/widget-grid";
 import { LayoutSwitcher } from "@/components/dashboard/layout-switcher";
 import { Button } from "@/components/ui/button";
+import { FreeTierWelcome } from "@/components/tiers/free-tier-welcome";
 import {
   Pencil,
   Check,
@@ -19,6 +20,10 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
+      {/* Free-tier first-impression card — auto-hides for paid users and
+          for free users who've dismissed it once. */}
+      <FreeTierWelcome />
+
       {/* Header — S6 style: bold title, subtitle, actions on right */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
         <div>
