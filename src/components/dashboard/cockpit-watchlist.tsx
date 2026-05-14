@@ -74,26 +74,23 @@ export function CockpitWatchlist({
   onSwitchWatchlist,
   recentEntries,
 }: CockpitWatchlistProps) {
-  const activeList = watchlistOptions.find((w) => w.id === activeWatchlistId);
-  const showSwitcher = watchlistOptions.length > 1;
-
   return (
     <div className="flex flex-col h-full">
-      {/* Header — name of active list + switcher when there's more than one */}
+      {/* Header — switcher always rendered so users can discover the
+       * "Manage watchlists…" footer item even with a single list.
+       * Previously the dropdown was hidden when length === 1, making
+       * "how do I change/create another watchlist" unanswerable from
+       * the cockpit. The dropdown is now always present; if there's
+       * only one list it's still useful as the entry point to manage
+       * lists. */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2 min-w-0">
           <Eye className="w-3.5 h-3.5 text-accent shrink-0" />
-          {showSwitcher ? (
-            <WatchlistSwitcher
-              options={watchlistOptions}
-              activeId={activeWatchlistId}
-              onSwitch={onSwitchWatchlist}
-            />
-          ) : (
-            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary truncate">
-              {activeList?.name ?? "Watchlist"}
-            </span>
-          )}
+          <WatchlistSwitcher
+            options={watchlistOptions}
+            activeId={activeWatchlistId}
+            onSwitch={onSwitchWatchlist}
+          />
         </div>
         <Badge variant="default" className="font-mono shrink-0">
           {symbols.length}

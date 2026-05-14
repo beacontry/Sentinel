@@ -585,22 +585,12 @@ function AnalysisCockpit() {
         >
           {/* Left: Watchlist + add controls */}
           <div className="flex min-h-0 flex-col border-r border-border bg-bg-secondary">
-                <div className="flex-1 min-h-0 overflow-hidden">
-                  <CockpitWatchlist
-                    symbols={symbols}
-                    selectedSymbol={selectedSymbol}
-                    onSelectSymbol={handleSelectSignal}
-                    onRemoveSymbol={handleRemoveSymbol}
-                    analyses={watchlistAnalyses}
-                    loading={isAnyLoading}
-                    watchlistOptions={watchlistOptions}
-                    activeWatchlistId={activeWatchlistId}
-                    onSwitchWatchlist={switchToList}
-                    recentEntries={recentEntries}
-                  />
-                </div>
-
-                <div className="shrink-0 space-y-2 border-t border-border p-3">
+                {/* Add to watchlist (top) — moved here from the bottom
+                 * 2026-05-13. Sits above the watchlist list so users
+                 * don't have to scroll past everything to add a symbol.
+                 * Popular-symbol chips appear inline when the list is
+                 * empty (first-run guidance). */}
+                <div className="shrink-0 space-y-2 border-b border-border p-3">
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -646,8 +636,28 @@ function AnalysisCockpit() {
                       ))}
                     </div>
                   )}
+                </div>
 
-                  {selectedSymbol && (
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <CockpitWatchlist
+                    symbols={symbols}
+                    selectedSymbol={selectedSymbol}
+                    onSelectSymbol={handleSelectSignal}
+                    onRemoveSymbol={handleRemoveSymbol}
+                    analyses={watchlistAnalyses}
+                    loading={isAnyLoading}
+                    watchlistOptions={watchlistOptions}
+                    activeWatchlistId={activeWatchlistId}
+                    onSwitchWatchlist={switchToList}
+                    recentEntries={recentEntries}
+                  />
+                </div>
+
+                {/* Selection actions — Refresh + Trade. Stays at the
+                 * bottom because they only apply when a symbol is
+                 * selected, so they're contextual rather than primary. */}
+                {selectedSymbol && (
+                  <div className="shrink-0 space-y-2 border-t border-border p-3">
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => {
@@ -670,8 +680,8 @@ function AnalysisCockpit() {
                         Trade
                       </Link>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
           </div>
 
           {/* Center: chart (65%) + intelligence (35%) split */}
