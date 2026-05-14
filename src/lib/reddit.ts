@@ -1,79 +1,84 @@
 // Reddit ticker-mention feed
 //
 // Pulls recent posts mentioning a stock symbol across an admin-managed
-// list of subreddits (see `reddit_subreddits` table — seeded with r/stocks,
-// r/investing, r/SecurityAnalysis, r/wallstreetbets). Surfaced on the
-// Analysis page → Reddit tab and (later) as a "Trending tickers" widget.
+// list of subreddits (see `reddit_subreddits` table — seeded with
+// r/stocks, r/investing, r/SecurityAnalysis, r/wallstreetbets).
 //
-// Why this exists: retail chatter on Reddit genuinely moves small-caps and
-// meme-adjacent tickers. Surfacing it next to news/filings/sentiment is
-// useful signal — particularly when volume is unusual on a name the
-// engine hasn't seen news for. We score post titles with the existing
-// headline-sentiment lexicon so a bullish/bearish chip can render per
-// post.
+// Surfaced on the Analysis page → Reddit tab.
 //
-// Auth: none. Reddit exposes public JSON at
-//   reddit.com/r/{sub}/search.json?q=...
-// without any API key. Their server-side rate limit for unauthenticated
-// JSON is generous (~60/min from a single IP) but Reddit *will* reject
-// requests with a default Node User-Agent. We send a descriptive UA.
+// ─── Why RSS, not JSON ─────────────────────────────────────────────────
+// First impl used `reddit.com/r/{sub}/search.json` — fine on residential
+// IPs but Reddit now serves the HTML web app instead of JSON to
+// datacenter IPs (DigitalOcean, AWS, GCP, etc.). Even with a proper
+// User-Agent. Old.reddit.com .json returns 403.
 //
-// Caching: per (symbol, sub) for 10 minutes. Cache is in-memory only —
-// fine for a single-droplet deployment; replace with Redis when we
-// scale out.
+// `search.rss` is NOT blocked — Reddit still treats Atom feeds as a
+// first-class public surface. So we parse Atom XML instead.
+//
+// Tradeoff: RSS doesn't expose `score`, `num_comments`, `flair`, or
+// `stickied`. We lose score-based sorting and the score-min filter.
+// Mitigation: sort by `published` time (newest first), and rely on the
+// ticker-mention word-boundary check + sentiment label for signal.
+//
+// If a future admin sets up Reddit OAuth credentials (parked in
+// docs/future-ideas.md), we can do a parallel JSON fetch against
+// oauth.reddit.com and get the full payload back. For now the RSS path
+// is what works.
+//
+// ─── Caching ───────────────────────────────────────────────────────────
+// In-memory per (symbol, sub), 10-min TTL. Replace with shared cache
+// if we ever scale horizontally.
 
+import { XMLParser } from "fast-xml-parser";
 import { scoreHeadline } from "./headline-sentiment";
 import { createRouteLogger } from "./logger";
 
 const log = createRouteLogger("reddit");
 
-// Reddit JSON expects a non-default UA. Their docs request the format
-// `<platform>:<app_id>:<version> (by /u/username)`. We don't have a
-// registered app, but any descriptive UA works for the unauthenticated
-// JSON endpoints — they specifically reject Node's default UA.
-const USER_AGENT = "Sentinel/1.0 (Trading Intelligence Platform; +https://sentinel.guardcybersolutionsllc.com)";
+// Reddit accepts most descriptive UAs on the RSS endpoint. Their
+// documented format is `<platform>:<app_id>:<version> (by /u/username)`.
+// We're not registered, so just send something descriptive.
+const USER_AGENT =
+  "Sentinel/1.0 (Trading Intelligence Platform; +https://sentinel.guardcybersolutionsllc.com)";
 
-/** What we return per post — trimmed-down, render-ready. */
 export interface RedditPost {
   /** Reddit's `t3_xxxxxx` post id. Stable, used for dedup across subs. */
   id: string;
-  subreddit: string;          // lowercase, no "r/"
+  subreddit: string; // lowercase, no "r/"
   title: string;
-  /** First N chars of the self-text body, if any. Empty for link posts. */
+  /** First N chars of post body (HTML stripped). Empty for link/image posts. */
   excerpt: string;
   author: string;
-  /** Permalink (relative path, prefix with `https://reddit.com` for full URL). */
-  permalink: string;
-  url: string;                // full https URL to the comment thread
-  score: number;              // upvotes - downvotes
+  url: string; // full https URL to the comment thread
+  permalink: string; // relative path
+  /**
+   * 0 when sourced from RSS (not exposed). The UI knows to hide score
+   * badges when 0; if/when we add an OAuth fallback path, real scores
+   * land here.
+   */
+  score: number;
+  /** Same — 0 from RSS. */
   numComments: number;
-  /** Unix seconds — Reddit's native timestamp format. */
+  /** Unix seconds — derived from RSS `<published>`. */
   createdUtc: number;
-  flair: string | null;       // e.g. "DD", "News", "Discussion"
-  isStickied: boolean;        // pinned mod post, usually want to skip
-  /** Keyword-driven label from `scoreHeadline()` over the post title. */
+  flair: string | null;
+  isStickied: boolean;
+  /** Keyword label from `scoreHeadline()` over the post title. */
   sentiment: "bullish" | "bearish" | "neutral";
 }
 
 export interface RedditFetchResult {
   symbol: string;
   posts: RedditPost[];
-  /** Subs we hit. Useful for "Sources: r/stocks, r/investing, ..." UI. */
+  /** Subs we hit (lowercased). */
   subreddits: string[];
   /** Subs that returned an error or timed out. */
   errored: string[];
-  scannedAt: string;          // ISO timestamp
+  scannedAt: string; // ISO timestamp
 }
 
 // ─── Cache ────────────────────────────────────────────────────────────────
-// In-memory only. Survives within a single Node process; resets on
-// container restart. Replace with shared cache if we ever scale horizontally.
-//
-// Key: `${symbol}:${sub}`. Value: { fetchedAt, posts }. TTL 10 minutes
-// — Reddit post velocity is slow enough that 10 min staleness is fine,
-// and aggressive caching keeps us well under Reddit's rate limit.
-
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
 interface CacheEntry {
   fetchedAt: number;
@@ -104,30 +109,97 @@ function cacheSet(symbol: string, sub: string, posts: RedditPost[]): void {
   cache.set(cacheKey(symbol, sub), { fetchedAt: Date.now(), posts });
 }
 
-// ─── Reddit JSON shape ────────────────────────────────────────────────────
-// Just the fields we read. Reddit returns way more; we ignore the rest.
+// ─── Atom XML parsing ─────────────────────────────────────────────────────
+// Reddit's search.rss returns Atom (XML), not RSS 2.0. fast-xml-parser
+// handles both equivalently for our purposes — we just read the fields.
 
-interface RedditJsonChild {
-  kind: "t3";
-  data: {
-    id: string;
-    subreddit: string;
-    title: string;
-    selftext?: string;
-    author: string;
-    permalink: string;
-    score: number;
-    num_comments: number;
-    created_utc: number;
-    link_flair_text?: string | null;
-    stickied?: boolean;
+interface AtomEntry {
+  id?: string; // "t3_xxxxx"
+  title?: string;
+  author?: { name?: string };
+  link?: { "@_href"?: string } | Array<{ "@_href"?: string }>;
+  category?: { "@_term"?: string } | Array<{ "@_term"?: string }>;
+  content?: { "#text"?: string } | string;
+  published?: string;
+  updated?: string;
+}
+
+interface AtomFeed {
+  feed?: {
+    entry?: AtomEntry | AtomEntry[];
   };
 }
 
-interface RedditJsonResponse {
-  data?: {
-    children?: RedditJsonChild[];
-  };
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  parseAttributeValue: false,
+  // Reddit's content field is HTML wrapped in CDATA. We want it as raw text.
+  cdataPropName: "#text",
+  // Force these tags to be arrays so we don't have to .filter Array.isArray()
+  // checks everywhere downstream.
+  isArray: (name) => name === "entry",
+});
+
+function pickLink(
+  link: AtomEntry["link"]
+): string | null {
+  if (!link) return null;
+  // Atom can have multiple <link rel="..."/> entries; we want the
+  // alternate one (the thread URL). For simplicity we grab the first
+  // href that looks like a Reddit comments URL.
+  const arr = Array.isArray(link) ? link : [link];
+  for (const l of arr) {
+    const href = l?.["@_href"];
+    if (href && href.includes("/comments/")) return href;
+  }
+  return arr[0]?.["@_href"] ?? null;
+}
+
+function pickSubreddit(cat: AtomEntry["category"]): string | null {
+  if (!cat) return null;
+  const arr = Array.isArray(cat) ? cat : [cat];
+  for (const c of arr) {
+    if (c?.["@_term"]) return c["@_term"].toLowerCase();
+  }
+  return null;
+}
+
+function extractContent(content: AtomEntry["content"]): string {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  return content["#text"] ?? "";
+}
+
+/** Strip HTML tags from a content string. RSS gives us markup-laden HTML. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#32;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractPermalink(url: string): string {
+  // "https://www.reddit.com/r/X/comments/Y/title/" → "/r/X/comments/Y/title/"
+  try {
+    const u = new URL(url);
+    return u.pathname;
+  } catch {
+    return url;
+  }
+}
+
+function parseIso(ts: string | undefined): number {
+  if (!ts) return Math.floor(Date.now() / 1000);
+  const ms = Date.parse(ts);
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : Math.floor(Date.now() / 1000);
 }
 
 // ─── Fetch one sub for one symbol ─────────────────────────────────────────
@@ -142,16 +214,14 @@ async function fetchSubredditMentions(
   const cached = cacheGet(symbol, sub);
   if (cached) return cached;
 
-  // Query both bare ticker and cashtag variants — Reddit's search does
-  // not implicitly unify them. `restrict_sr=on` scopes to the sub.
   const params = new URLSearchParams({
     q: `${symbol} OR $${symbol}`,
     sort: "new",
     restrict_sr: "on",
-    limit: String(Math.min(limit * 2, 50)), // overfetch — we'll filter junk client-side
+    limit: String(Math.min(limit * 2, 50)),
     t: "month",
   });
-  const url = `https://www.reddit.com/r/${encodeURIComponent(sub)}/search.json?${params}`;
+  const url = `https://www.reddit.com/r/${encodeURIComponent(sub)}/search.rss?${params}`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -160,48 +230,67 @@ async function fetchSubredditMentions(
     const res = await fetch(url, {
       headers: {
         "User-Agent": USER_AGENT,
-        Accept: "application/json",
+        Accept: "application/atom+xml, application/xml, text/xml",
       },
       signal: controller.signal,
     });
     if (!res.ok) {
-      // 429: rate limited; 403: blocked sub; 5xx: Reddit being Reddit.
-      log.warn({ sub, symbol, status: res.status }, "Reddit fetch non-OK");
+      log.warn({ sub, symbol, status: res.status }, "Reddit RSS fetch non-OK");
       return [];
     }
-    const json = (await res.json()) as RedditJsonResponse;
-    const children = json.data?.children ?? [];
+    const text = await res.text();
+    const parsed = xmlParser.parse(text) as AtomFeed;
+    // The XMLParser is configured with `isArray: name => name === "entry"`,
+    // so feed.entry is always an array — but TS can't infer that. Coerce.
+    const rawEntries = parsed.feed?.entry;
+    const entries: AtomEntry[] = Array.isArray(rawEntries)
+      ? rawEntries
+      : rawEntries
+        ? [rawEntries]
+        : [];
+
     const posts: RedditPost[] = [];
+    const symbolU = symbol.toUpperCase();
+    const tickerRe = new RegExp(`\\b\\$?${symbolU}\\b`, "i");
 
-    for (const c of children) {
-      if (c.kind !== "t3" || !c.data) continue;
-      const d = c.data;
-      if (d.stickied) continue;
+    for (const e of entries) {
+      const link = pickLink(e.link);
+      if (!link) continue;
+      const title = (e.title ?? "").trim();
+      if (!title) continue;
 
-      // Filter: title or self-text must actually contain the ticker.
-      // Reddit's search will sometimes return loose matches we don't want.
-      const titleU = d.title.toUpperCase();
-      const bodyU = (d.selftext ?? "").toUpperCase();
-      const symbolU = symbol.toUpperCase();
-      const mentioned =
-        new RegExp(`\\b\\$?${symbolU}\\b`).test(titleU) ||
-        new RegExp(`\\b\\$?${symbolU}\\b`).test(bodyU);
-      if (!mentioned) continue;
+      // Word-boundary filter: Reddit's search returns loose matches
+      // ("AAPL" search returning "AAPLE" posts). Title is primary;
+      // body is fallback (in case the ticker is only in body text).
+      const bodyText = htmlToText(extractContent(e.content));
+      if (!tickerRe.test(title) && !tickerRe.test(bodyText)) continue;
+
+      const idRaw = e.id ?? "";
+      // Reddit IDs come as "t3_xxxxx" in the feed entry id; the
+      // unprefixed form is more conventional for our store.
+      const id = idRaw.startsWith("t3_") ? idRaw.slice(3) : idRaw;
+      if (!id) continue;
+
+      const subreddit =
+        pickSubreddit(e.category) ?? sub.toLowerCase();
+      const authorRaw = e.author?.name ?? "";
+      // RSS author comes as "/u/username" — strip the prefix.
+      const author = authorRaw.replace(/^\/u\//, "");
 
       posts.push({
-        id: d.id,
-        subreddit: d.subreddit.toLowerCase(),
-        title: d.title,
-        excerpt: (d.selftext ?? "").slice(0, 280),
-        author: d.author,
-        permalink: d.permalink,
-        url: `https://www.reddit.com${d.permalink}`,
-        score: d.score,
-        numComments: d.num_comments,
-        createdUtc: d.created_utc,
-        flair: d.link_flair_text ?? null,
+        id,
+        subreddit,
+        title,
+        excerpt: bodyText.slice(0, 280),
+        author: author || "unknown",
+        url: link,
+        permalink: extractPermalink(link),
+        score: 0, // unavailable via RSS
+        numComments: 0, // unavailable via RSS
+        createdUtc: parseIso(e.published ?? e.updated),
+        flair: null,
         isStickied: false,
-        sentiment: scoreHeadline(d.title),
+        sentiment: scoreHeadline(title),
       });
     }
 
@@ -209,8 +298,7 @@ async function fetchSubredditMentions(
     return posts;
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown";
-    // AbortError on timeout is expected occasionally.
-    log.warn({ sub, symbol, err: message }, "Reddit fetch failed");
+    log.warn({ sub, symbol, err: message }, "Reddit RSS fetch failed");
     return [];
   } finally {
     clearTimeout(timeout);
@@ -222,14 +310,20 @@ async function fetchSubredditMentions(
 export interface GetMentionsOptions {
   /** Per-sub fetch cap before merge. Default 15. */
   perSubLimit?: number;
-  /** Drop posts with score < this. Default 5. Defends against ghost posts. */
+  /**
+   * @deprecated The RSS endpoint doesn't expose `score`, so this filter
+   * has no effect. Kept on the type for backwards-compatibility with the
+   * route's query-param plumbing. Will become functional again if we
+   * add the OAuth fallback path.
+   */
   minScore?: number;
 }
 
 /**
  * Pull mentions of `symbol` across `subreddits`. Subs are queried in
  * parallel via Promise.allSettled — one failing sub doesn't tank the
- * whole result. Posts are deduped by id, sorted by score desc.
+ * whole result. Posts are deduped by id, sorted by published time desc
+ * (newest first) — RSS doesn't expose score.
  */
 export async function getRedditMentions(
   symbol: string,
@@ -237,7 +331,6 @@ export async function getRedditMentions(
   opts: GetMentionsOptions = {}
 ): Promise<RedditFetchResult> {
   const perSubLimit = opts.perSubLimit ?? 15;
-  const minScore = opts.minScore ?? 5;
   const cleanSymbol = symbol.toUpperCase().trim();
   const cleanSubs = subreddits.map((s) => s.toLowerCase().trim()).filter(Boolean);
 
@@ -268,14 +361,14 @@ export async function getRedditMentions(
       return;
     }
     for (const post of r.value) {
-      if (post.score < minScore) continue;
       if (seen.has(post.id)) continue;
       seen.add(post.id);
       merged.push(post);
     }
   });
 
-  merged.sort((a, b) => b.score - a.score);
+  // Sort newest-first. (RSS has no score.)
+  merged.sort((a, b) => b.createdUtc - a.createdUtc);
 
   return {
     symbol: cleanSymbol,

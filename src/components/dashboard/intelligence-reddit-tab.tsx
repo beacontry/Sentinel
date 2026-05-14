@@ -182,14 +182,23 @@ export function IntelligenceRedditTab({ symbol }: IntelligenceRedditTabProps) {
             </p>
 
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-text-muted">
-              <span className="inline-flex items-center gap-1 font-mono">
-                <ArrowUpCircle className="w-3 h-3" />
-                {p.score}
-              </span>
-              <span className="inline-flex items-center gap-1 font-mono">
-                <MessagesSquare className="w-3 h-3" />
-                {p.numComments}
-              </span>
+              {/* Score + comment count are only populated when sourced
+                  from an OAuth-authenticated fetch. RSS (our default
+                  path on datacenter IPs) leaves them at 0 — hide the
+                  badges to avoid showing "0 upvotes / 0 comments" on
+                  every post. */}
+              {p.score > 0 && (
+                <span className="inline-flex items-center gap-1 font-mono">
+                  <ArrowUpCircle className="w-3 h-3" />
+                  {p.score}
+                </span>
+              )}
+              {p.numComments > 0 && (
+                <span className="inline-flex items-center gap-1 font-mono">
+                  <MessagesSquare className="w-3 h-3" />
+                  {p.numComments}
+                </span>
+              )}
               <span className="font-mono text-text-muted">u/{p.author}</span>
               {p.flair && (
                 <Badge variant="neutral" className="text-[9px] px-1.5 py-0">
