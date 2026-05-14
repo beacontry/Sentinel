@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sentinel Trading Engine — Ruleset</title>
+<title>Beacontry Trading Engine — Ruleset</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -529,9 +529,9 @@
 
   <!-- ===== HERO ===== -->
   <header class="hero">
-    <div class="hero-badge">Sentinel Engine &middot; v2 &middot; Pre-Live Hardening</div>
+    <div class="hero-badge">Beacontry Engine &middot; v2 &middot; Pre-Live Hardening</div>
     <h1>Trading Engine Ruleset</h1>
-    <p>How Sentinel scans the S&P 500, generates signals, enforces safety gates, and executes trades through Alpaca &mdash; with five circuit breakers, tamper-evident audit log, and personalized tax/PDT protections gating every live order.</p>
+    <p>How Beacontry scans the S&P 500, generates signals, enforces safety gates, and executes trades through Alpaca &mdash; with five circuit breakers, tamper-evident audit log, and personalized tax/PDT protections gating every live order.</p>
   </header>
 
   <!-- ===== TOC ===== -->
@@ -1461,7 +1461,7 @@
     </ul>
     <div class="callout warn">
       <span class="callout-icon">&#9888;</span>
-      <span><strong>Self-attestation only.</strong> Sentinel does not file or validate the election with the IRS. The election deadline is April 15 of the prior tax year (or as a new entity). Check the box only if you actually filed.</span>
+      <span><strong>Self-attestation only.</strong> Beacontry does not file or validate the election with the IRS. The election deadline is April 15 of the prior tax year (or as a new entity). Check the box only if you actually filed.</span>
     </div>
 
     <h3>Wash-Sale Protection</h3>
@@ -1494,7 +1494,7 @@
 
     <div class="callout info">
       <span class="callout-icon">&#8505;</span>
-      <span><strong>Note:</strong> Alpaca uses <em>previous business day's closing equity</em> for the actual PDT flag, not real-time. Sentinel treats <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">equity &lt; $25k</code> as vulnerable in real-time, which is intentionally more conservative.</span>
+      <span><strong>Note:</strong> Alpaca uses <em>previous business day's closing equity</em> for the actual PDT flag, not real-time. Beacontry treats <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">equity &lt; $25k</code> as vulnerable in real-time, which is intentionally more conservative.</span>
     </div>
   </section>
 
@@ -1619,7 +1619,7 @@ sudo podman run -d --name sentinel-app --network=host \
       <h2>AI Provider &amp; System Configuration</h2>
     </div>
 
-    <p>Every AI flow in Sentinel runs on <strong>Groq</strong> (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">llama-3.3-70b-versatile</code>): Insights page, Quick Insight widget, hybrid AI scoring layer, sentiment layer, filings chat, daily market digest cron, AI chat panel, and the Recent Trades <strong>AI &#x2728;</strong> trade-summary button. The <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">@anthropic-ai/sdk</code> dependency was removed in commit <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">0b2ef7e</code> once the lone Anthropic callsite (summarize-trade) was migrated. <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">CLAUDE_CONFIG</code> in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">src/lib/config.ts</code> remains the source of truth for <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.model</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.maxTokens</code> constants but no longer reads <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.apiKey</code>. All key resolution goes through <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getLlmApiKey()</code> in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">src/lib/system-config.ts</code>.</p>
+    <p>Every AI flow in Beacontry runs on <strong>Groq</strong> (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">llama-3.3-70b-versatile</code>): Insights page, Quick Insight widget, hybrid AI scoring layer, sentiment layer, filings chat, daily market digest cron, AI chat panel, and the Recent Trades <strong>AI &#x2728;</strong> trade-summary button. The <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">@anthropic-ai/sdk</code> dependency was removed in commit <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">0b2ef7e</code> once the lone Anthropic callsite (summarize-trade) was migrated. <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">CLAUDE_CONFIG</code> in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">src/lib/config.ts</code> remains the source of truth for <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.model</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.maxTokens</code> constants but no longer reads <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.apiKey</code>. All key resolution goes through <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getLlmApiKey()</code> in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">src/lib/system-config.ts</code>.</p>
 
     <h3>System Configuration table (migration 0030)</h3>
     <p>Encrypted server-wide secrets that admins can rotate from <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/dashboard/admin/system-config</code> without touching the droplet. Schema is just <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">(key TEXT PRIMARY KEY, value_encrypted TEXT, updated_by UUID, updated_at TIMESTAMPTZ)</code>. Values are AES-256-GCM ciphertext via <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">src/lib/crypto.ts</code> (no plaintext fallback). Allow-list of known keys enforced in code: <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">GROQ_API_KEY</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">FINNHUB_API_KEY</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">ANTHROPIC_API_KEY</code> &mdash; admins cannot silently overwrite arbitrary env vars from the UI.</p>
@@ -1751,7 +1751,7 @@ sudo podman run -d --name sentinel-app --network=host \
 
   <!-- ===== FOOTER ===== -->
   <footer class="footer">
-    <p><span class="brand">Sentinel</span> &mdash; Trading Intelligence Platform &middot; v2 Pre-Live Hardening + Adaptive Mode + Journal v2</p>
+    <p><span class="brand">Beacontry</span> &mdash; Trading Intelligence Platform &middot; v2 Pre-Live Hardening + Adaptive Mode + Journal v2</p>
     <p style="margin-top:4px">All rules enforced programmatically. Hash-chained audit on every privileged action. Five capital circuit breakers. Tax + PDT protections layered on every BUY. Scan re-entrancy guarded. AI: Groq-only.</p>
     <p style="margin-top:4px;color:var(--text-muted);font-size:0.85rem">Last revised: 2026-05-13 (Journal v2 phases 1-6, scan re-entrancy guard, getOrders abort, CSRF audit fixes, themes 5-up, resizable Analysis layout)</p>
   </footer>

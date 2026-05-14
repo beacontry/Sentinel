@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
           washSaleDisallowed: l.washSaleDisallowed,
         })),
         disclaimer:
-          "Self-attested. Sentinel computes FIFO realized gains + §1091 wash sale flags but is NOT a tax professional. Verify with your CPA before filing. Wash-sale rule is applied at symbol level only — substantially-identical ETF cross-matches (e.g. SPY↔IVV) NOT detected. §475(f) MTM-elected traders should disregard wash-sale flags (the engine respects MTM elsewhere; this report does not).",
+          "Self-attested. Beacontry computes FIFO realized gains + §1091 wash sale flags but is NOT a tax professional. Verify with your CPA before filing. Wash-sale rule is applied at symbol level only — substantially-identical ETF cross-matches (e.g. SPY↔IVV) NOT detected. §475(f) MTM-elected traders should disregard wash-sale flags (the engine respects MTM elsewhere; this report does not).",
       });
     }
 

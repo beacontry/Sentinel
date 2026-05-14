@@ -159,7 +159,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
             </div>
             <div>
               <h2 className="text-sm font-semibold text-text-primary">
-                Sentinel AI
+                Beacontry AI
               </h2>
               <p className="text-[10px] text-text-muted">
                 Trading research assistant

@@ -70,7 +70,7 @@ export default function MessagesPage() {
       <PageIntro
         eyebrow="Community"
         title="Messages"
-        description="Private one-on-one threads with other Sentinel users."
+        description="Private one-on-one threads with other Beacontry users."
         stats={[
           { label: "Threads", value: threads.length },
           { label: "Unread", value: totalUnread, tone: totalUnread > 0 ? "brand" : "neutral" },

@@ -45,7 +45,7 @@ export function WorkspacePreview({
           <Shield className="h-5 w-5" />
         </div>
         <div>
-          <div className="font-display text-2xl leading-none text-text-primary">Sentinel</div>
+          <div className="font-display text-2xl leading-none text-text-primary">Beacontry</div>
           <div className="mt-1 text-[11px] uppercase tracking-[0.08em] text-text-muted">
             Market Operating Desk
           </div>

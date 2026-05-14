@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sentinel — Platform Reference (Every Page & Feature)</title>
+<title>Beacontry — Platform Reference (Every Page & Feature)</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -225,8 +225,8 @@
   <!-- ===== HERO ===== -->
   <header class="hero">
     <span class="hero-badge">User Reference &middot; v1</span>
-    <h1>Sentinel Platform Reference</h1>
-    <p>Every page, every button, every feature in Sentinel — what it does, when to use it, and what to watch out for. This is the user-facing companion to <a href="engine-ruleset.html" style="color:var(--accent)">engine-ruleset.html</a> (which covers the trading engine internals).</p>
+    <h1>Beacontry Platform Reference</h1>
+    <p>Every page, every button, every feature in Beacontry — what it does, when to use it, and what to watch out for. This is the user-facing companion to <a href="engine-ruleset.html" style="color:var(--accent)">engine-ruleset.html</a> (which covers the trading engine internals).</p>
     <p class="hero-meta">Last revised 2026-05-12 &middot; 62 dashboard pages &middot; 15 widgets &middot; 8 shortcuts</p>
   </header>
 
@@ -632,7 +632,7 @@
 
     <div class="page-card" id="page-trader">
       <div class="page-card-head"><span class="page-name">Live Trader</span><span class="page-route">/dashboard/trader</span></div>
-      <p class="page-purpose">Engine controls + live positions + risk profile. The most important page in Sentinel.</p>
+      <p class="page-purpose">Engine controls + live positions + risk profile. The most important page in Beacontry.</p>
       <h4>Key UI surfaces</h4>
       <ul>
         <li><strong>Status banner</strong> — engine running/stopped, mode, current P&amp;L. Red <strong>LIVE</strong> badge when running on a live connection.</li>
@@ -878,7 +878,7 @@
         <li><strong>Tax Status card</strong> — self-attested Trader Tax Status + §475(f) MTM election. Same data as Trader page.</li>
         <li><strong>Personalized education links</strong> — guides ranked by your actual situation (harvestable losses → tax-loss harvesting guide; mixed gains → tax basics; etc.).</li>
       </ul>
-      <div class="gotcha"><strong>Self-attestation only:</strong> Sentinel does not file or validate your tax status. The MTM election checkbox is record-keeping. Talk to a CPA before claiming Trader Tax Status.</div>
+      <div class="gotcha"><strong>Self-attestation only:</strong> Beacontry does not file or validate your tax status. The MTM election checkbox is record-keeping. Talk to a CPA before claiming Trader Tax Status.</div>
     </div>
 
     <div class="page-card" id="page-tax">
@@ -927,7 +927,7 @@
 
     <div class="page-card" id="page-congress">
       <div class="page-card-head"><span class="page-name">Congress</span><span class="page-route">/dashboard/congress</span></div>
-      <p class="page-purpose">Federal Periodic Transaction Reports from Finnhub. Members of Congress are required to report trades within 45 days — Sentinel surfaces them filterable by ticker, member name, chamber, direction.</p>
+      <p class="page-purpose">Federal Periodic Transaction Reports from Finnhub. Members of Congress are required to report trades within 45 days — Beacontry surfaces them filterable by ticker, member name, chamber, direction.</p>
       <h4>Buttons &amp; controls</h4>
       <ul>
         <li><strong>Ticker filter</strong> — server-side query.</li>
@@ -1065,7 +1065,7 @@
 
     <div class="page-card" id="page-chat">
       <div class="page-card-head"><span class="page-name">AI Chat</span><span class="page-route">/dashboard/chat</span></div>
-      <p class="page-purpose">Conversational market analysis with the Groq-powered assistant. Has access to current market context (news, signals, sectors) and the Sentinel education guides via RAG — every answer cites guide sections when relevant.</p>
+      <p class="page-purpose">Conversational market analysis with the Groq-powered assistant. Has access to current market context (news, signals, sectors) and the Beacontry education guides via RAG — every answer cites guide sections when relevant.</p>
     </div>
 
     <div class="page-card" id="page-settings">
@@ -1180,7 +1180,7 @@
       <h2>Internal terms</h2>
     </div>
 
-    <p>Sentinel-specific or trading-specific terms that appear throughout the UI and these docs.</p>
+    <p>Beacontry-specific or trading-specific terms that appear throughout the UI and these docs.</p>
 
     <div class="concept">
       <div class="concept-title">Boot equity</div>
@@ -1209,22 +1209,22 @@
 
     <div class="concept">
       <div class="concept-title">MTM (§475(f) Mark-to-Market)</div>
-      <p>An IRS election that lets active traders (1) treat trading gains/losses as ordinary income instead of capital gains, and (2) be exempt from wash-sale rules. Election must be made at year-start. Sentinel self-attestation drives wash-sale protection on/off — DOES NOT file or validate the election. Talk to a CPA.</p>
+      <p>An IRS election that lets active traders (1) treat trading gains/losses as ordinary income instead of capital gains, and (2) be exempt from wash-sale rules. Election must be made at year-start. Beacontry self-attestation drives wash-sale protection on/off — DOES NOT file or validate the election. Talk to a CPA.</p>
     </div>
 
     <div class="concept">
       <div class="concept-title">PDT (Pattern Day Trader)</div>
-      <p>FINRA rule: if equity &lt; $25k AND ≥4 day-trades in 5 business days, the broker locks the account. Sentinel auto-detects equity threshold, refuses to start intraday mode below $25k, blocks new BUYs at 3+ daytrades (one shy of the limit). SELLs are always allowed — exits override PDT.</p>
+      <p>FINRA rule: if equity &lt; $25k AND ≥4 day-trades in 5 business days, the broker locks the account. Beacontry auto-detects equity threshold, refuses to start intraday mode below $25k, blocks new BUYs at 3+ daytrades (one shy of the limit). SELLs are always allowed — exits override PDT.</p>
     </div>
 
     <div class="concept">
       <div class="concept-title">Wash sale</div>
-      <p>IRS §1091: selling at a loss and buying a "substantially identical" security within 30 days disallows the loss for tax purposes. Sentinel's wash-sale protection blocks BUYs on any symbol with a losing exit in the last 31 calendar days. Symbol-level, not lot-level — over-conservative but simpler. Disabled when MTM is elected.</p>
+      <p>IRS §1091: selling at a loss and buying a "substantially identical" security within 30 days disallows the loss for tax purposes. Beacontry's wash-sale protection blocks BUYs on any symbol with a losing exit in the last 31 calendar days. Symbol-level, not lot-level — over-conservative but simpler. Disabled when MTM is elected.</p>
     </div>
 
     <div class="concept">
       <div class="concept-title">Trailing stop (dynamic)</div>
-      <p>Stop-loss that tightens exponentially as profit grows. At entry: ~10% trail (disaster stop). At 30% profit: ~3.7% trail (locks in ~26%). At 50% profit: ~2.4% trail (locks in ~48%). Sentinel pushes the actual stop to the broker on every scan so it's enforced even if Sentinel crashes.</p>
+      <p>Stop-loss that tightens exponentially as profit grows. At entry: ~10% trail (disaster stop). At 30% profit: ~3.7% trail (locks in ~26%). At 50% profit: ~2.4% trail (locks in ~48%). Beacontry pushes the actual stop to the broker on every scan so it's enforced even if Beacontry crashes.</p>
     </div>
 
     <div class="concept">
@@ -1255,9 +1255,9 @@
 
   <!-- ===== FOOTER ===== -->
   <footer class="footer">
-    <p><span class="brand">Sentinel</span> &mdash; Platform Reference v1 &middot; 2026-05-13</p>
+    <p><span class="brand">Beacontry</span> &mdash; Platform Reference v1 &middot; 2026-05-13</p>
     <p style="margin-top:6px">Engine internals: <a href="engine-ruleset.html">engine-ruleset.html</a> &middot; Financial education: <a href="/dashboard/education">/dashboard/education</a></p>
-    <p style="margin-top:14px;font-size:0.78rem">This is a user reference for an authorized in-house deployment of Sentinel. Sentinel is not a registered investment adviser; nothing here is financial advice. AI summaries and signal evaluations are tools — final trading decisions are yours.</p>
+    <p style="margin-top:14px;font-size:0.78rem">This is a user reference for an authorized in-house deployment of Beacontry. Beacontry is not a registered investment adviser; nothing here is financial advice. AI summaries and signal evaluations are tools — final trading decisions are yours.</p>
   </footer>
 
 </div>

@@ -801,7 +801,7 @@ export default function SettingsPage() {
             </Button>
           </div>
           <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-text-secondary">
-            <strong className="text-warning">Self-attested — not a tax substitute.</strong> Sentinel computes FIFO
+            <strong className="text-warning">Self-attested — not a tax substitute.</strong> Beacontry computes FIFO
             lots + wash-sale flags. Wash-sale rule is applied at symbol level only — substantially-identical ETF
             cross-matches (SPY↔IVV) are NOT detected. If you elected §475(f) MTM, disregard the wash-sale column.
             Always review with a CPA before filing.

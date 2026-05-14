@@ -52,7 +52,7 @@ export async function GET(
         createdAt: list.createdAt,
         // Prefer the user's anonymous handle when they've set one — same
         // privacy preference they expressed for the leaderboard.
-        ownerName: owner?.displayName ?? owner?.name ?? "A Sentinel user",
+        ownerName: owner?.displayName ?? owner?.name ?? "A Beacontry user",
         symbols: items.map((i) => i.symbol),
       };
     });

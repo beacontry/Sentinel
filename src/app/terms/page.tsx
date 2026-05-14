@@ -7,7 +7,7 @@ import { Radar } from "lucide-react";
 import { TERMS_VERSION } from "@/lib/terms-version";
 
 export const metadata = {
-  title: "Terms of Service — Sentinel",
+  title: "Terms of Service — Beacontry",
 };
 
 export default function TermsPage() {
@@ -19,7 +19,7 @@ export default function TermsPage() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
               <Radar className="h-4 w-4" />
             </div>
-            <span className="font-semibold">Sentinel</span>
+            <span className="font-semibold">Beacontry</span>
           </Link>
           <Link
             href="/login"
@@ -39,11 +39,11 @@ export default function TermsPage() {
         </div>
 
         <section className="space-y-2">
-          <h2 className="text-base font-semibold text-text-primary">1. What Sentinel Is</h2>
+          <h2 className="text-base font-semibold text-text-primary">1. What Beacontry Is</h2>
           <p>
-            Sentinel is a software tool for analyzing markets, journaling trades, and
+            Beacontry is a software tool for analyzing markets, journaling trades, and
             (optionally) automating order placement through your own brokerage account.
-            Sentinel does not custody assets, hold funds, or execute trades on its own
+            Beacontry does not custody assets, hold funds, or execute trades on its own
             books — every order is placed through the brokerage API you configure
             (currently Alpaca, Tradier, or Interactive Brokers).
           </p>
@@ -53,10 +53,10 @@ export default function TermsPage() {
           <h2 className="text-base font-semibold text-text-primary">2. Not Financial Advice</h2>
           <p>
             Signals, AI-generated commentary, optimizer outputs, model portfolios,
-            backtest results, and any other information produced by Sentinel are
+            backtest results, and any other information produced by Beacontry are
             <strong className="text-text-primary"> for informational purposes only</strong>.
-            Nothing in Sentinel is investment advice, brokerage advice, legal advice,
-            tax advice, or a recommendation to buy or sell any security. Sentinel is
+            Nothing in Beacontry is investment advice, brokerage advice, legal advice,
+            tax advice, or a recommendation to buy or sell any security. Beacontry is
             not a registered investment adviser, broker-dealer, or financial planner.
           </p>
           <p>
@@ -70,12 +70,12 @@ export default function TermsPage() {
           <h2 className="text-base font-semibold text-text-primary">3. Account Security</h2>
           <p>
             You are responsible for keeping your login credentials, broker API keys,
-            and any device that accesses Sentinel secure. Broker API keys are encrypted
-            at rest in Sentinel&apos;s database, but if your account is compromised,
+            and any device that accesses Beacontry secure. Broker API keys are encrypted
+            at rest in Beacontry&apos;s database, but if your account is compromised,
             anyone with access can place orders on your linked brokerage.
           </p>
           <p>
-            Rotate API keys promptly if you suspect exposure. Sentinel will not be
+            Rotate API keys promptly if you suspect exposure. Beacontry will not be
             liable for losses resulting from compromised credentials, lost devices,
             or unauthorized access to your account.
           </p>
@@ -85,7 +85,7 @@ export default function TermsPage() {
           <h2 className="text-base font-semibold text-text-primary">4. Automated Trading</h2>
           <p>
             The trading engine places real orders on your broker when enabled in Live
-            mode. Sentinel implements multiple safeguards (position limits, daily-loss
+            mode. Beacontry implements multiple safeguards (position limits, daily-loss
             halts, broker-disconnect detection, wash-sale checks, PDT protection), but
             these safeguards are best-effort and not guaranteed.
           </p>
@@ -100,7 +100,7 @@ export default function TermsPage() {
         <section className="space-y-2">
           <h2 className="text-base font-semibold text-text-primary">5. AI Outputs</h2>
           <p>
-            Sentinel uses third-party AI services (Anthropic Claude) to summarize
+            Beacontry uses third-party AI services (Anthropic Claude) to summarize
             market data, score sentiment, and generate the daily digest. AI outputs
             can be inaccurate, hallucinated, biased, or outdated. Treat them as
             commentary, not facts. Verify anything material before acting on it.
@@ -110,9 +110,9 @@ export default function TermsPage() {
         <section className="space-y-2">
           <h2 className="text-base font-semibold text-text-primary">6. Service Availability</h2>
           <p>
-            Sentinel is provided &quot;as is.&quot; The service may be unavailable,
+            Beacontry is provided &quot;as is.&quot; The service may be unavailable,
             degraded, or interrupted for maintenance, infrastructure issues, or
-            upstream dependency outages. Sentinel will not be liable for losses or
+            upstream dependency outages. Beacontry will not be liable for losses or
             missed opportunities resulting from service downtime.
           </p>
         </section>
@@ -120,7 +120,7 @@ export default function TermsPage() {
         <section className="space-y-2">
           <h2 className="text-base font-semibold text-text-primary">7. Data Use</h2>
           <p>
-            Sentinel stores your account data (email, encrypted broker keys, watchlists,
+            Beacontry stores your account data (email, encrypted broker keys, watchlists,
             trade history, journal entries, alert rules) to provide the service. We do
             not sell user data. Audit logs of privileged actions are retained for
             security and dispute resolution.

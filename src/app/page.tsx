@@ -61,12 +61,12 @@ export default function LandingPage() {
 
   const terminalLines = [
     { type: "comment", text: "# Engine scan cycle — optimized mode" },
-    { type: "cmd", text: "sentinel scan --mode optimized --symbols sp500" },
+    { type: "cmd", text: "beacontry scan --mode optimized --symbols sp500" },
     { type: "info", text: "[*] 487 symbols scanned \u2022 3 qualifying signals \u2022 2 passed confidence gate" },
     { type: "warning", text: "[!] INTC: screener signal pushed \u2022 STRONG_BUY \u2022 volume +180% avg" },
-    { type: "cmd", text: "sentinel execute --symbol INTC --validate risk" },
+    { type: "cmd", text: "beacontry execute --symbol INTC --validate risk" },
     { type: "success", text: "[+] Risk check passed \u2022 position sized \u2022 order filled \u2022 trailing stop placed" },
-    { type: "cmd", text: "sentinel status --positions" },
+    { type: "cmd", text: "beacontry status --positions" },
     { type: "success", text: "[+] 15 positions tracked \u2022 all stops synced to broker \u2022 journal updated" },
   ];
 
@@ -93,7 +93,7 @@ export default function LandingPage() {
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ld-accent">
               <Shield className="h-4 w-4 text-white" />
             </div>
-            Sentinel
+            Beacontry
           </Link>
 
           <ul className="hidden items-center gap-6 md:flex">
@@ -155,7 +155,7 @@ export default function LandingPage() {
             </h1>
 
             <p className="mx-auto mt-5 max-w-[720px] text-[clamp(1rem,2vw,1.16rem)] leading-relaxed text-ld-text-secondary lg:mx-0">
-              Sentinel monitors the market, generates confidence-scored trading signals,
+              Beacontry monitors the market, generates confidence-scored trading signals,
               executes through your broker, and protects every position with adaptive
               risk management — fully automated.
             </p>
@@ -180,7 +180,7 @@ export default function LandingPage() {
 
           {/* Hero Card — checklist */}
           <aside className="animate-fade-in-up stagger-1 top-accent-line rounded-2xl border border-ld-border bg-ld-card p-8 shadow-[0_22px_60px_rgba(0,0,0,0.32)] transition-all duration-300 hover:-translate-y-1 hover:border-ld-accent/28 hover:shadow-[0_28px_80px_rgba(0,0,0,0.38)]">
-            <h3 className="text-lg font-bold">What Sentinel does</h3>
+            <h3 className="text-lg font-bold">What Beacontry does</h3>
             <p className="mt-3 text-[0.95rem] text-ld-text-secondary">
               A fully automated trading desk — from market scanning to order execution to
               risk management — with every trade logged for review.
@@ -282,7 +282,7 @@ export default function LandingPage() {
               <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
               <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
               <span className="h-3 w-3 rounded-full bg-[#28c840]" />
-              <span className="ml-2 font-mono text-xs text-ld-text-muted">sentinel@engine ~ optimized-mode</span>
+              <span className="ml-2 font-mono text-xs text-ld-text-muted">beacontry@engine ~ optimized-mode</span>
             </div>
             <div className="p-7 font-mono text-[0.82rem] leading-[1.85]">
               {terminalLines.map((line, i) => (
@@ -332,7 +332,7 @@ export default function LandingPage() {
             Your trading desk. Fully automated.
           </h2>
           <p className="mx-auto mt-4 max-w-[520px] text-lg leading-relaxed text-ld-text-secondary">
-            Connect your broker, choose a mode, and let Sentinel handle the rest.
+            Connect your broker, choose a mode, and let Beacontry handle the rest.
             Every trade logged. Every stop synced. Full control when you want it.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
@@ -350,7 +350,7 @@ export default function LandingPage() {
       <footer className="border-t border-ld-border bg-ld-deep">
         <div className="mx-auto flex max-w-[1280px] items-center justify-center px-4 py-6 lg:px-7">
           <div className="text-[0.88rem] text-ld-text-muted">
-            &copy; 2026 Sentinel. All rights reserved.
+            &copy; 2026 Beacontry. All rights reserved.
           </div>
         </div>
       </footer>

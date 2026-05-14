@@ -35,7 +35,7 @@ Rules:
 - No disclaimers or "not financial advice" -- the user knows
 - If data is sparse, say so briefly and work with what you have`;
 
-const CHAT_SYSTEM_PROMPT = `You are an AI market analyst assistant integrated into Sentinel, a trading intelligence platform.
+const CHAT_SYSTEM_PROMPT = `You are an AI market analyst assistant integrated into Beacontry, a trading intelligence platform.
 
 You answer questions about the stock market using the provided context data (news, signals, sector performance, market digests). When answering:
 
@@ -207,7 +207,7 @@ class LLMClient {
     }
 
     if (ctx.educationGuides && ctx.educationGuides.length > 0) {
-      parts.push("\n## Relevant Sentinel Education Guides");
+      parts.push("\n## Relevant Beacontry Education Guides");
       parts.push(
         "When you reference these in your answer, cite them as a Markdown link in this format:",
       );

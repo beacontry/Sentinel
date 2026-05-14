@@ -96,13 +96,13 @@ function RegisterForm() {
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
                 <Shield className="h-4 w-4" />
               </div>
-              <span className="text-xl font-semibold text-text-primary">Sentinel</span>
+              <span className="text-xl font-semibold text-text-primary">Beacontry</span>
             </Link>
           </div>
           <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
             <h1 className="text-xl font-semibold text-text-primary">Invite Required</h1>
             <p className="mt-2 text-sm text-text-secondary">
-              Sentinel is invite-only. If you have an invite link, please use it to register.
+              Beacontry is invite-only. If you have an invite link, please use it to register.
             </p>
             <p className="mt-4 text-center text-sm text-text-muted">
               Already have an account?{" "}
@@ -135,7 +135,7 @@ function RegisterForm() {
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
                 <Shield className="h-4 w-4" />
               </div>
-              <span className="text-xl font-semibold text-text-primary">Sentinel</span>
+              <span className="text-xl font-semibold text-text-primary">Beacontry</span>
             </Link>
           </div>
           <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
@@ -161,7 +161,7 @@ function RegisterForm() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
               <Shield className="h-4 w-4" />
             </div>
-            <span className="text-xl font-semibold text-text-primary">Sentinel</span>
+            <span className="text-xl font-semibold text-text-primary">Beacontry</span>
           </Link>
         </div>
 

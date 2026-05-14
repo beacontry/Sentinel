@@ -40,7 +40,7 @@ const log = createRouteLogger("reddit");
 // documented format is `<platform>:<app_id>:<version> (by /u/username)`.
 // We're not registered, so just send something descriptive.
 const USER_AGENT =
-  "Sentinel/1.0 (Trading Intelligence Platform; +https://sentinel.guardcybersolutionsllc.com)";
+  "Beacontry/1.0 (Trading Intelligence Platform; +https://beacontry.com)";
 
 export interface RedditPost {
   /** Reddit's `t3_xxxxxx` post id. Stable, used for dedup across subs. */

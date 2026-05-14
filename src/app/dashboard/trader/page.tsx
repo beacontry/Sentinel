@@ -499,7 +499,7 @@ export default function TraderPage() {
               </span>
             </label>
             <div className="text-xs text-text-muted mt-1">
-              Self-attested. MTM traders are exempt from §1091 wash-sale rule. Election deadline was Apr 15 of the prior tax year — Sentinel does not file or validate.
+              Self-attested. MTM traders are exempt from §1091 wash-sale rule. Election deadline was Apr 15 of the prior tax year — Beacontry does not file or validate.
             </div>
           </div>
           <div className="sm:border-l sm:border-border sm:pl-4 sm:min-w-[200px]">

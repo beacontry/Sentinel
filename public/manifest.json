@@ -1,6 +1,6 @@
 {
-  "name": "Sentinel Trading",
-  "short_name": "Sentinel",
+  "name": "Beacontry",
+  "short_name": "Beacontry",
   "description": "Trading intelligence platform — signals, analysis, and automated execution",
   "start_url": "/dashboard/trader",
   "display": "standalone",

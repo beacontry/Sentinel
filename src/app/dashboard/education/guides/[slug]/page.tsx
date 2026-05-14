@@ -41,7 +41,7 @@ export async function generateMetadata({
   const guide = getGuideBySlug(slug);
   if (!guide) return { title: "Guide not found" };
   return {
-    title: `${guide.title} — Sentinel`,
+    title: `${guide.title} — Beacontry`,
     description: guide.summary,
   };
 }
