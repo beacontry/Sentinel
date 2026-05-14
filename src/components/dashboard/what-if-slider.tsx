@@ -89,8 +89,9 @@ export function WhatIfSlider({
         <span className="text-bullish">TP: ${takeProfit}</span>
       </div>
 
-      {/* Results */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Results — all 4 stat tiles in one row on desktop (sm+ → 4-col),
+          fall back to 2x2 on narrow widths so the cells stay legible. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <StatCard
           label="Projected P/L"
           value={`${computed.pnl >= 0 ? "+" : ""}$${computed.pnl.toFixed(0)}`}
@@ -98,23 +99,20 @@ export function WhatIfSlider({
           tone={computed.pnl >= 0 ? "positive" : "negative"}
         />
         <StatCard
-          label="Win Probability"
+          label="Win Prob"
           value={`${computed.winProbability}%`}
-          subtext="dynamic estimate"
+          subtext="estimate"
           tone="positive"
         />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
         <StatCard
-          label="Risk Exposure"
+          label="Risk"
           value={computed.riskExposure}
-          subtext="based on simulated move"
+          subtext="simulated"
         />
         <StatCard
-          label="Capital Used"
+          label="Capital"
           value={`$${computed.allocatedCapital.toLocaleString()}`}
-          subtext={`${positionPct}% of portfolio`}
+          subtext={`${positionPct}%`}
         />
       </div>
 
