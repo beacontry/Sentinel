@@ -1010,6 +1010,42 @@ No database migrations. No deploy steps beyond the standard image rebuild.
 
 ---
 
+## 2026-05-14 — Reddit ticker-mention feed (community v1)
+
+First external community-data integration. Surfaces recent Reddit posts mentioning a watchlist ticker on the Analysis page → new **Reddit** intelligence tab. No auth required (public JSON at `reddit.com/r/{sub}/search.json` is generous on rate limit with a non-default User-Agent).
+
+### Admin-configurable subreddit list
+`reddit_subreddits` table (migration `0033`) is the source of truth for which subs get queried. Admins manage it from **`/dashboard/admin` → Reddit Feed Sources** card — add/toggle/reweight/delete, no code change required. Every mutation writes a hash-chained `REDDIT_SUBREDDIT_UPDATED` audit row.
+
+Columns:
+- `name` (lowercase canonical, unique via `LOWER(name)` functional index)
+- `display_name`, `description`
+- `weight` (numeric 0–2) — sentiment-aggregation weight; lets admins down-weight noisy subs (r/wallstreetbets seeded at 0.40) without removing them
+- `enabled` (soft-disable)
+
+Seeded with the standard finance set: r/stocks, r/investing, r/SecurityAnalysis, r/wallstreetbets.
+
+### Data flow
+- `src/lib/reddit.ts` — per-sub fetch with 5s timeout + `Promise.allSettled` (one bad sub doesn't tank the result), in-memory cache per `(symbol, sub)` 10-min TTL, word-boundary regex filter (rejects loose matches like "AAPLE" matching "AAPL"), score-min filter to drop ghost posts, dedup by post id. Uses existing `scoreHeadline()` from `src/lib/headline-sentiment.ts` for per-post sentiment label (same lexicon as News tab chips).
+- `src/app/api/reddit/[symbol]/route.ts` — GET, session-auth, `withTimeout(3000)` on the subreddit-list query, 5-min response cache. Degrades gracefully on Reddit fetch failure (returns 200 + `unavailable: true` empty shape — same pattern as social-sentiment + transcripts routes).
+- `src/app/api/admin/reddit-subreddits/route.ts` — GET / POST / PATCH / DELETE, admin-only via `requireAuthWithCsrf(request, ["admin"])`, audit-logged. Calls `clearRedditCache()` on every mutation so the user-facing feed sees changes on the very next request.
+
+### Surfaces
+- **Analysis → Reddit tab** (`src/components/dashboard/intelligence-reddit-tab.tsx`): post cards with subreddit · time-ago · score · comments · author · flair · sentiment badge · link-out. Empty-state copy directs users to admin page when no subs configured.
+- **Admin → Reddit Feed Sources** card (`src/components/admin/reddit-subreddits-card.tsx`): add form (name/weight/description) + table with editable weight + on/off toggle + delete. Optimistic toggle with revert-on-failure.
+
+### Not wired in (v1 product decision)
+Reddit sentiment is **NOT** fed into `src/lib/hybrid/sentiment-layer.ts` that the engine reads — purely user-facing intelligence for now. Re-evaluate after a few weeks of observing data quality + backtest evidence.
+
+### Apply on prod
+```bash
+scp drizzle/0033_reddit_subreddits.sql deploy@<host>:/tmp/
+ssh deploy@<host> "sudo -u postgres psql sentinel_db -v ON_ERROR_STOP=1 -f /tmp/0033_reddit_subreddits.sql"
+```
+Idempotent — `IF NOT EXISTS` on every CREATE, `ON CONFLICT DO NOTHING` on seed. No CSP change needed — Reddit fetches happen server-side.
+
+---
+
 ## Static HTML docs (served by Next.js public/)
 
 User-facing HTML documentation lives in **`public/docs/`** (not the repo-root `docs/` folder which holds markdown):

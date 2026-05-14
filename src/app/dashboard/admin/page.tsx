@@ -17,7 +17,8 @@ import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import Link from "next/link";
-import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw, AlertTriangle, BarChart3, Key, ArrowRight } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw, AlertTriangle, BarChart3, Key, ArrowRight, MessagesSquare } from "lucide-react";
+import { RedditSubredditsCard } from "@/components/admin/reddit-subreddits-card";
 
 interface User {
   id: string;
@@ -1013,6 +1014,15 @@ export default function AdminPage() {
             <p className="mt-3 text-sm text-bullish">{inviteSuccess}</p>
           )}
         </Card>
+      </div>
+
+      {/* ── Reddit Subreddits Section ── */}
+      <div className="pt-4">
+        <h2 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+          <MessagesSquare className="w-5 h-5 text-accent" />
+          Reddit Feed Sources
+        </h2>
+        <RedditSubredditsCard />
       </div>
 
       {/* Invite list */}
