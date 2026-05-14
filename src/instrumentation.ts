@@ -24,6 +24,18 @@ export async function register() {
         console.error("Engine boot failed:", err);
       }
 
+      // Clean up orphaned optimizer runs from the previous container.
+      // GA runs live in the Node process — when a deploy or crash kills
+      // the container mid-run, the DB row stays at status='optimizing'
+      // forever, blocking new runs. This sweep flips stale rows to
+      // 'failed' so the user can start fresh.
+      try {
+        const { cleanupOrphanedOptimizerRuns } = await import("./lib/optimizer-boot-cleanup");
+        await cleanupOrphanedOptimizerRuns();
+      } catch (err) {
+        console.error("Optimizer cleanup failed:", err);
+      }
+
       try {
         const { startScreenerScheduler } = await import("./lib/screener");
         startScreenerScheduler();

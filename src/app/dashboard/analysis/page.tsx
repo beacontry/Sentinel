@@ -46,10 +46,8 @@ import {
   X,
   Crosshair,
   RefreshCw,
-  Maximize2,
   Focus,
 } from "lucide-react";
-import { ChartFullscreenOverlay } from "@/components/ui/chart-fullscreen-overlay";
 
 const FOCUS_STORAGE_KEY = "sentinel-focus-mode";
 
@@ -120,11 +118,11 @@ function AnalysisCockpit() {
     }
   }
 
-  // Chart fullscreen / zoom mode — user request to be able to expand
-  // either Engine view or TradingView to fill the viewport. Pure client
-  // state; the chart components don't need to know they're inside an
-  // overlay vs. inside the normal split layout.
-  const [chartFullscreen, setChartFullscreen] = useState(false);
+  // Chart fullscreen was removed 2026-05-13 after it kept fighting the
+  // PanelGroup horizontal sizing. The Focus-mode toggle (sidebar
+  // collapse) covers most of the same use case. Replay + Backtest still
+  // have their own chart-fullscreen toggles — those work because
+  // neither uses react-resizable-panels.
 
   // Focus mode — collapses the left dashboard sidebar to maximize the
   // research workspace. Persists across visits via localStorage. The
@@ -693,29 +691,9 @@ function AnalysisCockpit() {
                             TradingView
                           </button>
                         </div>
-                        <button
-                          onClick={() => setChartFullscreen(true)}
-                          className="rounded-md border border-border bg-bg-secondary p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
-                          title="Expand chart to full screen (Esc to exit)"
-                          aria-label="Expand chart to full screen"
-                        >
-                          <Maximize2 className="w-3.5 h-3.5" />
-                        </button>
                       </div>
                     )}
-                    {/* Suppress the in-page chart while the fullscreen
-                     * overlay is open. Two simultaneous TradingView mounts
-                     * + body scroll-lock briefly changing viewport width
-                     * caused the in-page panel to desync (chart enormous,
-                     * watchlist squished). With this, only ONE chart
-                     * exists at a time. The placeholder div keeps the
-                     * flex layout intact so the panel doesn't collapse
-                     * during the overlay session. */}
-                    {chartFullscreen ? (
-                      <div className="flex-1 min-h-0 flex items-center justify-center rounded-lg border border-dashed border-border bg-bg-secondary">
-                        <p className="text-xs text-text-muted">Chart open in fullscreen — Esc to return</p>
-                      </div>
-                    ) : selectedSymbol && chartMode === "tradingview" ? (
+                    {selectedSymbol && chartMode === "tradingview" ? (
                       <div className="flex-1 min-h-0">
                         <TradingViewChart symbol={selectedSymbol} interval="D" height="fill" />
                       </div>
@@ -759,30 +737,6 @@ function AnalysisCockpit() {
         </div>
       </div>
 
-      {/* Chart fullscreen overlay — renders whichever chart engine is
-       * currently selected, taking over the full viewport. Esc or the
-       * Exit button closes. The chart components are aware of resizing
-       * (they use ResizeObserver / TradingView reflows on container
-       * size change) so they re-layout automatically. */}
-      <ChartFullscreenOverlay
-        open={chartFullscreen}
-        onClose={() => setChartFullscreen(false)}
-        title={selectedSymbol ? `${selectedSymbol} — ${chartMode === "tradingview" ? "TradingView" : "Engine view"}` : "Chart"}
-      >
-        {selectedSymbol && chartMode === "tradingview" ? (
-          <div className="w-full h-full">
-            <TradingViewChart symbol={selectedSymbol} interval="D" height="fill" />
-          </div>
-        ) : selectedAnalysis && selectedAnalysis.bars?.length > 0 ? (
-          <div className="w-full h-full p-3">
-            <PriceChart analysis={selectedAnalysis} height={undefined} events={chartEvents} />
-          </div>
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-text-muted">No chart data available</p>
-          </div>
-        )}
-      </ChartFullscreenOverlay>
     </div>
   );
 }
