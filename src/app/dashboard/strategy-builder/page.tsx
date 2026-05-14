@@ -214,9 +214,9 @@ export default function StrategyBuilderPage() {
               <CardTitle>Risk Management</CardTitle>
             </CardHeader>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Input label="Stop Loss %" type="number" value={String(stopLoss)} onChange={(e) => setStopLoss(parseFloat(e.target.value) || 0)} />
-              <Input label="Take Profit %" type="number" value={String(takeProfit)} onChange={(e) => setTakeProfit(parseFloat(e.target.value) || 0)} />
-              <Input label="Max Hold (days)" type="number" value={String(holdPeriod)} onChange={(e) => setHoldPeriod(parseInt(e.target.value) || 14)} />
+              <Input label="Stop Loss %" help="Closes the trade if it loses this much from entry. 8–12% typical for swing." type="number" value={String(stopLoss)} onChange={(e) => setStopLoss(parseFloat(e.target.value) || 0)} />
+              <Input label="Take Profit %" help="Closes the trade when up this much from entry. 15–25% common for swing strategies." type="number" value={String(takeProfit)} onChange={(e) => setTakeProfit(parseFloat(e.target.value) || 0)} />
+              <Input label="Max Hold (days)" help="Forces an exit after this many days even if no rule triggered. 14–20 days is typical for swing." type="number" value={String(holdPeriod)} onChange={(e) => setHoldPeriod(parseInt(e.target.value) || 14)} />
             </div>
           </Card>
         </div>

@@ -263,8 +263,12 @@ export default function TradePage({
       // Reset qty/notional but keep order type + side selection
       setQty("");
       setNotional("");
-    } catch {
-      toast.toast({ type: "error", message: "Order submission failed." });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "network error";
+      toast.toast({
+        type: "error",
+        message: `Order couldn't reach the broker (${msg}). Check your connection and retry.`,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -468,11 +472,12 @@ export default function TradePage({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Select
                 label="Order Type"
+                help="Market = fills immediately at the current price (best for liquid stocks). Limit = only fills at your price or better. Stop / Stop-Limit = triggers when a price level is hit (use for exits)."
                 options={[
-                  { value: "market", label: "Market" },
-                  { value: "limit", label: "Limit" },
-                  { value: "stop", label: "Stop" },
-                  { value: "stop_limit", label: "Stop-Limit" },
+                  { value: "market", label: "Market — fill now at current price" },
+                  { value: "limit", label: "Limit — only fill at my price or better" },
+                  { value: "stop", label: "Stop — trigger market order at a level" },
+                  { value: "stop_limit", label: "Stop-Limit — trigger limit order at a level" },
                 ]}
                 value={orderType}
                 onChange={(v) => setOrderType(v as OrderType)}
@@ -480,11 +485,12 @@ export default function TradePage({
               />
               <Select
                 label="Time-in-Force"
+                help="Day = expires at market close (safest default). GTC = stays open until filled or cancelled. IOC = fill what you can right now, cancel the rest. FOK = fill the entire order immediately or cancel."
                 options={[
-                  { value: "day", label: "Day" },
-                  { value: "gtc", label: "GTC (Good-till-Cancelled)" },
-                  { value: "ioc", label: "IOC (Immediate-or-Cancel)" },
-                  { value: "fok", label: "FOK (Fill-or-Kill)" },
+                  { value: "day", label: "Day — expires at market close" },
+                  { value: "gtc", label: "GTC — good until I cancel" },
+                  { value: "ioc", label: "IOC — fill what you can, cancel rest" },
+                  { value: "fok", label: "FOK — fill everything or nothing" },
                 ]}
                 value={tif}
                 onChange={(v) => setTif(v as TimeInForce)}
@@ -496,6 +502,7 @@ export default function TradePage({
             {(orderType === "limit" || orderType === "stop_limit") && (
               <Input
                 label="Limit Price"
+                help="The maximum you'll pay to buy (or minimum you'll accept to sell). The order sits in the order book until the market reaches your price."
                 type="number"
                 step="0.01"
                 min="0"
@@ -508,6 +515,7 @@ export default function TradePage({
             {(orderType === "stop" || orderType === "stop_limit") && (
               <Input
                 label="Stop Price"
+                help="The trigger price. Once the market touches this level, the order activates. Set BELOW current price for sells (stop-loss), ABOVE for buys (breakout entries)."
                 type="number"
                 step="0.01"
                 min="0"

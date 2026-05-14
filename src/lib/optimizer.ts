@@ -707,7 +707,14 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
 
     const barsMap = await fetchAllBars(universeSymbols, (fetched) => {
       progress.symbolsFetched = fetched;
-      db.update(optimizationRuns).set({ symbolsFetched: fetched }).where(eq(optimizationRuns.id, runId)).catch(() => {});
+      // Progress write is best-effort — a single failed update shouldn't
+      // kill the optimization, but we want to know if writes are failing
+      // systematically (the run will appear "stuck" in the UI).
+      db.update(optimizationRuns).set({ symbolsFetched: fetched }).where(eq(optimizationRuns.id, runId))
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.warn({ runId, err: msg }, "Failed to write optimizer progress (run continues)");
+        });
     });
     logger.info({ runId, symbolCount: barsMap.size }, "Data fetching complete");
 
@@ -876,7 +883,16 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     logger.error({ runId, err: msg }, "Optimization failed");
     progress.status = "failed";
-    await db.update(optimizationRuns).set({ status: "failed", error: msg, completedAt: new Date() }).where(eq(optimizationRuns.id, runId)).catch(() => {});
+    await db
+      .update(optimizationRuns)
+      .set({ status: "failed", error: msg, completedAt: new Date() })
+      .where(eq(optimizationRuns.id, runId))
+      .catch((dbErr) => {
+        // Already in the error-recovery path — log but don't re-throw,
+        // we're cleaning up after a primary failure.
+        const dbMsg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+        logger.error({ runId, dbErr: dbMsg, primaryErr: msg }, "Failed to mark optimizer run as failed (DB unreachable?)");
+      });
     setTimeout(() => g.__optimizerJobs!.delete(runId), 10 * 60 * 1000);
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { usePolling } from "@/hooks/usePolling";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -959,7 +960,14 @@ export default function TraderPage() {
             <CardTitle>Recent Signals</CardTitle>
           </CardHeader>
           {signals.length === 0 ? (
-            <p className="text-sm text-text-muted py-4 text-center">No signals yet</p>
+            <div className="py-8 text-center">
+              <p className="text-sm text-text-muted">No signals yet</p>
+              <p className="text-xs text-text-muted mt-1">
+                Signals appear here once the engine scans your watchlist. Start the engine above, or browse the{" "}
+                <Link href="/dashboard/screener" className="text-accent hover:underline">Screener</Link>{" "}
+                for ideas.
+              </p>
+            </div>
           ) : (
             <div className="space-y-2 max-h-[400px] overflow-y-auto">
               {signals.map((s) => (
@@ -986,7 +994,13 @@ export default function TraderPage() {
             <CardTitle>Recent Trades</CardTitle>
           </CardHeader>
           {trades.length === 0 ? (
-            <p className="text-sm text-text-muted py-4 text-center">No trades yet</p>
+            <div className="py-8 text-center">
+              <p className="text-sm text-text-muted">No trades yet</p>
+              <p className="text-xs text-text-muted mt-1">
+                Trades show here after the engine fires a BUY/SELL on a signal. New to this?{" "}
+                <Link href="/dashboard/education" className="text-accent hover:underline">Browse the Education hub →</Link>
+              </p>
+            </div>
           ) : (
             <div className="space-y-2 max-h-[500px] overflow-y-auto">
               {trades.map((t) => (
@@ -1095,17 +1109,60 @@ export default function TraderPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {([
-                { key: "accountSize", label: "Account Size ($)", placeholder: "Engine default: 10,000", step: "100" },
-                { key: "maxDailyLossPct", label: "Max Daily Loss (%)", placeholder: "Engine default: 2%", step: "0.1" },
-                { key: "maxDrawdownPct", label: "Max Drawdown (%)", placeholder: "Engine default: 10%", step: "0.5" },
-                { key: "maxPositionPct", label: "Max Position (%)", placeholder: "Engine default: 15%", step: "0.5" },
-                { key: "maxPositionSize", label: "Max Position Size (shares)", placeholder: "Engine default: 100", step: "1" },
-                { key: "maxSingleTradeLoss", label: "Max Single Trade Loss ($)", placeholder: "Engine default: 100", step: "10" },
-                { key: "maxExposureMultiplier", label: "Max Exposure (× equity)", placeholder: "Engine default: 1.5×", step: "0.1" },
-              ] as const).map(({ key, label, placeholder, step }) => (
+                {
+                  key: "accountSize",
+                  label: "Account Size ($)",
+                  placeholder: "Engine default: 10,000",
+                  step: "100",
+                  help: "Your starting capital. Drives position sizing — a $5K account with 10% max position takes $500 trades.",
+                },
+                {
+                  key: "maxDailyLossPct",
+                  label: "Max Daily Loss (%)",
+                  placeholder: "Engine default: 2%",
+                  step: "0.1",
+                  help: "Engine halts for the day if losses exceed this. 1–2% is conservative; >3% is aggressive.",
+                },
+                {
+                  key: "maxDrawdownPct",
+                  label: "Max Drawdown (%)",
+                  placeholder: "Engine default: 10%",
+                  step: "0.5",
+                  help: "How much your account can drop from peak before exposure rules kick in. Higher = tolerates bigger swings.",
+                },
+                {
+                  key: "maxPositionPct",
+                  label: "Max Position (%)",
+                  placeholder: "Engine default: 15%",
+                  step: "0.5",
+                  help: "Largest single trade as % of equity. 10–15% = diversified; 25%+ = concentrated. Live trading: keep ≤10%.",
+                },
+                {
+                  key: "maxPositionSize",
+                  label: "Max Position Size (shares)",
+                  placeholder: "Engine default: 100",
+                  step: "1",
+                  help: "Hard cap on shares per order. Prevents oversized fills on cheap stocks (e.g. a $1 stock with 10% position = 1000 shares without this).",
+                },
+                {
+                  key: "maxSingleTradeLoss",
+                  label: "Max Single Trade Loss ($)",
+                  placeholder: "Engine default: 100",
+                  step: "10",
+                  help: "Informational only — the engine sizes by % but you can use this as a sanity ceiling.",
+                },
+                {
+                  key: "maxExposureMultiplier",
+                  label: "Max Exposure (× equity)",
+                  placeholder: "Engine default: 1.5×",
+                  step: "0.1",
+                  help: "Sum of all open positions as a multiple of equity. 1.0× = no leverage, 1.5× = mild margin use. Stay ≤1.0× on a cash account.",
+                },
+              ] as const).map(({ key, label, placeholder, step, help }) => (
                 <div key={key}>
                   <Input
                     label={label}
+                    help={help}
                     type="number"
                     step={step}
                     min="0"

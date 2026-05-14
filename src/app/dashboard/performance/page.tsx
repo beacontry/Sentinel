@@ -107,9 +107,17 @@ export default function PerformancePage() {
           <h3 className="font-display text-lg font-semibold mb-2">
             No performance data yet
           </h3>
-          <p className="text-sm text-text-secondary max-w-sm mx-auto">
-            Run analyses and wait 24 hours for accuracy data to be collected.
+          <p className="text-sm text-text-secondary max-w-md mx-auto">
+            Performance shows accuracy of signals and trades you&apos;ve actually taken. Run the engine for a few sessions, or close manual trades, and stats appear here within 24 hours.
           </p>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <a
+              href="/dashboard/trader"
+              className="text-xs font-medium text-accent hover:underline"
+            >
+              Go to Trader →
+            </a>
+          </div>
         </div>
       </div>
     );

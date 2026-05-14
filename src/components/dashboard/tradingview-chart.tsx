@@ -56,7 +56,11 @@ export function TradingViewChart({
     // unconditionally and we don't want to accumulate them on remounts.
     containerRef.current.innerHTML = "";
 
-    const containerId = `tv-chart-${Math.random().toString(36).slice(2, 8)}`;
+    // crypto.randomUUID() is broadly available in modern browsers; the
+    // `crypto.` prefix avoids a name collision with the page-global
+    // `crypto` if any. We only need the first segment for a short DOM
+    // id — uniqueness within the document, not crypto-grade.
+    const containerId = `tv-chart-${crypto.randomUUID().slice(0, 8)}`;
     const inner = document.createElement("div");
     inner.id = containerId;
     inner.style.height = "100%";

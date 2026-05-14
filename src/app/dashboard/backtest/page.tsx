@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
@@ -220,8 +221,12 @@ export default function BacktestPage() {
     try {
       const res = await fetch(`/api/strategy-params/${encodeURIComponent(symbol)}?mode=auto`);
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error ?? "ATR computation failed");
+        const data = await res.json().catch(() => ({}));
+        setError(
+          data.error
+            ? `Auto-tune failed: ${data.error}`
+            : `Auto-tune failed (HTTP ${res.status}). The symbol may not have enough price history, or the data provider is unreachable.`
+        );
         return;
       }
       const data = await res.json();
@@ -230,8 +235,9 @@ export default function BacktestPage() {
       setTrailingStop(parseFloat((data.params.trailingStopPct * 100).toFixed(1)));
       setHoldPeriod(data.params.holdPeriod);
       setStrategySource(`ATR: $${data.atr.toFixed(2)} (${(data.atrPct * 100).toFixed(1)}% of price)`);
-    } catch {
-      setError("ATR computation failed");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "network error";
+      setError(`Auto-tune failed: ${msg}. Check your connection and retry.`);
     } finally {
       setAtrLoading(false);
     }
@@ -295,8 +301,12 @@ export default function BacktestPage() {
         }),
       });
       if (!res.ok) {
-        const data = await res.json();
-        setSaveError(data.error || "Save failed");
+        const data = await res.json().catch(() => ({}));
+        setSaveError(
+          data.error
+            ? `Couldn't save strategy: ${data.error}`
+            : `Couldn't save strategy (HTTP ${res.status}). Try again, or check if you're still signed in.`
+        );
         return;
       }
       const data = await res.json();
@@ -315,8 +325,9 @@ export default function BacktestPage() {
       setSaveName("");
       setSaveDesc("");
       await loadStrategies();
-    } catch {
-      setSaveError("Save failed");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "network error";
+      setSaveError(`Couldn't save strategy: ${msg}. Check your connection and retry.`);
     } finally {
       setSaveLoading(false);
     }
@@ -545,6 +556,7 @@ export default function BacktestPage() {
             )}
             <Input
               label="Hold Period (bars)"
+              help="Maximum bars to stay in a trade before timing out. 1 bar = 1 day for daily backtests. 20 bars ≈ 1 month — common for swing strategies."
               type="number"
               value={holdPeriod}
               onChange={(e) => { setHoldPeriod(Number(e.target.value)); setPreset("custom"); }}
@@ -570,6 +582,7 @@ export default function BacktestPage() {
             </div>
             <Input
               label="Stop Loss %"
+              help="Closes the trade if it loses this much from entry. 8–12% is typical for swing trades; 3–5% for tight day-trading."
               type="number"
               value={stopLoss}
               onChange={(e) => { setStopLoss(Number(e.target.value)); setPreset("custom"); }}
@@ -579,6 +592,7 @@ export default function BacktestPage() {
             />
             <Input
               label="Trail Stop %"
+              help="Trailing stop — ratchets up as the trade moves in your favor, locking in gains. Triggers when price drops this % from the peak."
               type="number"
               value={trailingStop}
               onChange={(e) => { setTrailingStop(Number(e.target.value)); setPreset("custom"); }}
@@ -588,6 +602,7 @@ export default function BacktestPage() {
             />
             <Input
               label="Take Profit %"
+              help="Closes the trade when it's up this much from entry. Higher = lets winners run, lower = locks in faster. 15–25% is common for swing."
               type="number"
               value={takeProfit}
               onChange={(e) => { setTakeProfit(Number(e.target.value)); setPreset("custom"); }}
@@ -596,14 +611,17 @@ export default function BacktestPage() {
               max={50}
             />
             <div className="flex items-end">
-              <Button
-                variant="outline"
-                onClick={handleAutoTune}
-                loading={atrLoading}
-                disabled={!symbol.trim()}
-              >
-                <Zap className="w-4 h-4" />
-              </Button>
+              <Tooltip content="Auto-tune stop/trail/take-profit using the symbol's recent volatility (ATR). Sets wider stops on volatile names, tighter stops on calm ones — usually a better starting point than fixed %s.">
+                <Button
+                  variant="outline"
+                  onClick={handleAutoTune}
+                  loading={atrLoading}
+                  disabled={!symbol.trim()}
+                  aria-label="Auto-tune from ATR"
+                >
+                  <Zap className="w-4 h-4" />
+                </Button>
+              </Tooltip>
             </div>
           </div>
           {/* Source indicator */}

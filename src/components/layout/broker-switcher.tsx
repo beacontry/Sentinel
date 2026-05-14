@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/components/ui/toast";
+import { usePolling } from "@/hooks/usePolling";
 
 interface BrokerConnection {
   id: string;
@@ -84,9 +85,12 @@ export function BrokerSwitcher() {
 
   useEffect(() => {
     fetchAll();
-    const interval = setInterval(fetchAll, POLL_MS);
-    return () => clearInterval(interval);
   }, [fetchAll]);
+
+  // usePolling pauses when the tab isn't visible, so this doesn't burn
+  // requests in background tabs — fixes a slow leak where every open
+  // dashboard tab was firing two requests every 15s for hours.
+  usePolling(fetchAll, POLL_MS);
 
   const active = connections.find((c) => c.isActive) ?? null;
 

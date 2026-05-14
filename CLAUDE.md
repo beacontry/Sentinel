@@ -949,6 +949,67 @@ Append to droplet crontab as `sn-deploy` (UTC):
 0 22 * * 0  curl -fsS -H "x-cron-secret: $CRON_SECRET" https://sentinel.guardcybersolutionsllc.com/api/cron/journal-weekly-review
 ```
 
+## 2026-05-13 (audit batch) — Beginner-friendliness + correctness sweep
+
+Multi-prong audit triggered by the user asking for "beginner-friendly" QoL fixes alongside a paranoid re-check of CSRF (which had regressed multiple times previously). Audit ran four parallel exploration agents covering CSRF, code-correctness, UX gaps, and design-system violations; findings consolidated into one commit batch.
+
+### CSRF (defensive, no known active exploit)
+- **`csrf-token` cookie now cleared on logout** (`src/app/api/auth/logout/route.ts`). Old token was lingering after logout; minor info-leak + the next session got 403s on the first mutating request until `/api/csrf` rotated.
+- **Trailing-slash normalization in `pathIsCsrfExempt()`** (`src/components/csrf-init.tsx`). A trailing `/` on an auth route (e.g. via a redirect chain or old proxy) would slip out of the exemption set and cause the patched fetch to inject a CSRF header on `/api/auth/login/`, which then 403s because login doesn't validate CSRF. Now stripped before set-lookup.
+
+### Code correctness
+- **`crypto.randomUUID()` replaces `Math.random()` for TradingView container ID** (`src/components/dashboard/tradingview-chart.tsx`). One genuine bug among the 9 `Math.random()` hits; the other 8 are inside the GA optimizer where pseudo-random is correct.
+- **`withTimeout(3000)` wrapper added to `GET /api/broker/connections`** (`src/app/api/broker/connections/route.ts`). Last unwrapped GET in the codebase; now returns 504 with `X-Query-Timeout: true` on statement-timeout instead of hanging.
+- **Silent `.catch(() => {})` → logged catches.** Two in `src/lib/optimizer.ts` (progress writes during long-running jobs) and two in `src/lib/notifications.ts` (push + email best-effort). Without logging, optimizer "stuck" states and Resend rate-limit hits were undebuggable. The remaining `.catch(() => null)` instances are intentional graceful degradation (e.g. quote fetch fallback) — left alone with comments.
+- **Raw `setInterval` → `usePolling` hook.** `src/components/layout/broker-switcher.tsx` (15s) and `src/app/dashboard/admin/page.tsx` (30s) were the last two raw intervals in the codebase. usePolling pauses on tab-hidden, eliminating background-tab traffic.
+
+### Beginner-friendly UX
+- **`<HelpTip>` + `<FieldLabel>` primitives** in `src/components/ui/help-tip.tsx`. Tiny `?` info circle that opens a Radix Tooltip with a one-line explanation. Built on top of the existing `<Tooltip>` and `<TooltipProvider>` (already mounted in dashboard layout).
+- **`<Input>` and `<Select>` now accept an optional `help` prop** that renders a HelpTip next to the label. Backward-compatible — fields without `help` look unchanged. Requires a TooltipProvider ancestor (dashboard layout) so don't set `help` on auth-page Inputs.
+- **Trader risk profile fields all have help text** (`src/app/dashboard/trader/page.tsx`). Each of the 7 risk-override fields (Account Size, Max Daily Loss %, Max Drawdown %, Max Position %, Max Position Size, Max Single Trade Loss, Max Exposure ×) shows a one-line explanation of the concept and typical values on hover.
+- **Manual Order ticket help text** (`src/app/dashboard/trade/[symbol]/page.tsx`). Order Type, Time-in-Force, Limit Price, Stop Price all have HelpTips. Dropdown option labels expanded to plain-English ("Market — fill now at current price", "Day — expires at market close").
+- **Backtest help text** (`src/app/dashboard/backtest/page.tsx`). Stop Loss %, Trail Stop %, Take Profit %, Hold Period each carry a HelpTip. Auto-tune (⚡) button now has a tooltip explaining ATR-based tuning.
+- **Strategy Builder help text** (`src/app/dashboard/strategy-builder/page.tsx`). Same treatment on Stop Loss / Take Profit / Max Hold.
+- **Empty states with CTAs.** Replaced raw "No X yet" with explanatory text + next-action links:
+  - Trader page: Recent Signals → links to Screener + Education hub; Recent Trades → links to Education
+  - Alerts page: "Create your first alert" button surfaces the create form; history shows what triggers look like
+  - Performance page: explains "stats appear within 24h of trading" + Trader page link
+  - Feed page: points to Analysis page for sharing a signal
+- **Generic error messages → actionable error messages.** "Save failed", "ATR computation failed", "Order submission failed" now include the underlying reason from the API error envelope (when present) plus a one-line nudge ("Check your connection and retry" / "Try again or check if you're still signed in").
+
+### Re-audit findings (post-change)
+- `tsc --noEmit` clean
+- `npx vitest run` — all 387 tests pass
+- `next build` crashed with `WasmHash._updateWithBuffer` on Node 24 — environmental webpack bug, not related to this change; CI runs Node 20 LTS where it doesn't reproduce
+- Lint warnings only on pre-existing unused vars; no new errors
+- CSRF spot-check: every `POST/PUT/PATCH/DELETE` route under `src/app/api/**/route.ts` (75 files) uses `requireAuthWithCsrf` or `validateTraderSecret` (trader-secret routes) or is in the documented exemption list (login/register/logout/pin-login/validate-invite). No new bypasses.
+
+### Files touched (commit batch)
+- `src/app/api/auth/logout/route.ts` — clear csrf cookie on logout
+- `src/components/csrf-init.tsx` — trailing-slash normalization
+- `src/components/dashboard/tradingview-chart.tsx` — crypto.randomUUID
+- `src/app/api/broker/connections/route.ts` — withTimeout + 504 path
+- `src/lib/optimizer.ts` — log progress-write failures
+- `src/lib/notifications.ts` — log push + email failures
+- `src/components/layout/broker-switcher.tsx` — usePolling
+- `src/app/dashboard/admin/page.tsx` — usePolling
+- `src/components/ui/help-tip.tsx` — NEW (HelpTip + FieldLabel)
+- `src/components/ui/input.tsx` — optional `help` prop
+- `src/components/ui/select.tsx` — optional `help` prop
+- `src/app/dashboard/trader/page.tsx` — risk profile help text + empty-state CTAs
+- `src/app/dashboard/trade/[symbol]/page.tsx` — order ticket help text + better order errors
+- `src/app/dashboard/backtest/page.tsx` — field help text + auto-tune tooltip + better errors
+- `src/app/dashboard/strategies/page.tsx` — better save/auto-tune errors
+- `src/app/dashboard/strategy-builder/page.tsx` — field help text
+- `src/app/dashboard/alerts/page.tsx` — empty-state CTAs
+- `src/app/dashboard/performance/page.tsx` — explanatory empty state
+- `src/app/dashboard/feed/page.tsx` — actionable empty state
+- `public/docs/sentinel-features.html` — note new help-text affordances
+
+No database migrations. No deploy steps beyond the standard image rebuild.
+
+---
+
 ## Static HTML docs (served by Next.js public/)
 
 User-facing HTML documentation lives in **`public/docs/`** (not the repo-root `docs/` folder which holds markdown):

@@ -2,7 +2,10 @@ import { db } from "./db";
 import { discordWebhooks, users } from "./db/schema";
 import { eq, and } from "drizzle-orm";
 import { sendDiscordWebhook, signalStrengthValue } from "./discord";
+import { createRouteLogger } from "./logger";
 import type { AnalysisResult } from "@/types";
+
+const logger = createRouteLogger("notifications");
 
 interface NotificationPayload {
   title: string;
@@ -46,15 +49,22 @@ export async function sendNotification(
     }
   }
 
-  // Push notifications (if configured)
+  // Push notifications (if configured). Best-effort — push relies on
+  // browser subscriptions that can expire; one user's stale subscription
+  // shouldn't break the notify pipeline for everyone else.
   try {
     const { sendPushToUser } = await import("./push");
-    await sendPushToUser(userId, payload).catch(() => {});
-  } catch {
-    // Push module may not be available
+    await sendPushToUser(userId, payload).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ userId, err: msg }, "Push notification failed (subscription expired?)");
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn({ userId, err: msg }, "Push module unavailable — skipping push");
   }
 
-  // Email (if configured)
+  // Email (if configured). Same best-effort policy — Resend rate limits,
+  // bounced addresses, or a missing API key shouldn't break the caller.
   try {
     const [user] = await db
       .select({ emailNotifications: users.emailNotifications, notificationEmail: users.notificationEmail })
@@ -64,9 +74,13 @@ export async function sendNotification(
 
     if (user?.emailNotifications && user?.notificationEmail) {
       const { sendAlertEmail } = await import("./email");
-      await sendAlertEmail(user.notificationEmail, payload.title, payload.body).catch(() => {});
+      await sendAlertEmail(user.notificationEmail, payload.title, payload.body).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.warn({ userId, err: msg }, "Email notification failed");
+      });
     }
-  } catch {
-    // Email module may not be available or columns don't exist yet
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn({ userId, err: msg }, "Email path failed — skipping email");
   }
 }

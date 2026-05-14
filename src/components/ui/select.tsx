@@ -2,6 +2,7 @@
 
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { ChevronDown, Check } from "lucide-react";
+import { HelpTip } from "./help-tip";
 
 interface SelectOption {
   value: string;
@@ -19,6 +20,12 @@ interface SelectProps {
   className?: string;
   id?: string;
   name?: string;
+  /**
+   * Optional beginner-friendly help text rendered next to the label.
+   * Requires a `<TooltipProvider>` ancestor (mounted in dashboard
+   * layout). See Input component for the same pattern.
+   */
+  help?: string;
 }
 
 export function Select({
@@ -32,18 +39,22 @@ export function Select({
   className = "",
   id,
   name,
+  help,
 }: SelectProps) {
   const selectId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
 
   return (
     <div className={`space-y-1.5 ${className}`}>
       {label && (
-        <label
-          htmlFor={selectId}
-          className="block text-xs font-medium text-text-secondary"
-        >
-          {label}
-        </label>
+        <div className="flex items-center gap-1.5">
+          <label
+            htmlFor={selectId}
+            className="block text-xs font-medium text-text-secondary"
+          >
+            {label}
+          </label>
+          {help && <HelpTip>{help}</HelpTip>}
+        </div>
       )}
       <SelectPrimitive.Root value={value} onValueChange={onChange} disabled={disabled} name={name}>
         <SelectPrimitive.Trigger

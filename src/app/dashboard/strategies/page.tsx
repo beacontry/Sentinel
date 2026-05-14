@@ -86,8 +86,12 @@ export default function StrategiesPage() {
     try {
       const res = await fetch(`/api/strategy-params/${encodeURIComponent(symbol.toUpperCase())}?mode=auto`);
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error ?? "ATR computation failed");
+        const data = await res.json().catch(() => ({}));
+        setError(
+          data.error
+            ? `Auto-tune failed: ${data.error}`
+            : `Auto-tune failed (HTTP ${res.status}). The symbol may not have enough price history.`
+        );
         return;
       }
       const data = await res.json();
@@ -97,8 +101,9 @@ export default function StrategiesPage() {
       setHoldPeriod(data.params.holdPeriod);
       setAtrTuned(true);
       setLastAtr(data.atr);
-    } catch {
-      setError("ATR computation failed");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "network error";
+      setError(`Auto-tune failed: ${msg}.`);
     } finally {
       setAtrLoading(false);
     }
@@ -128,15 +133,20 @@ export default function StrategiesPage() {
         }),
       });
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error ?? "Save failed");
+        const data = await res.json().catch(() => ({}));
+        setError(
+          data.error
+            ? `Couldn't save: ${data.error}`
+            : `Couldn't save (HTTP ${res.status}). Try again, or check if you're still signed in.`
+        );
         return;
       }
       setShowAdd(false);
       resetForm();
       await loadStrategies();
-    } catch {
-      setError("Save failed");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "network error";
+      setError(`Couldn't save: ${msg}.`);
     } finally {
       setSaving(false);
     }
