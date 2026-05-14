@@ -8,6 +8,7 @@ import { decrypt } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { rateLimit } from "@/lib/rate-limiter";
+import { checkTier } from "@/lib/tiers";
 import { z } from "zod";
 
 const commandSchema = z.object({
@@ -21,6 +22,11 @@ const log = createRouteLogger("trader-command");
 export async function POST(request: NextRequest) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+
+  // Trader tier or higher — engine command (flatten / risk update) is
+  // a paid-feature mutation. Returns 402 with upgrade payload if not.
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   let body: unknown;
   try {

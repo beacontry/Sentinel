@@ -36,6 +36,8 @@ export async function GET() {
           name: users.name,
           email: users.email,
           role: users.role,
+          tier: users.tier,
+          tierExpiresAt: users.tierExpiresAt,
           createdAt: users.createdAt,
         })
         .from(users)

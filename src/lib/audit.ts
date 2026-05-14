@@ -278,6 +278,10 @@ export const AuditAction = {
   // Reddit subreddit list (admin) — add/toggle/delete a sub that the
   // Reddit ticker-mention feed queries
   REDDIT_SUBREDDIT_UPDATED: "reddit_subreddit.updated",
+  // User tier (subscription plan) changes — admin manual grants in
+  // Phase 1, Stripe webhook in Phase 2. Always audit so we have a
+  // hash-chained trail of every tier transition.
+  USER_TIER_CHANGED: "user.tier_changed",
 } as const;
 
 export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];
