@@ -102,16 +102,7 @@ export default function LandingPage() {
     { num: "04", title: "Execute", desc: "Qualifying signals are executed through your connected broker with appropriate order types and stop placement." },
   ];
 
-  const terminalLines = [
-    { type: "comment", text: "# Engine scan cycle — optimized mode" },
-    { type: "cmd", text: "beacontry scan --mode optimized --symbols sp500" },
-    { type: "info", text: "[*] 487 symbols scanned \u2022 3 qualifying signals \u2022 2 passed confidence gate" },
-    { type: "warning", text: "[!] INTC: screener signal pushed \u2022 STRONG_BUY \u2022 volume +180% avg" },
-    { type: "cmd", text: "beacontry execute --symbol INTC --validate risk" },
-    { type: "success", text: "[+] Risk check passed \u2022 position sized \u2022 order filled \u2022 trailing stop placed" },
-    { type: "cmd", text: "beacontry status --positions" },
-    { type: "success", text: "[+] 15 positions tracked \u2022 all stops synced to broker \u2022 journal updated" },
-  ];
+  // (terminalLines + lineColor removed 2026-05-14 — terminal mock replaced by annotated equity-curve SVG)
 
   const platform = [
     { icon: LineChart, title: "Automated Trade Journal", desc: "Every trade logged with entry context, exit reason, and P&L. Performance analytics by symbol, strategy, and time period." },
@@ -119,13 +110,6 @@ export default function LandingPage() {
     { icon: Brain, title: "AI-Powered Analysis", desc: "Ask about any symbol — get technical positioning, fundamental context, and sentiment synthesized into one actionable response." },
   ];
 
-  const lineColor: Record<string, string> = {
-    comment: "text-ld-text-muted italic",
-    cmd: "text-ld-text",
-    info: "text-ld-accent",
-    warning: "text-ld-amber",
-    success: "text-ld-cyan",
-  };
 
   return (
     <div className="min-h-screen bg-ld-deep font-[family-name:var(--font-display)] text-ld-text">
@@ -319,21 +303,173 @@ export default function LandingPage() {
             ))}
           </div>
 
-          {/* Terminal */}
+          {/* Equity-curve mockup — replaces the older terminal mock.
+              Shows what the engine actually produces (a trending equity
+              curve with annotated trade events) instead of describing
+              it textually. Inline SVG so no chart-lib dependency. */}
           <div className="animate-fade-in-up stagger-1 overflow-hidden rounded-2xl border border-ld-border bg-[#0c0c14] shadow-[0_22px_60px_rgba(0,0,0,0.32)]">
-            <div className="flex items-center gap-2 border-b border-ld-border bg-ld-card px-4 py-3">
-              <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
-              <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
-              <span className="h-3 w-3 rounded-full bg-[#28c840]" />
-              <span className="ml-2 font-mono text-xs text-ld-text-muted">beacontry@engine ~ optimized-mode</span>
+            {/* Window chrome — kept consistent with the previous terminal look */}
+            <div className="flex items-center justify-between gap-2 border-b border-ld-border bg-ld-card px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+                <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+                <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+                <span className="ml-2 font-mono text-xs text-ld-text-muted">beacontry · 30-day equity</span>
+              </div>
+              <span className="font-mono text-[10px] text-ld-text-muted hidden sm:inline">demo</span>
             </div>
-            <div className="p-7 font-mono text-[0.82rem] leading-[1.85]">
-              {terminalLines.map((line, i) => (
-                <div key={i} className={lineColor[line.type]}>
-                  {line.type === "cmd" && <span className="text-ld-accent">$ </span>}
-                  {line.text}
-                </div>
-              ))}
+
+            {/* Stats strip — anchors the visual with real-looking numbers */}
+            <div className="grid grid-cols-3 border-b border-ld-border bg-ld-card/40 px-4 py-3 text-center">
+              <div>
+                <div className="font-mono text-[0.7rem] uppercase tracking-wider text-ld-text-muted">P/L</div>
+                <div className="font-mono text-base font-bold text-ld-green">+18.4%</div>
+              </div>
+              <div className="border-x border-ld-border">
+                <div className="font-mono text-[0.7rem] uppercase tracking-wider text-ld-text-muted">Win rate</div>
+                <div className="font-mono text-base font-bold text-ld-text">64%</div>
+              </div>
+              <div>
+                <div className="font-mono text-[0.7rem] uppercase tracking-wider text-ld-text-muted">Trades</div>
+                <div className="font-mono text-base font-bold text-ld-text">23</div>
+              </div>
+            </div>
+
+            {/* SVG chart — viewBox 600×360, scales to container width.
+                Equity curve drawn with a smooth cubic-bezier path that
+                trends up with realistic intra-period drawdowns. Four
+                annotation markers along the curve callout key trade
+                events (BUY signal, profit taken, stop hit, trail tighten). */}
+            <div className="p-4 pt-2">
+              <svg viewBox="0 0 600 360" className="w-full h-auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="30-day equity curve with annotated trade events">
+                <defs>
+                  {/* Gradient under the curve */}
+                  <linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="oklch(72% 0.17 165)" stopOpacity="0.32" />
+                    <stop offset="100%" stopColor="oklch(72% 0.17 165)" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+
+                {/* Grid lines (faint horizontal) */}
+                {[80, 140, 200, 260, 320].map((y) => (
+                  <line key={y} x1="40" x2="580" y1={y} y2={y}
+                    stroke="oklch(28% 0.015 165)" strokeWidth="0.5" strokeDasharray="3 3" />
+                ))}
+
+                {/* Y-axis labels (right side) */}
+                <g className="font-mono" style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace" }}>
+                  <text x="585" y="84"  fill="oklch(48% 0.01 165)">+20%</text>
+                  <text x="585" y="144" fill="oklch(48% 0.01 165)">+15%</text>
+                  <text x="585" y="204" fill="oklch(48% 0.01 165)">+10%</text>
+                  <text x="585" y="264" fill="oklch(48% 0.01 165)">+5%</text>
+                  <text x="585" y="324" fill="oklch(48% 0.01 165)">0%</text>
+                </g>
+
+                {/* X-axis labels (week markers) */}
+                <g className="font-mono" style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace" }}>
+                  <text x="60"  y="345" fill="oklch(48% 0.01 165)" textAnchor="middle">W1</text>
+                  <text x="180" y="345" fill="oklch(48% 0.01 165)" textAnchor="middle">W2</text>
+                  <text x="300" y="345" fill="oklch(48% 0.01 165)" textAnchor="middle">W3</text>
+                  <text x="420" y="345" fill="oklch(48% 0.01 165)" textAnchor="middle">W4</text>
+                  <text x="540" y="345" fill="oklch(48% 0.01 165)" textAnchor="middle">Today</text>
+                </g>
+
+                {/* Filled area under curve */}
+                <path
+                  d="M 40 320
+                     C 70 318, 100 314, 130 305
+                     C 160 296, 180 308, 200 295
+                     L 230 285
+                     C 260 282, 285 268, 310 255
+                     L 340 270
+                     C 370 258, 395 240, 420 222
+                     C 450 208, 480 195, 510 175
+                     L 540 162
+                     L 580 145
+                     L 580 320
+                     L 40 320 Z"
+                  fill="url(#equityFill)"
+                />
+
+                {/* Equity curve line — accent color, slight glow effect */}
+                <path
+                  d="M 40 320
+                     C 70 318, 100 314, 130 305
+                     C 160 296, 180 308, 200 295
+                     L 230 285
+                     C 260 282, 285 268, 310 255
+                     L 340 270
+                     C 370 258, 395 240, 420 222
+                     C 450 208, 480 195, 510 175
+                     L 540 162
+                     L 580 145"
+                  fill="none"
+                  stroke="oklch(72% 0.17 165)"
+                  strokeWidth="2.5"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+
+                {/* Annotation markers — small dots + callout labels */}
+                {/* Marker 1: BUY signal at W1.5 */}
+                <g>
+                  <circle cx="130" cy="305" r="4" fill="oklch(72% 0.17 165)" stroke="#0c0c14" strokeWidth="2" />
+                  <line x1="130" y1="305" x2="130" y2="80" stroke="oklch(60% 0.12 165)" strokeWidth="0.5" strokeDasharray="2 3" />
+                  <rect x="80" y="60" width="100" height="22" rx="4" fill="oklch(18% 0.014 165)" stroke="oklch(72% 0.17 165 / 0.4)" />
+                  <text x="130" y="75" fill="oklch(72% 0.17 165)" textAnchor="middle"
+                    style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                    BUY · INTC
+                  </text>
+                </g>
+
+                {/* Marker 2: Stop hit (drawdown point) at W2 */}
+                <g>
+                  <circle cx="200" cy="295" r="4" fill="oklch(68% 0.2 25)" stroke="#0c0c14" strokeWidth="2" />
+                  <line x1="200" y1="295" x2="200" y2="120" stroke="oklch(68% 0.2 25)" strokeWidth="0.5" strokeDasharray="2 3" opacity="0.5" />
+                  <rect x="160" y="100" width="80" height="22" rx="4" fill="oklch(18% 0.014 165)" stroke="oklch(68% 0.2 25 / 0.4)" />
+                  <text x="200" y="115" fill="oklch(68% 0.2 25)" textAnchor="middle"
+                    style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                    Stop -1.8%
+                  </text>
+                </g>
+
+                {/* Marker 3: Profit taken at W3 */}
+                <g>
+                  <circle cx="310" cy="255" r="4" fill="oklch(75% 0.18 150)" stroke="#0c0c14" strokeWidth="2" />
+                  <line x1="310" y1="255" x2="310" y2="170" stroke="oklch(75% 0.18 150)" strokeWidth="0.5" strokeDasharray="2 3" opacity="0.5" />
+                  <rect x="260" y="150" width="100" height="22" rx="4" fill="oklch(18% 0.014 165)" stroke="oklch(75% 0.18 150 / 0.4)" />
+                  <text x="310" y="165" fill="oklch(75% 0.18 150)" textAnchor="middle"
+                    style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                    AAPL +5.2%
+                  </text>
+                </g>
+
+                {/* Marker 4: Trail tighten at W4 */}
+                <g>
+                  <circle cx="420" cy="222" r="4" fill="oklch(78% 0.16 80)" stroke="#0c0c14" strokeWidth="2" />
+                  <line x1="420" y1="222" x2="420" y2="60" stroke="oklch(78% 0.16 80)" strokeWidth="0.5" strokeDasharray="2 3" opacity="0.5" />
+                  <rect x="370" y="40" width="100" height="22" rx="4" fill="oklch(18% 0.014 165)" stroke="oklch(78% 0.16 80 / 0.4)" />
+                  <text x="420" y="55" fill="oklch(78% 0.16 80)" textAnchor="middle"
+                    style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                    Trail ↑
+                  </text>
+                </g>
+
+                {/* Marker 5: Today (latest point) — slightly larger, pulses via class */}
+                <g>
+                  <circle cx="580" cy="145" r="6" fill="oklch(72% 0.17 165 / 0.2)" />
+                  <circle cx="580" cy="145" r="4" fill="oklch(72% 0.17 165)" stroke="#0c0c14" strokeWidth="2">
+                    <animate attributeName="r" values="4;5;4" dur="2s" repeatCount="indefinite" />
+                  </circle>
+                </g>
+              </svg>
+            </div>
+
+            {/* Caption */}
+            <div className="border-t border-ld-border px-4 py-3 text-center">
+              <p className="font-mono text-[10px] leading-relaxed text-ld-text-muted">
+                Illustrative — every signal logged, every stop synced to broker, every trade journaled.
+              </p>
             </div>
           </div>
         </div>
