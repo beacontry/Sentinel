@@ -18,6 +18,7 @@ import { useAi } from "@/components/ai/ai-provider";
 import { ThemePicker } from "@/components/theme-picker";
 import { BrokerSwitcher } from "./broker-switcher";
 import { PnlFormatToggle } from "./pnl-format-toggle";
+import { SidebarTierBadge } from "@/components/tiers/sidebar-tier-badge";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -104,6 +105,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Footer */}
             <div style={{ padding: "4px 10px 12px" }}>
+              <SidebarTierBadge />
               <div style={{ marginBottom: 6 }}>
                 <ThemePicker variant="sidebar" />
               </div>
@@ -223,6 +225,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </nav>
 
             <div style={{ padding: "4px 10px 12px" }}>
+              <SidebarTierBadge />
               <div style={{ marginBottom: 6 }}>
                 <ThemePicker variant="sidebar" />
               </div>
