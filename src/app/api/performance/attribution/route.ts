@@ -14,6 +14,7 @@ import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { traderTrades } from "@/lib/db/schema";
 import { and, eq, isNotNull, sql, inArray } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("attribution");
 
@@ -22,6 +23,8 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   try {
     const rows = await withTimeout(3000, async (tx) => {

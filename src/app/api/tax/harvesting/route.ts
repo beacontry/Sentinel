@@ -9,12 +9,15 @@ const log = createRouteLogger("tax-harvesting");
 import { suggestHarvesting, type TaxPosition } from "@/lib/tax-engine";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { getBrokerPositionCache } from "@/lib/trading-engine";
+import { checkTier } from "@/lib/tiers-server";
 
 export async function GET() {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   try {
     // Get user's portfolios

@@ -24,6 +24,7 @@ import { getMarketDataProvider } from "@/lib/market-data";
 import { runBacktest, type BacktestResult } from "@/lib/backtester";
 import type { EngineMode } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("backtest/mode-compare");
 
@@ -49,6 +50,8 @@ export async function GET(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   const url = request.nextUrl;
   const symbol = (url.searchParams.get("symbol") ?? "").toUpperCase();

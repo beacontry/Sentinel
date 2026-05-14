@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { optimizationRuns } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("save-preset");
 
@@ -14,8 +15,10 @@ const log = createRouteLogger("save-preset");
  * The engine and compare route read the active run first.
  */
 export async function POST(request: NextRequest) {
-  const auth = await requireAuthWithCsrf(request, ["admin"]);
+  const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   let body: Record<string, unknown>;
   try {

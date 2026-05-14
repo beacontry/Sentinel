@@ -11,6 +11,7 @@ import {
 } from "@/lib/tax-engine";
 import { toCSV } from "@/lib/csv";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("tax-form8949");
 
@@ -26,6 +27,8 @@ export async function GET(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   const searchParams = request.nextUrl.searchParams;
   const year = Number(searchParams.get("year")) || new Date().getFullYear();

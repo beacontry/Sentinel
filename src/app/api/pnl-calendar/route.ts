@@ -5,6 +5,7 @@ import { portfolios, portfolioTrades, traderDailyPnl } from "@/lib/db/schema";
 import { eq, sql, gte, and, desc, inArray } from "drizzle-orm";
 import type { PnlCalendarDay } from "@/types";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("pnl-calendar");
 
@@ -13,6 +14,8 @@ export async function GET(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   try {
     const { searchParams } = new URL(request.url);

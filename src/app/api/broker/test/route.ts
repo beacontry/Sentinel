@@ -3,12 +3,15 @@ import { requireAuthWithCsrf } from "@/lib/auth";
 import { testBrokerConnectionSchema } from "@/lib/validators";
 import { createBrokerClient, BrokerError } from "@/lib/brokers";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("broker-test");
 
 export async function POST(request: Request) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   let body: unknown;
   try {

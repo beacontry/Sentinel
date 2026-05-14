@@ -27,6 +27,7 @@ import { groqChat } from "@/lib/claude";
 import { getLlmApiKey } from "@/lib/system-config";
 import { createRouteLogger } from "@/lib/logger";
 import { z } from "zod";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("trader/summarize-trade");
 
@@ -38,6 +39,8 @@ const schema = z.object({
 export async function POST(request: NextRequest) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "premium");
+  if (tierFail) return tierFail;
 
   if (!(await getLlmApiKey())) {
     return NextResponse.json(

@@ -4,6 +4,7 @@ import { calculateRelativeStrength } from "@/lib/relative-strength";
 import { RS_CONFIG } from "@/lib/config";
 import { getAllSectors } from "@/lib/sectors";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("relative-strength");
 
@@ -12,6 +13,8 @@ export async function GET(request: Request) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   try {
     const { searchParams } = new URL(request.url);

@@ -4,6 +4,7 @@ import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { symbolStrategies } from "@/lib/db/schema";
 import { createSymbolStrategySchema, deleteSymbolStrategySchema } from "@/lib/validators";
 import { eq, and } from "drizzle-orm";
+import { checkTier } from "@/lib/tiers-server";
 
 export async function GET() {
   const session = await getSession();
@@ -35,6 +36,8 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   const body = await request.json();
   const parsed = createSymbolStrategySchema.safeParse(body);

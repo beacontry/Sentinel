@@ -8,6 +8,7 @@ import { decrypt } from "@/lib/crypto";
 import { getBrokerPositionCache, getTrackedPositionData } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 import { rateLimit } from "@/lib/rate-limiter";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("trader-dashboard");
 
@@ -16,6 +17,8 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   // Heavy aggregate query: cap to 30/min/user (above polling rate of one per ~10s).
   const limit = rateLimit(`trader-dashboard:${session.userId}`, 30, 60);

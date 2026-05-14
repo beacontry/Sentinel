@@ -4,6 +4,7 @@ import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { alertRules } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { checkTier } from "@/lib/tiers-server";
 
 const createAlertSchema = z.object({
   symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
@@ -57,6 +58,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   const body = await request.json();
   const parsed = createAlertSchema.safeParse(body);

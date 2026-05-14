@@ -4,6 +4,7 @@ import { getMarketDataProvider } from "@/lib/market-data";
 import { getPopularSymbolsBySector } from "@/lib/sectors";
 import { RSI } from "@/lib/indicators/rsi";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("breadth");
 
@@ -12,6 +13,8 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   try {
     const provider = getMarketDataProvider();

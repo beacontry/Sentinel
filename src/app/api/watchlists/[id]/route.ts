@@ -14,6 +14,7 @@ import { watchlists, watchlistItems } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { renameWatchlistSchema } from "@/lib/validators";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("watchlist-detail");
 
@@ -84,6 +85,8 @@ export async function PATCH(
 ) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   const { id } = await params;
   if (!UUID_RE.test(id)) {

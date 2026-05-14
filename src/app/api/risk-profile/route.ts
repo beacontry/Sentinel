@@ -5,6 +5,7 @@ import { userRiskProfiles } from "@/lib/db/schema";
 import { updateRiskProfileSchema } from "@/lib/validators";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { eq } from "drizzle-orm";
+import { checkTier } from "@/lib/tiers-server";
 
 export async function GET() {
   const session = await getSession();
@@ -37,6 +38,8 @@ export async function GET() {
 export async function PATCH(request: NextRequest) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   let body: unknown;
   try {

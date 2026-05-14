@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { createBrokerClient, BrokerError } from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("broker-account");
 
@@ -14,6 +15,8 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   try {
     // Find the user's active broker connection

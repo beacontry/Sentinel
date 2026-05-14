@@ -5,6 +5,7 @@ import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { optimizationRuns } from "@/lib/db/schema";
 import { eq, desc, count, and } from "drizzle-orm";
 import { z } from "zod";
+import { checkTier } from "@/lib/tiers-server";
 
 const startSchema = z.object({
   populationSize: z.number().int().min(10).max(100).default(30),
@@ -14,8 +15,10 @@ const startSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAuthWithCsrf(request, ["admin"]);
+  const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   const body = await request.json().catch(() => ({}));
   const parsed = startSchema.safeParse(body);

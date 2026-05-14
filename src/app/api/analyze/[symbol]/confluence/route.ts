@@ -5,6 +5,7 @@ import { analyzeHybrid } from "@/lib/hybrid";
 import type { ConfluenceResult } from "@/types";
 import type { SignalType } from "@/types";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("confluence");
 
@@ -32,6 +33,8 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   const { symbol } = await params;
   const upperSymbol = symbol.toUpperCase();
