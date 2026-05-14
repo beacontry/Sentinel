@@ -224,7 +224,8 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
         )}
       </div>
 
-      {/* Indicators snapshot */}
+      {/* Indicators snapshot — 3-column compact grid
+          (was 3 stacked rows; the row-form took ~150px, this is ~75px) */}
       <div className="px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2 mb-2">
           <BarChart3 className="w-3.5 h-3.5 text-accent" />
@@ -232,59 +233,59 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
             Indicators
           </p>
         </div>
-        <div className="grid grid-cols-1 gap-2">
+        <div className="grid grid-cols-3 gap-1.5">
           {/* RSI */}
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-bg-elevated">
-            <div className="flex items-center gap-2">
-              <Activity className="w-3.5 h-3.5 text-text-muted" />
-              <span className="text-xs text-text-secondary">RSI (14)</span>
+          <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
+            <div className="flex items-center gap-1 text-text-muted">
+              <Activity className="w-3 h-3" />
+              <span className="text-[10px]">RSI</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-medium">
-                {analysis.indicators.rsi_14?.toFixed(1) ?? "--"}
-              </span>
-              <span className={`text-[10px] font-medium ${rsiStatus.color}`}>
-                {rsiStatus.label}
-              </span>
-            </div>
+            <span className="font-mono text-sm font-medium">
+              {analysis.indicators.rsi_14?.toFixed(1) ?? "--"}
+            </span>
+            <span className={`text-[9px] font-medium ${rsiStatus.color}`}>
+              {rsiStatus.label}
+            </span>
           </div>
 
           {/* MACD */}
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-bg-elevated">
-            <div className="flex items-center gap-2">
-              <ArrowUpDown className="w-3.5 h-3.5 text-text-muted" />
-              <span className="text-xs text-text-secondary">MACD</span>
+          <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
+            <div className="flex items-center gap-1 text-text-muted">
+              <ArrowUpDown className="w-3 h-3" />
+              <span className="text-[10px]">MACD</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-medium">
-                {analysis.indicators.macd_line?.toFixed(3) ?? "--"}
-              </span>
-              <span className={`text-[10px] font-medium ${macdDir.color}`}>
-                {macdDir.label}
-              </span>
-            </div>
+            <span className="font-mono text-sm font-medium">
+              {analysis.indicators.macd_line?.toFixed(3) ?? "--"}
+            </span>
+            <span className={`text-[9px] font-medium ${macdDir.color}`}>
+              {macdDir.label}
+            </span>
           </div>
 
           {/* EMA Trend */}
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-bg-elevated">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
+            <div className="flex items-center gap-1 text-text-muted">
               {emaTrend.label === "Uptrend" ? (
-                <TrendingUp className="w-3.5 h-3.5 text-text-muted" />
+                <TrendingUp className="w-3 h-3" />
               ) : emaTrend.label === "Downtrend" ? (
-                <TrendingDown className="w-3.5 h-3.5 text-text-muted" />
+                <TrendingDown className="w-3 h-3" />
               ) : (
-                <Minus className="w-3.5 h-3.5 text-text-muted" />
+                <Minus className="w-3 h-3" />
               )}
-              <span className="text-xs text-text-secondary">EMA 9/21</span>
+              <span className="text-[10px]">EMA</span>
             </div>
-            <span className={`text-[10px] font-medium ${emaTrend.color}`}>
+            {/* No numeric value for EMA — show the trend twice would be
+                redundant. Render a dash so the row heights align across
+                all three tiles. */}
+            <span className="font-mono text-sm font-medium text-text-muted">--</span>
+            <span className={`text-[9px] font-medium ${emaTrend.color}`}>
               {emaTrend.label}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Risk Management */}
+      {/* Risk Management — 3-col tile layout to match indicators */}
       <div className="px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2 mb-2">
           <ShieldAlert className="w-3.5 h-3.5 text-accent" />
@@ -292,21 +293,21 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
             Risk
           </p>
         </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-muted">Stop Loss (2%)</span>
+        <div className="grid grid-cols-3 gap-1.5">
+          <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
+            <span className="text-[10px] text-text-muted">Stop (2%)</span>
             <span className="font-mono text-sm text-bearish">
               ${stopLoss.toFixed(2)}
             </span>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-text-muted">Take Profit (3%)</span>
+          <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
+            <span className="text-[10px] text-text-muted">Target (3%)</span>
             <span className="font-mono text-sm text-bullish">
               ${takeProfit.toFixed(2)}
             </span>
           </div>
-          <div className="flex items-center justify-between pt-1 border-t border-border">
-            <span className="text-xs text-text-muted">Risk / Reward</span>
+          <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
+            <span className="text-[10px] text-text-muted">R / R</span>
             <span className="font-mono text-sm font-medium text-text-primary">
               1 : {riskReward}
             </span>
@@ -314,36 +315,38 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
         </div>
       </div>
 
-      {/* Hybrid layers (sentiment, options flow, AI) */}
-      <div className="px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-2 mb-2">
-          <Sparkles className="w-3.5 h-3.5 text-accent" />
-          <p className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
-            Hybrid Layers
-          </p>
+      {/* Hybrid layers (sentiment, options flow, AI)
+       *
+       * Hide the whole section when there's nothing to actually show.
+       * Previously rendered placeholder "Sentiment: --" / "Options Flow: --"
+       * chips that took space without conveying info — when those data
+       * sources land in the engine pipeline, this block lights up
+       * automatically. */}
+      {(analysis.unusualVolume || analysis.fibonacci) && (
+        <div className="px-4 py-3 border-b border-border">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="w-3.5 h-3.5 text-accent" />
+            <p className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+              Hybrid Layers
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {analysis.unusualVolume && (
+              <Badge variant="warning" className="text-[10px]">
+                Unusual Volume{" "}
+                {analysis.volumeRatio
+                  ? `${analysis.volumeRatio.toFixed(1)}x`
+                  : ""}
+              </Badge>
+            )}
+            {analysis.fibonacci && (
+              <Badge variant="default" className="text-[10px]">
+                Fib Levels Active
+              </Badge>
+            )}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {analysis.unusualVolume && (
-            <Badge variant="warning" className="text-[10px]">
-              Unusual Volume{" "}
-              {analysis.volumeRatio
-                ? `${analysis.volumeRatio.toFixed(1)}x`
-                : ""}
-            </Badge>
-          )}
-          {analysis.fibonacci && (
-            <Badge variant="default" className="text-[10px]">
-              Fib Levels Active
-            </Badge>
-          )}
-          <Badge variant="neutral" className="text-[10px]">
-            Sentiment: --
-          </Badge>
-          <Badge variant="neutral" className="text-[10px]">
-            Options Flow: --
-          </Badge>
-        </div>
-      </div>
+      )}
 
       {/* What-If Simulation */}
       <div className="px-4 py-3 border-b border-border">
@@ -414,7 +417,14 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
 // ─── Market Context (collapsible) ───────────────────────────────────
 
 function MarketContextSection({ symbol }: { symbol: string }) {
-  const [expanded, setExpanded] = useState(true);
+  // Default collapsed. Contains analyst consensus + insider activity
+  // (often 5+ rows) + social buzz + related stocks; with the right panel
+  // already crowded by Signal DNA / indicators / risk / what-if / etc.,
+  // forcing this open by default pushed the panel ~500px taller than
+  // any other column, creating big dead spaces at the bottom of the
+  // watchlist + intelligence columns. Users who want the deeper data
+  // click to expand.
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="px-4 py-3">
