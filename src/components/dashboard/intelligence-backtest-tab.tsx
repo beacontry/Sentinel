@@ -5,12 +5,19 @@ import { Badge } from "../ui/badge";
 import { Skeleton } from "../ui/skeleton";
 import { TestTube, TrendingUp, TrendingDown } from "lucide-react";
 
+// Mirrors the shape returned by /api/backtest/[symbol] (= runBacktest in
+// src/lib/backtester.ts). Every numeric field is treated as possibly
+// undefined at render time — older cached responses, partial failures, or
+// an API contract drift would otherwise blow the whole Analysis page with
+// `undefined.toFixed()`. Defensive numeric formatting below guards every
+// site. Specifically: avgReturn was historically returned by the API but
+// is no longer in the BacktestResult shape — it's computed client-side
+// from `trades[].returnPct` instead.
 interface BacktestResult {
   symbol: string;
   totalTrades: number;
   winRate: number;
   totalReturn: number;
-  avgReturn: number;
   maxDrawdown: number;
   sharpeRatio: number | null;
   trades: Array<{
@@ -22,6 +29,16 @@ interface BacktestResult {
     signal: string;
     exitReason: string;
   }>;
+}
+
+function fmtPct(n: number | null | undefined, decimals = 2): string {
+  if (n == null || !Number.isFinite(n)) return "--";
+  return n.toFixed(decimals);
+}
+
+function fmtSigned(n: number | null | undefined, decimals = 2): string {
+  if (n == null || !Number.isFinite(n)) return "--";
+  return `${n >= 0 ? "+" : ""}${n.toFixed(decimals)}`;
 }
 
 interface IntelligenceBacktestTabProps {
@@ -97,7 +114,13 @@ export function IntelligenceBacktestTab({ symbol }: IntelligenceBacktestTabProps
     );
   }
 
-  const isPositiveReturn = result.totalReturn > 0;
+  const isPositiveReturn = (result.totalReturn ?? 0) > 0;
+  // avgReturn is no longer returned by the API — compute from trades.
+  const avgReturn =
+    result.trades && result.trades.length > 0
+      ? result.trades.reduce((s, t) => s + (t.returnPct ?? 0), 0) /
+        result.trades.length
+      : 0;
 
   return (
     <div className="space-y-4">
@@ -113,7 +136,7 @@ export function IntelligenceBacktestTab({ symbol }: IntelligenceBacktestTabProps
           variant={isPositiveReturn ? "bullish" : "bearish"}
           className="text-[10px] font-mono"
         >
-          {isPositiveReturn ? "+" : ""}{result.totalReturn.toFixed(2)}%
+          {fmtSigned(result.totalReturn)}%
         </Badge>
       </div>
 
@@ -121,40 +144,40 @@ export function IntelligenceBacktestTab({ symbol }: IntelligenceBacktestTabProps
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         <StatCard
           label="Total Trades"
-          value={`${result.totalTrades}`}
+          value={`${result.totalTrades ?? 0}`}
           valueClass="text-text-primary"
         />
         <StatCard
           label="Win Rate"
-          value={`${(result.winRate * 100).toFixed(1)}%`}
-          valueClass={result.winRate >= 0.5 ? "text-bullish" : "text-bearish"}
+          value={`${fmtPct((result.winRate ?? 0) * 100, 1)}%`}
+          valueClass={(result.winRate ?? 0) >= 0.5 ? "text-bullish" : "text-bearish"}
         />
         <StatCard
           label="Avg Return"
-          value={`${result.avgReturn >= 0 ? "+" : ""}${result.avgReturn.toFixed(2)}%`}
-          valueClass={result.avgReturn >= 0 ? "text-bullish" : "text-bearish"}
+          value={`${fmtSigned(avgReturn)}%`}
+          valueClass={avgReturn >= 0 ? "text-bullish" : "text-bearish"}
         />
         <StatCard
           label="Total Return"
-          value={`${isPositiveReturn ? "+" : ""}${result.totalReturn.toFixed(2)}%`}
+          value={`${fmtSigned(result.totalReturn)}%`}
           valueClass={isPositiveReturn ? "text-bullish" : "text-bearish"}
         />
         <StatCard
           label="Max Drawdown"
-          value={`${result.maxDrawdown.toFixed(2)}%`}
+          value={`${fmtPct(result.maxDrawdown)}%`}
           valueClass="text-bearish"
         />
-        {result.sharpeRatio !== null && (
+        {result.sharpeRatio != null && Number.isFinite(result.sharpeRatio) && (
           <StatCard
             label="Sharpe Ratio"
-            value={result.sharpeRatio.toFixed(2)}
+            value={fmtPct(result.sharpeRatio)}
             valueClass={result.sharpeRatio > 1 ? "text-bullish" : result.sharpeRatio > 0 ? "text-text-primary" : "text-bearish"}
           />
         )}
       </div>
 
       {/* Recent trades */}
-      {result.trades.length > 0 && (
+      {(result.trades?.length ?? 0) > 0 && (
         <div>
           <p className="text-[10px] text-text-muted uppercase tracking-wider mb-2">
             Recent Trades
@@ -166,7 +189,7 @@ export function IntelligenceBacktestTab({ symbol }: IntelligenceBacktestTabProps
                 className="flex items-center justify-between px-3 py-1.5 rounded bg-bg-elevated text-xs"
               >
                 <div className="flex items-center gap-2">
-                  {trade.returnPct >= 0 ? (
+                  {(trade.returnPct ?? 0) >= 0 ? (
                     <TrendingUp className="w-3 h-3 text-bullish" />
                   ) : (
                     <TrendingDown className="w-3 h-3 text-bearish" />
@@ -184,7 +207,7 @@ export function IntelligenceBacktestTab({ symbol }: IntelligenceBacktestTabProps
                       trade.returnPct >= 0 ? "text-bullish" : "text-bearish"
                     }`}
                   >
-                    {trade.returnPct >= 0 ? "+" : ""}{trade.returnPct.toFixed(2)}%
+                    {fmtSigned(trade.returnPct)}%
                   </span>
                   <span className="text-[9px] text-text-muted">
                     {trade.exitReason}
