@@ -275,6 +275,9 @@ export const AuditAction = {
   USER_PROFILE_UPDATED: "user.profile_updated",
   // System configuration (admin) — set/rotate encrypted server-wide keys
   SYSTEM_CONFIG_UPDATED: "system_config.updated",
+  // Reddit subreddit list (admin) — add/toggle/delete a sub that the
+  // Reddit ticker-mention feed queries
+  REDDIT_SUBREDDIT_UPDATED: "reddit_subreddit.updated",
 } as const;
 
 export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];

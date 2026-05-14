@@ -10,6 +10,7 @@ import { IntelligenceNewsTab } from "./intelligence-news-tab";
 import { IntelligenceBacktestTab } from "./intelligence-backtest-tab";
 import { IntelligenceIndicatorsTab } from "./intelligence-indicators-tab";
 import { IntelligenceTranscriptsTab } from "./intelligence-transcripts-tab";
+import { IntelligenceRedditTab } from "./intelligence-reddit-tab";
 
 const TABS = [
   { id: "indicators", label: "Indicators" },
@@ -17,6 +18,7 @@ const TABS = [
   { id: "news", label: "News" },
   { id: "insiders", label: "Insiders" },
   { id: "transcripts", label: "Calls" },
+  { id: "reddit", label: "Reddit" },
   { id: "backtest", label: "Backtest" },
 ];
 
@@ -70,6 +72,10 @@ export function IntelligenceTabs({ symbol, analysis }: IntelligenceTabsProps) {
 
         <TabPanel active={activeTab === "transcripts"}>
           <IntelligenceTranscriptsTab symbol={symbol} />
+        </TabPanel>
+
+        <TabPanel active={activeTab === "reddit"}>
+          <IntelligenceRedditTab symbol={symbol} />
         </TabPanel>
 
         <TabPanel active={activeTab === "backtest"}>
