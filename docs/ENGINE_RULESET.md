@@ -686,4 +686,20 @@ Migration `0029_engine_intelligence.sql` added three columns to `user_risk_profi
 
 See `public/docs/engine-ruleset.html` (web view of this doc, served at `/docs/engine-ruleset.html` on any deployment) for the same content in HTML form. Both files are intentionally kept in sync — edit one, mirror to the other.
 
-**Last revised:** 2026-05-12 (post-marathon doc sweep + Phase 8 adaptive mode).
+## Reliability fixes (2026-05-13)
+
+### Scan re-entrancy guard
+
+The scan scheduler previously used `setInterval(() => scanFn().catch())` with no re-entrancy guard. When a scan took longer than the tick interval (slow broker response, large universe), the next tick fired while the previous scan was still in flight. Both concurrent scans called `client.getOrders()` independently — and because Alpaca's orders endpoint has hundreds-of-ms eventual consistency, the second scan's `pendingBuySymbols` frequently missed the first scan's order. Result: both scans passed the duplicate-buy guard and placed identical limit orders sub-second apart. Reported as "two SNDK buys at the same price/qty/age."
+
+Fix: closure-local `scanInFlight` flag flipped before `scanFn()` and cleared in `.finally()`. Belt: 10-minute stale-flag watchdog overrides the flag if it somehow stayed set (process crash mid-promise) so a wedged engine self-recovers within two intraday ticks. Same guard applied to the 1-minute exit-check interval.
+
+### getOrders failure now aborts the scan
+
+Previously a silent `try { ... } catch {}` swallowed `getOrders()` errors. The scan continued with an empty `pendingBuySymbols` set — going blind on duplicate-order detection. Now all three BUY paths (`runScan`, `runTacticalScan`, `runTacticalSmartScan`) log a warning, push a user-visible error, and abort the BUY portion of the scan when getOrders fails. Exits + position-map sync already happened before that point, so abort is safe for stop-loss management.
+
+### Journal v2 hook in reconciler
+
+When `reconcilePendingTrades` transitions a row from PENDING to FILLED, it now also calls `createAutoJournalStub()` (fire-and-forget, never throws). Inserts a journal entry pre-filled with the trade mechanics (symbol, action, fill price, P&L, signal) plus leading questions ("Why am I taking this trade?" for entries, "What's the lesson?" for exits). Idempotent via the `journal_auto_trade_uniq` partial unique index (migration 0032). Blank-canvas friction removed for journaling.
+
+**Last revised:** 2026-05-13 (Journal v2 phases 1-6, scan re-entrancy guard, getOrders abort, CSRF audit fixes, themes 5-up, resizable Analysis layout).

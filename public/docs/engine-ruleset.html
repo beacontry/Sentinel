@@ -561,6 +561,7 @@
       <a href="#ai-provider" data-num="21">AI Provider &amp; System Config</a>
       <a href="#marathon" data-num="22">Marathon Updates (2026-05-12)</a>
       <a href="#adaptive" data-num="23">Adaptive Engine Mode (Phase 8)</a>
+      <a href="#reliability-2026-05-13" data-num="24">Reliability fixes (2026-05-13)</a>
     </div>
   </nav>
 
@@ -1730,11 +1731,29 @@ sudo podman run -d --name sentinel-app --network=host \
     <p>Live mode uses VIX + SPY + breadth (a full breadth scan = 50 stocks &times; N days, too expensive to replay historically). Backtest replays VIX + SPY only &mdash; the strong-risk-on &rarr; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">aggressive</code> bump simply doesn't fire in backtest. Defensible simplification.</p>
   </section>
 
+  <!-- ===== 2026-05-13 batch ===== -->
+  <section class="section" id="reliability-2026-05-13">
+    <div class="section-header">
+      <span class="section-num">24</span>
+      <h2>Reliability fixes (2026-05-13)</h2>
+    </div>
+
+    <h3>Scan re-entrancy guard</h3>
+    <p>The scan scheduler previously used a bare <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">setInterval(() =&gt; scanFn().catch())</code>. When a scan took longer than the tick interval (slow broker, large universe), the next tick fired while the previous scan was still in flight. Both concurrent scans called <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">client.getOrders()</code> independently &mdash; and because Alpaca's orders endpoint has hundreds-of-ms eventual consistency, the second scan's <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pendingBuySymbols</code> set frequently missed the first scan's order. Result: both scans passed the duplicate-buy guard and placed identical limit orders sub-second apart. User reported as "two SNDK buys at the same price/qty/age."</p>
+    <p>Fix: closure-local <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scanInFlight</code> flag flipped before <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scanFn()</code> and cleared in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.finally()</code>. <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.finally()</code> guarantees the flag clears even if scanFn throws. Belt: a 10-minute stale-flag watchdog overrides the flag if for some reason it stayed set (process crash mid-promise, runtime weirdness) so a wedged engine self-recovers within two intraday ticks. Same guard applied to the 1-minute exit-check interval.</p>
+
+    <h3>getOrders failure: now aborts scan</h3>
+    <p>Previously a <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">try { ... } catch {}</code> silently swallowed errors fetching open orders. The scan continued with an empty <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pendingBuySymbols</code> set &mdash; going blind on duplicate-order detection. Now all three BUY paths (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runScan</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runTacticalScan</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runTacticalSmartScan</code>) log a warning, push a user-visible error, and abort the BUY portion of the scan when getOrders fails. Exits + position-map sync already happened before the getOrders call, so the abort is safe for stop-loss management.</p>
+
+    <h3>Journal v2 hook in reconciler</h3>
+    <p>When <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">reconcilePendingTrades</code> transitions a row from PENDING to FILLED, it now also calls <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">createAutoJournalStub()</code> (fire-and-forget, never throws). Inserts a journal entry pre-filled with the trade mechanics (symbol, action, fill price, P&amp;L, signal) plus leading questions ("Why am I taking this trade?" for entries, "What's the lesson?" for exits). Idempotent via the <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">journal_auto_trade_uniq</code> partial unique index (migration 0032) &mdash; re-runs no-op. User opens the journal page and fills in the WHY; blank-canvas friction removed.</p>
+  </section>
+
   <!-- ===== FOOTER ===== -->
   <footer class="footer">
-    <p><span class="brand">Sentinel</span> &mdash; Trading Intelligence Platform &middot; v2 Pre-Live Hardening + Adaptive Mode</p>
-    <p style="margin-top:4px">All rules enforced programmatically. Hash-chained audit on every privileged action. Five capital circuit breakers. Tax + PDT protections layered on every BUY. AI: Groq-only.</p>
-    <p style="margin-top:4px;color:var(--text-muted);font-size:0.85rem">Last revised: 2026-05-12 (post-marathon doc sweep + Phase 8 adaptive mode)</p>
+    <p><span class="brand">Sentinel</span> &mdash; Trading Intelligence Platform &middot; v2 Pre-Live Hardening + Adaptive Mode + Journal v2</p>
+    <p style="margin-top:4px">All rules enforced programmatically. Hash-chained audit on every privileged action. Five capital circuit breakers. Tax + PDT protections layered on every BUY. Scan re-entrancy guarded. AI: Groq-only.</p>
+    <p style="margin-top:4px;color:var(--text-muted);font-size:0.85rem">Last revised: 2026-05-13 (Journal v2 phases 1-6, scan re-entrancy guard, getOrders abort, CSRF audit fixes, themes 5-up, resizable Analysis layout)</p>
   </footer>
 
 </div>
