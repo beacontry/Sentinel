@@ -26,3 +26,4 @@ export * from "./schema/dm";
 export * from "./schema/system-config";
 export * from "./schema/congressional-trades";
 export * from "./schema/reddit";
+export * from "./schema/waitlist";
