@@ -26,7 +26,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { AnalysisResult } from "@/types";
 import { SignalDetails } from "@/components/dashboard/signal-details";
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
+// react-resizable-panels removed 2026-05-13 — sweep edge cases got too
+// tangled with TradingView's widget lifecycle + body scroll-lock +
+// nested orientation. Plain CSS Grid covers the use case.
 import { PriceChart, type ChartEvent } from "@/components/dashboard/price-chart";
 import { TradingViewChart } from "@/components/dashboard/tradingview-chart";
 import { IntelligenceTabs } from "@/components/dashboard/intelligence-tabs";
@@ -555,26 +557,34 @@ function AnalysisCockpit() {
           </div>
         </div>
 
-        {/* ─── Desktop 3-column with manual resize ───
+        {/* ─── Desktop 3-column ───
          *
-         * Big restructure 2026-05-13:
-         *   - Removed the SignalFeed panel from the left column. Users
-         *     get signals on /screener (the dedicated page) — having
-         *     them on Analysis too was duplication and split attention.
-         *     Left column is now pure watchlist (more breathing room).
-         *   - Replaced fixed 18rem | flex | 26rem grid with
-         *     react-resizable-panels so users can drag handles between
-         *     columns AND between the chart + intelligence panels.
-         *   - Sizes persist per-device via autoSaveId on each PanelGroup.
-         *   - Charts now use height="fill" so they actually grow into
-         *     the resized panel space (the 520px hardcode left half the
-         *     screen blank).
+         * History note: 2026-05-13 morning shipped react-resizable-panels
+         * for manual resize between columns. Spent the afternoon
+         * debugging cascade issues with the PriceChart sizing + Mac
+         * scrollbar compensation + nested PanelGroup orientation. Real
+         * culprit turned out to be PriceChart's missing height style
+         * (separate fix). Reverted to plain CSS Grid here — same
+         * layout users already had pre-refactor, dramatically simpler,
+         * no v4-panels edge cases. If we want drag-to-resize later
+         * we'll revisit with explicit sizing on every nested level.
+         *
+         *   - Removed the SignalFeed panel (user picked Option A in the
+         *     redundancy discussion). Left column is pure watchlist.
+         *   - Charts use height='fill' so they grow into the column's
+         *     allocated space (the 520px hardcode left half the
+         *     screen blank — fixed in PriceChart and TradingViewChart).
          */}
-        <div className="hidden lg:block flex-1 min-h-0" style={{ height: "100%" }}>
-          <PanelGroup orientation="horizontal" id="analysis-cockpit-h" className="h-full">
-            {/* Left: Watchlist + add controls */}
-            <Panel defaultSize={20} minSize={14} maxSize={35} id="left">
-              <div className="flex h-full min-h-0 flex-col border-r border-border bg-bg-secondary">
+        <div
+          className="hidden lg:grid flex-1 min-h-0"
+          style={{
+            gridTemplateColumns: "18rem minmax(0,1fr) 26rem",
+            gridTemplateRows: "1fr",
+            height: "100%",
+          }}
+        >
+          {/* Left: Watchlist + add controls */}
+          <div className="flex min-h-0 flex-col border-r border-border bg-bg-secondary">
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <CockpitWatchlist
                     symbols={symbols}
@@ -662,15 +672,18 @@ function AnalysisCockpit() {
                     </div>
                   )}
                 </div>
-              </div>
-            </Panel>
-            <ResizeHandle direction="horizontal" />
+          </div>
 
-            {/* Center: chart + intelligence (vertical sub-split) */}
-            <Panel defaultSize={55} minSize={30} id="center">
-              <PanelGroup orientation="vertical" id="analysis-cockpit-v" className="h-full">
-                <Panel defaultSize={65} minSize={30} id="chart">
-                  <div className="h-full min-h-0 overflow-hidden p-3 flex flex-col">
+          {/* Center: chart (65%) + intelligence (35%) split */}
+          <div
+            className="min-w-0 min-h-0"
+            style={{
+              display: "grid",
+              gridTemplateRows: "65% 35%",
+              height: "100%",
+            }}
+          >
+            <div className="min-h-0 overflow-hidden p-3 flex flex-col">
                     {/* Chart engine toggle + fullscreen button */}
                     {selectedSymbol && (
                       <div className="flex items-center justify-end gap-2 mb-2">
@@ -738,25 +751,17 @@ function AnalysisCockpit() {
                         onAddSymbol={handleAddSymbol}
                       />
                     )}
-                  </div>
-                </Panel>
-                <ResizeHandle direction="vertical" />
-                <Panel defaultSize={35} minSize={15} id="intelligence">
-                  <div className="h-full min-h-0 overflow-hidden">
-                    <IntelligenceTabs symbol={selectedSymbol} analysis={selectedAnalysis} />
-                  </div>
-                </Panel>
-              </PanelGroup>
-            </Panel>
-            <ResizeHandle direction="horizontal" />
+            </div>
 
-            {/* Right: signal details */}
-            <Panel defaultSize={25} minSize={16} maxSize={40} id="right">
-              <div className="h-full min-h-0 overflow-y-auto border-l border-border bg-bg-secondary">
-                <SignalDetails analysis={selectedAnalysis} loading={isSelectedLoading} />
-              </div>
-            </Panel>
-          </PanelGroup>
+            <div className="min-h-0 overflow-hidden">
+              <IntelligenceTabs symbol={selectedSymbol} analysis={selectedAnalysis} />
+            </div>
+          </div>
+
+          {/* Right: signal details */}
+          <div className="min-h-0 overflow-y-auto border-l border-border bg-bg-secondary">
+            <SignalDetails analysis={selectedAnalysis} loading={isSelectedLoading} />
+          </div>
         </div>
       </div>
 
@@ -785,27 +790,6 @@ function AnalysisCockpit() {
         )}
       </ChartFullscreenOverlay>
     </div>
-  );
-}
-
-// ─── Resize handle ──────────────────────────────────────────────
-//
-// Draggable divider between panels. Thin (4px) by default so it doesn't
-// chew screen space; the cursor changes on hover and the line widens
-// slightly so the affordance is discoverable. Color uses the existing
-// border token so it disappears into the layout when at rest.
-
-function ResizeHandle({ direction }: { direction: "horizontal" | "vertical" }) {
-  const isHorizontal = direction === "horizontal";
-  return (
-    <PanelResizeHandle
-      className={
-        isHorizontal
-          ? "relative w-1 bg-border hover:bg-accent/60 transition-colors data-[resizing=true]:bg-accent"
-          : "relative h-1 bg-border hover:bg-accent/60 transition-colors data-[resizing=true]:bg-accent"
-      }
-      style={{ cursor: isHorizontal ? "col-resize" : "row-resize" }}
-    />
   );
 }
 
