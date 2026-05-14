@@ -50,6 +50,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${SITE}/articles`, lastModified: now, changeFrequency: "daily", priority: 0.7 },
     { url: `${SITE}/terms`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
     { url: `${SITE}/risk`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${SITE}/privacy`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
+    { url: `${SITE}/contact`, lastModified: now, changeFrequency: "yearly", priority: 0.4 },
   ];
 
   // One sitemap entry per guide. Use the guide's lastReviewed as the

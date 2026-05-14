@@ -124,8 +124,9 @@ export function PublicShell({ children, active }: PublicShellProps) {
             <Link href="/" className="hover:text-ld-text">Home</Link>
             <Link href="/pricing" className="hover:text-ld-text">Pricing</Link>
             <Link href="/terms" className="hover:text-ld-text">Terms</Link>
+            <Link href="/privacy" className="hover:text-ld-text">Privacy</Link>
             <Link href="/risk" className="hover:text-ld-text">Risk Disclosure</Link>
-            <a href="mailto:hello@beacontry.com" className="hover:text-ld-text">Contact</a>
+            <Link href="/contact" className="hover:text-ld-text">Contact</Link>
           </div>
           <div>&copy; 2026 Beacontry. All rights reserved.</div>
           <div className="text-[0.78rem]">

@@ -140,7 +140,12 @@ export default function RiskPage() {
         </section>
 
         <p className="pt-4 border-t border-border text-sm">
-          See also: <Link href="/terms" className="text-accent hover:text-accent-hover underline">Terms of Service</Link>
+          See also:{" "}
+          <Link href="/terms" className="text-accent hover:text-accent-hover underline">Terms of Service</Link>
+          {" "}·{" "}
+          <Link href="/privacy" className="text-accent hover:text-accent-hover underline">Privacy Policy</Link>
+          {" "}·{" "}
+          <Link href="/contact" className="text-accent hover:text-accent-hover underline">Contact</Link>
         </p>
       </main>
     </div>
