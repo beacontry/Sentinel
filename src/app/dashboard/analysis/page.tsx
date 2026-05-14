@@ -560,39 +560,45 @@ function AnalysisCockpit() {
         {/* ─── Desktop layout: chart on top, panels below ───
          *
          * 2026-05-13 evening: user wanted the chart promoted from the
-         * center column (cramped between watchlist and signal panel)
-         * to a full-width top row, with everything else underneath.
-         * Two-row grid:
+         * cramped center column to a full-width top section, with
+         * everything else underneath.
          *
-         *   Row 1 (60%):  ████████████ chart ████████████
-         *   Row 2 (40%):  [watchlist] [intelligence] [signal details]
+         *   ┌────────────────────────────────────────┐
+         *   │              CHART                     │  ← responsive height
+         *   ├──────────┬─────────────────┬───────────┤
+         *   │watchlist │  intelligence   │  details  │  ← grid row
+         *   └──────────┴─────────────────┴───────────┘
          *
-         * Earlier layout history: 2026-05-13 morning shipped
-         * react-resizable-panels, reverted same afternoon (PriceChart
-         * sizing chase). This is the third iteration of this page's
-         * layout in 24h, finally driven by an actual user-facing
-         * complaint ("look at all the empty space" → chart too narrow).
+         * First attempt used a 2-row grid with 60/40 percent heights.
+         * That dragged the chart row to monstrous heights (3+
+         * viewports) because the panel row has tall intrinsic content
+         * (signal details panel = full DNA + indicators + risk +
+         * hybrid layers), so the workspace stretched and the chart
+         * proportionally followed.
+         *
+         * Fix: ditch the grid-row split. Use two stacked sections.
+         * Chart gets a clamp() height tied to viewport so it
+         * never exceeds ~55vh on laptops, never goes below 380px on
+         * very short screens. Panels row gets its own bounded height.
          *
          *   - SignalFeed panel was removed earlier (user picked Option A).
-         *   - Charts use height='fill' so they grow into the row's
+         *   - Charts use height='fill' so they grow into the section's
          *     allocated space (PriceChart + TradingViewChart both honor it).
          */}
-        <div
-          className="hidden lg:grid flex-1 min-h-0"
-          style={{
-            gridTemplateColumns: "18rem minmax(0,1fr) 26rem",
-            gridTemplateRows: "minmax(0, 60%) minmax(0, 40%)",
-            gridTemplateAreas: `
-              "chart chart chart"
-              "watchlist intel details"
-            `,
-            height: "100%",
-          }}
-        >
-          {/* ───── Row 1: Chart spans all 3 columns ───── */}
+        <div className="hidden lg:flex flex-1 min-h-0 flex-col">
+          {/* ───── Section 1: Chart (full width, bounded height) ───── */}
           <div
-            className="min-w-0 min-h-0 overflow-hidden p-3 flex flex-col border-b border-border"
-            style={{ gridArea: "chart" }}
+            className="shrink-0 border-b border-border overflow-hidden p-3 flex flex-col"
+            style={{
+              // clamp(min, preferred, max):
+              //   - 340px floor: chart stays usable on shorter laptop screens
+              //   - 48vh preferred: leaves ~50vh of viewport for the panels
+              //     and the page header above; total page height stays close
+              //     to one viewport on standard 1080p/1440p displays
+              //   - 580px ceiling: on tall monitors, don't waste space on a
+              //     chart bigger than what fits a candlestick view nicely
+              height: "clamp(340px, 48vh, 580px)",
+            }}
           >
             {/* Chart engine toggle + fullscreen button */}
             {selectedSymbol && (
@@ -673,11 +679,24 @@ function AnalysisCockpit() {
             )}
           </div>
 
-          {/* ───── Row 2 — Left: Watchlist + add controls ───── */}
+          {/* ───── Section 2: Watchlist + Intelligence + Details ─────
+           *
+           * Three columns sharing whatever viewport height remains
+           * after the chart. `flex-1 min-h-0` lets the panels absorb
+           * the remainder. `min-h-[320px]` is the panel-minimum on
+           * very short screens (causes a small page scroll there,
+           * acceptable). Each child column manages its own internal
+           * overflow so the whole section never causes the page
+           * itself to scroll on standard ≥1080p displays.
+           */}
           <div
-            className="flex min-h-0 flex-col border-r border-border bg-bg-secondary"
-            style={{ gridArea: "watchlist" }}
+            className="grid flex-1 min-h-[320px]"
+            style={{
+              gridTemplateColumns: "18rem minmax(0,1fr) 26rem",
+            }}
           >
+          {/* Left: Watchlist + add controls */}
+          <div className="flex min-h-0 flex-col border-r border-border bg-bg-secondary">
                 {/* Add to watchlist (top) — moved here from the bottom
                  * 2026-05-13. Sits above the watchlist list so users
                  * don't have to scroll past everything to add a symbol.
@@ -777,20 +796,15 @@ function AnalysisCockpit() {
                 )}
           </div>
 
-          {/* ───── Row 2 — Center: Intelligence tabs ───── */}
-          <div
-            className="min-w-0 min-h-0 overflow-hidden"
-            style={{ gridArea: "intel" }}
-          >
+          {/* Center: Intelligence tabs */}
+          <div className="min-w-0 min-h-0 overflow-hidden">
             <IntelligenceTabs symbol={selectedSymbol} analysis={selectedAnalysis} />
           </div>
 
-          {/* ───── Row 2 — Right: Signal details ───── */}
-          <div
-            className="min-h-0 overflow-y-auto border-l border-border bg-bg-secondary"
-            style={{ gridArea: "details" }}
-          >
+          {/* Right: Signal details */}
+          <div className="min-h-0 overflow-y-auto border-l border-border bg-bg-secondary">
             <SignalDetails analysis={selectedAnalysis} loading={isSelectedLoading} />
+          </div>
           </div>
         </div>
       </div>
