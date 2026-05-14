@@ -518,10 +518,14 @@ export default function LandingPage() {
 
         <div className="mx-auto grid max-w-[1280px] items-stretch gap-5 px-4 sm:grid-cols-2 lg:grid-cols-4 lg:px-7">
           {/* Four-tier structure (2026-05-14):
-                Free        — research + education (no engine, no AI)
-                Trader $20  — full platform without AI (most popular)
-                Premium $45 — Trader + AI + future premium data
-                Open Source — self-hosted, BYO infra */}
+                Free            — research + education (no engine, no AI)
+                Trader $20      — full platform without AI (most popular)
+                Premium $45     — Trader + AI + future premium data
+                Self-Hosted     — source-available (FSL-1.1), BYO infra.
+                                  Renamed from "Open Source" 2026-05-14 —
+                                  FSL is technically "source-available"
+                                  until each commit auto-converts to
+                                  Apache 2.0 at 2 years. */}
           {[
             {
               name: "Free",
@@ -581,19 +585,19 @@ export default function LandingPage() {
               highlight: false,
             },
             {
-              name: "Open Source",
-              tag: "Self-host",
+              name: "Self-Hosted",
+              tag: "Source-available",
               price: "Free",
               cadence: "",
               annual: "Your data, your hardware",
               desc: "BYO Postgres + broker + API keys.",
               features: [
-                "Full source code (FSL-1.1)",
+                "Source code on GitHub (FSL-1.1)",
                 "Same engine, your control",
                 "BYO Finnhub + Groq + broker",
                 "No telemetry, no SaaS lock-in",
                 "Privacy-first deployments",
-                "No SLA, no hosted support",
+                "Auto-converts to Apache 2.0 after 2 years",
               ],
               cta: "View on GitHub",
               highlight: false,
@@ -635,14 +639,14 @@ export default function LandingPage() {
               </ul>
 
               <Link
-                href={tier.name === "Open Source" ? "https://github.com/beacontry/Sentinel" : "/register"}
+                href={tier.name === "Self-Hosted" ? "https://github.com/beacontry/Sentinel" : "/register"}
                 className={`mt-8 inline-flex items-center justify-center gap-2 rounded-[10px] px-5 py-3 text-[0.92rem] font-semibold transition-all duration-200 hover:-translate-y-0.5 ${
                   tier.highlight
                     ? "bg-ld-accent text-white hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]"
                     : "border border-ld-border text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06]"
                 }`}
               >
-                {tier.cta} {tier.name !== "Open Source" && <ArrowRight className="h-4 w-4" />}
+                {tier.cta} {tier.name !== "Self-Hosted" && <ArrowRight className="h-4 w-4" />}
               </Link>
             </article>
           ))}
@@ -671,8 +675,8 @@ export default function LandingPage() {
           {[
             {
               icon: GitBranch,
-              title: "Open source engine",
-              desc: "The signal pipeline, optimizer, and audit log are public code. Read what your engine actually does — line by line. No vendor lock-in, no algorithmic opacity.",
+              title: "Public source code",
+              desc: "The signal pipeline, optimizer, and audit log are source-available on GitHub under FSL-1.1 (auto-converts to Apache 2.0 after 2 years). Read what your engine actually does — line by line. No vendor lock-in, no algorithmic opacity.",
             },
             {
               icon: Lock,

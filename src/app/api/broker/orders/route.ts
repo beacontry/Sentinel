@@ -9,7 +9,7 @@ import { decrypt } from "@/lib/crypto";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
 import { peekEngineStatus } from "@/lib/trading-engine";
-import { checkTier } from "@/lib/tiers";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("broker-orders");
 

@@ -46,7 +46,11 @@ export default function PricingPage() {
   //                 adaptive mode, multi-broker, journal, tax, etc.)
   //   Premium $45 — Trader + AI assistant + future paid-data tier
   //                 (L2 / real-time SIP / dark pools shipping later)
-  //   Open Source — self-hosted under FSL-1.1, BYO everything.
+  //   Self-Hosted — source-available under FSL-1.1, BYO everything.
+  //                (Renamed from "Open Source" 2026-05-14 — FSL is
+  //                technically source-available, not OSI-approved
+  //                open source, until each commit auto-converts to
+  //                Apache 2.0 at 2 years.)
   const tiers = [
     {
       name: "Free",
@@ -112,20 +116,20 @@ export default function PricingPage() {
       highlight: false,
     },
     {
-      name: "Open Source",
-      tag: "Self-host",
+      name: "Self-Hosted",
+      tag: "Source-available",
       price: "Free",
       cadence: "",
       annual: "Your data, your hardware",
       desc: "BYO Postgres + broker + paid API keys.",
       features: [
-        "Full source code (FSL-1.1)",
+        "Source code on GitHub (FSL-1.1)",
         "Same engine, your control",
         "BYO Finnhub + Groq + broker keys",
         "No telemetry, no SaaS lock-in",
         "Privacy-first deployments",
         "Self-managed updates",
-        "No SLA, no hosted support",
+        "Auto-converts to Apache 2.0 after 2 years",
         "Community Discord access",
       ],
       cta: "View on GitHub",
@@ -406,7 +410,7 @@ export default function PricingPage() {
                     : "border border-ld-border text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06]"
                 }`}
               >
-                {tier.cta} {tier.name !== "Self-hosted" && <ArrowRight className="h-4 w-4" />}
+                {tier.cta} {tier.name !== "Self-Hosted" && <ArrowRight className="h-4 w-4" />}
               </Link>
             </article>
           ))}

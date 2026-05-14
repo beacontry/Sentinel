@@ -8,7 +8,7 @@ import { decrypt } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { rateLimit } from "@/lib/rate-limiter";
-import { checkTier } from "@/lib/tiers";
+import { checkTier } from "@/lib/tiers-server";
 import { z } from "zod";
 
 const commandSchema = z.object({

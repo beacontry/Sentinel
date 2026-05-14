@@ -10,7 +10,8 @@
 
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getUserTier, labelFor } from "@/lib/tiers";
+import { getUserTier } from "@/lib/tiers-server";
+import { labelFor } from "@/lib/tiers";
 
 export async function GET() {
   const session = await getSession();

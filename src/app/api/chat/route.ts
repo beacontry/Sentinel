@@ -9,7 +9,7 @@ import { chatMessageSchema } from "@/lib/validators";
 import { CLAUDE_CONFIG } from "@/lib/config";
 import { createRouteLogger } from "@/lib/logger";
 import { rateLimit } from "@/lib/rate-limiter";
-import { checkTier } from "@/lib/tiers";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("chat");
 
