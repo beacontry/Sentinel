@@ -19,7 +19,7 @@ export async function sendAlertEmail(
   body: string
 ): Promise<EmailResult> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM ?? "Sentinel <alerts@sentinel.app>";
+  const from = process.env.EMAIL_FROM ?? "Beacontry <hello@beacontry.com>";
 
   if (!apiKey) {
     log.info({ to, subject }, "Email not configured, would send");
@@ -36,7 +36,7 @@ export async function sendAlertEmail(
       body: JSON.stringify({
         from,
         to: [to],
-        subject: `Sentinel: ${subject}`,
+        subject: `Beacontry: ${subject}`,
         html: buildEmailHtml(subject, body),
       }),
     });
@@ -60,7 +60,7 @@ export async function sendInviteEmail(
   signupUrl: string
 ): Promise<EmailResult> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM ?? "Sentinel <alerts@sentinel.app>";
+  const from = process.env.EMAIL_FROM ?? "Beacontry <hello@beacontry.com>";
 
   if (!apiKey) {
     log.info({ to, signupUrl }, "Email not configured, would send invite");
@@ -77,7 +77,7 @@ export async function sendInviteEmail(
       body: JSON.stringify({
         from,
         to: [to],
-        subject: "You're invited to Sentinel",
+        subject: "You're invited to Beacontry",
         html: buildInviteEmailHtml(signupUrl),
       }),
     });
@@ -108,11 +108,11 @@ function buildInviteEmailHtml(signupUrl: string): string {
       <div style="max-width:600px;margin:0 auto;padding:40px 20px;">
         <div style="background:#111827;border-radius:12px;border:1px solid #1e293b;padding:32px;">
           <div style="margin-bottom:24px;">
-            <span style="color:#10b981;font-size:20px;font-weight:bold;">Sentinel</span>
+            <span style="color:#10b981;font-size:20px;font-weight:bold;">Beacontry</span>
           </div>
-          <h2 style="color:#f8fafc;margin:0 0 16px;font-size:18px;">You're invited to Sentinel</h2>
+          <h2 style="color:#f8fafc;margin:0 0 16px;font-size:18px;">You're invited to Beacontry</h2>
           <p style="color:#94a3b8;margin:0 0 24px;line-height:1.6;font-size:14px;">
-            You've been invited to join Sentinel, an automated trading intelligence platform.
+            You've been invited to join Beacontry, an automated trading intelligence platform.
             Click below to create your account. This invite expires in 7 days.
           </p>
           <a href="${signupUrl}"
@@ -143,7 +143,7 @@ function buildEmailHtml(subject: string, body: string): string {
       <div style="max-width:600px;margin:0 auto;padding:40px 20px;">
         <div style="background:#111827;border-radius:12px;border:1px solid #1e293b;padding:32px;">
           <div style="margin-bottom:24px;">
-            <span style="color:#3b82f6;font-size:20px;font-weight:bold;">Sentinel</span>
+            <span style="color:#3b82f6;font-size:20px;font-weight:bold;">Beacontry</span>
           </div>
           <h2 style="color:#f8fafc;margin:0 0 16px;font-size:18px;">${subject}</h2>
           <p style="color:#94a3b8;margin:0 0 24px;line-height:1.6;font-size:14px;">${body}</p>
@@ -154,7 +154,7 @@ function buildEmailHtml(subject: string, body: string): string {
           </a>
         </div>
         <p style="color:#64748b;font-size:12px;margin-top:16px;text-align:center;">
-          You're receiving this because you enabled email alerts in Sentinel.
+          You're receiving this because you enabled email alerts in Beacontry.
         </p>
       </div>
     </body>

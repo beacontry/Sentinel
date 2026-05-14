@@ -1,5 +1,8 @@
 // Bump CACHE_NAME on every change to force clients to drop stale caches.
-const CACHE_NAME = "sentinel-v2";
+// 2026-05-14: bumped to v3 alongside the Sentinel → Beacontry rebrand so
+// every existing user gets a fresh cache (their offline page still says
+// "Sentinel" until they reload at least once).
+const CACHE_NAME = "beacontry-v3";
 const STATIC_ASSETS = ["/dashboard/trader"];
 
 // Returned whenever both network and cache miss. Without this, the previous
@@ -21,7 +24,7 @@ function offlineFallback(request) {
   return new Response(
     "<!doctype html><meta charset=utf-8><title>Offline</title>" +
       "<style>body{font-family:system-ui;padding:40px;color:#aaa;background:#0a1112}</style>" +
-      "<h1>Offline</h1><p>Sentinel can't reach the server. Reconnect and reload.</p>",
+      "<h1>Offline</h1><p>Beacontry can't reach the server. Reconnect and reload.</p>",
     {
       status: 503,
       statusText: "Service Unavailable",

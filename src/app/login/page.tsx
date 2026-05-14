@@ -168,7 +168,7 @@ export default function LoginPage() {
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
                 <Shield className="h-4 w-4" />
               </div>
-              <span className="text-xl font-semibold text-text-primary">Sentinel</span>
+              <span className="text-xl font-semibold text-text-primary">Beacontry</span>
             </Link>
           </div>
 
@@ -236,7 +236,7 @@ export default function LoginPage() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
               <Shield className="h-4 w-4" />
             </div>
-            <span className="text-xl font-semibold text-text-primary">Sentinel</span>
+            <span className="text-xl font-semibold text-text-primary">Beacontry</span>
           </Link>
         </div>
 

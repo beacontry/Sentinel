@@ -205,7 +205,7 @@ export default function SupportTicketPage({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">
-                        {m.authorRole === "admin" ? "Sentinel team" : "You"}
+                        {m.authorRole === "admin" ? "Beacontry team" : "You"}
                       </span>
                       <span className="text-[11px] text-text-muted">{formatTimestamp(m.createdAt)}</span>
                     </div>

@@ -127,7 +127,7 @@ export function TaxStatusCard() {
         </div>
         <p className="mt-3 text-xs text-text-muted leading-relaxed flex items-start gap-1.5">
           <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-          Self-attested. Sentinel does not file or validate election with the
+          Self-attested. Beacontry does not file or validate election with the
           IRS — record-keeping only.{" "}
           <Link
             href="/dashboard/education/guides/trader-tax-status-and-mtm-election"
@@ -147,7 +147,7 @@ export function TaxStatusCard() {
           <div className="space-y-5 px-1">
             <div className="rounded-lg border border-warning/20 bg-warning/10 p-3 text-xs leading-relaxed text-text-secondary">
               <strong className="text-text-primary">Self-attestation only.</strong>{" "}
-              Sentinel records what you tell it but does not file Form 3115,
+              Beacontry records what you tell it but does not file Form 3115,
               attach the §475(f) election statement to your return, or validate
               your qualification for Trader Tax Status. Always work with a CPA
               familiar with trader tax issues (e.g., GreenTraderTax) before

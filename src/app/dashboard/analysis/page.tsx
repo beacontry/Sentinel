@@ -620,7 +620,7 @@ function AnalysisCockpit() {
                           ? "bg-bg-elevated text-text-primary"
                           : "text-text-muted hover:text-text-secondary"
                         }`}
-                      title="Sentinel's chart with signal/earnings markers"
+                      title="Beacontry's chart with signal/earnings markers"
                     >
                       Engine view
                     </button>

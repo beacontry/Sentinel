@@ -67,7 +67,7 @@ export function SafeguardsOnboardingModal() {
 
       <div className="px-6 pb-2 space-y-4">
         <p className="text-sm text-text-secondary">
-          Sentinel&apos;s trading engine has built-in safeguards to prevent runaway losses and regulatory mishaps.
+          Beacontry&apos;s trading engine has built-in safeguards to prevent runaway losses and regulatory mishaps.
           They&apos;re always on, even in paper mode. If you ever see an order rejected or the engine auto-halt,
           one of these is the reason — not a bug.
         </p>
@@ -91,7 +91,7 @@ export function SafeguardsOnboardingModal() {
         </div>
 
         <p className="text-xs text-text-muted">
-          Self-attested. Sentinel is not a registered broker-dealer or investment advisor. You are responsible for your
+          Self-attested. Beacontry is not a registered broker-dealer or investment advisor. You are responsible for your
           own trades, tax reporting, and compliance.
         </p>
       </div>

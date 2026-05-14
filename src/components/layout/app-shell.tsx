@@ -64,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Radar className="h-4 w-4" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Sentinel</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Beacontry</div>
                   <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>Trading Intelligence</div>
                 </div>
               </Link>
@@ -184,7 +184,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Radar className="h-4 w-4" />
                 </div>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Sentinel</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>Beacontry</div>
                   <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>Trading Intelligence</div>
                 </div>
               </Link>

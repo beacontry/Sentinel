@@ -7,7 +7,7 @@ import { Radar, AlertTriangle } from "lucide-react";
 import { TERMS_VERSION } from "@/lib/terms-version";
 
 export const metadata = {
-  title: "Risk Disclosure — Sentinel",
+  title: "Risk Disclosure — Beacontry",
 };
 
 export default function RiskPage() {
@@ -19,7 +19,7 @@ export default function RiskPage() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
               <Radar className="h-4 w-4" />
             </div>
-            <span className="font-semibold">Sentinel</span>
+            <span className="font-semibold">Beacontry</span>
           </Link>
           <Link
             href="/login"
@@ -50,7 +50,7 @@ export default function RiskPage() {
         <section className="space-y-2">
           <h2 className="text-base font-semibold text-text-primary">Capital at Risk</h2>
           <p>
-            Every trade placed through Sentinel — manual or automated — uses real
+            Every trade placed through Beacontry — manual or automated — uses real
             money from your linked brokerage account once Live mode is enabled. The
             value of securities can decline to zero. Past returns do not predict
             future returns.
@@ -60,7 +60,7 @@ export default function RiskPage() {
         <section className="space-y-2">
           <h2 className="text-base font-semibold text-text-primary">Strategy Risk</h2>
           <p>
-            Sentinel&apos;s engine modes (conservative, moderate, optimized, intraday,
+            Beacontry&apos;s engine modes (conservative, moderate, optimized, intraday,
             tactical, tactical-smart) are technical strategies that can underperform
             or lose money in markets unlike those in which they were developed. The
             optimizer searches historical data; over-fitting is a real risk and
@@ -87,7 +87,7 @@ export default function RiskPage() {
           <p>
             If your account equity falls below $25,000 and you execute four or more
             day-trades within five business days, your broker may classify you as a
-            Pattern Day Trader and restrict your account. Sentinel includes PDT
+            Pattern Day Trader and restrict your account. Beacontry includes PDT
             protection that blocks new BUYs when this risk is high, but the broker
             ultimately decides classification.
           </p>
@@ -97,10 +97,10 @@ export default function RiskPage() {
           <h2 className="text-base font-semibold text-text-primary">Wash Sales &amp; Tax</h2>
           <p>
             Automated trading often generates wash sales (IRC §1091) that disallow
-            losses for tax purposes. Sentinel has wash-sale protection that blocks
+            losses for tax purposes. Beacontry has wash-sale protection that blocks
             repeat buys on losing exits within 31 calendar days, but the rule itself
             is complex (substantially identical securities, lot-level, IRA-aware).
-            Consult a tax professional. Sentinel does not provide tax advice.
+            Consult a tax professional. Beacontry does not provide tax advice.
           </p>
         </section>
 
@@ -117,7 +117,7 @@ export default function RiskPage() {
         <section className="space-y-2">
           <h2 className="text-base font-semibold text-text-primary">System Risk</h2>
           <p>
-            Sentinel runs on internet infrastructure. Outages, DNS failures, hosting
+            Beacontry runs on internet infrastructure. Outages, DNS failures, hosting
             issues, database corruption, or version upgrades can interrupt trading
             unexpectedly. Open positions may be exposed during outages because the
             engine cannot adjust stops or exit when it cannot reach the broker.
@@ -125,15 +125,15 @@ export default function RiskPage() {
           <p>
             For live trading, configure external monitoring (UptimeRobot or similar)
             pointed at <code className="font-mono text-text-primary">/api/health/engine</code> so
-            you know when Sentinel is unreachable.
+            you know when Beacontry is unreachable.
           </p>
         </section>
 
         <section className="space-y-2">
           <h2 className="text-base font-semibold text-text-primary">You Are the Responsible Party</h2>
           <p>
-            Every trade placed through Sentinel — even by the automated engine — is
-            attributable to you, not Sentinel. You are responsible for the trades,
+            Every trade placed through Beacontry — even by the automated engine — is
+            attributable to you, not Beacontry. You are responsible for the trades,
             the tax consequences, and any losses. Set risk limits aggressively before
             enabling Live mode and monitor the audit log regularly.
           </p>

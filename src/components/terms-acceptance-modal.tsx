@@ -73,12 +73,12 @@ export function TermsAcceptanceModal() {
             <AlertTriangle className="w-4 h-4 shrink-0 text-warning mt-0.5" />
             <p className="text-text-secondary m-0">
               The terms have been updated since you last accepted ({status.version}).
-              Please review and re-confirm to continue using Sentinel.
+              Please review and re-confirm to continue using Beacontry.
             </p>
           </div>
         )}
         <p className="text-sm text-text-secondary">
-          Sentinel is a tool, not a financial advisor. Signals, AI commentary,
+          Beacontry is a tool, not a financial advisor. Signals, AI commentary,
           backtest results, and automated trading are{" "}
           <strong className="text-text-primary">for informational purposes only</strong>
           {" "}and not investment advice. Trading involves substantial risk of loss.
@@ -110,7 +110,7 @@ export function TermsAcceptanceModal() {
             className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-accent focus:ring-accent"
           />
           <span className="text-sm text-text-secondary">
-            I have read both documents and I take sole responsibility for trades placed through Sentinel, including those placed by the automated engine.
+            I have read both documents and I take sole responsibility for trades placed through Beacontry, including those placed by the automated engine.
           </span>
         </label>
       </div>

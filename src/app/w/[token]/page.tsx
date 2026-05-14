@@ -1,6 +1,6 @@
 // Public read-only watchlist page. Anyone with the share token URL
-// (/w/[token]) can view, no Sentinel account required. Renders symbols
-// + owner attribution. Each symbol links to the Sentinel marketing
+// (/w/[token]) can view, no Beacontry account required. Renders symbols
+// + owner attribution. Each symbol links to the Beacontry marketing
 // page or analysis page (if the viewer has a session — but we don't
 // check here; the link target page handles auth).
 
@@ -53,7 +53,7 @@ export default async function PublicWatchlistPage({
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
               <Radar className="h-4 w-4" />
             </div>
-            <span className="font-semibold">Sentinel</span>
+            <span className="font-semibold">Beacontry</span>
           </Link>
           <Link
             href="/login"
@@ -96,7 +96,7 @@ export default async function PublicWatchlistPage({
         )}
 
         <div className="rounded-xl border border-border bg-bg-surface p-5 text-sm text-text-secondary">
-          <p className="font-medium text-text-primary mb-2">Build your own watchlist with Sentinel</p>
+          <p className="font-medium text-text-primary mb-2">Build your own watchlist with Beacontry</p>
           <p>
             Track symbols, get signal alerts, and run AI-driven analysis.{" "}
             <Link href="/" className="text-accent hover:text-accent-hover underline">

@@ -48,7 +48,7 @@ export function EducationalDisclaimer({
             Educational content — not personalized advice
           </p>
           <p className="text-xs leading-relaxed text-text-secondary">
-            Sentinel is not a registered investment advisor, tax professional,
+            Beacontry is not a registered investment advisor, tax professional,
             insurance agent, or law firm. Everything below is general education
             about how these products and rules work — not a recommendation
             specific to your situation. Tax laws, contribution limits, and

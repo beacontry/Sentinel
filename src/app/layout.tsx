@@ -5,13 +5,13 @@ import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Sentinel",
+  title: "Beacontry",
   description: "Trading intelligence platform — signals, analysis, and automated execution",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Sentinel",
+    title: "Beacontry",
   },
 };
 

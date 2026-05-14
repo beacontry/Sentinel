@@ -37,7 +37,7 @@ import { createRouteLogger } from "./logger";
 const log = createRouteLogger("congress-house-ingester");
 
 const USER_AGENT =
-  "Mozilla/5.0 (Sentinel-Trading-Intelligence; sentinel.guardcybersolutionsllc.com)";
+  "Mozilla/5.0 (Beacontry-Trading-Intelligence; beacontry.com)";
 
 // ─── XML index types ──────────────────────────────────────────────────────
 
