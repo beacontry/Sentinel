@@ -11,9 +11,10 @@ import {
 } from "lucide-react";
 import { BeacontryMark } from "@/components/brand/beacontry-mark";
 import {
-  NAV_ITEMS,
   isActivePath,
+  visibleNavItems,
 } from "./nav-config";
+import { useTier } from "@/components/tiers/tier-gate";
 import { useAi } from "@/components/ai/ai-provider";
 import { ThemePicker } from "@/components/theme-picker";
 import { BrokerSwitcher } from "./broker-switcher";
@@ -24,6 +25,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isChatOpen, toggleChat } = useAi();
+  // Filter the sidebar based on the user's role — admin-only items are
+  // hidden from non-admins entirely (rather than showing them with a
+  // permission-denied page when clicked). Loading state shows the
+  // unfiltered list briefly which is fine; the admin page itself
+  // server-side enforces role.
+  const { role } = useTier();
+  const navItems = visibleNavItems(role);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -76,7 +84,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Nav items */}
             <nav style={{ flex: 1, overflowY: "auto", padding: "4px 10px" }}>
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const active = isActivePath(item, pathname);
                 return (
                   <Link
@@ -196,7 +204,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <BrokerSwitcher />
 
             <nav style={{ flex: 1, overflowY: "auto", padding: "4px 10px" }}>
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const active = isActivePath(item, pathname);
                 return (
                   <Link

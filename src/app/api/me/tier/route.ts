@@ -27,6 +27,7 @@ export async function GET() {
         label: labelFor("free"),
         authenticated: false,
         hasStripeCustomer: false,
+        role: null,
       },
       { headers: { "Cache-Control": "private, no-store" } }
     );
@@ -52,7 +53,15 @@ export async function GET() {
   }
 
   return NextResponse.json(
-    { tier, label: labelFor(tier), authenticated: true, hasStripeCustomer },
+    {
+      tier,
+      label: labelFor(tier),
+      authenticated: true,
+      hasStripeCustomer,
+      // Role is part of the session JWT — no extra DB hit needed. Used
+      // by client-side nav filtering to hide admin items from non-admins.
+      role: session.role ?? "user",
+    },
     { headers: { "Cache-Control": "private, max-age=60" } }
   );
 }

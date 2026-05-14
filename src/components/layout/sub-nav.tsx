@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { SubNavTab } from "./nav-config";
+import { useTier } from "@/components/tiers/tier-gate";
+import { visibleSubNav, type SubNavTab } from "./nav-config";
 
 interface SubNavProps {
   tabs: SubNavTab[];
@@ -10,12 +11,17 @@ interface SubNavProps {
 
 export function SubNav({ tabs }: SubNavProps) {
   const pathname = usePathname();
+  // Filter admin-only tabs (e.g. /dashboard/optimizer used to be
+  // adminOnly:true) so non-admins don't see them. The page itself
+  // still enforces role server-side; this is purely UX.
+  const { role } = useTier();
+  const visibleTabs = visibleSubNav(tabs, role);
 
-  if (tabs.length <= 1) return null;
+  if (visibleTabs.length <= 1) return null;
 
   return (
     <div className="mb-6 flex flex-wrap gap-1 overflow-x-auto">
-      {tabs.map((tab) => {
+      {visibleTabs.map((tab) => {
         const active = pathname === tab.href;
         return (
           <Link

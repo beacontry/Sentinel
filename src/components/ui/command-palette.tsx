@@ -12,14 +12,20 @@ import {
 } from "lucide-react";
 import {
   COMMAND_PALETTE_EVENT,
-  NAV_ITEMS,
   SUB_NAV,
+  visibleNavItems,
+  visibleSubNav,
 } from "@/components/layout/nav-config";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
+import { useTier } from "@/components/tiers/tier-gate";
 
 // Build a flat list of all navigable pages (main items + sub-nav pages)
-function getAllPages() {
-  const pages = NAV_ITEMS.map((item) => ({
+// filtered by the current user's role. Admin-only routes don't appear
+// for non-admins in the command palette either — the same UX rule as
+// the sidebar nav: hide what they can't access.
+function getAllPages(role: string | null | undefined) {
+  const navItems = visibleNavItems(role);
+  const pages = navItems.map((item) => ({
     href: item.href,
     label: item.label,
     description: item.description,
@@ -27,10 +33,10 @@ function getAllPages() {
     keywords: item.keywords ?? [],
   }));
 
-  // Add sub-nav pages that aren't already in main nav
+  // Add sub-nav pages that aren't already in main nav, filtering admin-only.
   const mainHrefs = new Set(pages.map((p) => p.href));
   for (const tabs of Object.values(SUB_NAV)) {
-    for (const tab of tabs) {
+    for (const tab of visibleSubNav(tabs, role)) {
       if (!mainHrefs.has(tab.href)) {
         pages.push({
           href: tab.href,
@@ -46,8 +52,6 @@ function getAllPages() {
   return pages;
 }
 
-const ALL_PAGES = getAllPages();
-
 // Heuristic for "this looks like a ticker." 1-5 uppercase letters, optionally
 // with a trailing dot+1 char (e.g. BRK.B). Not exhaustive — Sentinel will
 // let through anything matching this pattern and the analysis page will
@@ -59,6 +63,10 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const router = useRouter();
   const { entries: recentEntries } = useRecentlyViewed();
+  // Filter pages by role at render-time. Admin-only routes don't
+  // appear for non-admins (parity with the sidebar).
+  const { role } = useTier();
+  const allPages = getAllPages(role);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -232,7 +240,7 @@ export function CommandPalette() {
                 [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-text-muted
                 [&_[cmdk-group-heading]]:font-medium"
             >
-              {ALL_PAGES.map((page) => (
+              {allPages.map((page) => (
                 <Command.Item
                   key={page.href}
                   value={`${page.label} ${page.description} ${page.keywords.join(" ")}`}
@@ -282,7 +290,7 @@ export function CommandPalette() {
 
           <div className="flex items-center justify-between border-t border-border px-4 py-2.5 text-[11px] text-text-muted">
             <span>Navigate with <kbd className="font-mono">↑↓</kbd> and <kbd className="font-mono">Enter</kbd></span>
-            <span className="font-mono">{ALL_PAGES.length} routes</span>
+            <span className="font-mono">{allPages.length} routes</span>
           </div>
         </Command>
       </div>
