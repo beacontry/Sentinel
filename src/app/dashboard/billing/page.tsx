@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 
 export default function BillingPage() {
-  const { tier, loading } = useTier();
+  const { tier, loading, hasStripeCustomer } = useTier();
   const { toast } = useToast();
   const [openingPortal, setOpeningPortal] = useState(false);
 
@@ -81,13 +81,25 @@ export default function BillingPage() {
                   Public data, education, watchlists. Upgrade for the engine + AI.
                 </p>
               )}
-              {tier !== "free" && !loading && (
+              {tier !== "free" && hasStripeCustomer && !loading && (
                 <p className="text-sm text-text-secondary mt-1">
                   Manage subscription, update card, or cancel via the Stripe portal.
                 </p>
               )}
+              {tier !== "free" && !hasStripeCustomer && !loading && (
+                <p className="text-sm text-text-secondary mt-1">
+                  Admin-granted plan — no billing attached.{" "}
+                  <a
+                    href="/contact"
+                    className="text-accent hover:text-accent-hover underline"
+                  >
+                    Contact support
+                  </a>{" "}
+                  to transition to a paid Stripe subscription.
+                </p>
+              )}
             </div>
-            {tier !== "free" && (
+            {tier !== "free" && hasStripeCustomer && (
               <Button onClick={openPortal} loading={openingPortal}>
                 <CreditCard className="h-4 w-4" />
                 Manage subscription

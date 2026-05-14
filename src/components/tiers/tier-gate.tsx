@@ -41,12 +41,21 @@ interface TierGateProps {
 }
 
 /** Hook returns the current user's tier. 60s in-memory cache. */
-export function useTier(): { tier: Tier; loading: boolean; authenticated: boolean } {
+export function useTier(): {
+  tier: Tier;
+  loading: boolean;
+  authenticated: boolean;
+  /** True if the user has a Stripe customer ID set (went through Checkout
+   *  at least once). False for free users + admin-granted paid tiers that
+   *  never touched Stripe. Used to gate "Manage subscription" buttons. */
+  hasStripeCustomer: boolean;
+} {
   const [state, setState] = useState<{
     tier: Tier;
     loading: boolean;
     authenticated: boolean;
-  }>({ tier: "free", loading: true, authenticated: false });
+    hasStripeCustomer: boolean;
+  }>({ tier: "free", loading: true, authenticated: false, hasStripeCustomer: false });
 
   useEffect(() => {
     let cancelled = false;
@@ -58,11 +67,17 @@ export function useTier(): { tier: Tier; loading: boolean; authenticated: boolea
           tier: (d.tier as Tier) ?? "free",
           loading: false,
           authenticated: !!d.authenticated,
+          hasStripeCustomer: !!d.hasStripeCustomer,
         });
       })
       .catch(() => {
         if (cancelled) return;
-        setState({ tier: "free", loading: false, authenticated: false });
+        setState({
+          tier: "free",
+          loading: false,
+          authenticated: false,
+          hasStripeCustomer: false,
+        });
       });
     return () => {
       cancelled = true;
