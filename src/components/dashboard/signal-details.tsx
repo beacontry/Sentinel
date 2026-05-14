@@ -136,16 +136,39 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
 
   return (
     <div className="h-full overflow-y-auto">
-      {/* Header: Symbol + Signal + Confidence */}
-      <div className="p-4 border-b border-border">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="font-display text-lg font-bold">{analysis.symbol}</h2>
+      {/* Header — symbol, signal badge, price, confidence all in one
+       * compact block. Previously: header + price were two separate
+       * sections each with their own border + uppercase-eyebrow label,
+       * eating ~50px of stacked-header chrome. */}
+      <div className="p-4 border-b border-border space-y-3">
+        {/* Top row: symbol + price (left), signal badge (right) */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="font-display text-lg font-bold leading-tight">
+              {analysis.symbol}
+            </h2>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="font-mono text-base font-bold text-text-primary">
+                ${analysis.price.toFixed(2)}
+              </span>
+              {priceChange !== null && (
+                <span
+                  className={`font-mono text-xs ${
+                    priceChange >= 0 ? "text-bullish" : "text-bearish"
+                  }`}
+                >
+                  {priceChange >= 0 ? "+" : ""}
+                  {priceChange.toFixed(2)}%
+                </span>
+              )}
+            </div>
+          </div>
           <SignalBadge signal={analysis.signal} size="lg" />
         </div>
 
-        {/* Confidence bar */}
-        <div className="mt-3">
-          <div className="flex justify-between text-xs mb-1">
+        {/* Confidence: inline label/percent above a slim full-width bar */}
+        <div>
+          <div className="flex justify-between text-[10px] mb-1">
             <span className="text-text-muted uppercase tracking-wider">
               Confidence
             </span>
@@ -161,7 +184,7 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
               {confidencePct}%
             </span>
           </div>
-          <div className="h-2 bg-bg-elevated rounded-full overflow-hidden">
+          <div className="h-1.5 bg-bg-elevated rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-700 ease-out ${
                 isBullish
@@ -173,28 +196,6 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
               style={{ width: `${confidencePct}%` }}
             />
           </div>
-        </div>
-      </div>
-
-      {/* Price */}
-      <div className="px-4 py-3 border-b border-border">
-        <p className="text-xs text-text-muted uppercase tracking-wider mb-1">
-          Price
-        </p>
-        <div className="flex items-baseline gap-2">
-          <span className="font-mono text-lg font-bold">
-            ${analysis.price.toFixed(2)}
-          </span>
-          {priceChange !== null && (
-            <span
-              className={`font-mono text-sm ${
-                priceChange >= 0 ? "text-bullish" : "text-bearish"
-              }`}
-            >
-              {priceChange >= 0 ? "+" : ""}
-              {priceChange.toFixed(2)}%
-            </span>
-          )}
         </div>
       </div>
 
@@ -348,45 +349,50 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
         </div>
       )}
 
-      {/* What-If Simulation */}
-      <div className="px-4 py-3 border-b border-border">
-        <WhatIfSlider analysis={analysis} />
-      </div>
+      {/* What-If Simulation — collapsible, default closed.
+       *
+       * The interactive slider + 4 result tiles is ~200px tall fully
+       * expanded. Most viewers of a signal are glancing at it, not
+       * dragging the slider — collapse by default and let users opt
+       * in. Same pattern as MarketContextSection below. */}
+      <WhatIfSection analysis={analysis} />
 
-      {/* Action buttons */}
-      <div className="px-4 py-3 border-b border-border space-y-2">
-        <Button
-          variant="outline"
-          size="md"
-          className="w-full"
-          onClick={() => {
-            window.location.href = `/dashboard/trader?symbol=${encodeURIComponent(analysis.symbol)}&signal=${analysis.signal}`;
-          }}
-        >
-          <Target className="w-4 h-4" />
-          Simulate Trade
-        </Button>
-        <Button
-          variant="primary"
-          size="md"
-          className={`w-full ${
-            isBearish
-              ? "bg-bearish hover:bg-bearish/80"
-              : "bg-bullish hover:bg-bullish/80"
-          }`}
-          onClick={() => {
-            window.location.href = `/dashboard/trader?symbol=${encodeURIComponent(analysis.symbol)}&signal=${analysis.signal}&execute=1`;
-          }}
-        >
-          {isBullish ? (
-            <TrendingUp className="w-4 h-4" />
-          ) : isBearish ? (
-            <TrendingDown className="w-4 h-4" />
-          ) : (
-            <Activity className="w-4 h-4" />
-          )}
-          {isBullish ? "Execute Buy" : isBearish ? "Execute Sell" : "Execute"}
-        </Button>
+      {/* Action buttons — side-by-side, were stacked (saved ~50px). */}
+      <div className="px-4 py-3 border-b border-border">
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            className="w-full"
+            onClick={() => {
+              window.location.href = `/dashboard/trader?symbol=${encodeURIComponent(analysis.symbol)}&signal=${analysis.signal}`;
+            }}
+          >
+            <Target className="w-4 h-4" />
+            Simulate
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            className={`w-full ${
+              isBearish
+                ? "bg-bearish hover:bg-bearish/80"
+                : "bg-bullish hover:bg-bullish/80"
+            }`}
+            onClick={() => {
+              window.location.href = `/dashboard/trader?symbol=${encodeURIComponent(analysis.symbol)}&signal=${analysis.signal}&execute=1`;
+            }}
+          >
+            {isBullish ? (
+              <TrendingUp className="w-4 h-4" />
+            ) : isBearish ? (
+              <TrendingDown className="w-4 h-4" />
+            ) : (
+              <Activity className="w-4 h-4" />
+            )}
+            {isBullish ? "Buy" : isBearish ? "Sell" : "Execute"}
+          </Button>
+        </div>
       </div>
 
       {/* Historical accuracy placeholder */}
@@ -410,6 +416,36 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
 
       {/* Market Context */}
       <MarketContextSection symbol={analysis.symbol} />
+    </div>
+  );
+}
+
+// ─── What-If Simulation (collapsible) ───────────────────────────────
+//
+// The slider + four result tiles costs ~200px of vertical real estate
+// expanded. Most viewers of a signal aren't dragging — they're glancing
+// — so default to collapsed and let interested users opt in. Same
+// pattern as MarketContextSection below.
+
+function WhatIfSection({ analysis }: { analysis: AnalysisResult }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="px-4 py-3 border-b border-border">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className={`flex items-center gap-2 w-full text-left cursor-pointer ${expanded ? "mb-3" : ""}`}
+      >
+        <Sparkles className="w-3.5 h-3.5 text-accent" />
+        <p className="text-xs font-semibold uppercase tracking-wider text-text-secondary flex-1">
+          What-If Simulation
+        </p>
+        {expanded ? (
+          <ChevronDown className="w-3.5 h-3.5 text-text-muted" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 text-text-muted" />
+        )}
+      </button>
+      {expanded && <WhatIfSlider analysis={analysis} />}
     </div>
   );
 }
