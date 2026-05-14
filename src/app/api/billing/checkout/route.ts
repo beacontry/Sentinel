@@ -145,24 +145,30 @@ export async function POST(request: NextRequest) {
           beacontry_cadence: resolved?.cadence ?? "",
         },
       },
-      // Required for the user to see + accept the same trial info we
-      // promised on /pricing — Stripe surfaces this on its checkout
-      // page automatically when trial_period_days is set.
       success_url: success,
       cancel_url: cancel,
-      // Cards only for v1 — Apple/Google Pay come for free with Stripe
-      // Checkout but we can lock to card during testing to keep things
-      // simple. Re-enable wallet payments later by removing this.
+      // Cards only for v1. Apple/Google Pay come "free" but locking to
+      // card simplifies test-mode flows. Re-enable wallets later by
+      // removing this line — Stripe will auto-add them.
       payment_method_types: ["card"],
       // Allow promotion codes (so a future "BEACON25" coupon Just Works)
       allow_promotion_codes: true,
-      // Tax — leave at "auto" so Stripe Tax handles state-by-state SaaS
-      // taxability. User has to provide a billing address for this to
-      // work, which Stripe Checkout prompts for automatically.
-      automatic_tax: { enabled: true },
-      customer_update: { address: "auto", name: "auto" },
-      // Save the address for future receipts.
+      // Address: collect for invoice receipts. Required if/when we
+      // re-enable Stripe Tax below.
       billing_address_collection: "auto",
+      // NOTE: automatic_tax + customer_update intentionally OFF.
+      //
+      // Stripe Tax requires the merchant to be activated in their
+      // Tax dashboard AND have nexus declared per state — neither is
+      // configured in the sandbox. Enabling automatic_tax against an
+      // unactivated account returns "stripe_tax_inactive" errors.
+      //
+      // Re-enable both lines when going live and Stripe Tax is set up:
+      //   automatic_tax: { enabled: true },
+      //   customer_update: { address: "auto", name: "auto" },
+      // For now Beacontry handles tax responsibility manually (or via
+      // the user's own jurisdiction — most retail-trader SaaS customers
+      // pay sales tax on their own state's terms).
     });
 
     log.info(
@@ -177,14 +183,48 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: session.url });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    log.error({ err: message, userId: auth.userId }, "Checkout session failed");
+    // Pull out as much Stripe-specific context as possible. Stripe
+    // errors come as instances of Stripe.errors.StripeError which
+    // carry .type, .code, .raw.message, etc. Surfacing the type to
+    // the client (NOT the message — that can leak account-specific
+    // info) lets the UI distinguish recoverable errors (rate-limit,
+    // network) from non-recoverable ones (invalid price, missing
+    // tax config).
+    const stripeErr = err as {
+      type?: string;
+      code?: string;
+      message?: string;
+      raw?: { message?: string; code?: string };
+    };
+    const stripeMessage =
+      stripeErr.raw?.message ?? stripeErr.message ?? "Unknown error";
+    const stripeType = stripeErr.type ?? "unknown_error";
+    const stripeCode = stripeErr.code ?? stripeErr.raw?.code ?? null;
+
+    log.error(
+      {
+        err: stripeMessage,
+        stripeType,
+        stripeCode,
+        userId: auth.userId,
+        priceId,
+      },
+      "Checkout session failed"
+    );
+
     return NextResponse.json(
       {
         error: {
           code: "INTERNAL",
           message: "Could not create checkout session. Try again or contact support.",
           retryable: true,
+          details: {
+            // Surface Stripe's category to the browser so admins can
+            // debug from devtools. Not sensitive — Stripe error types
+            // are documented in their public API reference.
+            stripeType,
+            stripeCode,
+          },
         },
       },
       { status: 500 }
