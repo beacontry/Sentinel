@@ -4,9 +4,19 @@
 > execution, and portfolio management in one workspace — fully transparent,
 > fully inspectable, fully yours.
 
-**Live**: [beacontry.com](https://beacontry.com) · also reachable at the legacy alias [sentinel.guardcybersolutionsllc.com](https://sentinel.guardcybersolutionsllc.com)
+**Live**: [beacontry.com](https://beacontry.com)
 
-**Docs**: [Features reference](https://beacontry.com/docs/sentinel-features.html) · [Engine ruleset](https://beacontry.com/docs/engine-ruleset.html)
+**Public surface** (no signup required):
+- [/learn](https://beacontry.com/learn) — 14 long-form trading & personal-finance guides
+- [/tools](https://beacontry.com/tools) — 8 free calculators (FIRE, Roth vs Traditional, tax-loss harvesting, …)
+- [/glossary](https://beacontry.com/glossary) — 95 terms across 6 categories
+- [/congress](https://beacontry.com/congress) — federal Periodic Transaction Reports, live
+- [/articles](https://beacontry.com/articles) — daily Beacontry Desk market digest
+- [/pricing](https://beacontry.com/pricing) — Free · Trader $20 · Premium $45 · Open Source
+
+**Docs**: [Features reference](https://beacontry.com/docs/sentinel-features.html) · [Engine ruleset](https://beacontry.com/docs/engine-ruleset.html) · [Usage slides](https://beacontry.com/docs/usage-slides.html)
+
+(Doc filenames keep the historical `sentinel-features.html` slug for link stability — the content is current.)
 
 ## Overview
 
@@ -417,8 +427,10 @@ ALLOW_LIVE_TRADING=        # set to 1 to enable live; leave unset for paper-only
 # daily digest emails (opt-in), and engine alert emails to send.
 # Without these, /api/admin/invites still creates the invite row and returns a copyable
 # signup link, but no email is delivered.
+# Leave EMAIL_FROM unset to use the in-code default ("Beacontry <hello@beacontry.com>"),
+# which requires beacontry.com verified in Resend. Override for self-hosted setups.
 RESEND_API_KEY=
-EMAIL_FROM=Sentinel <noreply@guardcybersolutionsllc.com>
+EMAIL_FROM=
 
 # Push notifications (web-push protocol)
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=
@@ -426,7 +438,7 @@ VAPID_PRIVATE_KEY=
 VAPID_SUBJECT=mailto:admin@example.com
 ```
 
-> **Invite emails:** Sentinel's registration is invite-only. Admins create invites at `/dashboard/admin` → an email with a signup link is sent via Resend. The `EMAIL_FROM` domain must be Resend-verified — for prod that's the shared GuardCyber apex (see GuardCyber `README.md` § Email Infrastructure for the DNS setup).
+> **Invite emails:** Beacontry's registration is invite-only. Admins create invites at `/dashboard/admin` → an email with a signup link is sent via Resend. The `EMAIL_FROM` domain must be Resend-verified — prod uses `beacontry.com` (verified directly in Resend, DKIM-signed). Self-hosted instances override `EMAIL_FROM` to use their own verified domain.
 
 ### Install & Run
 
@@ -444,15 +456,17 @@ CI/CD via GitHub Actions: push to `main` → build Docker image → push to GHCR
 # Manual deploy
 ssh deploy@server
 sudo -u sn-deploy -i bash -c '
-  podman pull ghcr.io/ixiondt/sentinel:latest
+  podman pull ghcr.io/beacontry/sentinel:latest
   podman stop sentinel-app; podman rm sentinel-app
   podman run -d --name sentinel-app \
     --network=host --env-file /opt/apps/sentinel/.env \
     -e NODE_ENV=production -e PORT=3010 \
     --restart always -m 1g \
-    ghcr.io/ixiondt/sentinel:latest
+    ghcr.io/beacontry/sentinel:latest
 '
 ```
+
+> **Image namespace note:** the image lives under the GitHub org `beacontry` (since the repo transferred in May 2026). The image is named `sentinel` because the engine module is still called Sentinel internally — see the "Internal naming note" at the top of this README.
 
 ## Architecture Decisions
 

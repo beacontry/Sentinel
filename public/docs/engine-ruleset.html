@@ -1579,7 +1579,7 @@ sudo podman run -d --name sentinel-app --network=host \
   -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache \
   -v /opt/apps/sentinel/cache:/data/cache:Z \
   --restart always -m 2g \
-  ghcr.io/ixiondt/sentinel:latest</div>
+  ghcr.io/beacontry/sentinel:latest</div>
         <p style="margin-top:8px;color:var(--text-muted);font-size:0.9rem"><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">podman restart</code> does NOT re-read env-file &mdash; must <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">stop &amp;&amp; rm &amp;&amp; run</code>.</p>
       </li>
       <li><strong>Start engine</strong> (Trader page &rarr; Start) in a swing mode (NOT <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">intraday</code> &mdash; engine refuses if equity &lt; $25k). Watch the persistent red LIVE banner appear, audit log fill with <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.started</code> (metadata.environment="live"), and the boot equity snapshot get captured.</li>

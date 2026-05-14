@@ -31,8 +31,10 @@ and migration `0033`.
 
 `beacontry.com` purchased + DNS / Cloudflare / Email Routing / DNSSEC
 all configured. App now serves on BOTH hostnames simultaneously:
-- `https://beacontry.com` (new brand)
-- `https://sentinel.guardcybersolutionsllc.com` (kept alive as legacy alias)
+- `https://beacontry.com` (new brand — primary, all marketing / sitemap / OG)
+- `https://sentinel.guardcybersolutionsllc.com` (passive legacy alias —
+  still resolves so old bookmarks don't break, but no new content points
+  here; can be retired when usage drops to zero)
 
 User-visible UI rebranded across ~30 files (page titles, manifest, login,
 register, terms, risk, dashboard copy, email templates, Discord embed text,
@@ -41,39 +43,24 @@ public HTML docs, outbound User-Agents to Yahoo / Finnhub / SEC / Reddit
 vars, localStorage keys, code comments) deliberately kept as "Sentinel"
 to avoid invalidating existing user prefs and breaking migrations.
 
-### Pending actions after rebrand (still TODO — user-driven)
+### Pending actions after rebrand (status)
 
-These two are gated on actions outside the repo. Surface them in future
-sessions until done:
+1. ✅ **`EMAIL_FROM` env var removed from prod droplet** (2026-05-14). The
+   stale `Sentinel <noreply@guardcybersolutionsllc.com>` line was deleted
+   from `/opt/apps/sentinel/.env`, container recreated (stop → rm → run
+   off `ghcr.io/beacontry/sentinel:latest`). Code default
+   `Beacontry <hello@beacontry.com>` now applies. `beacontry.com` is
+   verified in Resend. Backup at
+   `/opt/apps/sentinel/.env.bak.before-emailfrom-removal`.
 
-1. **Update `EMAIL_FROM` env var on prod droplet.** Code default is now
-   `Beacontry <hello@beacontry.com>` but the existing env-file value
-   (`Sentinel <noreply@guardcybersolutionsllc.com>`) overrides. Without
-   the change, outbound emails still come from the old brand. Recreate
-   command:
-   ```bash
-   ssh deploy@192.241.132.219
-   sudo sed -i 's/^EMAIL_FROM=.*/EMAIL_FROM=Beacontry <hello@beacontry.com>/' \
-     /opt/apps/sentinel/.env
-   sudo podman stop sentinel-app && sudo podman rm sentinel-app && \
-     sudo podman run -d --name sentinel-app --network=host \
-       --env-file /opt/apps/sentinel/.env \
-       -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 \
-       -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache \
-       -v /opt/apps/sentinel/cache:/data/cache:Z \
-       --restart always -m 2g \
-       ghcr.io/ixiondt/sentinel:latest
-   ```
-   ⚠ Also requires `beacontry.com` to be verified as a sender domain in
-   Resend (`resend.com/domains` → add → DNS records auto-detect via the
-   Cloudflare zone we set up). Until verified, Resend rejects sends from
-   `@beacontry.com` with 403; the catch-and-log path keeps the app from
-   crashing but emails silently fail.
-
-2. **Revoke the Cloudflare API token `beacontry-setup`.** Created
+2. ⏳ **Revoke the Cloudflare API token `beacontry-setup`.** Created
    2026-05-14 for the automated DNS/Email Routing setup. Token was
    pasted into chat history; revocation eliminates long-term risk.
    Profile → API Tokens → find `beacontry-setup` → Roll or Delete.
+
+3. ⏳ **Revoke the GitHub PAT** (`ghp_oKDin...`) at
+   `github.com/settings/tokens`. Used to flip repo public → private →
+   public during the rebrand; no longer needed.
 
 ### Today's deploy recap (for context)
 

@@ -19,7 +19,7 @@ async function fetchShared(token: string): Promise<SharedWatchlist | null> {
   const baseUrl =
     process.env.NEXT_PUBLIC_BASE_URL ??
     (process.env.NODE_ENV === "production"
-      ? "https://sentinel.guardcybersolutionsllc.com"
+      ? "https://beacontry.com"
       : "http://localhost:3010");
   try {
     const res = await fetch(`${baseUrl}/api/public/watchlist/${encodeURIComponent(token)}`, {
