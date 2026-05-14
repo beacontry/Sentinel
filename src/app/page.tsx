@@ -473,7 +473,7 @@ export default function LandingPage() {
               </ul>
 
               <Link
-                href={tier.name === "Self-hosted" ? "https://github.com/ixiondt/Sentinel" : "/register"}
+                href={tier.name === "Self-hosted" ? "https://github.com/beacontry/Sentinel" : "/register"}
                 className={`mt-8 inline-flex items-center justify-center gap-2 rounded-[10px] px-5 py-3 text-[0.92rem] font-semibold transition-all duration-200 hover:-translate-y-0.5 ${
                   tier.highlight
                     ? "bg-ld-accent text-white hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]"
