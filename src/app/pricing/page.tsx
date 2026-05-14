@@ -35,62 +35,98 @@ export default function PricingPage() {
     { label: "Why Beacontry", href: "/#trust" },
   ];
 
-  // ─── Tier cards (same as landing, kept in sync) ─────────────────────
+  // ─── Tier cards (kept in sync with landing teaser) ──────────────────
+  //
+  // Four-tier structure (2026-05-14 restructuring):
+  //   Free        — hosted, public-data only, no engine, no AI, no
+  //                 paid-API features. The 'I want to look around'
+  //                 entry point.
+  //   Trader $20  — full platform as it exists today, minus AI
+  //                 (every Finnhub feature, full engine, GA optimizer,
+  //                 adaptive mode, multi-broker, journal, tax, etc.)
+  //   Premium $45 — Trader + AI assistant + future paid-data tier
+  //                 (L2 / real-time SIP / dark pools shipping later)
+  //   Open Source — self-hosted under FSL-1.1, BYO everything.
   const tiers = [
+    {
+      name: "Free",
+      tag: "Hosted",
+      price: "$0",
+      cadence: "",
+      annual: "Public data + education",
+      desc: "Browse, learn, research. No trading.",
+      features: [
+        "All 14 education guides + 95 glossary terms",
+        "8 financial calculators",
+        "Congressional trades feed",
+        "Reddit ticker mentions",
+        "SEC filings + earnings calendar",
+        "Basic watchlist (1 list, 10 symbols)",
+        "Read-only community access",
+        "No trading engine, no AI",
+      ],
+      cta: "Sign up free",
+      ctaHref: "/register",
+      highlight: false,
+    },
     {
       name: "Trader",
       tag: "Most popular",
-      price: "$29",
+      price: "$20",
       cadence: "/ month",
-      annual: "$290/yr — saves 2 months",
-      desc: "Everything an active retail trader needs.",
+      annual: "$200/yr — saves 2 months",
+      desc: "The full platform without AI features.",
       features: [
         "Full engine (paper + live trading)",
-        "Unlimited watchlists",
-        "All education + spaced-rep review",
-        "Alerts: push, email, Discord",
-        "TradingView + Reddit + Congress feeds",
-        "Tax center + automated journal",
-        "1 broker connection",
+        "All 8 engine modes including adaptive",
+        "Genetic-algorithm optimizer",
+        "Multi-broker (up to 3 connections)",
+        "Hybrid signal pipeline (sentiment + options + analyst)",
+        "Audit log + tax center + journal",
+        "Unlimited watchlists + alerts",
+        "Full community access",
       ],
       cta: "Start with Trader",
       ctaHref: "/register",
       highlight: true,
     },
     {
-      name: "Pro",
-      tag: "Power users",
-      price: "$79",
+      name: "Premium",
+      tag: "AI + future data",
+      price: "$45",
       cadence: "/ month",
-      annual: "$790/yr — saves 2 months",
-      desc: "GA optimizer + adaptive mode + multi-broker.",
+      annual: "$450/yr — saves 2 months",
+      desc: "Trader + AI assistant + premium data (coming).",
       features: [
         "Everything in Trader, plus:",
-        "Adaptive (regime-driven) engine mode",
-        "Genetic-algorithm strategy optimizer",
-        "Multi-broker (up to 3 connections)",
-        "Audit log access",
-        "Priority email support",
-        "Saved-strategy library",
+        "AI chat assistant (Groq Llama 3.3)",
+        "AI-scored signal layer",
+        "AI weekly trade-journal review",
+        "Daily AI market digest",
+        "L2 / order book data (when available)",
+        "Real-time SIP feed (when available)",
+        "Dark pool data (when available)",
       ],
-      cta: "Step up to Pro",
+      cta: "Step up to Premium",
       ctaHref: "/register",
       highlight: false,
     },
     {
-      name: "Self-hosted",
-      tag: "Open source",
+      name: "Open Source",
+      tag: "Self-host",
       price: "Free",
       cadence: "",
       annual: "Your data, your hardware",
-      desc: "Bring your own Postgres + Alpaca keys.",
+      desc: "BYO Postgres + broker + paid API keys.",
       features: [
         "Full source code (FSL-1.1)",
-        "No telemetry, no SaaS lock-in",
-        "Self-managed updates",
-        "Privacy-first deployments",
-        "No SLA, no hosted support",
         "Same engine, your control",
+        "BYO Finnhub + Groq + broker keys",
+        "No telemetry, no SaaS lock-in",
+        "Privacy-first deployments",
+        "Self-managed updates",
+        "No SLA, no hosted support",
+        "Community Discord access",
       ],
       cta: "View on GitHub",
       ctaHref: "https://github.com/beacontry/Sentinel",
@@ -102,70 +138,90 @@ export default function PricingPage() {
   // Categories with rows. Each row shows which tiers include the feature.
   // Values: true (✓), false (—), or a string (e.g. "1" / "3" / "Unlimited").
   type Cell = boolean | string;
-  type Row = { label: string; trader: Cell; pro: Cell; selfHosted: Cell };
+  type Row = {
+    label: string;
+    free: Cell;
+    trader: Cell;
+    premium: Cell;
+    selfHosted: Cell;
+  };
   type Category = { name: string; rows: Row[] };
 
   const matrix: Category[] = [
     {
       name: "Trading engine",
       rows: [
-        { label: "Paper trading",                trader: true,  pro: true,  selfHosted: true  },
-        { label: "Live trading",                 trader: true,  pro: true,  selfHosted: true  },
-        { label: "Broker connections",           trader: "1",   pro: "3",   selfHosted: "Unlimited" },
-        { label: "Genetic-algorithm optimizer",  trader: false, pro: true,  selfHosted: true  },
-        { label: "Adaptive (regime-driven) mode", trader: false, pro: true,  selfHosted: true  },
-        { label: "All 8 engine modes",           trader: true,  pro: true,  selfHosted: true  },
-        { label: "Strategy builder + presets",   trader: true,  pro: true,  selfHosted: true  },
-        { label: "Backtest (single + compare)",  trader: true,  pro: true,  selfHosted: true  },
+        { label: "Paper trading",                free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Live trading",                 free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Broker connections",           free: false, trader: "3",   premium: "3",  selfHosted: "Unlimited" },
+        { label: "Genetic-algorithm optimizer",  free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Adaptive (regime-driven) mode", free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "All 8 engine modes",           free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Strategy builder + presets",   free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Backtest (single + compare)",  free: "Limited", trader: true, premium: true, selfHosted: true },
       ],
     },
     {
       name: "Data sources",
       rows: [
-        { label: "Real-time signals",            trader: true,  pro: true,  selfHosted: true  },
-        { label: "Reddit ticker mentions",       trader: true,  pro: true,  selfHosted: true  },
-        { label: "Congressional trades",         trader: true,  pro: true,  selfHosted: true  },
-        { label: "SEC filings + earnings",       trader: true,  pro: true,  selfHosted: true  },
-        { label: "News + sentiment analysis",    trader: true,  pro: true,  selfHosted: true  },
-        { label: "Options flow + unusual volume", trader: true,  pro: true,  selfHosted: true  },
-        { label: "AI scoring (Groq Llama 3.3)",  trader: true,  pro: true,  selfHosted: "BYO key" },
+        { label: "Yahoo daily bars (public)",    free: true,  trader: true,  premium: true, selfHosted: true  },
+        { label: "Reddit ticker mentions",       free: true,  trader: true,  premium: true, selfHosted: true  },
+        { label: "Congressional trades",         free: true,  trader: true,  premium: true, selfHosted: true  },
+        { label: "SEC filings + earnings cal",   free: true,  trader: true,  premium: true, selfHosted: true  },
+        { label: "Headline sentiment (local)",   free: true,  trader: true,  premium: true, selfHosted: true  },
+        { label: "Finnhub news + sentiment",     free: false, trader: true,  premium: true, selfHosted: "BYO key" },
+        { label: "Fundamentals + analyst recs",  free: false, trader: true,  premium: true, selfHosted: "BYO key" },
+        { label: "Insider transactions",         free: false, trader: true,  premium: true, selfHosted: "BYO key" },
+        { label: "Options flow + unusual vol",   free: false, trader: true,  premium: true, selfHosted: "BYO key" },
+        { label: "L2 / order book (coming)",     free: false, trader: false, premium: "Roadmap", selfHosted: false },
+        { label: "Real-time SIP feed (coming)",  free: false, trader: false, premium: "Roadmap", selfHosted: false },
+        { label: "Dark pool data (coming)",      free: false, trader: false, premium: "Roadmap", selfHosted: false },
+      ],
+    },
+    {
+      name: "AI features",
+      rows: [
+        { label: "AI chat assistant",            free: false, trader: false, premium: true, selfHosted: "BYO key" },
+        { label: "AI signal scoring (hybrid)",   free: false, trader: false, premium: true, selfHosted: "BYO key" },
+        { label: "AI weekly journal review",     free: false, trader: false, premium: true, selfHosted: "BYO key" },
+        { label: "Daily AI market digest",       free: false, trader: false, premium: true, selfHosted: "BYO key" },
+        { label: "AI trade summaries",           free: false, trader: false, premium: true, selfHosted: "BYO key" },
       ],
     },
     {
       name: "Risk + compliance",
       rows: [
-        { label: "Per-user risk profile",        trader: true,  pro: true,  selfHosted: true  },
-        { label: "Trailing-stop sync to broker", trader: true,  pro: true,  selfHosted: true  },
-        { label: "PDT detection (sub-$25K)",     trader: true,  pro: true,  selfHosted: true  },
-        { label: "Wash-sale protection / MTM",   trader: true,  pro: true,  selfHosted: true  },
-        { label: "Account-switch detection",     trader: true,  pro: true,  selfHosted: true  },
-        { label: "Daily notional cap",           trader: true,  pro: true,  selfHosted: true  },
-        { label: "Hash-chained audit log",       trader: "View", pro: "View + verify", selfHosted: "Full access" },
-        { label: "MFA + encrypted credentials",  trader: true,  pro: true,  selfHosted: true  },
+        { label: "Per-user risk profile",        free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Trailing-stop sync to broker", free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "PDT detection (sub-$25K)",     free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Wash-sale protection / MTM",   free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Account-switch detection",     free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Daily notional cap",           free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Hash-chained audit log",       free: false, trader: "View", premium: "View + verify", selfHosted: "Full access" },
+        { label: "MFA + encrypted credentials",  free: true,  trader: true,  premium: true, selfHosted: true  },
       ],
     },
     {
       name: "Productivity",
       rows: [
-        { label: "Multi-watchlist (named + shareable)", trader: true, pro: true, selfHosted: true },
-        { label: "Trade journal (auto-stub + prompts)", trader: true, pro: true, selfHosted: true },
-        { label: "AI weekly review",             trader: true,  pro: true,  selfHosted: "BYO key" },
-        { label: "Tax center (Form 8949)",       trader: true,  pro: true,  selfHosted: true  },
-        { label: "Saved strategy library",       trader: false, pro: true,  selfHosted: true  },
-        { label: "Performance attribution",      trader: true,  pro: true,  selfHosted: true  },
-        { label: "Education hub + spaced-rep",   trader: true,  pro: true,  selfHosted: true  },
+        { label: "Education hub + spaced-rep",   free: true,  trader: true,  premium: true, selfHosted: true  },
+        { label: "Financial calculators (8)",    free: true,  trader: true,  premium: true, selfHosted: true  },
+        { label: "Multi-watchlist + sharing",    free: "1 list / 10 sym", trader: "Unlimited", premium: "Unlimited", selfHosted: "Unlimited" },
+        { label: "Trade journal (auto-stub)",    free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Tax center (Form 8949)",       free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Saved strategy library",       free: false, trader: true,  premium: true, selfHosted: true  },
+        { label: "Performance attribution",      free: false, trader: true,  premium: true, selfHosted: true  },
       ],
     },
     {
       name: "Community + support",
       rows: [
-        { label: "Forum + posts + leaderboard",  trader: true,  pro: true,  selfHosted: false },
-        { label: "Private messages",             trader: true,  pro: true,  selfHosted: false },
-        { label: "Discord webhook alerts",       trader: true,  pro: true,  selfHosted: true  },
-        { label: "Daily AI market digest",       trader: true,  pro: true,  selfHosted: "BYO key" },
-        { label: "Email support",                trader: true,  pro: true,  selfHosted: false },
-        { label: "Priority email support",       trader: false, pro: true,  selfHosted: false },
-        { label: "Community Discord access",     trader: true,  pro: true,  selfHosted: true  },
+        { label: "Forum + posts + leaderboard",  free: "Read",  trader: true,  premium: true, selfHosted: false },
+        { label: "Private messages",             free: false,   trader: true,  premium: true, selfHosted: false },
+        { label: "Discord webhook alerts",       free: false,   trader: true,  premium: true, selfHosted: true  },
+        { label: "Email support",                free: false,   trader: true,  premium: true, selfHosted: false },
+        { label: "Priority support",             free: false,   trader: false, premium: true, selfHosted: false },
+        { label: "Community Discord access",     free: true,    trader: true,  premium: true, selfHosted: true  },
       ],
     },
   ];
@@ -179,39 +235,49 @@ export default function PricingPage() {
   // ─── FAQ ────────────────────────────────────────────────────────────
   const faqs = [
     {
+      id: "what-is-free",
+      q: "What's actually free on the Free tier?",
+      a: "All public-data features. You can read every guide in the education hub (14 long-form guides, 95 glossary terms, 8 financial calculators), browse Congressional trades, see Reddit ticker mentions, view SEC filings + the earnings calendar, and keep a small watchlist (1 list, up to 10 symbols) backed by Yahoo daily bars. You can read community forum posts. You CANNOT trade (no engine), use Finnhub-powered features (news + sentiment + fundamentals + options flow + insiders), or use AI features. The Free tier is for learning + research + watching Congress trades.",
+    },
+    {
+      id: "trader-vs-premium",
+      q: "What's the difference between Trader and Premium?",
+      a: "Trader ($20/mo) is the full platform as it exists today, minus AI. That's the engine (paper + live), all 8 modes including adaptive, GA optimizer, multi-broker, Finnhub data (news + sentiment + fundamentals + options + insiders), journal, tax center, audit log — everything. Premium ($45/mo) is Trader + AI assistant (chat, signal scoring, weekly review, daily digest, trade summaries) + future premium-data features (L2 / real-time SIP / dark pools) when they ship. If you don't want AI-summarized analysis, Trader is right. If you want the assistant talking to you about your trades + reading premium data when we land it, Premium is right.",
+    },
+    {
       id: "switch",
       q: "Can I switch tiers later?",
-      a: "Yes — upgrade or downgrade anytime. Upgrades are prorated to the current billing cycle; downgrades take effect at the start of the next cycle.",
+      a: "Yes — upgrade or downgrade anytime. Upgrades are prorated to the current billing cycle; downgrades take effect at the start of the next cycle. Downgrading from Premium to Trader pauses AI features at the next renewal but keeps your data intact.",
     },
     {
       id: "trial",
       q: "Is there a free trial?",
-      a: "Beacontry is currently invite-only beta — public signup opens later. Join the waitlist on the landing page and you'll be notified when invites go out. Early users get the Trader tier free for the first 90 days.",
+      a: "Free tier IS the trial — sign up free, browse the education + public feeds, get a feel for the platform. When you're ready to trade, upgrade to Trader or Premium. Beacontry is currently invite-only beta — join the waitlist if you want early access.",
     },
     {
       id: "broker",
       q: "Do I need to bring my own broker?",
-      a: "Yes — Beacontry never custodies assets. Connect your existing Alpaca, Tradier, or Interactive Brokers account via API keys we encrypt at rest with AES-256-GCM. You can run paper trading with Alpaca free tier if you don't want to wire up a live broker yet.",
+      a: "Yes — Beacontry never custodies assets. Connect your existing Alpaca, Tradier, or Interactive Brokers account via API keys we encrypt at rest with AES-256-GCM. You can run paper trading with the Alpaca free tier if you don't want to wire up a live broker yet.",
     },
     {
-      id: "trader-vs-pro",
-      q: "What's the difference between Trader and Pro?",
-      a: "Pro adds the genetic-algorithm strategy optimizer, the adaptive (regime-driven) engine mode, multi-broker connections (up to 3 instead of 1), audit log access, priority email support, and a saved-strategy library. If you're a power user running multiple strategies across multiple brokers or want to algorithmically tune parameters, Pro is the tier.",
+      id: "future-data",
+      q: "When do L2 / real-time / dark pool data land?",
+      a: "These are on the Premium tier roadmap. Real-time SIP feeds run $100-200/mo per data provider for the underlying license; we'll ship as the user base supports the underlying spend. Premium subscribers get them automatically when they land — no price bump.",
     },
     {
       id: "self-host",
       q: "Can I self-host commercially?",
-      a: "Personal use, internal company use, dev/research/educational use — all free under the Functional Source License. Hosting Beacontry as a competing commercial service (offering it to others as a paid trading platform) requires a commercial license from us. Email hello@beacontry.com if that's your use case. Each release auto-converts to Apache 2.0 after 2 years.",
+      a: "Personal use, internal company use, dev/research/educational use — all free under the Functional Source License (FSL-1.1). Self-hosting Beacontry as a competing commercial service (offering it to others as a paid trading platform) requires a commercial license from us. Email hello@beacontry.com if that's your use case. Each release auto-converts to Apache 2.0 after 2 years.",
+    },
+    {
+      id: "byo-keys",
+      q: "If I self-host, what API keys do I need to bring?",
+      a: "At minimum: a broker (Alpaca paper-free / Alpaca-live / Tradier / IBKR). For full features, you'll also want Finnhub (news, sentiment, fundamentals, options, insiders) and Groq (AI). Every API key is encrypted in your local database; you control the keys. You can also disable Finnhub or AI features entirely if you want — the engine still works on Yahoo bars + headline sentiment alone.",
     },
     {
       id: "team",
       q: "Can I get a team / family-office / firm license?",
       a: "Yes. Team and Enterprise tiers start at $299/seat/mo with role-based access control, dedicated tenant, SLA, white-label options, and custom data sources. Email hello@beacontry.com with your use case.",
-    },
-    {
-      id: "data",
-      q: "Where does the data come from?",
-      a: "Yahoo Finance (price data), Finnhub (news + analyst ratings + insider transactions), Reddit (ticker mentions, public RSS), House Clerk PTR archive (Congressional trades), Groq (Llama 3.3 for AI features). All upstream — we don't aggregate or resell.",
     },
     {
       id: "tax",
@@ -295,7 +361,7 @@ export default function PricingPage() {
 
       {/* ── Tier cards ── */}
       <section className="pb-20">
-        <div className="mx-auto grid max-w-[1180px] items-stretch gap-6 px-4 sm:grid-cols-2 lg:grid-cols-3 lg:px-7">
+        <div className="mx-auto grid max-w-[1280px] items-stretch gap-5 px-4 sm:grid-cols-2 lg:grid-cols-4 lg:px-7">
           {tiers.map((tier, i) => (
             <article
               key={tier.name}
@@ -367,14 +433,17 @@ export default function PricingPage() {
                 {/* Sticky header */}
                 <thead>
                   <tr className="border-b border-ld-border bg-ld-panel/60">
-                    <th className="w-[40%] px-5 py-4 text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-text-muted">
+                    <th className="w-[36%] px-5 py-4 text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-text-muted">
                       Feature
                     </th>
                     <th className="px-3 py-4 text-center text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-text-secondary">
+                      Free
+                    </th>
+                    <th className="px-3 py-4 text-center text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-accent">
                       Trader
                     </th>
                     <th className="px-3 py-4 text-center text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-accent">
-                      Pro
+                      Premium
                     </th>
                     <th className="px-3 py-4 text-center text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-text-secondary">
                       Self-hosted
@@ -386,7 +455,7 @@ export default function PricingPage() {
                     <Fragment key={category.name}>
                       {/* Category divider */}
                       <tr className="border-b border-ld-border/60 bg-ld-deep/30">
-                        <td colSpan={4} className="px-5 py-2.5 text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-accent">
+                        <td colSpan={5} className="px-5 py-2.5 text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-accent">
                           {category.name}
                         </td>
                       </tr>
@@ -398,8 +467,9 @@ export default function PricingPage() {
                           <td className="px-5 py-3 text-[0.9rem] text-ld-text-secondary">
                             {row.label}
                           </td>
+                          <td className="px-3 py-3 text-center">{renderCell(row.free)}</td>
                           <td className="px-3 py-3 text-center">{renderCell(row.trader)}</td>
-                          <td className="px-3 py-3 text-center">{renderCell(row.pro)}</td>
+                          <td className="px-3 py-3 text-center">{renderCell(row.premium)}</td>
                           <td className="px-3 py-3 text-center">{renderCell(row.selfHosted)}</td>
                         </tr>
                       ))}
