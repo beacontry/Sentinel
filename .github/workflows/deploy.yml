@@ -87,16 +87,23 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: deploy
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: GHCR_PAT
+          # REPO + GH_USER: passed through so the image path auto-updates
+          # if the repo gets transferred (e.g. ixiondt/Sentinel →
+          # beacontry/sentinel) without needing to edit this workflow.
+          # GHCR requires lowercase image names; `github.repository`
+          # preserves the original case, so we lowercase in-script.
+          envs: GHCR_PAT,REPO,GH_USER
           script: |
-            echo "$GHCR_PAT" | sudo -u sn-deploy -i podman login ghcr.io -u ixiondt --password-stdin
+            IMAGE="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]'):latest"
+            echo "Deploying image: $IMAGE"
+            echo "$GHCR_PAT" | sudo -u sn-deploy -i podman login ghcr.io -u "$GH_USER" --password-stdin
             echo "Login done, pulling image..."
-            sudo -u sn-deploy -i podman pull ghcr.io/ixiondt/sentinel:latest
+            sudo -u sn-deploy -i podman pull "$IMAGE"
             echo "Pull done, replacing container..."
             sudo -u sn-deploy -i podman stop sentinel-app 2>/dev/null || true
             sudo -u sn-deploy -i podman rm sentinel-app 2>/dev/null || true
             sudo -u sn-deploy -i bash -c 'mkdir -p /opt/apps/sentinel/cache'
-            sudo -u sn-deploy -i podman run -d --name sentinel-app --network=host --env-file /opt/apps/sentinel/.env -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache -v /opt/apps/sentinel/cache:/data/cache:Z --restart always -m 2g ghcr.io/ixiondt/sentinel:latest
+            sudo -u sn-deploy -i podman run -d --name sentinel-app --network=host --env-file /opt/apps/sentinel/.env -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache -v /opt/apps/sentinel/cache:/data/cache:Z --restart always -m 2g "$IMAGE"
             echo "Container started"
             # Health check — wait for app to be ready
             for i in 1 2 3 4 5; do
@@ -112,3 +119,5 @@ jobs:
             exit 1
         env:
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          REPO: ${{ github.repository }}
+          GH_USER: ${{ github.actor }}
