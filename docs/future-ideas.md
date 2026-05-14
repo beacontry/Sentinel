@@ -69,8 +69,8 @@ External prerequisites (user does):
 2. Create Products + Prices:
    - Trader Monthly @ $20 (`price_xxx`)
    - Trader Annual @ $200 (~17% discount) (`price_yyy`)
-   - Premium Monthly @ $45 (`price_zzz`)
-   - Premium Annual @ $450 (~17% discount) (`price_www`)
+   - Premium Monthly @ $40 (`price_zzz`)
+   - Premium Annual @ $400 (~17% discount) (`price_www`)
 3. Enable Stripe Tax (automates US state-by-state SaaS taxability)
 4. Generate webhook signing secret + API keys (test + live)
 5. Hand keys to assistant via `/dashboard/admin/system-config` (uses

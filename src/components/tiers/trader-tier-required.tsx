@@ -61,10 +61,10 @@ export function TraderTierRequired() {
 
         <div className="flex flex-col gap-2 lg:items-end">
           <Link
-            href="/pricing"
+            href="/dashboard/billing"
             className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent-hover transition-colors"
           >
-            See pricing
+            Upgrade to Trader
             <ArrowRight className="h-4 w-4" />
           </Link>
           <span className="text-[0.72rem] text-text-muted text-center lg:text-right">

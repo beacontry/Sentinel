@@ -43,10 +43,15 @@ export const users = pgTable("users", {
   tier: text("tier").notNull().default("free"),
   tierChangedAt: timestamp("tier_changed_at", { withTimezone: true }),
   tierExpiresAt: timestamp("tier_expires_at", { withTimezone: true }),
+  // 2026-05-14 — Phase C. Stripe is the source of truth for billing
+  // state; we mirror only the customer ID + tier + tier_expires_at.
+  // NULL = never started a checkout flow (free-only users).
+  stripeCustomerId: text("stripe_customer_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("users_email_idx").on(t.email),
+  uniqueIndex("users_stripe_customer_idx").on(t.stripeCustomerId),
 ]);
 
 export const userPreferences = pgTable("user_preferences", {

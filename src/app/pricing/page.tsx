@@ -44,7 +44,7 @@ export default function PricingPage() {
   //   Trader $20  — full platform as it exists today, minus AI
   //                 (every Finnhub feature, full engine, GA optimizer,
   //                 adaptive mode, multi-broker, journal, tax, etc.)
-  //   Premium $45 — Trader + AI assistant + future paid-data tier
+  //   Premium $40 — Trader + AI assistant + future paid-data tier
   //                 (L2 / real-time SIP / dark pools shipping later)
   //   Self-Hosted — source-available under FSL-1.1, BYO everything.
   //                (Renamed from "Open Source" 2026-05-14 — FSL is
@@ -97,9 +97,9 @@ export default function PricingPage() {
     {
       name: "Premium",
       tag: "AI + future data",
-      price: "$45",
+      price: "$40",
       cadence: "/ month",
-      annual: "$450/yr — saves 2 months",
+      annual: "$400/yr — saves 2 months",
       desc: "Trader + AI assistant + premium data (coming).",
       features: [
         "Everything in Trader, plus:",
@@ -246,7 +246,7 @@ export default function PricingPage() {
     {
       id: "trader-vs-premium",
       q: "What's the difference between Trader and Premium?",
-      a: "Trader ($20/mo) is the full platform as it exists today, minus AI. That's the engine (paper + live), all 8 modes including adaptive, GA optimizer, multi-broker, Finnhub data (news + sentiment + fundamentals + options + insiders), journal, tax center, audit log — everything. Premium ($45/mo) is Trader + AI assistant (chat, signal scoring, weekly review, daily digest, trade summaries) + future premium-data features (L2 / real-time SIP / dark pools) when they ship. If you don't want AI-summarized analysis, Trader is right. If you want the assistant talking to you about your trades + reading premium data when we land it, Premium is right.",
+      a: "Trader ($20/mo) is the full platform as it exists today, minus AI. That's the engine (paper + live), all 8 modes including adaptive, GA optimizer, multi-broker, Finnhub data (news + sentiment + fundamentals + options + insiders), journal, tax center, audit log — everything. Premium ($40/mo) is Trader + AI assistant (chat, signal scoring, weekly review, daily digest, trade summaries) + future premium-data features (L2 / real-time SIP / dark pools) when they ship. If you don't want AI-summarized analysis, Trader is right. If you want the assistant talking to you about your trades + reading premium data when we land it, Premium is right.",
     },
     {
       id: "switch",

@@ -67,9 +67,11 @@ export function SidebarTierBadge() {
 
   // Free tier — loud upgrade pill. Same visual rhythm as the other
   // sidebar buttons but with accent treatment to draw the eye.
+  // Routes through /dashboard/billing (Phase C) so users see the
+  // in-app upgrade grid rather than the marketing page.
   return (
     <Link
-      href="/pricing"
+      href="/dashboard/billing"
       style={{
         display: "flex",
         alignItems: "center",
