@@ -43,6 +43,8 @@ import { createRouteLogger } from "./logger";
 import { writeAudit, AuditAction } from "./audit";
 import { detectMarketRegime } from "./market-regime";
 import { createAutoJournalStub } from "./journal-auto-stub";
+import { getUserTier } from "./tiers-server";
+import { userHasTier } from "./tiers";
 
 const log = createRouteLogger("trading-engine");
 
@@ -169,6 +171,14 @@ export interface EngineState {
     reasons: string[];
     updatedAt: Date;
   } | null;
+  /** User's effective tier at engine start. Captured once so mid-session
+   *  tier changes don't reshape the running pipeline (we'd lose AI score
+   *  history mid-trade if it flipped). Read by `buildHybridOpts()` to
+   *  strip Premium-tier hybrid layers (AI scoring + AI sentiment) for
+   *  non-Premium users — they get pure technical + Finnhub layers but
+   *  not the Groq-driven layers they don't pay for. Tier picks up next
+   *  time the engine is restarted. */
+  userTier: "free" | "trader" | "premium" | "enterprise" | null;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -213,6 +223,7 @@ function createDefaultEngine(): EngineState {
     pdtPatternFlagged: false,
     effectiveMode: null,
     adaptiveRegime: null,
+    userTier: null,
   };
 }
 
@@ -3249,7 +3260,21 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   // Adaptive's effective mode collapses to "optimized" when regime warrants —
   // getActiveMode lets adaptive users inherit the GA params automatically.
   const optSignalParams = getActiveMode(engine) === "optimized" ? await getOptimizedSignalParams() : null;
-  const hybridOpts = optSignalParams ? { signalParams: optSignalParams } : undefined;
+  // Tier-aware hybrid options (Phase E3):
+  //   - Free shouldn't reach here (server gates engine start); fallback to trader
+  //     pipeline if somehow reached
+  //   - Trader: Finnhub layers (sentiment/options/analyst) ON, AI scoring OFF
+  //   - Premium+: everything ON (default — no overrides)
+  // The hybrid pipeline defaults read HYBRID_CONFIG which has AI scoring on;
+  // we only override to OFF for non-Premium users to skip the Groq call.
+  const isPremium = userHasTier(engine.userTier ?? "trader", "premium");
+  const hybridOpts: import("@/types").HybridPipelineOptions | undefined =
+    !isPremium || optSignalParams
+      ? {
+          ...(optSignalParams ? { signalParams: optSignalParams } : {}),
+          ...(isPremium ? {} : { enableAiScoring: false }),
+        }
+      : undefined;
 
   // 4. Get current broker positions + run live-trading safeguard checks
   let brokerPositions: Awaited<ReturnType<BrokerClient["getPositions"]>> = [];
@@ -3939,6 +3964,11 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   engine.halted = false;
   engine.mode = mode;
   engine.userId = userId;
+  // Capture tier at boot so the hybrid pipeline knows which layers to
+  // run. Premium gets AI scoring; Trader gets Finnhub but no AI;
+  // free shouldn't reach here (server gate blocks engine start) but
+  // we treat as 'trader' if somehow we get a free user — fail-conservative.
+  engine.userTier = await getUserTier(userId);
   engine.errors = [];
   engine.dailyLoss = 0;
   engine.dailyLossDate = getETDateString();

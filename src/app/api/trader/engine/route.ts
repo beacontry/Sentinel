@@ -9,6 +9,7 @@ import {
 import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { z } from "zod";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("trader-engine-api");
 
@@ -37,6 +38,8 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   let body: unknown;
   try {

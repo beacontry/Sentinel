@@ -10,6 +10,7 @@ import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { savedStrategies } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("backtest-compare");
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -19,6 +20,8 @@ export async function GET(request: Request) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   const url = new URL(request.url);
   const idsParam = url.searchParams.get("ids") ?? "";

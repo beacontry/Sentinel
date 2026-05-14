@@ -9,6 +9,7 @@ const log = createRouteLogger("screener");
 import { isTraderConfigured } from "@/lib/trader-client";
 import { rateLimit } from "@/lib/rate-limiter";
 import { z } from "zod";
+import { checkTier } from "@/lib/tiers-server";
 
 export const maxDuration = 120; // Allow up to 2 minutes for full market scan
 
@@ -70,6 +71,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   const { allowed } = rateLimit(`screener:${auth.userId}`, 3, 60);
   if (!allowed) {

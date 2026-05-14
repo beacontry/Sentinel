@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getMarketDataProvider } from "@/lib/market-data";
 import { analyzeBars } from "@/lib/indicators/analyzer";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("multi-timeframe");
 
@@ -11,6 +12,8 @@ export async function GET(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   const symbol = request.nextUrl.searchParams.get("symbol")?.toUpperCase();
   if (!symbol || !/^[A-Z]{1,10}$/.test(symbol)) {

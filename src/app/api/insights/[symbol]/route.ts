@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
 import { getQuickInsight } from "@/lib/quick-insights";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("insights");
 
@@ -14,6 +15,8 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "premium");
+  if (tierFail) return tierFail;
 
   // Rate limit: 10 req/min per user
   const { allowed } = rateLimit(`insight:${session.userId}`, 10, 60);

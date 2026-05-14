@@ -9,6 +9,7 @@ import { createRouteLogger } from "@/lib/logger";
 const log = createRouteLogger("paper-trading-run");
 import { getMarketDataProvider } from "@/lib/market-data";
 import { STRATEGY_PRESETS, type PresetName } from "@/lib/strategy-presets";
+import { checkTier } from "@/lib/tiers-server";
 
 export async function POST(
   request: Request,
@@ -16,6 +17,8 @@ export async function POST(
 ) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   const { id } = await params;
 

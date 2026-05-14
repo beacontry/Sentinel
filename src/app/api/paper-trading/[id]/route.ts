@@ -4,6 +4,7 @@ import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { paperTradingConfigs, paperTradingRuns } from "@/lib/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("paper-trading-detail");
 
@@ -75,6 +76,8 @@ export async function DELETE(
 ) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   const { id } = await params;
 

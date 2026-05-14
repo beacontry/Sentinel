@@ -5,6 +5,7 @@ import { signals, signalAccuracy } from "@/lib/db/schema";
 import { eq, gte, lte, and, desc, inArray, type SQL } from "drizzle-orm";
 import { toCSV } from "@/lib/csv";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("signals-export");
 
@@ -13,6 +14,8 @@ export async function GET(request: NextRequest) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   const params = request.nextUrl.searchParams;
   const symbolsParam = params.get("symbols");

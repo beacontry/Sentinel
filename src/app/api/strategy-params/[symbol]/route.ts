@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { computeATRStrategy } from "@/lib/strategy-atr";
 import { resolveStrategy } from "@/lib/strategy-resolver";
+import { checkTier } from "@/lib/tiers-server";
 
 export async function GET(
   request: NextRequest,
@@ -11,6 +12,8 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const tierFail = await checkTier(session.userId, "trader");
+  if (tierFail) return tierFail;
 
   const { symbol } = await params;
   const upperSymbol = symbol.toUpperCase();

@@ -9,6 +9,7 @@ import {
   deleteStrategySchema,
 } from "@/lib/validators";
 import { createRouteLogger } from "@/lib/logger";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("strategies");
 
@@ -51,6 +52,8 @@ export async function GET() {
 export async function POST(request: Request) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+  const tierFail = await checkTier(auth.userId, "trader");
+  if (tierFail) return tierFail;
 
   let body;
   try {

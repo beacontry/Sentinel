@@ -10,6 +10,7 @@ import { createRouteLogger } from "@/lib/logger";
 import { TOP_50, TOP_150 } from "@/lib/optimizer";
 import { SP500_SYMBOLS } from "@/lib/sp500";
 import type { Bar } from "@/types";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("mode-comparison");
 
@@ -487,6 +488,8 @@ function simulateTacticalSmart(
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const tierFail = await checkTier(session.userId, "trader");
+    if (tierFail) return tierFail;
 
   try {
     const provider = getMarketDataProvider();
