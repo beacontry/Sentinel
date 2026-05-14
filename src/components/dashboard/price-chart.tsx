@@ -238,9 +238,25 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
     setVisible((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
+  /**
+   * Layout note: when `height === "fill"`, the chart needs to grow to
+   * fill its parent (e.g. inside a resizable panel). Old layout used
+   * `space-y-3` (block flow) which means children have auto-determined
+   * heights — the chart container's clientHeight ended up 0 at mount,
+   * chart fell back to 400px hardcode, panel had huge empty space
+   * below. New layout: when height is "fill", use flex-col + h-full +
+   * flex-1 on the chart container so the chart claims the available
+   * vertical space. ResizeObserver below tracks that dimension.
+   *
+   * When height is a number (mobile usage, where the parent has fixed
+   * height), keep the old auto-flow wrapper to avoid disturbing those
+   * callers.
+   */
+  const useFillLayout = height === "fill";
+
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-1.5">
+    <div className={useFillLayout ? "flex flex-col h-full gap-3 min-h-0" : "space-y-3"}>
+      <div className="flex flex-wrap gap-1.5 shrink-0">
         {Object.entries(indicatorColors).map(([key, color]) => (
           <button
             key={key}
@@ -259,7 +275,8 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
 
       <div
         ref={containerRef}
-        className="overflow-hidden rounded-xl border border-border bg-bg-surface"
+        className={`overflow-hidden rounded-xl border border-border bg-bg-surface ${useFillLayout ? "flex-1 min-h-0" : ""}`}
+        style={useFillLayout ? { height: "100%" } : { height: `${height}px` }}
       />
 
       {showRsi && (
@@ -278,7 +295,7 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
         />
       )}
 
-      <div className="flex gap-1.5">
+      <div className="flex gap-1.5 shrink-0">
         <button
           onClick={() => setShowRsi(!showRsi)}
           className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all
