@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sentinel — Usage Slides</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-root:     oklch(8% 0.01 165);
+    --bg-primary:  oklch(10% 0.01 165);
+    --bg-surface:  oklch(14% 0.012 165);
+    --bg-elevated: oklch(18% 0.014 165);
+    --bg-hover:    oklch(22% 0.015 165);
+
+    --text-primary:   oklch(96% 0.005 165);
+    --text-secondary: oklch(68% 0.01 165);
+    --text-muted:     oklch(48% 0.01 165);
+
+    --border:       oklch(24% 0.015 165);
+    --border-hover: oklch(32% 0.02 165);
+
+    --accent:       oklch(72% 0.17 165);
+    --accent-dim:   oklch(60% 0.12 165);
+    --accent-bg:    oklch(72% 0.17 165 / 0.08);
+    --accent-bg-md: oklch(72% 0.17 165 / 0.14);
+
+    --bullish:    oklch(75% 0.18 150);
+    --bearish:    oklch(68% 0.2 25);
+    --warning:    oklch(78% 0.16 80);
+    --info:       oklch(72% 0.12 240);
+  }
+
+  /* Viewport-responsive root font-size.
+   * Scales between 11px (tiny laptop / heavy browser zoom) and 18px
+   * (full HD+ desktop). Tracks 1.55% of the SMALLER viewport dimension
+   * (vmin) so the deck adapts equally to narrow phones turned landscape
+   * and short widescreens. Every rem-sized element — cards, lede, body
+   * text, kbd badges — scales with this. Browser zoom shrinks effective
+   * vmin, so the deck auto-fits regardless of zoom level. */
+  html { font-size: clamp(11px, 1.55vmin, 18px); scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg-root);
+    color: var(--text-primary);
+    line-height: 1.55;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  code, .mono { font-family: 'JetBrains Mono', monospace; }
+  code {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 6px;
+    color: var(--accent);
+    font-size: 0.88em;
+  }
+
+  /* ── Slide container ──────────────────────────────────────────────── */
+
+  .deck {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-root);
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    /* Asymmetric vertical padding: standard top, larger bottom to
+       reserve space for the fixed deck-footer (~60px tall). Otherwise
+       dense slides (keyboard cheatsheet) bleed into the counter. */
+    padding: clamp(48px, 7vh, 80px) clamp(60px, 9vw, 120px) clamp(80px, 10vh, 110px);
+    overflow: hidden;
+  }
+  .slide.active { display: flex; }
+
+  /* Slide enter animation */
+  .slide.active > * {
+    animation: slideIn 0.4s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  }
+  .slide.active > *:nth-child(1) { animation-delay: 0.05s; }
+  .slide.active > *:nth-child(2) { animation-delay: 0.10s; }
+  .slide.active > *:nth-child(3) { animation-delay: 0.15s; }
+  .slide.active > *:nth-child(4) { animation-delay: 0.20s; }
+  .slide.active > *:nth-child(5) { animation-delay: 0.25s; }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Typography ───────────────────────────────────────────────────── */
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+    margin-bottom: 12px;
+  }
+  .eyebrow::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+  }
+
+  h1 {
+    font-size: clamp(2.4rem, 5.5vw, 3.8rem);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-bottom: 18px;
+  }
+  h2 {
+    font-size: clamp(1.6rem, 3.2vw, 2.3rem);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.015em;
+    margin-bottom: 12px;
+  }
+  h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 24px 0 8px;
+  }
+
+  .lede {
+    font-size: clamp(1.05rem, 1.6vw, 1.25rem);
+    color: var(--text-secondary);
+    max-width: 900px;
+    margin-bottom: 28px;
+    line-height: 1.55;
+  }
+
+  /* ── Body content ─────────────────────────────────────────────────── */
+
+  .body {
+    flex: 1;
+    /* Allow scrolling on dense slides instead of cutting content off
+       at the bottom edge (and behind the footer). Most slides fit; the
+       keyboard cheatsheet on smaller viewports doesn't. */
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 70rem;
+  }
+  .body p {
+    color: var(--text-secondary);
+    font-size: 1.02rem;
+    max-width: 56rem;
+  }
+  .body ul {
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+  .body li {
+    position: relative;
+    padding-left: 1.5rem;
+    color: var(--text-secondary);
+    font-size: 1.02rem;
+    line-height: 1.55;
+  }
+  .body li::before {
+    content: "›";
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--accent);
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .body strong { color: var(--text-primary); font-weight: 600; }
+
+  /* ── Card grid ────────────────────────────────────────────────────── */
+
+  .grid {
+    display: grid;
+    /* rem-based gaps so spacing scales with the viewport-responsive
+       root font-size, not absolute pixels. */
+    gap: 0.875rem;
+    margin-top: 1rem;
+  }
+  .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+  .card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    padding: 1.1rem 1.25rem;
+  }
+  .card-title {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    margin-bottom: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .card-title .badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent-bg);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+  }
+  .card p {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  /* ── Two-column layout ────────────────────────────────────────────── */
+
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    flex: 1;
+    align-items: start;
+  }
+
+  /* ── Title slide ──────────────────────────────────────────────────── */
+
+  .title-slide {
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+  .title-slide h1 {
+    font-size: clamp(3rem, 8vw, 5.5rem);
+    background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .title-slide .lede { font-size: clamp(1.2rem, 2vw, 1.5rem); }
+  .title-slide .meta {
+    display: flex;
+    gap: 24px;
+    margin-top: 36px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .title-slide .meta div {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--text-muted);
+  }
+  .title-slide .meta div span {
+    color: var(--accent);
+    margin-right: 8px;
+  }
+
+  /* ── Closing slide ────────────────────────────────────────────────── */
+
+  .closing-slide {
+    justify-content: center;
+    text-align: center;
+  }
+  .closing-slide .grid {
+    margin-top: 28px;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* ── Keyboard cheatsheet ──────────────────────────────────────────── */
+
+  .kbd-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 14px;
+    max-width: 800px;
+  }
+  .kbd-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 12px;
+    background: var(--bg-surface);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    padding: 3px 9px;
+    border-radius: 6px;
+    color: var(--accent);
+    font-weight: 600;
+    min-width: 56px;
+    text-align: center;
+  }
+  .kbd-row span { color: var(--text-secondary); font-size: 0.92rem; }
+
+  /* ── Footer (slide counter + nav hint) ────────────────────────────── */
+
+  .deck-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px clamp(30px, 5vw, 60px);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    pointer-events: none;
+    user-select: none;
+    /* Backdrop so any slide content that still reaches the bottom
+       fades behind the footer instead of overlapping its text. */
+    background: linear-gradient(to top, var(--bg-root) 50%, transparent);
+    z-index: 6;
+  }
+  .deck-footer .brand {
+    color: var(--text-secondary);
+  }
+  .deck-footer .counter {
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    padding: 4px 12px;
+    border-radius: 999px;
+    pointer-events: auto;
+  }
+  .deck-footer .hint { color: var(--text-muted); }
+
+  /* ── Progress bar ─────────────────────────────────────────────────── */
+
+  .progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--bg-surface);
+    z-index: 10;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+    box-shadow: 0 0 10px var(--accent);
+  }
+
+  /* ── Nav buttons ──────────────────────────────────────────────────── */
+
+  .nav-btn {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    z-index: 5;
+    font-size: 1.2rem;
+  }
+  .nav-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-bg);
+  }
+  .nav-btn.prev { left: 24px; }
+  .nav-btn.next { right: 24px; }
+  .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* ── Color hints ──────────────────────────────────────────────────── */
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    border: 1px solid;
+  }
+  .pill.bullish { color: var(--bullish); border-color: var(--bullish); background: oklch(75% 0.18 150 / 0.1); }
+  .pill.bearish { color: var(--bearish); border-color: var(--bearish); background: oklch(68% 0.2 25 / 0.1); }
+  .pill.warning { color: var(--warning); border-color: var(--warning); background: oklch(78% 0.16 80 / 0.1); }
+  .pill.info    { color: var(--info);    border-color: var(--info);    background: oklch(72% 0.12 240 / 0.1); }
+
+  /* ── Print: each slide on its own page ────────────────────────────── */
+
+  @media print {
+    body { background: white; color: black; overflow: visible; }
+    .deck { position: static; }
+    .slide {
+      display: flex !important;
+      position: static;
+      page-break-after: always;
+      page-break-inside: avoid;
+      height: 100vh;
+      background: white;
+      color: black;
+    }
+    .slide.active > * { animation: none; }
+    .nav-btn, .deck-footer, .progress { display: none !important; }
+    h1, h2, h3, .lede, .body p, .body li { color: black !important; }
+    .card { background: #f5f5f5 !important; }
+    code { color: #0a7c5a !important; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slide.active > * { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div class="progress"><div class="progress-fill" id="progressFill"></div></div>
+
+<!-- Nav arrows -->
+<button class="nav-btn prev" id="navPrev" aria-label="Previous slide">‹</button>
+<button class="nav-btn next" id="navNext" aria-label="Next slide">›</button>
+
+<div class="deck" id="deck">
+
+<!-- ============================ SLIDE 1: TITLE ============================ -->
+<section class="slide active title-slide">
+  <div class="eyebrow">Sentinel · Usage</div>
+  <h1>Trading Intelligence,<br>End to End</h1>
+  <p class="lede">A guided tour of every page and feature. Built for traders who want signals, execution, journaling, and tax — all in one place.</p>
+  <div class="meta">
+    <div><span>›</span>Press → to advance</div>
+    <div><span>›</span>Press P to print all</div>
+    <div><span>›</span>Press Esc for overview</div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 2: WHAT IS SENTINEL ============================ -->
+<section class="slide">
+  <div class="eyebrow">Concepts · 1 of 7</div>
+  <h2>What Sentinel is</h2>
+  <p class="lede">A full-stack trading platform — research, execute, journal, learn, file taxes, operate at production grade. 62 pages, all yours from day one.</p>
+  <div class="grid cols-3">
+    <div class="card">
+      <div class="card-title">Research <span class="badge">Find</span></div>
+      <p>500-symbol screener, news with sentiment, social sentiment, SEC filings (AI-summarized), congress trades (official sources), insights, multi-timeframe analysis, breadth, correlation, sector rotation, unusual volume, relative strength.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Execute <span class="badge">Trade</span></div>
+      <p>Self-optimizing trading engine — 8 modes. Manual order ticket (market/limit/stop/bracket/fractional). Three brokers: Alpaca, Tradier, IBKR. Paper + live. Backtest, compare, optimize, replay, stress-test.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Journal <span class="badge">Reflect</span></div>
+      <p>Auto-stub on every fill, daily pre/post-market prompts, AI Sunday review, behavioral pattern badges. 30 tags across emotion/strategy/execution/outcome. Cross-linked to Performance + P&amp;L Calendar.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Tax <span class="badge">File</span></div>
+      <p>Unified Tax Center: realized + unrealized P&amp;L across manual portfolios and engine fills. Tax-loss harvesting candidates. §475(f) MTM tracking. Form 8949 export. Personalized education on your real numbers.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Learn <span class="badge">Educate</span></div>
+      <p>100+ glossary terms with spaced repetition. 15+ long-form guides (Roth IRA, MTM, wash sale, FERS, kiddie tax, more). 8 interactive calculators. AI chat with RAG over the guides.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Operate <span class="badge">Run</span></div>
+      <p>Hash-chained audit log. AES-256-GCM encrypted keys. MFA-ready. CSRF + CSP. 5 themes + color-blind palette. PWA install + push. Discord webhooks. Email digests. Customer support tickets. 16-widget dashboard with multi-layout.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 3: ENGINE MODES ============================ -->
+<section class="slide">
+  <div class="eyebrow">Concepts · 2 of 7</div>
+  <h2>Eight engine modes</h2>
+  <p class="lede">Different risk postures, different scan cadences. Pick one, or pick adaptive and let the regime classifier choose.</p>
+  <div class="grid cols-4">
+    <div class="card"><div class="card-title">Conservative</div><p>Lower confidence threshold, wider stops, fewer concurrent positions.</p></div>
+    <div class="card"><div class="card-title">Moderate</div><p>Balanced. The default if you're not sure where to start.</p></div>
+    <div class="card"><div class="card-title">Optimized</div><p>Uses GA-tuned parameters from the optimizer. Updated when you accept a new tune.</p></div>
+    <div class="card"><div class="card-title">Aggressive</div><p>Tighter stops, higher position size, looser confidence gate. Risk-on environments only.</p></div>
+    <div class="card"><div class="card-title">Intraday</div><p>5-min bars, 1-min scans. <span class="pill warning">PDT-sensitive</span> under $25k.</p></div>
+    <div class="card"><div class="card-title">Tactical</div><p>SPY trend filter — enters when above SMA, exits when below. Bull-only.</p></div>
+    <div class="card"><div class="card-title">Tactical Smart</div><p>Tactical + screener-scored entries. Always-on rebalance to top signals.</p></div>
+    <div class="card"><div class="card-title">Adaptive</div><p>Reads VIX + SPY + breadth, picks the right base mode for the regime.</p></div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 4: RISK PROFILE ============================ -->
+<section class="slide">
+  <div class="eyebrow">Concepts · 3 of 7</div>
+  <h2>Risk profile is the single source of truth</h2>
+  <p class="lede">Set it once on the Trader page. Every engine, every backtest, every order respects these limits.</p>
+  <div class="grid cols-2">
+    <div class="card"><div class="card-title">Account size</div><p>Base for position sizing. The engine never sizes a position above <code>maxPositionPct</code> of this.</p></div>
+    <div class="card"><div class="card-title">Max daily loss %</div><p>Engine auto-halts when daily losses exceed this. Resumes next trading day.</p></div>
+    <div class="card"><div class="card-title">Max position %</div><p>Size per trade as fraction of equity. Also caps concurrent position count (100 / pct).</p></div>
+    <div class="card"><div class="card-title">Max consecutive losses</div><p>Auto-halt after N losses in a row. Resets on any winner.</p></div>
+    <div class="card"><div class="card-title">Sector exposure cap</div><p>Reject new BUYs that would push a sector above this fraction of equity.</p></div>
+    <div class="card"><div class="card-title">Earnings blackout</div><p>Skip BUYs on symbols with earnings in the next N days.</p></div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 5: BROKER = SOURCE OF TRUTH ============================ -->
+<section class="slide">
+  <div class="eyebrow">Concepts · 4 of 7</div>
+  <h2>The broker is the source of truth</h2>
+  <p class="lede">Positions, fills, cash — Sentinel reads them live from your broker every scan. The database is a cache, not the record.</p>
+  <div class="body">
+    <ul>
+      <li><strong>Multiple brokers supported:</strong> Alpaca (paper + live), Tradier (paper + live), IBKR (live only). Add your keys in <code>Settings</code>.</li>
+      <li><strong>Paper trades are real Alpaca paper trades</strong> — they go to Alpaca's paper engine, get matched against live market data, fills come back through the same code path live uses. Faithful test of signal quality and risk profile.</li>
+      <li><strong>Live trading requires explicit unlock:</strong> set <code>ALLOW_LIVE_TRADING=1</code> in the server env. Without it the engine refuses to start on any live broker. Five capital circuit breakers fire automatically on every BUY (notional cap, rate limit, broker failure, account switch, consecutive losses).</li>
+      <li><strong>You can switch brokers without restart</strong> from the sidebar. Engine reloads with the new active connection on the next scan.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 6: AI IS GROQ ============================ -->
+<section class="slide">
+  <div class="eyebrow">Concepts · 5 of 7</div>
+  <h2>AI runs on Groq</h2>
+  <p class="lede"><code>llama-3.3-70b-versatile</code>. Fast, cheap, and good enough for everything we ask of it.</p>
+  <div class="split">
+    <div>
+      <h3>Where AI shows up</h3>
+      <ul>
+        <li><strong>Insights</strong> — explains why a stock is moving</li>
+        <li><strong>Hybrid signal layer</strong> — sentiment + analyst views</li>
+        <li><strong>Filings chat</strong> — ask questions of 10-K / 10-Q PDFs</li>
+        <li><strong>Market digest</strong> — daily AI summary, emailed</li>
+        <li><strong>AI chat</strong> — RAG over the education library</li>
+        <li><strong>Trade summaries</strong> — the ✨ button on Recent Trades</li>
+        <li><strong>Journal weekly review</strong> — Sunday 5pm ET</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Where you manage keys</h3>
+      <ul>
+        <li>Admin → <code>/dashboard/admin/system-config</code></li>
+        <li>Keys encrypted at rest (AES-256-GCM)</li>
+        <li>Test-before-save flow validates against the live provider</li>
+        <li>No SSH needed to rotate; takes effect within 60s for LLM calls</li>
+        <li>Finnhub key rotation requires container restart (constructed once at boot)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 7: AUDIT LOG ============================ -->
+<section class="slide">
+  <div class="eyebrow">Concepts · 6 of 7</div>
+  <h2>Tamper-evident audit log</h2>
+  <p class="lede">Every privileged action writes a hash-chained row. You can verify the chain with one click.</p>
+  <div class="body">
+    <ul>
+      <li><strong>What gets logged:</strong> logins, order placements, halts, config changes, role changes, system-config rotations, MFA setup, watchlist sharing, broker connection changes.</li>
+      <li><strong>How the chain works:</strong> each row stores a SHA-256 of <code>(prev_hash, action, actor, resource, metadata, timestamp)</code>. Genesis row has <code>prev_hash = "GENESIS"</code>. Tampering with any row breaks every subsequent row's hash.</li>
+      <li><strong>Verify chain</strong> button on <code>/dashboard/admin/audit</code> walks the entire log and reports any break, with the specific row.</li>
+      <li><strong>What's safe to truncate:</strong> the whole log via <code>TRUNCATE audit_log</code> resets to a new genesis. Partial deletes break the chain permanently.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 8: THEMES ============================ -->
+<section class="slide">
+  <div class="eyebrow">Concepts · 7 of 7</div>
+  <h2>Five themes</h2>
+  <p class="lede">Pick one in the sidebar footer. Trading semantics (red/green for P&amp;L) stay universal across all themes so positions are always recognizable.</p>
+  <div class="grid cols-4">
+    <div class="card"><div class="card-title">Light</div><p>Default. White surfaces, emerald accent.</p></div>
+    <div class="card"><div class="card-title">Dark</div><p>Emerald-tinted near-black, easy on the eyes.</p></div>
+    <div class="card"><div class="card-title">Coral</div><p>Warm peach surfaces, coral accent. Light variant.</p></div>
+    <div class="card"><div class="card-title">Light Blue</div><p>Cool sky tints, blue accent. Light variant.</p></div>
+    <div class="card"><div class="card-title">Gray</div><p>True neutral grays, no emerald tint. Dark variant.</p></div>
+    <div class="card"><div class="card-title">Color-blind palette</div><p>Settings → Display Prefs. Swaps red/green for Wong blue/orange.</p></div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 9: DASHBOARD ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Dashboard</div>
+  <h2>Dashboard — your command center</h2>
+  <p class="lede">Customizable widget grid. 16 widgets. Multiple named layouts.</p>
+  <div class="split">
+    <div>
+      <h3>How to customize</h3>
+      <ul>
+        <li>Click <strong>Edit Layout</strong> in the header</li>
+        <li>Drag any widget to rearrange (dnd-kit handles ordering)</li>
+        <li>Resize cycle: small → medium → large → full-width</li>
+        <li>Save as a new named layout, or update the default</li>
+        <li>The sidebar dropdown lets you swap between saved layouts</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Notable widgets</h3>
+      <ul>
+        <li><strong>Live News Feed</strong> — scrolling, 5-min auto-refresh, sentiment-tagged, watchlist symbols first</li>
+        <li><strong>Net Worth</strong> — aggregate across paper portfolios + broker</li>
+        <li><strong>P&amp;L by Symbol</strong> — top contributors to lifetime realized P&amp;L</li>
+        <li><strong>Quick Insight</strong> — AI 2-3 sentences on any symbol</li>
+        <li><strong>Continue Reading</strong> — next education guide</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 10: ANALYSIS ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Analysis</div>
+  <h2>Analysis cockpit</h2>
+  <p class="lede">The deepest single-symbol research surface. Chart + signal + intelligence tabs.</p>
+  <div class="split">
+    <div>
+      <h3>Three columns</h3>
+      <ul>
+        <li><strong>Left:</strong> Add-to-watchlist input + your watchlist with switcher dropdown</li>
+        <li><strong>Center top:</strong> Chart (Engine view or TradingView)</li>
+        <li><strong>Center bottom:</strong> Intelligence tabs — Technical, Options Flow, Earnings, Analyst, AI, Filings, Backtest</li>
+        <li><strong>Right:</strong> Signal box — SignalBadge, confidence %, indicator breakdown</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Power features</h3>
+      <ul>
+        <li><strong>Focus mode</strong> (header) — collapse the sidebar for more chart real estate</li>
+        <li><strong>Maximize</strong> (chart toolbar) — expand chart to full viewport, Esc to exit</li>
+        <li><strong>Engine view ↔ TradingView</strong> — toggle, persists per-device</li>
+        <li><strong>Make Default ★</strong> in the watchlist dropdown — switch your default without leaving the page</li>
+        <li>Deep links work: <code>?symbol=HPE</code></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 11: SCREENER + TRADER ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Trading</div>
+  <h2>Screener → Trader pipeline</h2>
+  <p class="lede">Screener scans the market. Engine acts on what the screener finds. You decide when to start.</p>
+  <div class="split">
+    <div>
+      <h3>Screener</h3>
+      <ul>
+        <li>500+ symbols, scanned every 5 min during market hours</li>
+        <li>Filter by signal type, confidence, sector, sentiment</li>
+        <li>One-click push qualifying signals to your engine</li>
+        <li>Cached results — fast page loads, accurate freshness clock</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Live Trader</h3>
+      <ul>
+        <li><strong>Start / Stop / Halt</strong> in the header</li>
+        <li>Switch modes without stopping (engine reloads on next scan)</li>
+        <li>Open Positions table — click any row for the detail sheet (entry, current, P&amp;L, signal history, close button)</li>
+        <li>Open Orders, Recent Signals, Recent Trades — all with AI ✨ summaries</li>
+        <li>Risk profile lives here. Engine respects it, every order.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 12: BACKTEST + OPTIMIZER ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Trading</div>
+  <h2>Backtest, Compare, Optimize</h2>
+  <p class="lede">Three tools, one workflow: prove the strategy in historical data before you live-trade it.</p>
+  <div class="grid cols-3">
+    <div class="card">
+      <div class="card-title">Backtest</div>
+      <p>Run any strategy preset (or custom) against any symbol + date range. Equity curve, win rate, max drawdown, Sharpe + Sortino + Calmar + MAR.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Compare</div>
+      <p>Pick up to 5 saved strategies. Side-by-side stats columns + equity-curve overlay normalized to start = 100. Mode-compare runs all 8 modes against one symbol.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Optimizer</div>
+      <p>Genetic algorithm tunes signal parameters (EMA/RSI/stops/TP) on a training window, validates on hold-out. Top tune deployable as "optimized" mode.</p>
+    </div>
+  </div>
+  <h3 style="margin-top: 24px;">Plus</h3>
+  <div class="body">
+    <ul>
+      <li><strong>Replay</strong> — step through historical trades bar-by-bar with markers on the chart. The "why did I do that?" tool.</li>
+      <li><strong>Risk Simulator</strong> — what happens to your portfolio if SPY drops 10%? 20%? Stress-test your sizing.</li>
+      <li><strong>Manual Order Ticket</strong> — <code>/dashboard/trade/{SYM}</code>. Market / limit / stop / bracket. Engine-gated (refused while engine is running, to prevent state drift).</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 13: JOURNAL V2 (1/3) ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Journal · 1 of 3</div>
+  <h2>Journal v2 — auto-stubs and prompts</h2>
+  <p class="lede">The blank-canvas problem solved. Sentinel writes the trade mechanics; you write the WHY.</p>
+  <div class="split">
+    <div>
+      <h3>Auto-stubs on every fill</h3>
+      <ul>
+        <li>Trade closes → journal entry created automatically</li>
+        <li>Pre-fills symbol, P&amp;L, signal, fill price, qty</li>
+        <li>Adds leading questions: "What did I get right or wrong about this trade?" / "What's the lesson?"</li>
+        <li>Idempotent: re-running reconciliation never creates duplicates</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Daily prompts</h3>
+      <ul>
+        <li><strong>Pre-market</strong> at 8:30 ET — 4 questions about today's plan</li>
+        <li><strong>Post-market</strong> at 4:30 ET — 4 reflection questions about what worked / didn't</li>
+        <li>Weekends skipped. One prompt per type per day per user.</li>
+        <li>Unfilled prompts sort to the top of the entry list with a "Needs review" badge.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 14: JOURNAL V2 (2/3) ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Journal · 2 of 3</div>
+  <h2>Tagging that maps to behavior</h2>
+  <p class="lede">30 tags across 4 categories. Each entry can have any combination.</p>
+  <div class="grid cols-4">
+    <div class="card">
+      <div class="card-title">Emotion <span class="badge">8</span></div>
+      <p>Discipline, patience, confidence, fear, greed, FOMO, revenge, boredom.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Strategy <span class="badge">8</span></div>
+      <p>Breakout, mean reversion, trend, swing, intraday, news, earnings, technical.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Execution <span class="badge">8</span></div>
+      <p>Followed plan, perfect, early exit, late entry, size too big/small, stop too tight/wide.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Outcome <span class="badge">6</span></div>
+      <p>Win, loss, breakeven, stopped out, full target, partial fill.</p>
+    </div>
+  </div>
+  <h3 style="margin-top: 28px;">Why categorized?</h3>
+  <div class="body">
+    <p>So phase 6 (behavioral pattern badges) can answer: <strong>"Every time you tag FOMO, you lose."</strong> Per-tag win rate computed from linked trades, surfaced as a quiet badge on the journal home when there's enough data (n ≥ 5).</p>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 15: JOURNAL V2 (3/3) ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Journal · 3 of 3</div>
+  <h2>AI weekly review + cross-feature linking</h2>
+  <p class="lede">Sunday 5pm ET, Groq writes you a recap. Cross-page links thread journal entries into the rest of the platform.</p>
+  <div class="split">
+    <div>
+      <h3>AI weekly review</h3>
+      <ul>
+        <li>Pulls last 7 days of closed trades + journal entries</li>
+        <li>Structured output: Week in numbers · What worked · What didn't · Pattern across the week · One question for next week</li>
+        <li>Stored as a regular journal entry of type <code>weekly-review</code> — you can edit it</li>
+        <li>~$0.005 per user per week on Groq</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Cross-feature links</h3>
+      <ul>
+        <li><strong>Performance</strong> row → journal entries for that symbol</li>
+        <li><strong>P&amp;L Calendar</strong> day → journal entries for that date</li>
+        <li>Journal entry header → <strong>Open chart →</strong> link for trade stubs</li>
+        <li>URL params: <code>?symbol=AAPL</code>, <code>?date=2026-05-13</code></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 16: TAX ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Journal</div>
+  <h2>Tax Center</h2>
+  <p class="lede">Unified realized + unrealized P&amp;L across manual portfolios and live engine fills. Tax-loss harvesting candidates surfaced inline.</p>
+  <div class="split">
+    <div>
+      <h3>What's in it</h3>
+      <ul>
+        <li>Year selector (calendar-year scope)</li>
+        <li>Short-term + long-term realized totals</li>
+        <li>Harvesting candidates — open positions with unrealized losses, sorted by loss magnitude</li>
+        <li>Tax Status card — self-attested Trader Tax Status + §475(f) MTM election</li>
+        <li>Personalized education links — guides ranked by your situation</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Separate Tax Report (Form 8949)</h3>
+      <ul>
+        <li><code>/dashboard/tax</code> generates strict IRS Form 8949-formatted realized gains</li>
+        <li>From engine fills only (Tax Center is the unified view)</li>
+        <li>Exports as CSV / PDF</li>
+        <li><span class="pill warning">Self-attestation only</span> — Sentinel does not file or validate. Talk to a CPA before claiming TTS.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 17: RESEARCH ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Research</div>
+  <h2>Research surfaces</h2>
+  <p class="lede">News, sentiment, filings, insights, congress trades. All keyed off Finnhub + house clerk + senate eFD.</p>
+  <div class="grid cols-3">
+    <div class="card"><div class="card-title">News</div><p>Sentiment-tagged headlines (bullish/bearish/neutral). Per-symbol filtering. Click → opens article.</p></div>
+    <div class="card"><div class="card-title">Sentiment</div><p>Bullish/bearish % per symbol from Finnhub social-sentiment. Trend arrows over time.</p></div>
+    <div class="card"><div class="card-title">Filings</div><p>SEC filings (10-K, 10-Q, 8-K) by symbol. Click any filing → AI summary via Groq.</p></div>
+    <div class="card"><div class="card-title">Articles</div><p>Daily AI-generated market digest published as an article. Long-form analysis from the editorial pipeline.</p></div>
+    <div class="card"><div class="card-title">Insights</div><p>"Why is this stock moving today?" — AI explainer from quote + recent news. Cached 5 min.</p></div>
+    <div class="card"><div class="card-title">Congress</div><p>Federal Periodic Transaction Reports from official sources (house disclosures-clerk + senate efdsearch). Daily refresh.</p></div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 18: MACRO ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Macro</div>
+  <h2>Macro &amp; events</h2>
+  <p class="lede">The context layer: economic calendar, earnings, FX, policy.</p>
+  <div class="grid cols-2">
+    <div class="card">
+      <div class="card-title">Calendar</div>
+      <p>Economic events (FOMC, CPI, NFP, etc.) with impact rating, time, consensus, prior.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Earnings</div>
+      <p>Upcoming earnings dates for your watchlist symbols. Whisper, consensus, surprise %. Add tickers persistently right from the page.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Currency</div>
+      <p>USD major pairs with current rate + trend.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Policy</div>
+      <p>Fed funds rate, dot plot, recent FOMC statements. Daily auto-refresh.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 19: EDUCATION ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Research</div>
+  <h2>Education hub</h2>
+  <p class="lede">Glossary + guides + calculators + spaced-repetition. Pure educational content; no investment advice.</p>
+  <div class="grid cols-3">
+    <div class="card">
+      <div class="card-title">Glossary <span class="badge">100+</span></div>
+      <p>Terms across 6 categories: basics, technical, fundamental, options, risk, wealth. Spaced-repetition review uses SM-2.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Guides <span class="badge">15+</span></div>
+      <p>Long-form: Roth IRA, 401k, backdoor Roth, §475(f) MTM, wash sale, FERS, UGMA/UTMA, kiddie tax. Each with key facts + quiz.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Calculators <span class="badge">8</span></div>
+      <p>Roth vs Traditional, FIRE number, compound interest, employer match, tax-loss harvesting, quarterly tax estimator, college funding, term vs whole life. Accordion-style.</p>
+    </div>
+  </div>
+  <h3 style="margin-top: 24px;">AI integration</h3>
+  <div class="body">
+    <ul>
+      <li>The AI chat panel uses RAG over the guides — answers cite specific guide sections.</li>
+      <li>Personalized education on Tax Center ranks guides by your real data (harvestable losses, trade count, tax bracket).</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 20: COMMUNITY ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Community</div>
+  <h2>Community surfaces</h2>
+  <p class="lede">For when you want to talk to other Sentinel users — or just see what they're trading.</p>
+  <div class="grid cols-2">
+    <div class="card">
+      <div class="card-title">Feed</div>
+      <p>Public stream of shared signals + posts. Like-and-comment surface.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Forum</div>
+      <p>Threaded discussions, categories. Click threads to drill in.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Posts</div>
+      <p>Long-form user-written posts. Markdown supported.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Messages</div>
+      <p>Private direct messages between users. Threaded inbox, unread badges.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Leaderboard</div>
+      <p>Top-performing users by P&amp;L or signal accuracy. Opt-in.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Shared Watchlist</div>
+      <p>Generate a public read-only link to any of your watchlists via <code>/w/[token]</code>. Revocable.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 21: HELP + ADMIN ============================ -->
+<section class="slide">
+  <div class="eyebrow">Pages · Help · Admin</div>
+  <h2>Support + admin tools</h2>
+  <p class="lede">Help when you need it. Admin tools for the platform itself.</p>
+  <div class="split">
+    <div>
+      <h3>Support</h3>
+      <ul>
+        <li>Open a support ticket from <code>/dashboard/support</code></li>
+        <li>Status flow: open → responded → resolved → closed</li>
+        <li>Email notification on every reply (Resend)</li>
+        <li>Admins see all tickets; users see their own</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Admin</h3>
+      <ul>
+        <li><strong>Users + Invites</strong> — invite-only signup, admin invites send a one-time signup link</li>
+        <li><strong>Audit Log</strong> — hash-chained, verifiable</li>
+        <li><strong>System Configuration</strong> — rotate Groq / Finnhub / Anthropic keys without SSH. Encrypted at rest.</li>
+        <li><strong>Paper Trading</strong> — global paper-broker state</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 22: KEYBOARD ============================ -->
+<section class="slide">
+  <div class="eyebrow">Quick reference</div>
+  <h2>Keyboard shortcuts</h2>
+  <p class="lede">Single-key shortcuts fire when no modifier is held and you're not typing in an input.</p>
+  <div class="kbd-grid">
+    <div class="kbd-row"><kbd>⌘ K</kbd><span>Command palette — fuzzy nav + symbol jump</span></div>
+    <div class="kbd-row"><kbd>T</kbd><span>Open Trader</span></div>
+    <div class="kbd-row"><kbd>A</kbd><span>Open Analysis</span></div>
+    <div class="kbd-row"><kbd>S</kbd><span>Open Screener</span></div>
+    <div class="kbd-row"><kbd>W</kbd><span>Open Watchlists</span></div>
+    <div class="kbd-row"><kbd>J</kbd><span>Open Journal</span></div>
+    <div class="kbd-row"><kbd>N</kbd><span>Open News</span></div>
+    <div class="kbd-row"><kbd>?</kbd><span>Show this shortcut list</span></div>
+  </div>
+  <h3 style="margin-top: 28px;">Slide-deck shortcuts</h3>
+  <div class="kbd-grid">
+    <div class="kbd-row"><kbd>→ / Space</kbd><span>Next slide</span></div>
+    <div class="kbd-row"><kbd>←</kbd><span>Previous slide</span></div>
+    <div class="kbd-row"><kbd>Home / End</kbd><span>Jump to first / last</span></div>
+    <div class="kbd-row"><kbd>P</kbd><span>Print all slides</span></div>
+  </div>
+</section>
+
+<!-- ============================ SLIDE 23: CLOSING ============================ -->
+<section class="slide closing-slide">
+  <div class="eyebrow">Wrapping up</div>
+  <h1>That's the tour.</h1>
+  <p class="lede">Everything you've just seen — features, calculators, audit log, journal v2 — is yours from day one. No upgrades, no per-feature tier.</p>
+  <div class="grid cols-3">
+    <div class="card">
+      <div class="card-title">Start here</div>
+      <p>Open <code>/dashboard</code>, then <code>/dashboard/trader</code>. Set your risk profile. Start paper trading. Watch the first few scans.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Deeper reference</div>
+      <p><code>/docs/sentinel-features.html</code> — every page and feature with surfaces and gotchas. The full reference behind these slides.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Engine internals</div>
+      <p><code>/docs/engine-ruleset.html</code> — exit logic, safety stops, capital circuit breakers, audit log shape. Read before going live.</p>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div class="deck-footer">
+  <div class="brand">Sentinel · Usage Slides</div>
+  <div class="counter" id="counter">1 / 23</div>
+  <div class="hint">← → to navigate · P to print</div>
+</div>
+
+<script>
+  const slides = document.querySelectorAll(".slide");
+  const total = slides.length;
+  const counter = document.getElementById("counter");
+  const progressFill = document.getElementById("progressFill");
+  const prevBtn = document.getElementById("navPrev");
+  const nextBtn = document.getElementById("navNext");
+  let current = 0;
+
+  function go(idx) {
+    current = Math.max(0, Math.min(total - 1, idx));
+    slides.forEach((s, i) => s.classList.toggle("active", i === current));
+    counter.textContent = `${current + 1} / ${total}`;
+    progressFill.style.width = `${((current + 1) / total) * 100}%`;
+    prevBtn.disabled = current === 0;
+    nextBtn.disabled = current === total - 1;
+    history.replaceState(null, "", `#${current + 1}`);
+  }
+
+  function next() { if (current < total - 1) go(current + 1); }
+  function prev() { if (current > 0) go(current - 1); }
+
+  document.addEventListener("keydown", (e) => {
+    // Ignore if user is typing in an input
+    if (e.target.matches("input, textarea, select")) return;
+
+    if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") {
+      e.preventDefault();
+      next();
+    } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+      e.preventDefault();
+      prev();
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      go(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      go(total - 1);
+    } else if (e.key === "p" || e.key === "P") {
+      // Activate all slides so the print stylesheet can paginate them
+      slides.forEach((s) => s.classList.add("active"));
+      window.print();
+      // Restore single-slide view after the print dialog returns
+      setTimeout(() => {
+        slides.forEach((s, i) => s.classList.toggle("active", i === current));
+      }, 100);
+    }
+  });
+
+  prevBtn.addEventListener("click", prev);
+  nextBtn.addEventListener("click", next);
+
+  // Touch swipe (mobile)
+  let touchStartX = null;
+  document.addEventListener("touchstart", (e) => {
+    touchStartX = e.touches[0].clientX;
+  }, { passive: true });
+  document.addEventListener("touchend", (e) => {
+    if (touchStartX === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 60) {
+      dx < 0 ? next() : prev();
+    }
+    touchStartX = null;
+  }, { passive: true });
+
+  // Deep-link via #N
+  function fromHash() {
+    const h = parseInt(location.hash.slice(1), 10);
+    if (!isNaN(h) && h >= 1 && h <= total) {
+      go(h - 1);
+    }
+  }
+  window.addEventListener("hashchange", fromHash);
+  fromHash();
+</script>
+</body>
+</html>
