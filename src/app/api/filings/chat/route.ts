@@ -6,7 +6,7 @@ import { CLAUDE_CONFIG } from "@/lib/config";
 import { getLlmApiKey } from "@/lib/system-config";
 import { getFilingContent } from "@/lib/sec-filings";
 import { createRouteLogger } from "@/lib/logger";
-import { checkTier } from "@/lib/tiers";
+import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("filings-chat");
 

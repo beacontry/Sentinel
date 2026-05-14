@@ -1,10 +1,20 @@
 /**
- * User subscription tiers — single source of truth.
+ * User subscription tiers — single source of truth (client-safe).
  *
  * Phase 1 of the billing rollout (2026-05-14). Enforcement only —
  * no payment integration yet. Admins grant tiers manually via the
  * /dashboard/admin UI; Stripe webhook will replace that path in
  * Phase 2.
+ *
+ * This module is INTENTIONALLY client-safe — pure functions, types,
+ * and constants only. No DB imports, no Node.js stdlib, no
+ * `next/server`. Safe to import from both client components
+ * (sidebar-tier-badge.tsx, tier-gate.tsx, etc.) and server routes.
+ *
+ * Server-only helpers that need DB access (`getUserTier`,
+ * `checkTier`) live in `tiers-server.ts`. Importing those from a
+ * client component will break the build, which is the desired
+ * behavior.
  *
  * The four tiers and what they unlock:
  *
@@ -31,17 +41,18 @@
  * silently disabling gates.
  */
 
-import { db, withTimeout } from "./db";
-import { users } from "./db/schema/users";
-import { eq } from "drizzle-orm";
-
 export type Tier = "free" | "trader" | "premium" | "enterprise";
 
 /**
  * Ordered list of tiers, lowest → highest. The index in this array
  * IS the tier rank — used by the comparator below.
  */
-export const TIERS: readonly Tier[] = ["free", "trader", "premium", "enterprise"] as const;
+export const TIERS: readonly Tier[] = [
+  "free",
+  "trader",
+  "premium",
+  "enterprise",
+] as const;
 
 /**
  * Numeric rank for a tier. Returns -1 for unknown strings so callers
@@ -96,35 +107,10 @@ export function effectiveTier(user: {
 }
 
 /**
- * Fetch a user's tier from the DB. Use sparingly — most callers
- * should rely on the tier already attached to the JWT session
- * (added at login). This is the fresh-from-DB fallback for routes
- * that need the absolute latest value (e.g., right after a tier
- * change).
- */
-export async function getUserTier(userId: string): Promise<Tier> {
-  try {
-    const rows = await withTimeout(3000, async (tx) =>
-      tx
-        .select({ tier: users.tier, expires: users.tierExpiresAt })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1)
-    );
-    if (rows.length === 0) return "free";
-    return effectiveTier({ tier: rows[0].tier, tierExpiresAt: rows[0].expires });
-  } catch {
-    // DB failure — fail SAFE, not OPEN. Treat as 'free' so paid
-    // features are denied during outages rather than silently allowed.
-    return "free";
-  }
-}
-
-/**
- * Returned by `requireTier()` when a user is below the required
- * tier. Shape matches the existing API Error Contract (code +
- * message + retryable + details) so the client can branch
- * uniformly on 402 responses.
+ * Returned by `checkTier()` when a user is below the required tier.
+ * Shape matches the existing API Error Contract (code + message +
+ * retryable + details) so the client can branch uniformly on 402
+ * responses.
  */
 export interface UpgradeRequiredPayload {
   error: {
@@ -162,10 +148,14 @@ export function buildUpgradeRequiredPayload(
  */
 export function labelFor(tier: Tier): string {
   switch (tier) {
-    case "free": return "Free";
-    case "trader": return "Trader";
-    case "premium": return "Premium";
-    case "enterprise": return "Enterprise";
+    case "free":
+      return "Free";
+    case "trader":
+      return "Trader";
+    case "premium":
+      return "Premium";
+    case "enterprise":
+      return "Enterprise";
   }
 }
 
@@ -174,39 +164,4 @@ export function labelFor(tier: Tier): string {
  */
 export function isTier(value: string): value is Tier {
   return TIERS.includes(value as Tier);
-}
-
-// ─── Request-level helpers ─────────────────────────────────────────────────
-//
-// Designed to compose with the existing `getSession()` /
-// `requireAuthWithCsrf()` flow rather than replace it. Two-line addition
-// per route after auth:
-//
-//   const auth = await requireAuthWithCsrf(request);
-//   if (auth instanceof Response) return auth;
-//   const tierFail = await checkTier(auth.userId, "trader");
-//   if (tierFail) return tierFail;
-//
-//   // ... rest of route logic
-
-import { NextResponse } from "next/server";
-
-/**
- * Validate that a user satisfies the minimum tier. Returns a 402
- * Response if not; null if the check passes (caller proceeds).
- *
- * Fail-safe: DB outages return 402 (effective tier defaults to
- * 'free' inside getUserTier on error). Better to deny a feature
- * during an outage than silently allow it.
- */
-export async function checkTier(
-  userId: string,
-  minTier: Tier
-): Promise<Response | null> {
-  const currentTier = await getUserTier(userId);
-  if (userHasTier(currentTier, minTier)) return null;
-  return NextResponse.json(
-    buildUpgradeRequiredPayload(currentTier, minTier),
-    { status: 402 }
-  );
 }

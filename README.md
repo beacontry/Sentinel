@@ -12,7 +12,7 @@
 - [/glossary](https://beacontry.com/glossary) — 95 terms across 6 categories
 - [/congress](https://beacontry.com/congress) — federal Periodic Transaction Reports, live
 - [/articles](https://beacontry.com/articles) — daily Beacontry Desk market digest
-- [/pricing](https://beacontry.com/pricing) — Free · Trader $20 · Premium $45 · Open Source
+- [/pricing](https://beacontry.com/pricing) — Free · Trader $20 · Premium $45 · Self-Hosted (source-available)
 
 **Docs**: [Features reference](https://beacontry.com/docs/sentinel-features.html) · [Engine ruleset](https://beacontry.com/docs/engine-ruleset.html) · [Usage slides](https://beacontry.com/docs/usage-slides.html)
 
