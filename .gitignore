@@ -46,3 +46,8 @@ debug_*.ts
 # backups
 backups/
 .commit-msg.tmp
+
+# Claude Code session files — auto-saves tool permissions which can
+# include bash commands containing secrets (sessions where I exported
+# tokens etc.). Never commit.
+.claude/
