@@ -20,7 +20,10 @@ export default function LandingPage() {
   const navLinks = [
     { label: "Features", href: "#features" },
     { label: "How It Works", href: "#process" },
-    { label: "Pricing", href: "#pricing" },
+    // Standalone /pricing page is the canonical pricing surface (full
+    // feature-comparison matrix + FAQ). The #pricing teaser further
+    // down this landing stays as a quick glance for scroll readers.
+    { label: "Pricing", href: "/pricing" },
     { label: "Why Beacontry", href: "#trust" },
   ];
 
