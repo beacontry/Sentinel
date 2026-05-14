@@ -100,10 +100,11 @@ export default function TermsPage() {
         <section className="space-y-2">
           <h2 className="text-base font-semibold text-text-primary">5. AI Outputs</h2>
           <p>
-            Beacontry uses third-party AI services (Anthropic Claude) to summarize
-            market data, score sentiment, and generate the daily digest. AI outputs
-            can be inaccurate, hallucinated, biased, or outdated. Treat them as
-            commentary, not facts. Verify anything material before acting on it.
+            Beacontry uses third-party AI services (currently Groq running Llama
+            3.3) to summarize market data, score sentiment, and generate the daily
+            digest. AI outputs can be inaccurate, hallucinated, biased, or outdated.
+            Treat them as commentary, not facts. Verify anything material before
+            acting on it.
           </p>
         </section>
 
@@ -133,7 +134,75 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base font-semibold text-text-primary">8. Changes</h2>
+          <h2 className="text-base font-semibold text-text-primary">8. Subscriptions &amp; Billing</h2>
+          <p>
+            Beacontry offers a free tier (research, education, calculators, public
+            data) and paid tiers (Trader, Premium) that unlock the trading engine,
+            broker integration, AI chat, and other premium features. Paid plans bill
+            monthly or annually through Stripe. Pricing is shown on{" "}
+            <Link href="/pricing" className="text-accent hover:text-accent-hover underline">/pricing</Link>{" "}
+            and may change with advance notice to active subscribers (current
+            subscribers retain their existing rate through the end of their current
+            billing period).
+          </p>
+          <p>
+            Beacontry never sees or stores your card details — Stripe holds them.
+            Charges appear on your statement as &quot;Beacontry&quot; or
+            &quot;BEACONTRY.COM&quot; depending on your card issuer.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-text-primary">9. Cancellation</h2>
+          <p>
+            You can cancel a paid subscription at any time from{" "}
+            <Link href="/dashboard/billing" className="text-accent hover:text-accent-hover underline">/dashboard/billing</Link>{" "}
+            or via the Stripe Customer Portal. Cancellation takes effect at the end
+            of your current billing period — you keep paid-tier access until then.
+            We do not lock your data behind the subscription; downgrading to free
+            retains your watchlists, journal, trade history, and broker connection
+            (broker access still requires a Trader-tier plan to use the engine).
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-text-primary">10. Refunds</h2>
+          <p>
+            <strong className="text-text-primary">First 30 days</strong>: full refund
+            on request, no questions asked. Email{" "}
+            <a href="mailto:hello@beacontry.com" className="text-accent hover:text-accent-hover underline">hello@beacontry.com</a>{" "}
+            or open a support ticket from your dashboard. Refunds process to the
+            original payment method within 5–10 business days via Stripe.
+          </p>
+          <p>
+            <strong className="text-text-primary">After 30 days</strong>: prorated
+            refunds for unused portions of an annual plan, evaluated case-by-case.
+            Monthly plans are not refundable after 30 days but can be cancelled to
+            stop future billing.
+          </p>
+          <p>
+            <strong className="text-text-primary">Free trial</strong>: cancel before
+            the trial ends (you&apos;ll get an email reminder 24 hours before
+            conversion) and you won&apos;t be charged. Cancellation during the trial
+            is immediate, not at trial end.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-text-primary">11. Payment Disputes</h2>
+          <p>
+            If you have a billing question or believe a charge is incorrect, email{" "}
+            <a href="mailto:hello@beacontry.com" className="text-accent hover:text-accent-hover underline">hello@beacontry.com</a>{" "}
+            within 60 days of the charge and we&apos;ll investigate. We
+            ask that you contact us before initiating a chargeback — chargebacks
+            cost Beacontry $15+ in fees regardless of outcome and we&apos;d rather
+            issue you a refund directly. Repeated chargebacks without prior contact
+            may result in account suspension.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-text-primary">12. Changes</h2>
           <p>
             These terms may change. Material changes will prompt you to re-accept
             on next sign-in. The version stamp at the top reflects the current text.
@@ -141,7 +210,12 @@ export default function TermsPage() {
         </section>
 
         <p className="pt-4 border-t border-border text-sm">
-          See also: <Link href="/risk" className="text-accent hover:text-accent-hover underline">Risk Disclosure</Link>
+          See also:{" "}
+          <Link href="/risk" className="text-accent hover:text-accent-hover underline">Risk Disclosure</Link>
+          {" "}·{" "}
+          <Link href="/privacy" className="text-accent hover:text-accent-hover underline">Privacy Policy</Link>
+          {" "}·{" "}
+          <Link href="/contact" className="text-accent hover:text-accent-hover underline">Contact</Link>
         </p>
       </main>
     </div>

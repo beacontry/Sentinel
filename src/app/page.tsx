@@ -787,9 +787,25 @@ export default function LandingPage() {
 
       {/* ── Footer ── */}
       <footer className="border-t border-ld-border bg-ld-deep">
-        <div className="mx-auto flex max-w-[1280px] items-center justify-center px-4 py-6 lg:px-7">
-          <div className="text-[0.88rem] text-ld-text-muted">
+        <div className="mx-auto flex max-w-[1280px] flex-col items-center gap-3 px-4 py-6 text-center lg:px-7">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[0.88rem] text-ld-text-muted">
+            <Link href="/pricing" className="hover:text-ld-text">Pricing</Link>
+            <Link href="/learn" className="hover:text-ld-text">Learn</Link>
+            <Link href="/tools" className="hover:text-ld-text">Tools</Link>
+            <Link href="/glossary" className="hover:text-ld-text">Glossary</Link>
+            <Link href="/contact" className="hover:text-ld-text">Contact</Link>
+            <Link href="/terms" className="hover:text-ld-text">Terms</Link>
+            <Link href="/privacy" className="hover:text-ld-text">Privacy</Link>
+            <Link href="/risk" className="hover:text-ld-text">Risk Disclosure</Link>
+            <a href="https://github.com/beacontry/Sentinel" target="_blank" rel="noopener noreferrer" className="hover:text-ld-text">Source</a>
+          </div>
+          <div className="text-[0.85rem] text-ld-text-muted">
             &copy; 2026 Beacontry. All rights reserved.
+          </div>
+          <div className="text-[0.78rem] text-ld-text-muted max-w-[640px]">
+            Beacontry is a software tool for market research and trade journaling.
+            It is not a registered broker-dealer, investment advisor, or tax
+            professional. Nothing here is investment advice.
           </div>
         </div>
       </footer>
