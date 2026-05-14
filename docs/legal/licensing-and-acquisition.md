@@ -371,7 +371,100 @@ just hosts the legal entity.
 
 ---
 
-## 7. References
+## 7. Decision FAQ
+
+Concise answers to the two questions most likely to recur. The deep
+technical answers live in sections 1-2 above; these are the
+quote-back-to-yourself versions.
+
+### Would it make a difference if Beacontry was Open Source vs Source-Available?
+
+Smaller differences than people think. The honest matrix:
+
+| Dimension | Open Source (MIT/Apache) | Source-Available (FSL) |
+|---|---|---|
+| Repo public on GitHub | ✅ same | ✅ same |
+| Anyone can read every line | ✅ same | ✅ same |
+| Anyone can fork | ✅ same | ✅ same |
+| Anyone can self-host for themselves | ✅ same | ✅ same |
+| Anyone can host as a **competing commercial service** | ✅ yes | ❌ no (the key difference) |
+| OSI-approved | ✅ yes | ❌ no |
+| Acquirer-friendly | depends on license (some viral licenses scare buyers) | ✅ explicitly designed for this |
+| Auto-converts to permissive open source | n/a (already there) | ✅ after 2 years (FSL → Apache 2.0) |
+| Counts as "open source" in casual conversation | ✅ yes | ⚠ technically no |
+
+**The competitive-moat difference is the only one that actually matters
+for the business.** Under pure MIT or Apache, any well-resourced
+company — AWS, Robinhood, an upstart competitor — could fork
+Beacontry tomorrow and offer "AWS Beacontry" or "RobinhoodPro" as a
+managed service for $5/mo, undercutting our hosted pricing.
+
+This is exactly what happened to **MongoDB** (AWS DocumentDB),
+**ElasticSearch** (AWS OpenSearch), **Redis** (AWS ElastiCache).
+They each had to pivot to source-available licenses (SSPL, RSAL)
+specifically to prevent this — but pivoted AFTER getting hurt for
+years. Beacontry picked the right license up front to skip that
+battle.
+
+Every other dimension — user experience, ability to read the code,
+the audit-trail trust signal, the ability to be acquired, the
+contributor pipeline — is **identical or better** with FSL than with
+pure MIT.
+
+### Does the license change whether the repo is public?
+
+**No.** Repo visibility and license are independent settings on
+GitHub. They answer different questions:
+
+- **Visibility**: "Who can see this code?"
+- **License**: "What can they do with what they see?"
+
+| Repo setting | License | Result |
+|---|---|---|
+| Public | MIT | Open source. Anyone reads + uses commercially |
+| **Public** | **FSL** (Beacontry's actual setup) | **Source-available. Anyone reads + uses personally** |
+| Public | (no license) | Visible but legally unusable ("all rights reserved") |
+| Private | Any | Not visible to anyone outside the org |
+
+We chose **public + FSL** = "everyone can see, everyone can use for
+themselves but not as a competing service." The two flags are
+configured independently in GitHub settings; flipping one doesn't
+affect the other.
+
+If we ever wanted to:
+- Switch to MIT → repo stays public, just loses the commercial moat
+- Switch to a closed proprietary license → would need to flip
+  visibility to private too (you can't enforce a closed license on a
+  public repo because anyone who's already seen the code has the
+  benefit of having seen it)
+- Switch to fully private → license becomes moot (nobody can see the
+  code anyway)
+
+The current configuration — public + FSL — is the modern
+source-available SaaS default. Same pattern as Sentry, HashiCorp
+(BUSL), CockroachDB. It's correctly configured.
+
+### Why "Self-Hosted" instead of "Open Source" as the tier name?
+
+Because the FSL license is technically **source-available**, not
+OSI-approved open source. Calling it "Open Source" (capital O,
+capital S) in marketing could:
+
+1. Attract complaints from OSI purists (a small but vocal group)
+2. Mislead users who expect MIT/Apache rights they don't actually have
+3. Risk the very small chance of trademark friction (the term "Open
+   Source" isn't trademarked, but OSI has been aggressive about it)
+
+"Self-Hosted" sidesteps the debate by describing the user benefit
+("you run it yourself") rather than the license technicality. The tag
+underneath still says "Source-available" so users who care about
+license character can see it. The FAQ entry and the README + LICENSE
+file are crystal clear that the license is FSL-1.1 and auto-converts
+to Apache 2.0 after 2 years.
+
+---
+
+## 8. References
 
 External:
 
