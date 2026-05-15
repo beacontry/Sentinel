@@ -13,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ChatMessageData, ChatSession } from "@/types";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 const SUGGESTED_PROMPTS = [
   "What's the current market sentiment across major indices?",
@@ -192,7 +193,15 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col lg:flex-row">
+    <div className="flex h-[calc(100vh-3rem)] flex-col">
+      <div className="px-4 lg:px-6 pt-4">
+        <PaywallBanner
+          minTier="premium"
+          featureName="AI Chat"
+          description="Conversational AI assistant with context on your watchlist, trades, and education library."
+        />
+      </div>
+      <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
       {/* Session sidebar */}
       <div className="hidden w-72 shrink-0 flex-col border-r border-border bg-bg-secondary lg:flex">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -380,6 +389,7 @@ export default function ChatPage() {
             AI may produce inaccurate analysis. Always verify before trading.
           </p>
         </div>
+      </div>
       </div>
     </div>
   );

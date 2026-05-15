@@ -31,6 +31,7 @@ import {
   Zap,
   Minus,
 } from "lucide-react";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -336,6 +337,7 @@ export default function ScreenerPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
+      <PaywallBanner minTier="trader" featureName="Market Screener" description="Full-universe market scans + signal ranking. The engine pulls from here." />
       <PageIntro
         eyebrow="Market Scanner"
         title="Screener"

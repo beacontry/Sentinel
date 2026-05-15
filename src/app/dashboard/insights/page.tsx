@@ -17,6 +17,7 @@ import {
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface InsightResult {
   symbol: string;
@@ -89,6 +90,7 @@ export default function InsightsPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.research} />
+      <PaywallBanner minTier="premium" featureName="AI Insights" description="AI-generated Quick Insight per symbol, summarizing technical + sentiment + fundamentals." />
       <PageIntro
         eyebrow="Research"
         title="Insights"

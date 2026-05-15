@@ -12,6 +12,7 @@ import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import type { SymbolStrategy } from "@/types";
 import { STRATEGY_PRESETS, PRESET_LABELS, type PresetName } from "@/lib/strategy-presets";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 const PRESET_OPTIONS = [
   { value: "custom", label: "Custom" },
@@ -181,6 +182,7 @@ export default function StrategiesPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.trader} />
+      <PaywallBanner minTier="trader" featureName="Strategies" description="Strategy presets, parameter tuning, save + load workflows." />
       <PageIntro
         eyebrow="Execution"
         title="Strategies"

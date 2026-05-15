@@ -22,6 +22,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import type { PnlCalendarDay } from "@/types";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface DayTrade {
   symbol: string;
@@ -119,6 +120,7 @@ export default function PnlCalendarPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.journal} />
+      <PaywallBanner minTier="trader" featureName="P&L Calendar" description="Heatmap of daily P&L with day-drilldown." />
       <PageIntro
         eyebrow="Record"
         title="P&L Calendar"

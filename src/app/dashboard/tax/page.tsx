@@ -29,6 +29,7 @@ import type {
   TaxSummary,
   FilingStatus,
 } from "@/lib/tax-engine";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -143,6 +144,7 @@ export default function TaxReportPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.journal} />
+      <PaywallBanner minTier="trader" featureName="Tax Reports" description="Form 8949 generator from engine fills." />
       <PageIntro
         eyebrow="Record"
         title="Tax Report"

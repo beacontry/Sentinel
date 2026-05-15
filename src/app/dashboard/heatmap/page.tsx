@@ -6,6 +6,7 @@ import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import { Grid3X3 } from "lucide-react";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface HeatmapSymbol {
   symbol: string;
@@ -60,6 +61,7 @@ export default function HeatmapPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.analysis} />
+      <PaywallBanner minTier="trader" featureName="Market Heatmap" />
       <PageIntro
         eyebrow="Market Analysis"
         title="Heatmap"

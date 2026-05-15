@@ -9,6 +9,7 @@ import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import { FileBarChart } from "lucide-react";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface PerformanceData {
   overall: { totalSignals: number; correctSignals: number; accuracy: number; avgReturn: number };
@@ -113,6 +114,7 @@ export default function ReportsPage() {
     return (
       <div className="p-4 lg:p-6 space-y-6">
         <SubNav tabs={SUB_NAV.journal} />
+      <PaywallBanner minTier="trader" featureName="Reports" />
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}

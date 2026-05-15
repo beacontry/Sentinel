@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Sparkles,
 } from "lucide-react";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface Filing {
   accessionNumber: string;
@@ -88,6 +89,7 @@ export default function FilingsPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.research} />
+      <PaywallBanner minTier="trader" featureName="Filings AI Chat" description="Ask the AI about a company's 10-Q / 10-K filings. Filings listing itself is free." />
       <PageIntro
         eyebrow="Disclosure Desk"
         title="SEC Filings"

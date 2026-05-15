@@ -8,6 +8,7 @@ import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import { BarChart3, TrendingUp, TrendingDown } from "lucide-react";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface BreadthData {
   scanned: number;
@@ -47,6 +48,7 @@ export default function BreadthPage() {
     return (
       <div className="p-4 lg:p-6 space-y-6">
         <SubNav tabs={SUB_NAV.analysis} />
+      <PaywallBanner minTier="trader" featureName="Market Breadth" />
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 rounded-xl" />)}

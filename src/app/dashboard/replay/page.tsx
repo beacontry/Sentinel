@@ -10,6 +10,7 @@ import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import { Play, BarChart3, Maximize2, Minimize2 } from "lucide-react";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface Trade {
   id?: string;
@@ -194,6 +195,7 @@ export default function ReplayPage() {
     return (
       <div className="p-4 lg:p-6 space-y-6">
         <SubNav tabs={SUB_NAV.trader} />
+      <PaywallBanner minTier="trader" featureName="Replay" />
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-[450px] rounded-xl" />
       </div>

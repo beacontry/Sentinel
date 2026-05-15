@@ -24,6 +24,7 @@ import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import type { JournalEntry, JournalEntryType } from "@/types";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface JournalPattern {
   tag: string;
@@ -393,6 +394,7 @@ function JournalPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.journal} />
+      <PaywallBanner minTier="trader" featureName="Trade Journal" description="Auto-stub on filled trades, daily prompts, weekly AI review, tagged-pattern badges." />
       <PageIntro
         eyebrow="Record"
         title="Journal"

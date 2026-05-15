@@ -10,6 +10,7 @@ import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import { ShieldAlert, Zap } from "lucide-react";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface Position {
   symbol: string;
@@ -140,6 +141,7 @@ export default function RiskSimulatorPage() {
     return (
       <div className="p-4 lg:p-6 space-y-6">
         <SubNav tabs={SUB_NAV.trader} />
+      <PaywallBanner minTier="trader" featureName="Risk Simulator" />
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-48 rounded-xl" />
       </div>

@@ -52,6 +52,7 @@ import {
   Maximize2,
 } from "lucide-react";
 import { ChartFullscreenOverlay } from "@/components/ui/chart-fullscreen-overlay";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 const FOCUS_STORAGE_KEY = "sentinel-focus-mode";
 
@@ -440,6 +441,7 @@ function AnalysisCockpit() {
   return (
     <div className="flex min-h-full flex-col gap-6 p-4 lg:p-6">
       <SubNav tabs={SUB_NAV.analysis} />
+      <PaywallBanner minTier="trader" featureName="Analysis cockpit" description="Charts, hybrid signals, signal history. Free users see public data only; engine + Finnhub layers unlock with Trader." />
       <PageIntro
         eyebrow="Research Desk"
         title="Analysis Cockpit"
