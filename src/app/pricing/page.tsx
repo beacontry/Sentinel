@@ -279,11 +279,6 @@ export default function PricingPage() {
       a: "At minimum: a broker (Alpaca paper-free / Alpaca-live / Tradier / IBKR). For full features, you'll also want Finnhub (news, sentiment, fundamentals, options, insiders) and Groq (AI). Every API key is encrypted in your local database; you control the keys. You can also disable Finnhub or AI features entirely if you want — the engine still works on Yahoo bars + headline sentiment alone.",
     },
     {
-      id: "team",
-      q: "Can I get a team / family-office / firm license?",
-      a: "Yes. Team and Enterprise tiers start at $299/seat/mo with role-based access control, dedicated tenant, SLA, white-label options, and custom data sources. Email hello@beacontry.com with your use case.",
-    },
-    {
       id: "tax",
       q: "Does Beacontry handle taxes?",
       a: "Beacontry generates Form 8949 + tracks FIFO realized gains + wash-sale flags (or honors §475(f) MTM election if you've filed one). It is NOT a tax filing service or a registered tax professional. Verify with your CPA before filing.",
@@ -416,9 +411,6 @@ export default function PricingPage() {
           ))}
         </div>
 
-        <p className="mx-auto mt-10 max-w-[680px] px-4 text-center text-[0.85rem] text-ld-text-muted">
-          Need team / firm / white-label? <a href="mailto:hello@beacontry.com" className="text-ld-accent hover:underline">Email us</a> for Team and Enterprise pricing.
-        </p>
       </section>
 
       {/* ── Feature comparison matrix ── */}
