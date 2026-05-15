@@ -10,146 +10,100 @@ the one exception (it's the high-level tracker).
 
 ---
 
-## Launch playbook (2026-05-14 — actively executing A→B→D→C)
+## Production readiness assessment (2026-05-14 EOD)
+
+After Phases A→B→C→D→E→F→G all shipped, the platform is **revenue-capable
+in Stripe sandbox** but not yet taking real money. Concrete gap list:
+
+### Tier 1 — Blocks revenue
+1. **Stripe is still in sandbox.** Activate live mode via business profile
+   verification (1-2 business days). New `sk_live_` + new webhook secret +
+   copy Trader/Premium products to live mode + (optional) Stripe Tax + nexus
+   declarations. Replace keys in `/dashboard/admin/system-config`. Once
+   approved by Stripe this is ~30 min of dashboard work.
+
+### Tier 2 — Operational gaps (bite at first scale)
+2. **No real-time error monitoring.** Sentry free tier (5K errors/mo).
+   Add `@sentry/nextjs`, drop DSN in admin/system-config. 30 min setup.
+3. **No uptime monitoring.** UptimeRobot or BetterUptime free tier pings
+   `/api/health` every 5 min, pages on outage. 15 min setup.
+4. **No backup restore drill.** Nightly `pg_dump` runs per deploy patterns
+   but never test-restored. Run a restore drill on a throwaway droplet
+   before there's customer data worth losing.
+5. **Single container, single DB instance.** Fine for ≤100 users. Beyond
+   that, plan a hot-standby PG + second app instance.
+6. **No customer-facing status page.** Doesn't matter at 0 users; will at
+   100+ when even short blips generate support tickets. UptimeRobot Pro
+   ($5/mo) → status.beacontry.com.
+
+### Tier 3 — Polish / conversion (defer until traction)
+7. **No user-behavior analytics.** PostHog free up to 1M events. Cloudflare
+   Web Analytics for traffic. ~1 hour combined.
+8. **No A/B testing infrastructure.** PostHog covers this; defer until
+   meaningful traffic.
+9. **No referral / affiliate tracking.** Stripe Referrals or Rewardful.
+   Defer until 50+ paying customers.
+10. **PWA mobile not tested.** Manifest in place; nobody's installed it
+    to home screen yet. Mobile-first traders care.
+
+## Launch playbook (2026-05-14 — Phases A-G shipped; execution starts NOW)
 
 Path from invite-only beta to first paying customer. Phases A, B, D ship
 first because they unblock free-tier onboarding; Phase C (Stripe) needs
 external setup (Stripe account, products, keys) before code can ship.
 
-### Phase A — Open public free signup
+### What was shipped (2026-05-14)
+- ✅ Phase A — public free signup (commit `169ad18`)
+- ✅ Phase B — free-tier dashboard + welcome card + sidebar tier badge (`1e1749b`)
+- ✅ Phase D — privacy + contact + ToS billing sections (`472b18d`)
+- ✅ Phase C — Stripe end-to-end (`6e91c40`); period-end + admin-grant fixes (`62f9a7a`, `b3aaaa`)
+- ✅ Phase F — admin nav hidden from non-admins (`f228266`)
+- ✅ Phase E1+E2+E3 — 63 tier gates + engine tier-awareness (`700809a`)
+- ✅ Phase G — paywall banners on 28 paid pages + HTML tier doc (`635902b`)
 
-Remove invite-token requirement on `/api/auth/register` for `free` tier.
-Invites stay as the admin path for issuing pre-promoted accounts (trader,
-premium) without going through Stripe. Defenses against abuse:
+### What's left (in order)
 
-- IP-based rate-limit (`5/60s`) already in place via `src/lib/rate-limiter.ts`
-- Honeypot field on the form (bots fill hidden fields; real users don't)
-- Email must be syntactically valid (Zod) and lowercase-unique
-- Free tier is gated to mostly-public features anyway — minimum abuse surface
-- Cloudflare Turnstile deferred to Phase A.5 if/when abuse appears
+**1. Stripe live-mode activation** (user, 30 min + 1-2 day Stripe approval).
+Business profile in Stripe dashboard → identity verification → live mode
+unlocks. Then `sk_live_` + new live webhook secret + Copy products to
+live mode + (optional) Stripe Tax. Swap keys in `/dashboard/admin/system-config`,
+optionally override price IDs via env vars.
 
-Files touched:
-- `src/app/api/auth/register/route.ts` — branch on `token` presence
-- `src/app/register/page.tsx` — show standard form when no token
-- (No DB migration — `users.tier` default is already `'free'`)
+**2. Marketing execution** (see playbook below).
 
-### Phase B — Free-tier dashboard landing
+**3. Operational monitoring** (Sentry + UptimeRobot — see production-readiness
+section above).
 
-Currently `/dashboard/trader` is the default landing post-signup. That page
-is unusable for a free user (no broker connection, can't run the engine).
-Need a free-tier-aware landing that surfaces what they CAN do + a persistent
-upgrade CTA.
+### Distribution execution plan (start week of 2026-05-14)
 
-Files touched:
-- New `src/components/tiers/free-tier-banner.tsx` — persistent sidebar CTA
-- `src/app/dashboard/page.tsx` — branch on tier; redirect free users to a
-  curated dashboard instead of `/dashboard/trader`
-- Wrap paid nav items with `<TierGate>` so they appear with a lock icon
-- Admin UI: 7/14-day Trader trial grant (one-click; writes to
-  `tier_expires_at` so it auto-expires)
+**Week 1 — Validate the funnel (target: 5-10 free signups).**
+- Tweet launch announcement, pin to profile, engage replies for 4h
+- Reddit r/algotrading post with screenshots + honest pitch
+- Daily digest → Twitter thread automation via Groq + Make.com / n8n
+- Personal email to 5 traders you know
 
-### Phase D — Privacy + contact + ToS refresh
+**Week 2-3 — First paying customer.**
+- Identify 3 most-engaged free signups, comp a Trader month each
+- 2 should convert when trial ends
+- Reddit 2-3x/wk in r/algotrading, r/options, r/financialindependence
 
-Required before accepting payments + for trust on a finance app.
+**Week 4 — Product Hunt launch.**
+- Tuesday launch
+- 5-line tagline, 3 screenshots, 90-second Loom, 5 seeded friend-comments
+- Realistic: 50-200 signups + permanent backlink
 
-- `/privacy` — standard SaaS privacy policy adapted to data we actually
-  collect (email, password hash, broker creds encrypted, trades, usage)
-- `/contact` — unauth-friendly form → creates a `support_tickets` row
-  with a "guest" sender; logged-in users redirect to `/dashboard/support`
-- `/terms` — add refund + cancellation + dispute resolution sections
-  before Phase C ships (otherwise Stripe will flag the merchant account)
+**Month 2+ — Decide based on data.**
+- Good retention → double down on what's working (more Reddit, IH, social)
+- Bad retention → product fix first, no more marketing spend
+- Good conversion (>5% free→paid) → test paid ads
+- Bad conversion (<1%) → adjust paywall position
 
-### Phase C — Stripe billing (DEFERRED until Stripe account set up)
+**Never (until later):**
+- Paid ads before 20 paying customers + measured CAC
+- SEO blog factory before organic search shows what converts
+- Fancy onboarding flow before 5 actual people walked through on Loom
+- Mobile app before 1000+ MAU on web
 
-The actual revenue surface. ~6-8 hours of focused work; the bottleneck is
-external setup, not code.
-
-External prerequisites (user does):
-1. Sign up at stripe.com, verify identity (EIN if applicable)
-2. Create Products + Prices:
-   - Trader Monthly @ $20 (`price_xxx`)
-   - Trader Annual @ $200 (~17% discount) (`price_yyy`)
-   - Premium Monthly @ $40 (`price_zzz`)
-   - Premium Annual @ $400 (~17% discount) (`price_www`)
-3. Enable Stripe Tax (automates US state-by-state SaaS taxability)
-4. Generate webhook signing secret + API keys (test + live)
-5. Hand keys to assistant via `/dashboard/admin/system-config` (uses
-   existing encrypted-at-rest pattern — same as Groq/Finnhub keys)
-
-Code work (assistant does):
-
-| File | Purpose |
-|------|---------|
-| `drizzle/0036_stripe.sql` | `ALTER TABLE users ADD COLUMN stripe_customer_id text UNIQUE`. Stripe is source of truth for subscription state; we mirror only `tier` + `tier_expires_at` which exist already |
-| `src/lib/stripe.ts` | Lazy Stripe SDK client (key from `system_config` → env fallback, same pattern as `getLlmApiKey()`) |
-| `src/app/api/billing/checkout/route.ts` | POST creates Checkout Session, returns URL (server-generated, no client-side card handling) |
-| `src/app/api/billing/portal/route.ts` | POST creates Customer Portal Session for users to self-manage cancellation, card update, plan changes, invoice history |
-| `src/app/api/webhooks/stripe/route.ts` | Webhook receiver. Signature-verified via `Stripe-Signature` header. Idempotent via `stripe_events_processed` table (dedup on event ID). Handles: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed` |
-| `src/app/dashboard/billing/page.tsx` | Current plan, upgrade CTAs, "Manage subscription" → Customer Portal |
-| `src/components/tiers/upgrade-button.tsx` | Universal "Upgrade to X" component wired to `/api/billing/checkout` |
-
-Decisions made up front (revise if needed):
-- **Monthly + Annual** at ~17% annual discount. Default playbook.
-- **Trial: 7-day Trader trial via Stripe**, card required (`trial_period_days: 7`). Card-required has worse top-of-funnel conversion but materially better trial→paid conversion.
-- **Refunds: pro-rated, 30-day no-questions-asked**. Document in `/terms` (Phase D).
-- **Currency: USD-only at launch.** Stripe handles foreign card conversion automatically.
-- **Tax: Stripe Tax enabled.** ~$0.50/transaction. Worth every cent versus filing state-by-state.
-
-Webhook gotchas to handle:
-- `Stripe-Signature` verification — MUST use Stripe SDK's `constructEvent()` or anyone can forge tier grants
-- Webhook retry — Stripe retries failed webhooks for up to 3 days. Dedup via event ID is mandatory
-- Race: webhook can arrive before redirect-back lands. Treat webhook as source of truth, redirect-back as UX hint only
-
-### Distribution playbook (post-launch)
-
-Not code — captured here because the strategy needs to be ready when Phase
-A ships. Filing alongside Phase C because they kick off at the same time.
-
-**First 20 free users (manual, by user):**
-- `r/algotrading` (170k) — answer substantive questions, link relevant
-  tool/guide as footnote, never a link-drop
-- Twitter/X fintwit replies — same playbook, never broadcast tweets
-- Discord trading communities — only ones already a member of
-- Tag-along: post the daily digest content (already auto-generated) as
-  Twitter threads via Groq summarization
-
-**First 10 paying customers (manual, post-Phase-C):**
-1. Identify 10 most-engaged free users (>5 sessions, used engine/backtest)
-2. Email each one personally from `hello@beacontry.com` (NOT the digest cron):
-   "Noticed you've been using Beacontry. Want to give you a free Trader
-   month. What's broken / what would you pay for?"
-3. ~3/10 will upgrade when the free month ends (routine became dependent)
-4. Iterate on whatever complaint appears 3+ times
-5. Rinse and repeat with next 10
-
-This is intentionally unscaleable. Goal is learning what to build, not
-unit economics. By customer #20 you'll know retention drivers and can
-swap manual outreach for funnel optimization.
-
-**Product Hunt launch:**
-One-shot. Pick a Tuesday 2 weeks out. Need:
-- 5-line tagline
-- 3 screenshots (Trader, /learn, /congress)
-- 90-second Loom walkthrough
-- "Maker" comment with the story
-- 5 friend-comments in first 4 hours to seed momentum
-- Realistic outcome: 50-200 signups + permanent backlink
-
-**Paid ads: DON'T** until ≥ 20 paying customers + measured CAC < $40.
-Trading-software CPC is $5-15. You'll burn $500 before you understand
-the funnel.
-
-### Order + estimated effort
-
-| Phase | Scope | Hours | Blocks on |
-|-------|-------|-------|-----------|
-| A | Public signup | 1-2 | nothing |
-| B | Free-tier landing | 1-2 | A |
-| D | Privacy + contact + ToS | 1 | nothing |
-| C | Stripe end-to-end | 6-8 | Stripe account + Products + keys |
-
-Total assistant-time: ~10-13 hours. A+B+D can ship over a long weekend.
-C ships when Stripe externals are ready.
 
 ---
 

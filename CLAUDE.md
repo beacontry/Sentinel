@@ -1048,14 +1048,73 @@ Idempotent — `IF NOT EXISTS` on every CREATE, `ON CONFLICT DO NOTHING` on seed
 
 ---
 
+## 2026-05-14 — Tier enforcement + paywall UX + Stripe billing
+
+Eight-phase rollout in a single day taking Beacontry from "invite-only beta with marketing pricing" to "revenue-capable hosted SaaS with full tier enforcement, paywall UX, and Stripe-driven billing."
+
+### Phase A — Public free-tier signup
+`/api/auth/register` accepts anonymous signups for the `free` tier. Honeypot + IP rate-limit + format check defenses; invite path preserved for admin-issued tiered comp accounts. Register page shows the standard form when no token provided.
+
+### Phase B — Free-tier dashboard landing
+New components: `<FreeTierWelcome>` (dismissible welcome card on `/dashboard`), `<SidebarTierBadge>` (Upgrade pill for free, "Trader plan · Manage" chip for paid), `<TraderTierRequired>` (full-feature paywall card above `/dashboard/trader`).
+
+### Phase D — Privacy + contact + ToS billing language
+`/privacy` (full SaaS privacy policy with sub-processor list), `/contact` (email + dashboard tickets + security disclosure). `/terms` extended with sections 8-11: Subscriptions, Cancellation, Refunds (30-day full + prorated annual), Payment Disputes. `TERMS_VERSION` bumped to `2026-05-14` so existing users re-accept.
+
+### Phase C — Stripe billing end-to-end
+Migration `0036_stripe.sql` adds `users.stripe_customer_id` + `stripe_events_processed` table (webhook idempotency dedup). New files: `src/lib/stripe.ts` (lazy SDK client, key lookup via `system_config` → env fallback), `src/lib/billing-prices.ts` (price-ID source of truth; env-var override for live mode). Routes: `/api/billing/checkout` (POST → Checkout Session URL), `/api/billing/portal` (POST → Customer Portal URL), `/api/webhooks/stripe` (POST receiver — signature-verified, idempotent via `stripe_events_processed`, handles 6 events: `checkout.session.completed`, `customer.subscription.{created,updated,deleted}`, `invoice.payment_{succeeded,failed}`). Dashboard: `/dashboard/billing` with current-plan + upgrade grid for free users + Manage button for paid. `<UpgradeButton tier cadence>` component used everywhere CTAs route to checkout.
+
+**Stripe API version pinned**: `2026-04-22.dahlia`. Critical: `current_period_end` moved from Subscription object to `items[0]` in this version — the webhook reads from the new location (with fallback) so `tier_expires_at` is correctly set. Sandbox tested end-to-end with test card `4242 4242 4242 4242` on a fresh free user; `test@test.com` user has tier=trader, stripe_customer_id, tier_expires_at correctly populated, audit log shows USER_TIER_CHANGED rows with manual=false.
+
+**Marketing alignment**: Premium price corrected from `$45/$450` to `$40/$400` across landing + pricing + README + future-ideas — Stripe was the source of truth.
+
+**Going live checklist**: business profile verification in Stripe (1-2 business days), generate `sk_live_` + live webhook, "Copy to live mode" on Trader + Premium products, swap keys in `/dashboard/admin/system-config`, optionally override price IDs via env vars. Stripe Tax stays OFF until activated in Stripe dashboard + US nexus declared per state.
+
+### Phase E1 + E2 — API tier gates (63 new gates)
+Goal: close the "pricing promises one thing, code enforces another" gap. Before: 4 routes gated. After: 64 routes gated.
+
+**Premium gates** (4): `/api/chat`, `/api/filings/chat`, `/api/insights/[symbol]`, `/api/trader/summarize-trade`.
+**Trader gates** (60): 11 Finnhub per-symbol (news, sentiment, fundamentals, options, insider, recommendations, peers, social-sentiment, volatility, profile), 6 engine+broker (trader/dashboard, trader/engine, broker/account, broker/connections + activate + test, risk-profile), 13 analysis (analyze[+daily+confluence], breadth, sector-rotation, relative-strength, multi-timeframe, unusual-activity, correlation, heatmap, accuracy[+symbol], signals/export, screener), 14 backtest+optimizer+strategies+paper-trading, 8 journal/tax/performance/pnl-calendar, 2 alerts, 6 multi-watchlist+multi-layout.
+
+**Optimizer fix**: `/api/optimize/*` previously required `requireAuthWithCsrf(request, ["admin"])` — now just `requireAuthWithCsrf(request)` + Trader tier check, so paying Trader users can run their own optimizer (the documented product promise on `/pricing`) instead of needing an admin to do it for them.
+
+### Phase E3 — Engine tier-awareness
+`EngineState.userTier` captured at `startEngine()` from DB. Hybrid pipeline options now branch on tier: Trader users get `enableAiScoring: false` (stays Finnhub-driven layers only), Premium+ users get the full pipeline. Mid-session tier changes don't reshape a running pipeline — they take effect on engine restart.
+
+### Phase F — Admin nav hidden from non-admins
+`<NavItem>` and `<SubNavTab>` interfaces gained `adminOnly?: boolean`. New helpers `visibleNavItems(role)` + `visibleSubNav(tabs, role)` filter at render time. Admin top-level nav item + admin-only sub-nav tabs (e.g., `/dashboard/optimizer` was tagged but the flag was a no-op before) are now hidden entirely for non-admins. Sidebar (desktop + mobile), sub-nav, command palette all filter consistently. `/api/me/tier` now returns `role` so the client can filter. **The pages themselves still server-side enforce role** — this is purely UX.
+
+### Phase G — Paywall banners on paid pages
+New generic `<PaywallBanner minTier featureName description?>` component sits at the top of 28 paid dashboard pages. Hides for users at or above tier; renders an upgrade card for users below. Applied to all major paid pages (analysis, news, sentiment, screener, backtest, optimizer, alerts, strategies, journal, performance, tax, etc.). Replaces the previous experience where free users would visit paid pages, see broken empty states, and 402 errors in DevTools without explanation.
+
+**HTML tier reference**: `public/docs/tiers.html` — full feature comparison matrix (~60 rows × 5 columns), tier-vs-role explanation, "which tier should you pick?" scenario cards, upgrade/downgrade/cancellation mechanics, technical enforcement details, pricing FAQ. Linkable from `/pricing` and the public-shell footer.
+
+### Migration applied
+- `0036_stripe.sql` — `users.stripe_customer_id` + `stripe_events_processed` table. Applied to prod 2026-05-14.
+
+### Test coverage
+- `tests/unit/billing-prices.test.ts` (17 tests) — tier↔price mapping bijectivity + env override + display labels + trial period constant
+- `tests/unit/tiers.test.ts` (20 tests) — existing
+- `tests/unit/system-config.test.ts` — KNOWN_KEYS asserts STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET added
+- 440/440 tests passing post-batch
+
+### Going-live remaining
+1. **Stripe live-mode activation**: business profile verification + Activate live mode + copy products to live + new sk_live_ + new webhook secret. ~30 min user, 1-2 days Stripe approval.
+2. **Sentry / uptime monitoring**: not blocking but recommended before paying customers.
+3. **Pricing live-mode price ID swap**: either edit `src/lib/billing-prices.ts` hardcoded defaults OR set `STRIPE_PRICE_<TIER>_<CADENCE>` env vars on the droplet.
+
+---
+
 ## Static HTML docs (served by Next.js public/)
 
 User-facing HTML documentation lives in **`public/docs/`** (not the repo-root `docs/` folder which holds markdown):
 
 - `public/docs/engine-ruleset.html` — trading engine internals (kept in sync with `docs/ENGINE_RULESET.md`)
 - `public/docs/sentinel-features.html` — per-page/per-feature user training reference
+- `public/docs/tiers.html` — full tier breakdown + feature matrix (~60 rows × 5 columns) + pricing FAQ
+- `public/docs/usage-slides.html` — onboarding slides
 
-These render as static assets at `/docs/engine-ruleset.html` and `/docs/sentinel-features.html` on any deployment (Next.js auto-serves everything under `public/`). The repo-root `docs/` folder holds markdown source: `docs/ENGINE_RULESET.md`, `docs/future-ideas.md`. **When editing the engine ruleset, change both `docs/ENGINE_RULESET.md` AND `public/docs/engine-ruleset.html` in the same commit** — they're intentionally mirrored.
+These render as static assets at `/docs/*.html` on any deployment (Next.js auto-serves everything under `public/`). The repo-root `docs/` folder holds markdown source: `docs/ENGINE_RULESET.md`, `docs/future-ideas.md`, `docs/legal/licensing-and-acquisition.md`. **When editing the engine ruleset, change both `docs/ENGINE_RULESET.md` AND `public/docs/engine-ruleset.html` in the same commit** — they're intentionally mirrored.
 
 ## Detailed Design Reference
 For exhaustive design tokens, component APIs, and page templates, see `.claude/skills/sentinel-redesign/references/`:

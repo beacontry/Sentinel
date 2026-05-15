@@ -14,7 +14,7 @@
 - [/articles](https://beacontry.com/articles) — daily Beacontry Desk market digest
 - [/pricing](https://beacontry.com/pricing) — Free · Trader $20 · Premium $40 · Self-Hosted (source-available)
 
-**Docs**: [Features reference](https://beacontry.com/docs/sentinel-features.html) · [Engine ruleset](https://beacontry.com/docs/engine-ruleset.html) · [Usage slides](https://beacontry.com/docs/usage-slides.html)
+**Docs**: [Features reference](https://beacontry.com/docs/sentinel-features.html) · [Engine ruleset](https://beacontry.com/docs/engine-ruleset.html) · [Usage slides](https://beacontry.com/docs/usage-slides.html) · [Tier breakdown](https://beacontry.com/docs/tiers.html)
 
 (Doc filenames keep the historical `sentinel-features.html` slug for link stability — the content is current.)
 
