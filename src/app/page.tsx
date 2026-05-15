@@ -27,43 +27,50 @@ export default function LandingPage() {
     { label: "Why Beacontry", href: "#trust" },
   ];
 
-  // Waitlist form state — sits in the final CTA section. Public unauth
-  // endpoint at /api/waitlist; rate-limited per IP, honeypot-protected.
-  const [waitlistEmail, setWaitlistEmail] = useState("");
-  const [waitlistStatus, setWaitlistStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
-  const [waitlistError, setWaitlistError] = useState<string | null>(null);
-  // Hidden honeypot field. Real users never see this; bots filling
-  // every input get caught and silently ignored server-side.
-  const [waitlistHoneypot, setWaitlistHoneypot] = useState("");
-
-  async function submitWaitlist(e: React.FormEvent) {
-    e.preventDefault();
-    if (!waitlistEmail.trim() || waitlistStatus === "submitting") return;
-    setWaitlistStatus("submitting");
-    setWaitlistError(null);
-    try {
-      const res = await fetch("/api/waitlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: waitlistEmail.trim(),
-          source: "landing-hero",
-          website: waitlistHoneypot,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setWaitlistError(typeof data.error === "string" ? data.error : "Couldn't save. Try again.");
-        setWaitlistStatus("error");
-        return;
-      }
-      setWaitlistStatus("success");
-      setWaitlistEmail("");
-    } catch {
-      setWaitlistError("Network error. Try again.");
-      setWaitlistStatus("error");
-    }
-  }
+  // Public-browse links shown on the landing's final CTA section.
+  // Replaces the legacy "join the waitlist" card — public free signup
+  // is open, so a waitlist asking "we'll let you know when public
+  // signup opens" was contradictory. These point at surfaces that
+  // genuinely don't require an account so curious visitors can poke
+  // around before committing to a signup.
+  const exploreLinks: {
+    label: string;
+    href: string;
+    blurb: string;
+    external?: boolean;
+  }[] = [
+    {
+      label: "Education hub",
+      href: "/learn",
+      blurb: "14 long-form guides on tax, FIRE, options, retirement",
+    },
+    {
+      label: "Free calculators",
+      href: "/tools",
+      blurb: "8 calculators — FIRE, Roth, tax-loss harvesting…",
+    },
+    {
+      label: "Glossary",
+      href: "/glossary",
+      blurb: "95 trading + investing terms",
+    },
+    {
+      label: "How the engine works",
+      href: "/docs/engine-ruleset.html",
+      blurb: "Full ruleset for the 8 trading modes",
+    },
+    {
+      label: "Tier details",
+      href: "/docs/tiers.html",
+      blurb: "Feature matrix + pricing FAQ",
+    },
+    {
+      label: "Source code",
+      href: "https://github.com/beacontry/Sentinel",
+      blurb: "FSL-1.1, auto-Apache 2.0 after 2 years",
+      external: true,
+    },
+  ];
 
   const heroPoints = [
     "Self-optimizing strategies",
@@ -732,59 +739,47 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          {/* Waitlist — for visitors who aren't ready to sign up but want
-              to be notified. Currently invite-only registration means
-              walk-ups would bounce on the register page anyway. */}
-          <div className="mx-auto mt-12 max-w-[480px] rounded-2xl border border-ld-border bg-ld-card p-6">
-            <p className="font-mono text-xs uppercase tracking-[0.14em] text-ld-text-muted">
-              Or join the waitlist
+          {/* Explore-freely grid — replaces the legacy waitlist card.
+              All six surfaces are public (no account required), so a
+              curious visitor can poke around before committing to a
+              signup. Education + tools + engine docs are the substance
+              proofs; source code is the transparency signal. */}
+          <div className="mx-auto mt-12 max-w-[760px] rounded-2xl border border-ld-border bg-ld-card p-6 lg:p-7">
+            <p className="font-mono text-xs uppercase tracking-[0.14em] text-ld-text-muted text-center">
+              Or explore freely — no account needed
             </p>
-            <p className="mt-2 text-[0.92rem] text-ld-text-secondary">
-              Not ready yet? Drop your email and we&apos;ll let you know when public signup opens.
-            </p>
-
-            {waitlistStatus === "success" ? (
-              <div className="mt-5 flex items-center justify-center gap-2 rounded-[10px] bg-ld-accent/10 border border-ld-accent/30 px-4 py-3 text-ld-accent">
-                <Check className="h-4 w-4" />
-                <span className="font-medium">You&apos;re on the list. We&apos;ll be in touch.</span>
-              </div>
-            ) : (
-              <form onSubmit={submitWaitlist} className="mt-5 flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="email"
-                  value={waitlistEmail}
-                  onChange={(e) => setWaitlistEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  required
-                  className="flex-1 rounded-[10px] border border-ld-border bg-ld-deep px-4 py-3 text-[0.94rem] text-ld-text placeholder:text-ld-text-muted focus:border-ld-accent focus:outline-none focus:ring-1 focus:ring-ld-accent/40"
-                  autoComplete="email"
-                  aria-label="Email address"
-                />
-                {/* Honeypot — hidden from sighted users, ignored by screen readers.
-                    Bots that auto-fill form fields trip this and get silently dropped server-side. */}
-                <input
-                  type="text"
-                  name="website"
-                  value={waitlistHoneypot}
-                  onChange={(e) => setWaitlistHoneypot(e.target.value)}
-                  tabIndex={-1}
-                  autoComplete="off"
-                  aria-hidden="true"
-                  style={{ position: "absolute", left: "-10000px", top: "auto", width: "1px", height: "1px", overflow: "hidden" }}
-                />
-                <button
-                  type="submit"
-                  disabled={waitlistStatus === "submitting" || !waitlistEmail.trim()}
-                  className="rounded-[10px] bg-ld-accent px-5 py-3 text-[0.92rem] font-semibold text-white transition-all duration-200 hover:bg-ld-accent-dim disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {waitlistStatus === "submitting" ? "Joining…" : "Notify me"}
-                </button>
-              </form>
-            )}
-
-            {waitlistError && (
-              <p className="mt-3 text-[0.85rem] text-red-400">{waitlistError}</p>
-            )}
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {exploreLinks.map((link) => {
+                const baseCls =
+                  "group flex flex-col gap-1 rounded-xl border border-ld-border bg-ld-deep/40 p-4 text-left transition-all duration-200 hover:border-ld-accent/50 hover:bg-ld-accent/[0.04]";
+                const inner = (
+                  <>
+                    <span className="flex items-center justify-between gap-2 text-[0.94rem] font-semibold text-ld-text">
+                      {link.label}
+                      <ArrowRight className="h-3.5 w-3.5 text-ld-text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ld-accent" />
+                    </span>
+                    <span className="text-[0.82rem] leading-relaxed text-ld-text-secondary">
+                      {link.blurb}
+                    </span>
+                  </>
+                );
+                return link.external ? (
+                  <a
+                    key={link.href}
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={baseCls}
+                  >
+                    {inner}
+                  </a>
+                ) : (
+                  <Link key={link.href} href={link.href} className={baseCls}>
+                    {inner}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
         </div>
       </section>
