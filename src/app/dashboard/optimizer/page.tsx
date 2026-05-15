@@ -23,6 +23,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -149,6 +150,7 @@ export default function OptimizerPage() {
   if (userRole !== null && userRole !== "admin") {
     return (
       <div className="p-4 lg:p-6 space-y-6">
+      <PaywallBanner minTier="trader" featureName="Strategy Optimizer" description="Genetic-algorithm optimizer across the full S&P 500 + walk-forward validation." />
         <div className="rounded-xl border border-border bg-bg-surface p-12 text-center">
           <Target className="w-12 h-12 text-text-muted mx-auto mb-4" />
           <h2 className="text-lg font-semibold text-text-primary mb-2">Admin Access Required</h2>

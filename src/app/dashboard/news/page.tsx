@@ -17,6 +17,7 @@ import {
   Clock,
   RefreshCw,
 } from "lucide-react";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface NewsArticle {
   headline: string;
@@ -85,6 +86,7 @@ export default function NewsPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.research} />
+      <PaywallBanner minTier="trader" featureName="Per-symbol news" description="Headlines per ticker (Finnhub) with sentiment badges. General market news is free." />
       <PageIntro
         eyebrow="Research"
         title="News"

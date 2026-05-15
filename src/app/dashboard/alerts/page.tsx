@@ -10,6 +10,7 @@ import { Bell, Plus, Trash2, Clock, CheckCircle } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface AlertRule {
   id: string;
@@ -156,6 +157,7 @@ export default function AlertsPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.trader} />
+      <PaywallBanner minTier="trader" featureName="Alerts" description="Price + signal alerts with Discord/email/push delivery." />
       <PageIntro
         eyebrow="Execution"
         title="Alerts"

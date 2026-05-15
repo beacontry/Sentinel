@@ -16,6 +16,7 @@ import type { BacktestResult } from "@/lib/backtester";
 import type { SavedStrategy } from "@/types";
 import { BacktestChart } from "@/components/dashboard/backtest-chart";
 import { STRATEGY_PRESETS, PRESET_LABELS, type PresetName } from "@/lib/strategy-presets";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 const EXIT_REASON_LABELS: Record<string, { label: string; color: string }> = {
   stop_loss: { label: "Stop Loss", color: "text-bearish" },
@@ -362,6 +363,7 @@ export default function BacktestPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.trader} />
+      <PaywallBanner minTier="trader" featureName="Backtest Lab" description="Strategy backtesting + mode-compare + Sharpe/Sortino/Calmar/MAR metrics." />
       <PageIntro
         eyebrow="Strategy Lab"
         title="Backtest"

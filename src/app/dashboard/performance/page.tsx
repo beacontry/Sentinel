@@ -11,6 +11,7 @@ import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import { usePolling } from "@/hooks/usePolling";
 import { POLLING_INTERVALS } from "@/lib/config";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface PerformanceData {
   overall: {
@@ -97,6 +98,7 @@ export default function PerformancePage() {
     return (
       <div className="p-4 lg:p-6 space-y-6">
         <SubNav tabs={SUB_NAV.journal} />
+      <PaywallBanner minTier="trader" featureName="Performance & Attribution" description="Per-symbol realized P&L breakdown + signal accuracy + total return." />
         <PageIntro
           eyebrow="Record"
           title="Performance"

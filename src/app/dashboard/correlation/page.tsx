@@ -8,6 +8,7 @@ import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
 import { GitCompareArrows } from "lucide-react";
+import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface CorrelationResult {
   symbols: string[];
@@ -58,6 +59,7 @@ export default function CorrelationPage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <SubNav tabs={SUB_NAV.analysis} />
+      <PaywallBanner minTier="trader" featureName="Correlation Matrix" />
       <PageIntro
         eyebrow="Market Analysis"
         title="Correlation"

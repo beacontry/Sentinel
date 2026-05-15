@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beacontry Tiers — What Each Plan Includes</title>
+<meta name="description" content="Detailed feature breakdown for Beacontry's four tiers: Free, Trader ($20/mo), Premium ($40/mo), and Self-Hosted (FSL-1.1).">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  :root {
+    --bg-root:     oklch(8% 0.01 165);
+    --bg-primary:  oklch(10% 0.01 165);
+    --bg-surface:  oklch(14% 0.012 165);
+    --bg-elevated: oklch(18% 0.014 165);
+    --bg-hover:    oklch(22% 0.015 165);
+    --text-primary:   oklch(96% 0.005 165);
+    --text-secondary: oklch(68% 0.01 165);
+    --text-muted:     oklch(48% 0.01 165);
+    --border:       oklch(24% 0.015 165);
+    --border-hover: oklch(32% 0.02 165);
+    --accent:       oklch(72% 0.17 165);
+    --accent-dim:   oklch(60% 0.12 165);
+    --accent-bg:    oklch(72% 0.17 165 / 0.08);
+    --accent-bg-md: oklch(72% 0.17 165 / 0.14);
+    --bullish: oklch(72% 0.17 145);
+    --bearish: oklch(65% 0.22 25);
+    --warning: oklch(78% 0.16 80);
+  }
+
+  html { background: var(--bg-root); }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    color: var(--text-secondary);
+    background: var(--bg-root);
+    line-height: 1.6;
+    font-size: 15px;
+    min-height: 100vh;
+  }
+
+  .container { max-width: 1180px; margin: 0 auto; padding: 48px 32px 80px; }
+  @media (max-width: 720px) { .container { padding: 32px 20px 64px; } }
+
+  header { text-align: center; margin-bottom: 56px; }
+  header .eyebrow {
+    display: inline-block;
+    background: var(--accent-bg-md);
+    color: var(--accent);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 18px;
+  }
+  header h1 {
+    color: var(--text-primary);
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+    margin-bottom: 14px;
+  }
+  header p { font-size: 1.05rem; color: var(--text-secondary); max-width: 640px; margin: 0 auto; }
+
+  h2 {
+    color: var(--text-primary);
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin: 56px 0 16px;
+    letter-spacing: -0.015em;
+  }
+  h3 {
+    color: var(--text-primary);
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 28px 0 10px;
+  }
+  p { margin-bottom: 14px; }
+  ul { margin-bottom: 16px; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--text-primary); font-weight: 600; }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg-elevated);
+    color: var(--accent);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+  a:hover { color: var(--accent-dim); }
+
+  /* Tier-card grid (top of page) */
+  .tier-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+    margin-bottom: 48px;
+  }
+  .tier-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+    transition: border-color 0.18s, transform 0.18s;
+  }
+  .tier-card:hover { border-color: var(--border-hover); }
+  .tier-card.featured { border-color: var(--accent); position: relative; }
+  .tier-card.featured::before {
+    content: "Most popular";
+    position: absolute;
+    top: -10px;
+    right: 16px;
+    background: var(--accent);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .tier-card .tier-name {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .tier-card .tier-price {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+    margin: 14px 0 6px;
+  }
+  .tier-card .tier-period {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-bottom: 14px;
+  }
+  .tier-card .tier-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+  .tier-card .tier-desc {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-top: 10px;
+    min-height: 3em;
+  }
+
+  /* Feature-comparison table */
+  .matrix-wrap {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+  table { width: 100%; border-collapse: collapse; min-width: 680px; }
+  thead tr { background: var(--bg-elevated); }
+  th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 12px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  th.feature { text-align: left; padding-left: 18px; width: 38%; }
+  th.tier-trader, th.tier-premium { color: var(--accent); }
+  td {
+    text-align: center;
+    padding: 12px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+  }
+  td.feature {
+    text-align: left;
+    padding-left: 18px;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+  td .check { color: var(--accent); font-weight: 700; }
+  td .dash { color: var(--text-muted); }
+  .matrix-wrap .category-row td {
+    background: var(--bg-elevated);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    padding: 10px 18px;
+    text-align: left;
+  }
+  .matrix-wrap tr:last-child td { border-bottom: none; }
+  .matrix-scroll { overflow-x: auto; }
+
+  /* Inline callout boxes */
+  .callout {
+    background: var(--accent-bg);
+    border: 1px solid var(--accent-bg-md);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 20px 0;
+  }
+  .callout strong { color: var(--accent); }
+
+  /* "When to pick which tier" comparison cards */
+  .scenario {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin-bottom: 14px;
+  }
+  .scenario .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .scenario .verdict { color: var(--text-primary); font-weight: 600; }
+
+  /* Footer */
+  footer {
+    margin-top: 80px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  footer a { color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <span class="eyebrow">Plans &amp; pricing</span>
+  <h1>Beacontry tiers — detailed breakdown</h1>
+  <p>What each plan includes, what's behind the paywall, and how to pick. All paid plans include a 7-day free trial and a 30-day full refund window. Cancel anytime in the Stripe Customer Portal.</p>
+</header>
+
+<!-- ── Tier overview cards ───────────────────────────────── -->
+<section class="tier-grid">
+  <div class="tier-card">
+    <span class="tier-tag">Hosted</span>
+    <div class="tier-name">Free</div>
+    <div class="tier-price">$0</div>
+    <div class="tier-period">forever</div>
+    <p class="tier-desc">Research, learning, and public-market data. No trading, no AI.</p>
+  </div>
+  <div class="tier-card featured">
+    <span class="tier-tag">Hosted · $20/mo</span>
+    <div class="tier-name">Trader</div>
+    <div class="tier-price">$20</div>
+    <div class="tier-period">/month · $200/yr (saves 17%)</div>
+    <p class="tier-desc">Full platform without AI — engine, brokers, Finnhub data, optimizer, journal, tax.</p>
+  </div>
+  <div class="tier-card">
+    <span class="tier-tag">Hosted · $40/mo</span>
+    <div class="tier-name">Premium</div>
+    <div class="tier-price">$40</div>
+    <div class="tier-period">/month · $400/yr (saves 17%)</div>
+    <p class="tier-desc">Trader + AI assistant + future paid-data tier (L2 / SIP / dark pools).</p>
+  </div>
+  <div class="tier-card">
+    <span class="tier-tag">Source-available</span>
+    <div class="tier-name">Self-Hosted</div>
+    <div class="tier-price">Free</div>
+    <div class="tier-period">FSL-1.1 → Apache 2.0 after 2yr</div>
+    <p class="tier-desc">Run it yourself on your hardware. BYO API keys and broker.</p>
+  </div>
+</section>
+
+<!-- ── How tier vs role works ────────────────────────────── -->
+<h2>Tiers vs. roles — the two axes</h2>
+<p>
+  Beacontry uses two orthogonal access systems. They never conflict; sometimes they stack.
+</p>
+
+<div class="callout">
+  <p><strong>Tier</strong> answers "what features can you use?" Hierarchical: Enterprise &gt; Premium &gt; Trader &gt; Free.</p>
+  <p><strong>Role</strong> answers "are you running the platform?" Binary: <code>admin</code> or <code>user</code>.</p>
+  <p>An admin can be on the Free tier (they paid for nothing). A regular user can be on Premium (they pay for everything). Admin can grant any tier manually from <code>/dashboard/admin</code>; in production, Stripe Checkout grants paid tiers automatically.</p>
+</div>
+
+<!-- ── Feature comparison matrix ─────────────────────────── -->
+<h2>Feature matrix</h2>
+<div class="matrix-wrap">
+<div class="matrix-scroll">
+<table>
+  <thead>
+    <tr>
+      <th class="feature">Feature</th>
+      <th>Free</th>
+      <th class="tier-trader">Trader</th>
+      <th class="tier-premium">Premium</th>
+      <th>Self-Hosted</th>
+    </tr>
+  </thead>
+  <tbody>
+
+    <!-- TRADING ENGINE -->
+    <tr class="category-row"><td colspan="5">// Trading engine + execution</td></tr>
+    <tr><td class="feature">Automated trading engine (8 modes)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Engine modes (conservative / moderate / aggressive / optimized / intraday / tactical / tactical-smart / adaptive)</td><td><span class="dash">—</span></td><td><span class="check">All 8</span></td><td><span class="check">All 8</span></td><td><span class="check">All 8</span></td></tr>
+    <tr><td class="feature">Live trading (real money)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Paper trading (simulated)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Broker connections (Alpaca, IBKR, Tradier)</td><td><span class="dash">—</span></td><td><span class="check">3 active</span></td><td><span class="check">3 active</span></td><td><span class="check">Unlimited</span></td></tr>
+    <tr><td class="feature">Manual order ticket (per-symbol)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Bracket orders (entry + stop + take-profit atomic)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Fractional shares / dollar-based buys</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+
+    <!-- DATA -->
+    <tr class="category-row"><td colspan="5">// Market data</td></tr>
+    <tr><td class="feature">Yahoo daily + intraday bars (free)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Finnhub news (per symbol)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">Finnhub sentiment + insider sentiment</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">Finnhub fundamentals (per symbol)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">Finnhub options flow + analyst recommendations</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">Finnhub insider transactions</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">L2 / real-time SIP / dark pools <em>(planned)</em></td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO data</span></td></tr>
+    <tr><td class="feature">General market news (Yahoo + RSS)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+
+    <!-- ANALYSIS -->
+    <tr class="category-row"><td colspan="5">// Analysis</td></tr>
+    <tr><td class="feature">Hybrid signal pipeline (technical + Finnhub layers)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">AI signal scoring (Groq)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">Multi-timeframe analysis</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Market breadth / sector rotation</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Correlation + relative strength matrices</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Heatmap + unusual activity detector</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Screener (full S&amp;P 500 scan)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Congressional trades (federal PTRs)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">SEC filings listing</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Reddit ticker-mention feed</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+
+    <!-- AI -->
+    <tr class="category-row"><td colspan="5">// AI features (Premium)</td></tr>
+    <tr><td class="feature">AI Chat assistant (full-context conversation)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">AI Quick Insight (per-symbol summary)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">AI signal scoring in engine pipeline</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">AI trade summaries (Recent Trades AI ✨)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">Daily AI market digest</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">Weekly AI trade review</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">Filings AI Chat (10-Q / 10-K Q&amp;A)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+
+    <!-- STRATEGY -->
+    <tr class="category-row"><td colspan="5">// Strategy + backtesting</td></tr>
+    <tr><td class="feature">Backtest lab (single symbol + date range)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Mode-compare backtest (all engine modes vs SPY)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Compare-strategies (up to 5 saved strategies)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Sharpe / Sortino / Calmar / MAR ratios</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Strategy Builder (visual + tunable)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">GA Optimizer (genetic algorithm + walk-forward validation)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Replay (historical bar-by-bar)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+
+    <!-- JOURNAL + TAX -->
+    <tr class="category-row"><td colspan="5">// Journal + tax</td></tr>
+    <tr><td class="feature">Trade journal (auto-stub on filled trades)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Daily pre / post-market journal prompts</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Tagged-pattern behavioral badges</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Performance attribution (per-symbol realized P&amp;L)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">P&amp;L Calendar (heatmap with drill-down)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Tax Center + Form 8949 generator</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Self-attested §475(f) MTM election + wash-sale protection</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Drawdown analytics</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+
+    <!-- WATCHLIST + ALERTS + DASHBOARD -->
+    <tr class="category-row"><td colspan="5">// Watchlists, alerts, layouts</td></tr>
+    <tr><td class="feature">Watchlist (default list)</td><td><span class="check">10 symbols</span></td><td><span class="check">Unlimited</span></td><td><span class="check">Unlimited</span></td><td><span class="check">Unlimited</span></td></tr>
+    <tr><td class="feature">Multi-watchlist (multiple named lists)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Shared watchlist (public link)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Alerts (price + signal + Discord/email/push)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Custom dashboard layouts (single default)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Multiple named dashboard layouts</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+
+    <!-- RESEARCH + EDUCATION -->
+    <tr class="category-row"><td colspan="5">// Research &amp; education (free for everyone)</td></tr>
+    <tr><td class="feature">Education hub (14 guides on retirement, tax, FIRE, options)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Glossary (95 terms across 6 categories)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">8 financial calculators (FIRE, Roth, tax-loss harvesting, …)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Spaced-repetition glossary review (SM-2)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Daily market digest (auto-published article)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr><td class="feature">Earnings calendar + macro / policy / currency feeds</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+
+    <!-- COMMUNITY -->
+    <tr class="category-row"><td colspan="5">// Community</td></tr>
+    <tr><td class="feature">Feed, forum, posts, leaderboard</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Direct messages (private DMs)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Customer support tickets</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">Self-serve</span></td></tr>
+
+    <!-- INFRASTRUCTURE -->
+    <tr class="category-row"><td colspan="5">// Infrastructure &amp; trust</td></tr>
+    <tr><td class="feature">Hash-chained audit log (tamper-evident)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Encrypted broker keys at rest (AES-256-GCM)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">7-day free trial</td><td><span class="dash">N/A</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="dash">N/A</span></td></tr>
+    <tr><td class="feature">30-day full refund</td><td><span class="dash">N/A</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="dash">N/A</span></td></tr>
+    <tr><td class="feature">Hosted infrastructure (we operate it)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="dash">DIY</span></td></tr>
+    <tr><td class="feature">Source code access (FSL-1.1 → Apache 2.0 in 2yr)</td><td><span class="check">✓ read</span></td><td><span class="check">✓ read</span></td><td><span class="check">✓ read</span></td><td><span class="check">✓ run</span></td></tr>
+
+  </tbody>
+</table>
+</div>
+</div>
+
+<!-- ── Which tier for which user? ───────────────────────────── -->
+<h2>Which tier should you pick?</h2>
+
+<div class="scenario">
+  <div class="label">"I want to learn before I trade"</div>
+  <div class="verdict">Free.</div>
+  <p>14 long-form guides, 8 calculators, 95 glossary terms, Congress trades, daily digest, public news feed, a 10-symbol watchlist. Stay here as long as you want; upgrade only when you're ready to trade.</p>
+</div>
+
+<div class="scenario">
+  <div class="label">"I want to trade automatically + know what's happening on each ticker"</div>
+  <div class="verdict">Trader — $20/mo.</div>
+  <p>Full engine (8 modes), broker integration, Finnhub per-symbol news + sentiment + fundamentals + options + insiders, GA optimizer, backtest lab, full journal + tax tooling. The trading product without the AI commentary on top.</p>
+</div>
+
+<div class="scenario">
+  <div class="label">"I want the AI to help — chat about my trades, score my signals, summarize the day"</div>
+  <div class="verdict">Premium — $40/mo.</div>
+  <p>Everything in Trader plus AI Chat with full account context, per-symbol AI Quick Insight, AI scoring in the engine's hybrid pipeline, daily AI market digest, weekly AI trade review, AI trade summaries, and the Filings Q&amp;A bot. When real-time L2 / SIP / dark pools ship later, Premium subscribers get them automatically.</p>
+</div>
+
+<div class="scenario">
+  <div class="label">"I want to run it on my own hardware with full control"</div>
+  <div class="verdict">Self-Hosted — free.</div>
+  <p>Clone from <a href="https://github.com/beacontry/Sentinel">github.com/beacontry/Sentinel</a>, run on your own Postgres + broker + API keys. Source available under FSL-1.1 (auto-converts to Apache 2.0 after 2 years). Same features, you control the deployment + the data. No SLA, no hosted support — community Discord access only.</p>
+</div>
+
+<div class="scenario">
+  <div class="label">"I'm a firm / fund / family office and need RBAC + dedicated tenant"</div>
+  <div class="verdict">Enterprise — contact us.</div>
+  <p>Everything in Premium plus role-based access control, dedicated tenant isolation, custom data sources, contractual SLA. Email <a href="mailto:hello@beacontry.com">hello@beacontry.com</a> for pricing.</p>
+</div>
+
+<!-- ── How upgrades + cancellations work ──────────────────── -->
+<h2>How upgrades, downgrades, and cancellations work</h2>
+
+<h3>Upgrade mid-cycle (e.g., Trader → Premium)</h3>
+<p>Stripe prorates immediately. You're refunded the unused portion of Trader and charged the prorated cost of Premium for the rest of the period. Tier flips within ~3 seconds of payment confirmation via our webhook. Audit log records the change with <code>USER_TIER_CHANGED</code>.</p>
+
+<h3>Downgrade (e.g., Premium → Trader)</h3>
+<p>Same mechanics, in reverse. Stripe prorates a credit applied to your next invoice. Your tier flips immediately to the lower one; you keep your data (watchlists, journal, broker connections) — only paid feature access changes.</p>
+
+<h3>Cadence switch (Monthly ↔ Annual)</h3>
+<p>Stripe prorates. Switching to Annual mid-month gives you a credit for the remaining month + charges the annual rate; the annual cycle starts from that day.</p>
+
+<h3>Cancellation (default: at period end)</h3>
+<p>Click <strong>Manage subscription</strong> in <a href="/dashboard/billing">/dashboard/billing</a> to open the Stripe Customer Portal. Pick <em>Cancel subscription</em> — defaults to ending at the next renewal so you keep paid access for what you already paid for. At period end, your tier reverts to Free automatically via webhook. Data is preserved; resubscribing picks up where you left off.</p>
+
+<h3>Refunds — first 30 days</h3>
+<p>Full refund on request, no questions asked. Email <a href="mailto:hello@beacontry.com">hello@beacontry.com</a> or open a support ticket from your dashboard. Refunds process to the original payment method within 5–10 business days via Stripe.</p>
+
+<h3>Payment failures</h3>
+<p>If your card declines on renewal, Stripe retries for ~5 days and emails you. Your tier stays active during the dunning window. If retries all fail, the subscription cancels and tier reverts to Free.</p>
+
+<!-- ── How we enforce it ──────────────────────────────────── -->
+<h2>How tier gates work (technical)</h2>
+<p>Two enforcement layers, both required:</p>
+
+<h3>Server (the security boundary)</h3>
+<p>Every paid API route calls <code>await checkTier(userId, "trader" | "premium")</code> from <code>src/lib/tiers-server.ts</code> immediately after the auth check. Free users hitting paid routes get a <code>402 TIER_INSUFFICIENT</code> response. This is what actually protects the feature — bypassing it requires a database-level tier mutation, which only admins can perform.</p>
+
+<h3>Client (the UX layer)</h3>
+<p>The same paid pages render a <code>&lt;PaywallBanner&gt;</code> at the top via <code>useTier()</code> hook + <code>userHasTier()</code> check. Free users see the upgrade prompt instead of confused empty states. The page itself still renders; actions fail with the 402 envelope, and the UI explains why.</p>
+
+<h3>Engine tier-awareness</h3>
+<p>When the engine starts, it captures <code>engine.userTier</code> from the database. The hybrid signal pipeline strips Premium-tier layers (AI scoring) for non-Premium users — Trader-tier users get the Finnhub-driven layers (sentiment, options, analyst) but skip the Groq-driven AI scoring layer they don't pay for. Mid-session tier changes don't reshape a running engine; they take effect on the next restart.</p>
+
+<h3>Source of truth</h3>
+<p>Stripe is the source of truth for subscription state. We mirror only <code>users.tier</code> + <code>users.tier_expires_at</code> + <code>users.stripe_customer_id</code> in our database. Subscription lifecycle events (creation, plan switches, cancellations, payment failures) flow through our webhook at <code>/api/webhooks/stripe</code>, which updates the mirror.</p>
+
+<!-- ── Pricing FAQ ────────────────────────────────────────── -->
+<h2>Common pricing questions</h2>
+
+<h3>Why is Premium ($40) more than 2× Trader ($20)?</h3>
+<p>It isn't — Premium is $40/mo, Trader is $20/mo, so Premium is exactly 2× Trader. The AI features (Groq inference + storage + processing) cost meaningfully more than the Finnhub-only Trader plan, so the premium reflects real marginal cost on our side.</p>
+
+<h3>Can I skip Trader and go straight to Premium?</h3>
+<p>Yes. New users can sign up for either plan directly from <a href="/pricing">/pricing</a>. Both include the 7-day free trial.</p>
+
+<h3>What if I'm on the free trial and decide to cancel?</h3>
+<p>Cancel anytime during the trial in the Stripe Customer Portal — you won't be charged. The trial ends immediately on cancellation (not at the original trial end date).</p>
+
+<h3>If I cancel after the trial, do I keep my data?</h3>
+<p>Yes. Your account, watchlists, journal entries, trade history, broker connections, and audit log all persist. Only paid feature access is removed at the end of the billing period. Resubscribing later picks up exactly where you left off.</p>
+
+<h3>Why does the Self-Hosted tier still need API keys?</h3>
+<p>Beacontry doesn't custody data or proxy market data through our infrastructure for self-hosted instances. You bring your own Finnhub key (news / sentiment / fundamentals), Groq key (AI), broker account (Alpaca / IBKR / Tradier), and Postgres database. Beacontry is the orchestrator; the third-party services do the actual heavy lifting.</p>
+
+<h3>What's the difference between "Open Source" and "Source Available"?</h3>
+<p>"Open Source" (capital S) is a formal designation by the Open Source Initiative — it requires permissive commercial use (MIT / Apache / GPL family). "Source Available" means the source code is publicly readable + forkable but commercial competing use is restricted. Beacontry's Functional Source License (FSL-1.1-ALv2) is source-available — anyone can read, fork, modify, and self-host for their own use; they can't host it as a competing commercial trading platform during the first 2 years. Each commit auto-converts to Apache 2.0 after 2 years. See <a href="/docs/legal/licensing-and-acquisition.md">our licensing reference</a> for the full breakdown.</p>
+
+<h3>Do you offer discounts for students / educators / open-source contributors?</h3>
+<p>Yes — email <a href="mailto:hello@beacontry.com">hello@beacontry.com</a> with a verifiable .edu address or a GitHub link to your OSS contributions. We'll comp a Trader tier for the duration of your enrollment or active contribution period.</p>
+
+<h3>Why is there a 7-day trial and not 14 or 30 days?</h3>
+<p>Long trials hurt commitment more than they help conversion — users who haven't engaged in 7 days won't engage in 14. 7 days is enough to run the engine on paper across multiple market sessions and see signals fire. If you need more time, email us; we'll extend on request.</p>
+
+<footer>
+  Beacontry · <a href="https://beacontry.com">beacontry.com</a> ·
+  <a href="/pricing">Pricing page</a> ·
+  <a href="/terms">Terms</a> ·
+  <a href="/privacy">Privacy</a> ·
+  <a href="mailto:hello@beacontry.com">hello@beacontry.com</a>
+</footer>
+
+</div>
+</body>
+</html>
