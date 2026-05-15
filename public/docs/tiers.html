@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Beacontry Tiers — What Each Plan Includes</title>
-<meta name="description" content="Detailed feature breakdown for Beacontry's four tiers: Free, Trader ($20/mo), Premium ($40/mo), and Self-Hosted (FSL-1.1).">
+<meta name="description" content="Detailed feature breakdown for Beacontry's three tiers: Free, Trader ($20/mo), and Premium ($40/mo).">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -178,7 +178,7 @@
     padding: 12px 10px;
     border-bottom: 1px solid var(--border);
   }
-  th.feature { text-align: left; padding-left: 18px; width: 38%; }
+  th.feature { text-align: left; padding-left: 18px; width: 44%; }
   th.tier-trader, th.tier-premium { color: var(--accent); }
   td {
     text-align: center;
@@ -280,13 +280,6 @@
     <div class="tier-period">/month · $400/yr (saves 17%)</div>
     <p class="tier-desc">Trader + AI assistant + future paid-data tier (L2 / SIP / dark pools).</p>
   </div>
-  <div class="tier-card">
-    <span class="tier-tag">Source-available</span>
-    <div class="tier-name">Self-Hosted</div>
-    <div class="tier-price">Free</div>
-    <div class="tier-period">FSL-1.1 → Apache 2.0 after 2yr</div>
-    <p class="tier-desc">Run it yourself on your hardware. BYO API keys and broker.</p>
-  </div>
 </section>
 
 <!-- ── How tier vs role works ────────────────────────────── -->
@@ -296,7 +289,7 @@
 </p>
 
 <div class="callout">
-  <p><strong>Tier</strong> answers "what features can you use?" Hierarchical: Enterprise &gt; Premium &gt; Trader &gt; Free.</p>
+  <p><strong>Tier</strong> answers "what features can you use?" Hierarchical: Premium &gt; Trader &gt; Free.</p>
   <p><strong>Role</strong> answers "are you running the platform?" Binary: <code>admin</code> or <code>user</code>.</p>
   <p>An admin can be on the Free tier (they paid for nothing). A regular user can be on Premium (they pay for everything). Admin can grant any tier manually from <code>/dashboard/admin</code>; in production, Stripe Checkout grants paid tiers automatically.</p>
 </div>
@@ -312,109 +305,106 @@
       <th>Free</th>
       <th class="tier-trader">Trader</th>
       <th class="tier-premium">Premium</th>
-      <th>Self-Hosted</th>
     </tr>
   </thead>
   <tbody>
 
     <!-- TRADING ENGINE -->
-    <tr class="category-row"><td colspan="5">// Trading engine + execution</td></tr>
-    <tr><td class="feature">Automated trading engine (8 modes)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Engine modes (conservative / moderate / aggressive / optimized / intraday / tactical / tactical-smart / adaptive)</td><td><span class="dash">—</span></td><td><span class="check">All 8</span></td><td><span class="check">All 8</span></td><td><span class="check">All 8</span></td></tr>
-    <tr><td class="feature">Live trading (real money)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Paper trading (simulated)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Broker connections (Alpaca, IBKR, Tradier)</td><td><span class="dash">—</span></td><td><span class="check">3 active</span></td><td><span class="check">3 active</span></td><td><span class="check">Unlimited</span></td></tr>
-    <tr><td class="feature">Manual order ticket (per-symbol)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Bracket orders (entry + stop + take-profit atomic)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Fractional shares / dollar-based buys</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr class="category-row"><td colspan="4">// Trading engine + execution</td></tr>
+    <tr><td class="feature">Automated trading engine (8 modes)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Engine modes (conservative / moderate / aggressive / optimized / intraday / tactical / tactical-smart / adaptive)</td><td><span class="dash">—</span></td><td><span class="check">All 8</span></td><td><span class="check">All 8</span></td></tr>
+    <tr><td class="feature">Live trading (real money)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Paper trading (simulated)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Broker connections (Alpaca, IBKR, Tradier)</td><td><span class="dash">—</span></td><td><span class="check">3 active</span></td><td><span class="check">3 active</span></td></tr>
+    <tr><td class="feature">Manual order ticket (per-symbol)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Bracket orders (entry + stop + take-profit atomic)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Fractional shares / dollar-based buys</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
 
     <!-- DATA -->
-    <tr class="category-row"><td colspan="5">// Market data</td></tr>
-    <tr><td class="feature">Yahoo daily + intraday bars (free)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Finnhub news (per symbol)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">Finnhub sentiment + insider sentiment</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">Finnhub fundamentals (per symbol)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">Finnhub options flow + analyst recommendations</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">Finnhub insider transactions</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">L2 / real-time SIP / dark pools <em>(planned)</em></td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO data</span></td></tr>
-    <tr><td class="feature">General market news (Yahoo + RSS)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr class="category-row"><td colspan="4">// Market data</td></tr>
+    <tr><td class="feature">Yahoo daily + intraday bars (free)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Finnhub news (per symbol)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Finnhub sentiment + insider sentiment</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Finnhub fundamentals (per symbol)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Finnhub options flow + analyst recommendations</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Finnhub insider transactions</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">L2 / real-time SIP / dark pools <em>(planned)</em></td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">General market news (Yahoo + RSS)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
 
     <!-- ANALYSIS -->
-    <tr class="category-row"><td colspan="5">// Analysis</td></tr>
-    <tr><td class="feature">Hybrid signal pipeline (technical + Finnhub layers)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">AI signal scoring (Groq)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">Multi-timeframe analysis</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Market breadth / sector rotation</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Correlation + relative strength matrices</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Heatmap + unusual activity detector</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Screener (full S&amp;P 500 scan)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Congressional trades (federal PTRs)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">SEC filings listing</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Reddit ticker-mention feed</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr class="category-row"><td colspan="4">// Analysis</td></tr>
+    <tr><td class="feature">Hybrid signal pipeline (technical + Finnhub layers)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">AI signal scoring (Groq)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Multi-timeframe analysis</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Market breadth / sector rotation</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Correlation + relative strength matrices</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Heatmap + unusual activity detector</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Screener (full S&amp;P 500 scan)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Congressional trades (federal PTRs)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">SEC filings listing</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Reddit ticker-mention feed</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
 
     <!-- AI -->
-    <tr class="category-row"><td colspan="5">// AI features (Premium)</td></tr>
-    <tr><td class="feature">AI Chat assistant (full-context conversation)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">AI Quick Insight (per-symbol summary)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">AI signal scoring in engine pipeline</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">AI trade summaries (Recent Trades AI ✨)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">Daily AI market digest</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">Weekly AI trade review</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">Filings AI Chat (10-Q / 10-K Q&amp;A)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
+    <tr class="category-row"><td colspan="4">// AI features (Premium)</td></tr>
+    <tr><td class="feature">AI Chat assistant (full-context conversation)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">AI Quick Insight (per-symbol summary)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">AI signal scoring in engine pipeline</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">AI trade summaries (Recent Trades AI ✨)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Daily AI market digest</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Weekly AI trade review</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Filings AI Chat (10-Q / 10-K Q&amp;A)</td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td><span class="check">✓</span></td></tr>
 
     <!-- STRATEGY -->
-    <tr class="category-row"><td colspan="5">// Strategy + backtesting</td></tr>
-    <tr><td class="feature">Backtest lab (single symbol + date range)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Mode-compare backtest (all engine modes vs SPY)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Compare-strategies (up to 5 saved strategies)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Sharpe / Sortino / Calmar / MAR ratios</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Strategy Builder (visual + tunable)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">GA Optimizer (genetic algorithm + walk-forward validation)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Replay (historical bar-by-bar)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr class="category-row"><td colspan="4">// Strategy + backtesting</td></tr>
+    <tr><td class="feature">Backtest lab (single symbol + date range)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Mode-compare backtest (all engine modes vs SPY)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Compare-strategies (up to 5 saved strategies)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Sharpe / Sortino / Calmar / MAR ratios</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Strategy Builder (visual + tunable)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">GA Optimizer (genetic algorithm + walk-forward validation)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Replay (historical bar-by-bar)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
 
     <!-- JOURNAL + TAX -->
-    <tr class="category-row"><td colspan="5">// Journal + tax</td></tr>
-    <tr><td class="feature">Trade journal (auto-stub on filled trades)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Daily pre / post-market journal prompts</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Tagged-pattern behavioral badges</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Performance attribution (per-symbol realized P&amp;L)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">P&amp;L Calendar (heatmap with drill-down)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Tax Center + Form 8949 generator</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Self-attested §475(f) MTM election + wash-sale protection</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Drawdown analytics</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr class="category-row"><td colspan="4">// Journal + tax</td></tr>
+    <tr><td class="feature">Trade journal (auto-stub on filled trades)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Daily pre / post-market journal prompts</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Tagged-pattern behavioral badges</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Performance attribution (per-symbol realized P&amp;L)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">P&amp;L Calendar (heatmap with drill-down)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Tax Center + Form 8949 generator</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Self-attested §475(f) MTM election + wash-sale protection</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Drawdown analytics</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
 
     <!-- WATCHLIST + ALERTS + DASHBOARD -->
-    <tr class="category-row"><td colspan="5">// Watchlists, alerts, layouts</td></tr>
-    <tr><td class="feature">Watchlist (default list)</td><td><span class="check">10 symbols</span></td><td><span class="check">Unlimited</span></td><td><span class="check">Unlimited</span></td><td><span class="check">Unlimited</span></td></tr>
-    <tr><td class="feature">Multi-watchlist (multiple named lists)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Shared watchlist (public link)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Alerts (price + signal + Discord/email/push)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Custom dashboard layouts (single default)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Multiple named dashboard layouts</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr class="category-row"><td colspan="4">// Watchlists, alerts, layouts</td></tr>
+    <tr><td class="feature">Watchlist (default list)</td><td><span class="check">10 symbols</span></td><td><span class="check">Unlimited</span></td><td><span class="check">Unlimited</span></td></tr>
+    <tr><td class="feature">Multi-watchlist (multiple named lists)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Shared watchlist (public link)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Alerts (price + signal + Discord/email/push)</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Custom dashboard layouts (single default)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Multiple named dashboard layouts</td><td><span class="dash">—</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
 
     <!-- RESEARCH + EDUCATION -->
-    <tr class="category-row"><td colspan="5">// Research &amp; education (free for everyone)</td></tr>
-    <tr><td class="feature">Education hub (14 guides on retirement, tax, FIRE, options)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Glossary (95 terms across 6 categories)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">8 financial calculators (FIRE, Roth, tax-loss harvesting, …)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Spaced-repetition glossary review (SM-2)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Daily market digest (auto-published article)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">BYO key</span></td></tr>
-    <tr><td class="feature">Earnings calendar + macro / policy / currency feeds</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr class="category-row"><td colspan="4">// Research &amp; education (free for everyone)</td></tr>
+    <tr><td class="feature">Education hub (14 guides on retirement, tax, FIRE, options)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Glossary (95 terms across 6 categories)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">8 financial calculators (FIRE, Roth, tax-loss harvesting, …)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Spaced-repetition glossary review (SM-2)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Daily market digest (auto-published article)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Earnings calendar + macro / policy / currency feeds</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
 
     <!-- COMMUNITY -->
-    <tr class="category-row"><td colspan="5">// Community</td></tr>
-    <tr><td class="feature">Feed, forum, posts, leaderboard</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Direct messages (private DMs)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Customer support tickets</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">Self-serve</span></td></tr>
+    <tr class="category-row"><td colspan="4">// Community</td></tr>
+    <tr><td class="feature">Feed, forum, posts, leaderboard</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Direct messages (private DMs)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Customer support tickets</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
 
     <!-- INFRASTRUCTURE -->
-    <tr class="category-row"><td colspan="5">// Infrastructure &amp; trust</td></tr>
-    <tr><td class="feature">Hash-chained audit log (tamper-evident)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">Encrypted broker keys at rest (AES-256-GCM)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
-    <tr><td class="feature">7-day free trial</td><td><span class="dash">N/A</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="dash">N/A</span></td></tr>
-    <tr><td class="feature">30-day full refund</td><td><span class="dash">N/A</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="dash">N/A</span></td></tr>
-    <tr><td class="feature">Hosted infrastructure (we operate it)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="dash">DIY</span></td></tr>
-    <tr><td class="feature">Source code access (FSL-1.1 → Apache 2.0 in 2yr)</td><td><span class="check">✓ read</span></td><td><span class="check">✓ read</span></td><td><span class="check">✓ read</span></td><td><span class="check">✓ run</span></td></tr>
+    <tr class="category-row"><td colspan="4">// Infrastructure &amp; trust</td></tr>
+    <tr><td class="feature">Hash-chained audit log (tamper-evident)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">Encrypted broker keys at rest (AES-256-GCM)</td><td><span class="check">✓</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">7-day free trial</td><td><span class="dash">N/A</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
+    <tr><td class="feature">30-day full refund</td><td><span class="dash">N/A</span></td><td><span class="check">✓</span></td><td><span class="check">✓</span></td></tr>
 
   </tbody>
 </table>
@@ -440,18 +430,6 @@
   <div class="label">"I want the AI to help — chat about my trades, score my signals, summarize the day"</div>
   <div class="verdict">Premium — $40/mo.</div>
   <p>Everything in Trader plus AI Chat with full account context, per-symbol AI Quick Insight, AI scoring in the engine's hybrid pipeline, daily AI market digest, weekly AI trade review, AI trade summaries, and the Filings Q&amp;A bot. When real-time L2 / SIP / dark pools ship later, Premium subscribers get them automatically.</p>
-</div>
-
-<div class="scenario">
-  <div class="label">"I want to run it on my own hardware with full control"</div>
-  <div class="verdict">Self-Hosted — free.</div>
-  <p>Clone from <a href="https://github.com/beacontry/Sentinel">github.com/beacontry/Sentinel</a>, run on your own Postgres + broker + API keys. Source available under FSL-1.1 (auto-converts to Apache 2.0 after 2 years). Same features, you control the deployment + the data. No SLA, no hosted support — community Discord access only.</p>
-</div>
-
-<div class="scenario">
-  <div class="label">"I'm a firm / fund / family office and need RBAC + dedicated tenant"</div>
-  <div class="verdict">Enterprise — contact us.</div>
-  <p>Everything in Premium plus role-based access control, dedicated tenant isolation, custom data sources, contractual SLA. Email <a href="mailto:hello@beacontry.com">hello@beacontry.com</a> for pricing.</p>
 </div>
 
 <!-- ── How upgrades + cancellations work ──────────────────── -->
@@ -505,12 +483,6 @@
 
 <h3>If I cancel after the trial, do I keep my data?</h3>
 <p>Yes. Your account, watchlists, journal entries, trade history, broker connections, and audit log all persist. Only paid feature access is removed at the end of the billing period. Resubscribing later picks up exactly where you left off.</p>
-
-<h3>Why does the Self-Hosted tier still need API keys?</h3>
-<p>Beacontry doesn't custody data or proxy market data through our infrastructure for self-hosted instances. You bring your own Finnhub key (news / sentiment / fundamentals), Groq key (AI), broker account (Alpaca / IBKR / Tradier), and Postgres database. Beacontry is the orchestrator; the third-party services do the actual heavy lifting.</p>
-
-<h3>What's the difference between "Open Source" and "Source Available"?</h3>
-<p>"Open Source" (capital S) is a formal designation by the Open Source Initiative — it requires permissive commercial use (MIT / Apache / GPL family). "Source Available" means the source code is publicly readable + forkable but commercial competing use is restricted. Beacontry's Functional Source License (FSL-1.1-ALv2) is source-available — anyone can read, fork, modify, and self-host for their own use; they can't host it as a competing commercial trading platform during the first 2 years. Each commit auto-converts to Apache 2.0 after 2 years. See <a href="/docs/legal/licensing-and-acquisition.md">our licensing reference</a> for the full breakdown.</p>
 
 <h3>Do you offer discounts for students / educators / open-source contributors?</h3>
 <p>Yes — email <a href="mailto:hello@beacontry.com">hello@beacontry.com</a> with a verifiable .edu address or a GitHub link to your OSS contributions. We'll comp a Trader tier for the duration of your enrollment or active contribution period.</p>

@@ -1,11 +1,26 @@
 "use client";
 
-// /register — sign-up page. Two flows depending on URL params:
+// /register — sign-up page. Three flows depending on URL params:
 //
-//   /register             → public free-tier signup (anonymous, no invite)
-//   /register?token=...   → invite-token signup (admin-issued; email is
-//                           pre-filled and locked, tier is still 'free'
-//                           on insertion — admin upgrades post-signup)
+//   /register                    → public free-tier signup (anonymous)
+//   /register?token=...          → invite-token signup (admin-issued;
+//                                  email is pre-filled and locked, tier
+//                                  is still 'free' on insertion — admin
+//                                  upgrades post-signup)
+//   /register?plan=trader&...    → public signup WITH plan intent. After
+//   /register?plan=premium&...     a successful signup the page forwards
+//                                  to /dashboard/billing?upgrade=<tier>
+//                                  :<cadence>, which auto-triggers
+//                                  Stripe Checkout. Used by the /pricing
+//                                  "Start with Trader / Premium" CTAs to
+//                                  carry plan intent through registration
+//                                  → checkout without dropping users on
+//                                  the dashboard with no narrative thread.
+//                                  `plan` + `cadence` are CLIENT-SIDE
+//                                  UX hints only — the account is still
+//                                  created at tier=free server-side, and
+//                                  the real grant comes from the Stripe
+//                                  webhook on successful payment.
 //
 // Anti-abuse on the public path:
 //   - Server: IP rate-limit + honeypot field + bcrypt cost
@@ -17,6 +32,17 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { BeacontryMark } from "@/components/brand/beacontry-mark";
+import { displayPrice, type Cadence } from "@/lib/billing-prices";
+
+type PaidPlan = "trader" | "premium";
+
+function parsePaidPlan(raw: string | null): PaidPlan | null {
+  return raw === "trader" || raw === "premium" ? raw : null;
+}
+
+function parseCadence(raw: string | null): Cadence {
+  return raw === "year" ? "year" : "month";
+}
 
 export default function RegisterPage() {
   return (
@@ -36,6 +62,14 @@ function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
+  const plan = parsePaidPlan(searchParams.get("plan"));
+  const cadence = parseCadence(searchParams.get("cadence"));
+  // Plan-intent UX only fires on the public path (no invite token).
+  // Invite-issued accounts are admin-managed; plan intent doesn't apply.
+  const planIntent = !token && plan ? { plan, cadence } : null;
+  const planPrice = planIntent
+    ? displayPrice(planIntent.plan, planIntent.cadence)
+    : null;
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -103,7 +137,16 @@ function RegisterForm() {
         setError(data.error ?? "Registration failed");
         return;
       }
-      router.push("/dashboard");
+      // Plan intent forwards to billing with an upgrade hint; the billing
+      // page reads ?upgrade= and auto-fires Stripe Checkout. Without plan
+      // intent the user lands on the dashboard normally.
+      if (planIntent) {
+        router.push(
+          `/dashboard/billing?upgrade=${planIntent.plan}:${planIntent.cadence}`
+        );
+      } else {
+        router.push("/dashboard");
+      }
     } catch {
       setError("An unexpected error occurred");
     } finally {
@@ -171,13 +214,28 @@ function RegisterForm() {
 
         <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
           <h1 className="text-xl font-semibold text-text-primary">
-            {isInvitePath ? "Create account" : "Sign up for free"}
+            {isInvitePath
+              ? "Create account"
+              : planIntent
+                ? `Start your ${planIntent.plan === "trader" ? "Trader" : "Premium"} trial`
+                : "Sign up for free"}
           </h1>
           <p className="mt-1 text-sm text-text-secondary">
             {isInvitePath
               ? "Set up your trading workspace."
-              : "Free tier — education, glossary, calculators, Congress trades, daily digest, watchlists. Upgrade later when you want the engine."}
+              : planIntent && planPrice
+                ? `${planPrice.label} after the 7-day free trial. We'll create your account and take you to secure checkout next.`
+                : "Free tier — education, glossary, calculators, Congress trades, daily digest, watchlists. Upgrade later when you want the engine."}
           </p>
+          {planIntent && planPrice ? (
+            <div className="mt-4 rounded-lg border border-accent/30 bg-accent/[0.06] px-3 py-2 text-[0.82rem] text-text-secondary">
+              <span className="font-semibold text-accent">
+                {planIntent.plan === "trader" ? "Trader" : "Premium"}{" "}
+                {planIntent.cadence === "year" ? "Annual" : "Monthly"}
+              </span>{" "}
+              · {planPrice.label} · 7-day free trial, cancel anytime
+            </div>
+          ) : null}
 
           <form onSubmit={handleSubmit} className="mt-5 space-y-4">
             {error && (
@@ -257,7 +315,11 @@ function RegisterForm() {
             </div>
 
             <Button type="submit" loading={loading} className="w-full">
-              {isInvitePath ? "Create Account" : "Create free account"}
+              {isInvitePath
+                ? "Create Account"
+                : planIntent
+                  ? "Continue to checkout"
+                  : "Create free account"}
             </Button>
 
             {!isInvitePath && (

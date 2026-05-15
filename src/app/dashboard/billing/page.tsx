@@ -9,15 +9,27 @@
 //
 // Source of truth: /api/me/tier (cached 60s) for tier state. The page
 // itself does not call Stripe — only via the API routes.
+//
+// Auto-checkout (`?upgrade=trader:month` / `premium:year` / etc.):
+// the /pricing CTAs → /register?plan=... flow forwards here with an
+// upgrade hint. When present AND the user is on free, we POST to
+// /api/billing/checkout once on mount and redirect to Stripe. The
+// auto-fire guards against:
+//   - duplicate firing (firedRef)
+//   - paid users (they'd hit "current plan" anyway, so just clear the
+//     hint and render normally)
+//   - canceled/success returns from Stripe (only present when the
+//     redirect originated upstream of Stripe, not on the way back)
 
-import { useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageIntro } from "@/components/layout/page-intro";
 import { UpgradeButton } from "@/components/tiers/upgrade-button";
 import { useTier } from "@/components/tiers/tier-gate";
 import { labelFor } from "@/lib/tiers";
-import { displayPrice } from "@/lib/billing-prices";
+import { displayPrice, resolvePriceId, type Cadence } from "@/lib/billing-prices";
 import { useToast } from "@/components/ui/toast";
 import {
   CreditCard,
@@ -29,9 +41,136 @@ import {
 } from "lucide-react";
 
 export default function BillingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 text-accent animate-spin" />
+        </div>
+      }
+    >
+      <BillingPageInner />
+    </Suspense>
+  );
+}
+
+function parseUpgradeHint(raw: string | null): { tier: "trader" | "premium"; cadence: Cadence } | null {
+  if (!raw) return null;
+  const [tierPart, cadencePart] = raw.split(":");
+  if (tierPart !== "trader" && tierPart !== "premium") return null;
+  const cadence: Cadence = cadencePart === "year" ? "year" : "month";
+  return { tier: tierPart, cadence };
+}
+
+function BillingPageInner() {
   const { tier, loading, hasStripeCustomer } = useTier();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
   const [openingPortal, setOpeningPortal] = useState(false);
+  const [autoCheckout, setAutoCheckout] = useState<
+    { tier: "trader" | "premium"; cadence: Cadence } | null
+  >(null);
+  // Guards against StrictMode double-fire in dev + remount loops in prod.
+  const autoCheckoutFired = useRef(false);
+
+  // Return-from-Stripe toast. ?success=1 or ?canceled=1 lands here
+  // after the Customer comes back from Stripe Checkout. The actual tier
+  // grant is the webhook's job — this is just user feedback. Fires once.
+  const returnToastFired = useRef(false);
+  useEffect(() => {
+    if (returnToastFired.current) return;
+    if (searchParams.get("success") === "1") {
+      returnToastFired.current = true;
+      toast({
+        type: "success",
+        message:
+          "Payment successful — your plan will update within a few seconds.",
+      });
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("success");
+        url.searchParams.delete("session_id");
+        window.history.replaceState({}, "", url.toString());
+      }
+    } else if (searchParams.get("canceled") === "1") {
+      returnToastFired.current = true;
+      toast({
+        type: "info",
+        message: "Checkout canceled — pick a plan below to try again.",
+      });
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("canceled");
+        window.history.replaceState({}, "", url.toString());
+      }
+    }
+  }, [searchParams, toast]);
+
+  // Auto-checkout: read ?upgrade=<tier>:<cadence>, wait for tier to
+  // resolve, then fire /api/billing/checkout once. We don't fire if the
+  // user is already at-or-above the requested tier — they'd see "current
+  // plan" and bouncing them to Stripe would charge twice.
+  useEffect(() => {
+    if (loading) return;
+    if (autoCheckoutFired.current) return;
+    const hint = parseUpgradeHint(searchParams.get("upgrade"));
+    if (!hint) return;
+    if (tier !== "free") {
+      // Already paid — silently clear the hint so the page renders
+      // normally. The user's intent has already been satisfied or
+      // exceeded.
+      return;
+    }
+    autoCheckoutFired.current = true;
+    setAutoCheckout(hint);
+
+    // Drop the upgrade param from the URL so the back button after
+    // canceling at Stripe doesn't re-fire checkout. We've already
+    // captured the intent in state.
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("upgrade");
+      window.history.replaceState({}, "", url.toString());
+    }
+
+    (async () => {
+      try {
+        const priceId = resolvePriceId(hint.tier, hint.cadence);
+        if (!priceId) {
+          toast({
+            type: "error",
+            message:
+              "That plan isn't configured right now. Pick a plan below to upgrade.",
+          });
+          setAutoCheckout(null);
+          return;
+        }
+        const res = await fetch("/api/billing/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ priceId }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data?.url) {
+          toast({
+            type: "error",
+            message:
+              data?.error?.message ??
+              "Could not start checkout — pick a plan below to retry.",
+          });
+          setAutoCheckout(null);
+          return;
+        }
+        window.location.href = data.url;
+      } catch {
+        toast({
+          type: "error",
+          message: "Network error — pick a plan below to retry.",
+        });
+        setAutoCheckout(null);
+      }
+    })();
+  }, [loading, tier, searchParams, toast]);
 
   async function openPortal() {
     setOpeningPortal(true);
@@ -63,6 +202,31 @@ export default function BillingPage() {
         title="Billing"
         description="Manage your plan, payment method, and invoices."
       />
+
+      {/* Auto-checkout overlay — visible only while we're forwarding the
+          user to Stripe. Carries the plan intent forward visually so the
+          jump from /register → here → Stripe doesn't feel like teleport. */}
+      {autoCheckout && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 text-accent animate-spin" />
+              <div>
+                <CardTitle>Continuing to secure checkout…</CardTitle>
+                <p className="text-sm text-text-secondary mt-1">
+                  Taking you to Stripe to start your{" "}
+                  <span className="font-semibold text-text-primary">
+                    {labelFor(autoCheckout.tier)}{" "}
+                    {autoCheckout.cadence === "year" ? "Annual" : "Monthly"}
+                  </span>{" "}
+                  trial. If nothing happens in a few seconds, pick a plan below
+                  to retry.
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+        </Card>
+      )}
 
       {/* Current plan summary */}
       <Card>

@@ -91,7 +91,7 @@ export default function PricingPage() {
         "Full community access",
       ],
       cta: "Start with Trader",
-      ctaHref: "/register",
+      ctaHref: "/register?plan=trader&cadence=month",
       highlight: true,
     },
     {
@@ -112,7 +112,7 @@ export default function PricingPage() {
         "Dark pool data (when available)",
       ],
       cta: "Step up to Premium",
-      ctaHref: "/register",
+      ctaHref: "/register?plan=premium&cadence=month",
       highlight: false,
     },
     {
@@ -256,7 +256,7 @@ export default function PricingPage() {
     {
       id: "trial",
       q: "Is there a free trial?",
-      a: "Free tier IS the trial — sign up free, browse the education + public feeds, get a feel for the platform. When you're ready to trade, upgrade to Trader or Premium. Beacontry is currently invite-only beta — join the waitlist if you want early access.",
+      a: "Two ways to try. The Free tier is permanent — sign up, browse the education hub + public feeds (Congressional trades, SEC filings, daily digest), keep a 10-symbol watchlist. No card required, no expiry. When you're ready to trade, both paid plans (Trader $20/mo and Premium $40/mo) include a 7-day free trial — cancel anytime in the first 7 days and you won't be charged. Beyond the trial, the first 30 days are still fully refundable, no questions asked.",
     },
     {
       id: "broker",
@@ -540,15 +540,16 @@ export default function PricingPage() {
             Ready to start watching?
           </h2>
           <p className="mx-auto mt-4 max-w-[520px] text-lg leading-relaxed text-ld-text-secondary">
-            Beacontry is currently invite-only beta. Join the waitlist and
-            we&apos;ll let you know when public signup opens.
+            Free tier is permanent — sign up in 30 seconds, no card required.
+            Upgrade to Trader or Premium when you&apos;re ready to trade, both
+            with a 7-day free trial.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <Link href="/#cta-waitlist" className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-8 py-4 text-base font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
-              Join Waitlist <ArrowRight className="h-4 w-4" />
+            <Link href="/register" className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-8 py-4 text-base font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
+              Sign up free <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link href="/" className="rounded-[10px] border border-ld-border px-8 py-4 text-base font-semibold text-ld-text transition-all duration-200 hover:-translate-y-0.5 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
-              Back to home
+            <Link href="/register?plan=trader&cadence=month" className="rounded-[10px] border border-ld-border px-8 py-4 text-base font-semibold text-ld-text transition-all duration-200 hover:-translate-y-0.5 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
+              Start Trader trial
             </Link>
           </div>
         </div>
