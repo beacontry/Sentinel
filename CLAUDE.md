@@ -143,16 +143,19 @@ Always use existing components — never recreate them:
 
 ## Registration & Invites
 
-Registration is **invite-only**. No public signup.
+Two registration paths share one endpoint:
 
-**Flow:** Admin sends invite from dashboard (`/dashboard/admin`) → user receives email with signup link (`/register?token=...`) → register page validates token, pre-fills email → account created, invite marked used.
+1. **Public free signup** (`/register`) — anonymous, no invite needed. Creates a `free`-tier account. IP rate-limit (5/60s) + honeypot field + bcrypt. Tier is hardcoded `free` server-side; clients cannot upgrade themselves at signup.
+2. **Plan-intent signup** (`/register?plan=trader|premium&cadence=month|year`) — same anonymous path, but the page renders plan-aware UI ("Start your Trader trial — $20/mo") and after successful signup forwards to `/dashboard/billing?upgrade=<tier>:<cadence>`, which auto-fires Stripe Checkout. The account is still created at `tier=free`; the real grant comes from the Stripe webhook after payment. Driven by the `/pricing` "Start with Trader / Premium" CTAs.
+3. **Invite-token signup** (`/register?token=...`) — admin-issued. Email pre-filled and locked; tier still inserts as `free` (admin upgrades post-signup via the admin UI or Stripe). Used for closed cohorts where admin wants to control who lands.
 
 **Key files:**
 - `src/lib/db/schema/invites.ts` — `invites` table (token, email, expiry, used)
 - `src/app/api/admin/invites/route.ts` — GET (list), POST (create + send email)
 - `src/app/api/auth/validate-invite/route.ts` — GET (check token validity)
-- `src/app/api/auth/register/route.ts` — requires valid invite token, email must match
-- `src/app/register/page.tsx` — shows "Invite Required" without token, validates token on mount
+- `src/app/api/auth/register/route.ts` — handles all three paths; tier always hardcoded to `free` server-side
+- `src/app/register/page.tsx` — branches on `?token=` vs `?plan=` vs neither
+- `src/app/dashboard/billing/page.tsx` — reads `?upgrade=<tier>:<cadence>` and auto-fires `/api/billing/checkout`
 
 **Admin UI:** Invitations section on admin page — email input to send invites, table of sent invites with status (Pending/Registered/Expired), copy link button.
 

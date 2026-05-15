@@ -81,12 +81,18 @@ export function UpgradeButton({
     );
   }
 
-  // Anonymous — route through register first, then back to pricing.
-  // We could POST to /api/billing/checkout anyway, but they'd get a 401
-  // and a confusing toast. Better UX: sign-up flow with return URL.
+  // Anonymous — route through register with plan intent. The register
+  // page reads ?plan=&cadence= and after a successful signup forwards
+  // to /dashboard/billing?upgrade=<tier>:<cadence>, which then
+  // auto-triggers /api/billing/checkout. Anonymous → Stripe in one
+  // narrative thread; no "ended up on the dashboard with no upgrade
+  // path" dead-ends.
   if (!authenticated) {
     return (
-      <Link href="/register" className={baseCls}>
+      <Link
+        href={`/register?plan=${tier}&cadence=${cadence}`}
+        className={baseCls}
+      >
         <span>{ctaLabel}</span>
         <ArrowRight className="h-4 w-4" />
       </Link>
