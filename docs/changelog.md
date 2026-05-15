@@ -466,3 +466,65 @@ New generic `<PaywallBanner minTier featureName description?>` component sits at
 1. **Stripe live-mode activation**: business profile verification + Activate live mode + copy products to live + new sk_live_ + new webhook secret. ~30 min user, 1-2 days Stripe approval.
 2. **Sentry / uptime monitoring**: not blocking but recommended before paying customers.
 3. **Pricing live-mode price ID swap**: either edit `src/lib/billing-prices.ts` hardcoded defaults OR set `STRIPE_PRICE_<TIER>_<CADENCE>` env vars on the droplet.
+
+---
+
+## 2026-05-15 — Public marketing surfaces: pricing flow, tier doc cleanup, landing waitlist removal
+
+Follow-on to the 2026-05-14 tier + billing rollout. Closes three contradictions that the day-after walkthrough surfaced: pricing CTAs all bounced to a generic `/register` regardless of plan; the public tiers doc still listed Enterprise + Self-Hosted as if they were ordinary tier columns; the landing page's final CTA was a waitlist asking visitors to wait for "public signup" — which has been open all along.
+
+### Plan intent through /pricing → /register → Stripe Checkout
+End-to-end flow so a visitor who clicks "Start with Trader" lands at Stripe with the right plan, not on a generic free-tier dashboard with no upgrade path.
+
+- `/pricing` Trader + Premium CTAs route to `/register?plan=<tier>&cadence=month`. Free CTA unchanged.
+- `/register` reads `?plan=&cadence=`, renders plan-aware header ("Start your Trader trial"), price chip ($20/mo · 7-day trial), and "Continue to checkout" button text. Tier is still hardcoded to `free` server-side; plan intent is a UX hint only.
+- On successful registration with plan intent, redirects to `/dashboard/billing?upgrade=<tier>:<cadence>` instead of `/dashboard`.
+- `/dashboard/billing` wrapped in `<Suspense>`; reads `?upgrade=` via `useSearchParams`, auto-POSTs `/api/billing/checkout` once on mount, redirects to Stripe. Guards: `autoCheckoutFired` ref against StrictMode double-fire, tier check against already-paid users, URL param self-clears so back-button doesn't re-trigger.
+- Return-from-Stripe `?success=1` / `?canceled=1` get toast feedback ("Payment successful — your plan will update within a few seconds" / "Checkout canceled — pick a plan below to try again"). URL params clear after firing.
+- `<UpgradeButton>` anonymous fallback now carries `?plan=&cadence=` so the same plan-intent flow fires from any anonymous click of an upgrade CTA, not just the pricing page.
+
+### Public tiers doc (`public/docs/tiers.html`) — Enterprise + Self-Hosted dropped
+The matrix used to be 4 columns (Free / Trader / Premium / Self-Hosted) with Enterprise mentioned only in the "Which tier should you pick?" scenario cards. Audit of `src/lib/tiers.ts` showed Enterprise has zero `checkTier(.., "enterprise")` calls in the codebase — it gates nothing today. Self-Hosted isn't a tier at all, it's a deployment model.
+
+- Matrix is now 3 columns: Free / Trader / Premium.
+- Drops the Enterprise "contact us" scenario card and the Self-Hosted "run on your own hardware" scenario card.
+- Drops two FAQ entries that were Self-Hosted-specific (API keys for self-hosted; Open Source vs Source Available).
+- Drops the Self-Hosted tier card from the top-of-page grid.
+- `Tier` enum in code keeps Enterprise — admins can still grant it manually from `/dashboard/admin` (it never expires through cron, per `effectiveTier()` special case). Public surfaces just stop advertising it.
+
+### Stale "invite-only beta" copy on /pricing
+Three places contradicted public free signup being open:
+
+- FAQ #4 "Is there a free trial?" rewritten — covers the permanent free tier + 7-day trial on paid plans + 30-day refund window. Drops "Beacontry is currently invite-only beta — join the waitlist."
+- Final CTA section "Beacontry is currently invite-only beta. Join the waitlist..." → "Sign up free + Start Trader trial" buttons.
+- Team / family-office / firm FAQ entry + "Need team / firm / white-label? Email us for Team and Enterprise pricing" subtext below the tier cards: both removed. We don't currently offer team plans, so promising "$299/seat/mo with RBAC + SLA + white-label" was promising what we don't ship.
+
+### Landing waitlist (`src/app/page.tsx`) → "Explore freely" link grid
+The waitlist card asked visitors to drop their email and "we'll let you know when public signup opens." Public signup has been open for over a day. Replaced with a 6-card grid under "Or explore freely — no account needed":
+
+- `/learn` — Education hub (14 long-form guides)
+- `/tools` — Free calculators (8 — FIRE, Roth, tax-loss harvesting, …)
+- `/glossary` — 95 trading + investing terms
+- `/docs/engine-ruleset.html` — Full ruleset for the 8 engine modes
+- `/docs/tiers.html` — Feature matrix + pricing FAQ
+- `github.com/beacontry/Sentinel` — Source code (FSL-1.1)
+
+Waitlist state, honeypot field, and POST handler removed from the page. `/api/waitlist` route + waitlist table + migration `0034_waitlist.sql` left in place for any future "back-in-stock" use; landing just unwired the caller.
+
+### CLAUDE.md Registration & Invites rewritten
+Documents the three register paths that now exist:
+
+1. **Public free signup** — `/register`, anonymous, creates `free`-tier account
+2. **Plan-intent signup** — `/register?plan=trader|premium&cadence=month|year`, anonymous, plan-aware UI, forwards to billing-with-upgrade hint after signup
+3. **Invite-token signup** — `/register?token=...`, admin-issued, email locked, tier inserts as `free` (admin upgrades post-signup)
+
+Tier is always hardcoded `free` server-side regardless of path; real grant comes from Stripe webhook on successful payment.
+
+### Files touched
+- `public/docs/tiers.html` — Enterprise/Self-Hosted columns + scenarios + FAQ entries dropped
+- `src/app/pricing/page.tsx` — Trader/Premium CTAs carry plan params; team FAQ + sales subtext removed; "invite-only beta" copy replaced
+- `src/app/register/page.tsx` — reads `?plan=&cadence=`, plan-aware UI, post-success redirect to billing
+- `src/app/dashboard/billing/page.tsx` — Suspense wrap; auto-checkout on `?upgrade=`; success/cancel toasts; URL self-clear
+- `src/components/tiers/upgrade-button.tsx` — anonymous fallback carries plan
+- `src/app/page.tsx` — waitlist card → explore-freely grid
+- `CLAUDE.md` — Registration & Invites section rewritten
