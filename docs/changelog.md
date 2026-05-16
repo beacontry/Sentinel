@@ -528,3 +528,121 @@ Tier is always hardcoded `free` server-side regardless of path; real grant comes
 - `src/components/tiers/upgrade-button.tsx` — anonymous fallback carries plan
 - `src/app/page.tsx` — waitlist card → explore-freely grid
 - `CLAUDE.md` — Registration & Invites section rewritten
+
+
+---
+
+## 2026-05-16 — Audit-driven hardening: security, a11y, theming, tooling
+
+Six-batch sweep through the engine + UI quality audit findings.
+Top-line: vulnerability count went from 8 (1 critical / 2 high / 5
+moderate) to **0**. Three accessible-modal regressions fixed. Chart
+theming wired to CSS tokens. Lint migrated off the soon-removed
+`next lint`. All 467 unit tests pass throughout.
+
+### Batch 1 — Security (P1.1 + P1.2)
+- Removed `sanitize-html` + `@types/sanitize-html` (zero usages,
+  was carrying GHSA-rpr9-rxv7-x643 critical XSS).
+- `next` 15.3.1 → 15.5.18 (security patches). Held off the 15→16
+  major bump for a deliberate batch.
+- `drizzle-orm` 0.38.3 → 0.45.2 (closes SQL identifier escape
+  advisory).
+- `drizzle-kit` 0.30.1 → 0.31.10.
+- Added `overrides.postcss ^8.5.10` to force-patch postcss through
+  next's transitive resolution.
+- Extracted the SW registration `<script>` from `src/app/layout.tsx`
+  into `/public/sw-register.js`. Loaded via `<script src defer>`.
+- Dropped `'unsafe-inline'` from CSP `script-src` in
+  `next.config.ts`. `'unsafe-eval'` stays dev-only for HMR.
+
+### Batch 2 — Muted-text contrast (P1.4)
+WCAG AA fixes for `--color-text-muted` (and landing counterparts)
+on dark themes. Previous values were ~3.1-3.5:1 against typical
+card surfaces — below AA's 4.5:1 for normal text.
+
+| Theme | Token | Was | Now | New contrast on bg-surface |
+|---|---|---|---|---|
+| .dark | `--color-text-muted` | #607b71 | #7f9389 | ≈4.9:1 |
+| .dark | `--color-ld-text-muted` | #67627e | #8780a3 | ≈5.6:1 |
+| .gray | `--color-text-muted` | #71717a | #8d8d96 | ≈5.0:1 |
+| .gray | `--color-ld-text-muted` | #71717a | #8d8d96 | ≈5.0:1 |
+
+Light-mode variants (default / coral / light-blue) use dark text
+on light surfaces — opposite direction, not flagged, unchanged.
+
+### Batch 3 — Modal/drawer a11y (P1.3)
+- `src/components/ui/modal.tsx` — Radix `Dialog.Root` flipped from
+  `modal={false}` to `modal={true}`. Auto-grants focus trap,
+  body-scroll lock, and `aria-modal="true"` on `Dialog.Content`.
+  Removed manual `onClick={onClose}` on overlay (Radix handles
+  outside-click-to-close when `modal={true}`).
+- New shared hook `src/hooks/useDrawerA11y.ts` (70 lines): focus
+  trap, initial focus on close button, focus restore to trigger on
+  unmount. Used by `PositionDetailSheet`, `SymbolPreviewSheet`, and
+  the mobile-menu drawer in `AppShell`.
+- All three drawer containers now carry `role="dialog" + aria-modal
+  ="true" + aria-label + tabIndex={-1}`. Close buttons enlarged to
+  44×44 with descriptive aria-labels.
+
+### Batch 4 — Chart theming (P2.5)
+- New `src/lib/chart-theme.ts` adapter. `getChartTheme()` reads CSS
+  custom properties at call time (bg-surface, text-secondary,
+  border, border-hover, bg-elevated, accent, text-muted) and
+  returns chart-config tokens.
+- `PriceChart` (3 internal chart instances: main, RSI overlay,
+  MACD overlay) and `BacktestChart` (equity curve + baseline price
+  line) call it during chart init. Hardcoded #ffffff / #e2e8f0 /
+  #64748b / #94a3b8 values removed.
+- Theme switches mid-session aren't reactive (chart reads tokens
+  once on mount). Acceptable for current dashboard flow; can be
+  made live-reactive later by keying parent `<div>` by theme.
+
+### Batch 5 — Touch targets (P2.6)
+- Analysis page mobile "add symbol" button: h-9 w-9 (36×36) →
+  h-11 w-11 (44×44). Added aria-label.
+- Widget remove button in dashboard edit mode: h-7 w-7 (28×28) →
+  h-11 w-11 (44×44).
+- Modal/drawer close buttons (already bumped in Batch 3).
+
+Accepted residual: P&L year-heatmap cells stay at 14×14px (annual
+density is the feature; keyboard + screen-reader access via
+existing `role="button"` + `onKeyDown` handler).
+
+### Batch 6 — Tooling (P2.7 + Batch 1 residuals)
+- Lint migrated off `next lint` (deprecated, removed in Next 16):
+  `package.json` script `next lint` → `eslint .`. Added explicit
+  `ignores` block to `eslint.config.mjs` so `eslint .` doesn't
+  walk .next/, node_modules/, drizzle/meta/, etc.
+- Added `overrides.esbuild ^0.28.0`. Resolves the vite@8 vs
+  drizzle-kit's nested @esbuild-kit version conflict (was
+  ELSPROBLEMS), AND closes the 4 moderate audit findings that
+  Batch 1 marked as residual.
+
+**Net audit result:** `npm audit` reports **0 vulnerabilities**.
+`npm ls esbuild` clean across the dependency tree. Lint: 0 errors,
+77 warnings (pre-existing unused-var warnings, not regressions).
+
+### Files touched (across all 6 batches)
+
+Code:
+- `next.config.ts` (CSP)
+- `src/app/layout.tsx` (SW script extraction)
+- `src/app/globals.css` (muted-text token bumps)
+- `src/components/ui/modal.tsx` (Radix modal=true)
+- `src/components/dashboard/position-detail-sheet.tsx` +
+  `src/components/ui/symbol-preview-sheet.tsx` +
+  `src/components/layout/app-shell.tsx` (drawer a11y)
+- `src/components/dashboard/price-chart.tsx` +
+  `src/components/dashboard/backtest-chart.tsx` (theme tokens)
+- `src/app/dashboard/analysis/page.tsx` +
+  `src/components/dashboard/widget-wrapper.tsx` (touch targets)
+- `eslint.config.mjs` (ignore directories)
+
+New files:
+- `public/sw-register.js` (external SW registration)
+- `src/hooks/useDrawerA11y.ts` (shared focus-trap hook)
+- `src/lib/chart-theme.ts` (CSS-token chart adapter)
+
+Package metadata:
+- `package.json` — dep bumps, `overrides` block, lint script
+- `package-lock.json` — regenerated
