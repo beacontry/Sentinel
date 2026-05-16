@@ -11,12 +11,17 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, children, className = "" }: ModalProps) {
+  // modal={true} (Radix default) gives us proper accessible-modal
+  // behavior: focus is trapped inside the dialog, scroll is locked
+  // on the body, and aria-modal="true" is set on Dialog.Content
+  // automatically. The previous modal={false} disabled all of that —
+  // sighted users could tab into background content behind the
+  // overlay and screen readers could traverse outside the dialog.
   return (
-    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) onClose(); }} modal={false}>
+    <Dialog.Root open={open} onOpenChange={(v) => { if (!v) onClose(); }} modal={true}>
       <Dialog.Portal>
         <Dialog.Overlay
           className="fixed inset-0 z-50 bg-black/60 data-[state=open]:animate-fade-in"
-          onClick={onClose}
         />
         <Dialog.Content
           onEscapeKeyDown={onClose}

@@ -9,7 +9,7 @@
 //
 // Closes on overlay click, X button, or Escape.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   X,
@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
+import { useDrawerA11y } from "@/hooks/useDrawerA11y";
 
 interface PositionLike {
   symbol: string;
@@ -69,6 +70,10 @@ export function PositionDetailSheet({
   const { pnlFormat } = useDisplayPrefs();
   const toast = useToast();
   const [closing, setClosing] = useState(false);
+  // Drawer a11y refs — useDrawerA11y handles focus trap + restore on
+  // close; aria-modal is set statically on the container below.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   // Esc closes the sheet
   useEffect(() => {
@@ -79,6 +84,8 @@ export function PositionDetailSheet({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [symbol, onClose]);
+
+  useDrawerA11y({ open: !!symbol, containerRef, closeRef: closeButtonRef });
 
   // Filter the parent's signals down to this symbol, newest first
   const symbolSignals = symbol
@@ -127,10 +134,14 @@ export function PositionDetailSheet({
 
       {/* Sheet */}
       <div
+        ref={containerRef}
         role="dialog"
+        aria-modal="true"
         aria-label={`${symbol} position details`}
+        tabIndex={-1}
         className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md overflow-y-auto
-          border-l border-border bg-bg-surface shadow-2xl animate-slide-in-right"
+          border-l border-border bg-bg-surface shadow-2xl animate-slide-in-right
+          focus:outline-none"
       >
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-bg-surface px-5 py-4">
@@ -158,9 +169,10 @@ export function PositionDetailSheet({
             )}
           </div>
           <button
+            ref={closeButtonRef}
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-text-muted hover:bg-bg-hover hover:text-text-primary"
-            aria-label="Close"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-text-muted hover:bg-bg-hover hover:text-text-primary"
+            aria-label="Close position details"
           >
             <X className="w-5 h-5" />
           </button>
