@@ -11,9 +11,12 @@ const csp = [
   // TradingView Advanced Chart loads s3.tradingview.com/tv.js which then
   // injects iframes from s.tradingview.com / charting-library and pulls
   // images for ticker logos. Whitelist all three origins.
-  // 'unsafe-inline' dropped — SW registration moved to /sw-register.js
-  // (Batch 1, 2026-05-16). 'unsafe-eval' is dev-only for HMR.
-  `script-src 'self' https://static.cloudflareinsights.com https://s3.tradingview.com${isDev ? " 'unsafe-eval'" : ""}`,
+  // 'unsafe-inline' restored — Next.js inlines hydration/chunk-loader
+  // scripts at build time and they need it to execute. Dropping the
+  // directive (Batch 1) broke production with a white page (hydration
+  // never ran). Proper fix is nonce-based CSP via middleware, scheduled
+  // for a separate batch. 'unsafe-eval' is dev-only for HMR.
+  `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://s3.tradingview.com${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   // Finnhub serves stock logos from static2.finnhub.io (and historically
   // static.finnhub.io). Wildcard the subdomain so the company-profile card
