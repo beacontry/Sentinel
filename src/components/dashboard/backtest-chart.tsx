@@ -10,6 +10,7 @@ import {
   ColorType,
   CrosshairMode,
 } from "lightweight-charts";
+import { getChartTheme } from "@/lib/chart-theme";
 
 interface BacktestChartProps {
   equityCurve: { date: string; value: number }[];
@@ -37,30 +38,31 @@ export function BacktestChart({ equityCurve, height = 300 }: BacktestChartProps)
       height === "fill" ? container.clientHeight || 300 : height;
 
     try {
+      const theme = getChartTheme();
       const chart = createChart(container, {
         width: container.clientWidth,
         height: initialHeight,
         layout: {
-          background: { type: ColorType.Solid, color: "#ffffff" },
-          textColor: "#64748b",
+          background: { type: ColorType.Solid, color: theme.background },
+          textColor: theme.textColor,
           fontFamily: "system-ui, sans-serif",
           fontSize: 11,
         },
         grid: {
-          vertLines: { color: "#e2e8f0" },
-          horzLines: { color: "#e2e8f0" },
+          vertLines: { color: theme.gridColor },
+          horzLines: { color: theme.gridColor },
         },
         crosshair: {
           mode: CrosshairMode.Normal,
-          vertLine: { color: "#cbd5e1", labelBackgroundColor: "#1e293b" },
-          horzLine: { color: "#cbd5e1", labelBackgroundColor: "#1e293b" },
+          vertLine: { color: theme.crosshairLine, labelBackgroundColor: theme.crosshairLabel },
+          horzLine: { color: theme.crosshairLine, labelBackgroundColor: theme.crosshairLabel },
         },
         rightPriceScale: {
-          borderColor: "#e2e8f0",
+          borderColor: theme.gridColor,
           scaleMargins: { top: 0.1, bottom: 0.1 },
         },
         timeScale: {
-          borderColor: "#e2e8f0",
+          borderColor: theme.gridColor,
           timeVisible: true,
         },
       });
@@ -86,7 +88,7 @@ export function BacktestChart({ equityCurve, height = 300 }: BacktestChartProps)
 
       series.createPriceLine({
         price: 10000,
-        color: "#94a3b8",
+        color: theme.baselineColor,
         lineWidth: 1,
         lineStyle: 2,
         axisLabelVisible: true,
