@@ -31,20 +31,19 @@
     "adm-zip": "^0.5.17",
     "bcryptjs": "^2.4.3",
     "cmdk": "^1.1.1",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "fast-xml-parser": "^5.8.0",
     "geist": "^1.7.0",
     "jose": "^5.9.6",
     "lightweight-charts": "^5.1.0",
     "lucide-react": "^0.468.0",
-    "next": "^15.3.1",
+    "next": "^15.5.18",
     "node-html-parser": "^7.1.0",
     "pdf-parse": "^1.1.4",
     "pino": "^9.6.0",
     "postgres": "^3.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "sanitize-html": "^2.14.0",
     "stripe": "^22.1.1",
     "zod": "^3.24.1"
   },
@@ -55,8 +54,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@types/sanitize-html": "^2.13.0",
-    "drizzle-kit": "^0.30.1",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9.17.0",
     "eslint-config-next": "^15.3.1",
     "husky": "^9.1.7",
@@ -70,5 +68,8 @@
     "*.{ts,tsx}": [
       "eslint --fix"
     ]
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }
