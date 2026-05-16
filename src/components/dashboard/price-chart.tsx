@@ -16,6 +16,7 @@ import {
   ColorType,
   CrosshairMode,
 } from "lightweight-charts";
+import { getChartTheme } from "@/lib/chart-theme";
 
 export interface ChartEvent {
   date: string;
@@ -61,30 +62,31 @@ function toTime(dateStr: string): Time {
 }
 
 function makeChartOptions(container: HTMLElement, height: number) {
+  const theme = getChartTheme();
   return {
     width: container.clientWidth,
     height,
     layout: {
-      background: { type: ColorType.Solid as const, color: "#ffffff" },
-      textColor: "#64748b",
+      background: { type: ColorType.Solid as const, color: theme.background },
+      textColor: theme.textColor,
       fontFamily: "'Aptos', 'Segoe UI', sans-serif",
       fontSize: 11,
     },
     grid: {
-      vertLines: { color: "#e2e8f0" },
-      horzLines: { color: "#e2e8f0" },
+      vertLines: { color: theme.gridColor },
+      horzLines: { color: theme.gridColor },
     },
     crosshair: {
       mode: CrosshairMode.Normal,
-      vertLine: { color: "#3d506f", labelBackgroundColor: "#1e293b" },
-      horzLine: { color: "#3d506f", labelBackgroundColor: "#1e293b" },
+      vertLine: { color: theme.crosshairLine, labelBackgroundColor: theme.crosshairLabel },
+      horzLine: { color: theme.crosshairLine, labelBackgroundColor: theme.crosshairLabel },
     },
     rightPriceScale: {
-      borderColor: "#e2e8f0",
+      borderColor: theme.gridColor,
       scaleMargins: { top: 0.1, bottom: 0.2 },
     },
     timeScale: {
-      borderColor: "#e2e8f0",
+      borderColor: theme.gridColor,
       timeVisible: true,
       secondsVisible: false,
     },
@@ -333,20 +335,21 @@ function RsiSubChart({
   useEffect(() => {
     if (!ref.current) return;
 
+    const theme = getChartTheme();
     const chart = createChart(ref.current, {
       width: ref.current.clientWidth,
       height: 100,
       layout: {
-        background: { type: ColorType.Solid as const, color: "#ffffff" },
-        textColor: "#64748b",
+        background: { type: ColorType.Solid as const, color: theme.background },
+        textColor: theme.textColor,
         fontFamily: "'Aptos', 'Segoe UI', sans-serif",
         fontSize: 10,
       },
       grid: {
-        vertLines: { color: "#e2e8f0" },
-        horzLines: { color: "#e2e8f0" },
+        vertLines: { color: theme.gridColor },
+        horzLines: { color: theme.gridColor },
       },
-      rightPriceScale: { borderColor: "#e2e8f0" },
+      rightPriceScale: { borderColor: theme.gridColor },
       timeScale: { visible: false },
     });
 
@@ -403,20 +406,21 @@ function MacdSubChart({
   useEffect(() => {
     if (!ref.current) return;
 
+    const theme = getChartTheme();
     const chart = createChart(ref.current, {
       width: ref.current.clientWidth,
       height: 120,
       layout: {
-        background: { type: ColorType.Solid as const, color: "#ffffff" },
-        textColor: "#64748b",
+        background: { type: ColorType.Solid as const, color: theme.background },
+        textColor: theme.textColor,
         fontFamily: "'Aptos', 'Segoe UI', sans-serif",
         fontSize: 10,
       },
       grid: {
-        vertLines: { color: "#e2e8f0" },
-        horzLines: { color: "#e2e8f0" },
+        vertLines: { color: theme.gridColor },
+        horzLines: { color: theme.gridColor },
       },
-      rightPriceScale: { borderColor: "#e2e8f0" },
+      rightPriceScale: { borderColor: theme.gridColor },
       timeScale: { visible: false },
     });
 
