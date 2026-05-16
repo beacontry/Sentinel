@@ -40,10 +40,18 @@ const useHttps = process.env.FORCE_HTTPS === "true";
  *
  * `'unsafe-eval'` stays dev-only for HMR.
  */
-function buildCsp(nonce: string): string {
+function buildCsp(): string {
   return [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline' 'nonce-${nonce}' https://static.cloudflareinsights.com https://s3.tradingview.com${isDev ? " 'unsafe-eval'" : ""}`,
+    // CSP Level 3: if a nonce OR hash is present in script-src, the
+    // browser IGNORES 'unsafe-inline'. We can't have both. Since the
+    // nonce-only approach broke prod (Next.js doesn't auto-stamp the
+    // nonce on statically-rendered pages' inline scripts), we keep
+    // 'unsafe-inline' alone for now. Middleware still generates a
+    // nonce for future use (e.g. a future build-time hash injection
+    // step), but the CSP itself sits at the looser unsafe-inline
+    // level until that work lands.
+    `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://s3.tradingview.com${isDev ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: https://s3.tradingview.com https://*.tradingview.com https://*.finnhub.io",
     "font-src 'self' https://fonts.gstatic.com",
@@ -66,7 +74,7 @@ export async function middleware(request: NextRequest) {
   crypto.getRandomValues(nonceBytes);
   const nonce = btoa(String.fromCharCode(...nonceBytes));
 
-  const csp = buildCsp(nonce);
+  const csp = buildCsp();
 
   // Auth gate — only fires for /dashboard. Other matched routes
   // (landing, /pricing, /login, /register, etc.) get the CSP
