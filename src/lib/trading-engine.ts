@@ -890,6 +890,90 @@ export class MarketClosedError extends Error {
   }
 }
 
+/**
+ * Enforce the daily-loss halt threshold. Called from every scan path
+ * (runScan, runTacticalScan, runTacticalSmartScan) BEFORE any BUY
+ * decision logic so the limit can't be silently bypassed by a
+ * particular mode.
+ *
+ * Previously the threshold check existed only inside runScan() —
+ * tactical and tactical-smart scans reset the daily-loss counter on
+ * date change but never enforced the threshold, so they could keep
+ * opening positions past the loss cap. This was a real safety gap
+ * surfaced by the 2026-05-16 cross-check audit.
+ *
+ * Behavior on hit:
+ *   1. set engine.halted = true
+ *   2. cancel all pending broker orders (best-effort — cancelAllOrders
+ *      may be unavailable on IBKR/Tradier; logged + continued)
+ *   3. upsert today's trader_daily_pnl row with halted=true + reason
+ *   4. return true so the caller early-exits its scan
+ *
+ * Returns false on:
+ *   - already-halted engines (no double-cancel)
+ *   - can't fetch account equity (transient broker failure — defer
+ *     decision to next scan rather than halt erroneously)
+ *   - threshold not exceeded
+ */
+async function enforceDailyLossHalt(
+  engine: EngineState,
+  client: BrokerClient,
+  today: string,
+): Promise<boolean> {
+  if (!engine.userId) return false;
+  if (engine.halted) return true;
+
+  let equity: number;
+  try {
+    const account = await client.getAccount();
+    equity = account.equity;
+  } catch {
+    return false;
+  }
+  if (equity <= 0) return false;
+
+  const riskLimits = await loadRiskLimits(engine.userId);
+  engine.dailyLossLimit = riskLimits.dailyLossPct;
+  const dailyLossThreshold = equity * riskLimits.dailyLossPct;
+  if (engine.dailyLoss > -dailyLossThreshold) return false;
+
+  log.warn(
+    {
+      userId: engine.userId,
+      dailyLoss: engine.dailyLoss,
+      threshold: dailyLossThreshold,
+      mode: engine.mode,
+      effectiveMode: engine.effectiveMode,
+    },
+    "Daily loss limit exceeded — halting engine"
+  );
+  engine.halted = true;
+  pushError(engine, `Daily loss limit hit: $${engine.dailyLoss.toFixed(2)}`);
+
+  if (client.cancelAllOrders) {
+    try {
+      await client.cancelAllOrders();
+      log.info({ userId: engine.userId }, "Canceled all pending orders on daily-loss halt");
+    } catch (err) {
+      log.warn(
+        { userId: engine.userId, err: err instanceof Error ? err.message : "unknown" },
+        "Failed to cancel pending orders on daily-loss halt"
+      );
+    }
+  }
+
+  await upsertDailyPnl(
+    today,
+    0,
+    0,
+    0,
+    true,
+    `Daily loss limit exceeded: $${engine.dailyLoss.toFixed(2)}`,
+    engine.userId,
+  );
+  return true;
+}
+
 async function placeEngineOrder(
   client: BrokerClient,
   params: Omit<PlaceOrderParams, "positionIntent">
@@ -2550,6 +2634,11 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
     return;
   }
 
+  // Daily-loss halt — same enforcement as runScan(). The 2026-05-16
+  // cross-check audit caught that tactical paths reset the counter
+  // each day but never compared against the threshold.
+  if (await enforceDailyLossHalt(engine, client, today)) return;
+
   // Phase 1 (UI-lie audit fix): re-snapshot bootEquity at every new trading
   // day so the 50% equity-collapse tripwire stays calibrated as the
   // account organically grows over weeks/months. Without this, a 5%
@@ -2794,6 +2883,11 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
     pushError(engine, `Broker connection failed: ${err instanceof Error ? err.message : "unknown"}`);
     return;
   }
+
+  // Daily-loss halt — same enforcement as runScan(). The 2026-05-16
+  // cross-check audit caught that tactical-smart reset the counter
+  // each day but never compared against the threshold.
+  if (await enforceDailyLossHalt(engine, client, today)) return;
 
   // Phase 1 — re-snapshot bootEquity at every new trading day
   if (engine.boot && engine.bootEquitySnapshotDate !== today) {
@@ -3338,18 +3432,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   const riskLimits = await loadRiskLimits(engine.userId);
   engine.dailyLossLimit = riskLimits.dailyLossPct;
 
-  // 2. Check daily loss limit
-  const dailyLossThreshold = equity * riskLimits.dailyLossPct;
-  if (engine.dailyLoss <= -dailyLossThreshold) {
-    log.warn(
-      { dailyLoss: engine.dailyLoss, threshold: dailyLossThreshold },
-      "Daily loss limit exceeded — halting engine"
-    );
-    engine.halted = true;
-    pushError(engine, `Daily loss limit hit: $${engine.dailyLoss.toFixed(2)}`);
-    await upsertDailyPnl(today, 0, 0, 0, true, `Daily loss limit exceeded: $${engine.dailyLoss.toFixed(2)}`, engine.userId);
-    return;
-  }
+  // 2. Daily-loss halt — shared helper, runs in every scan path so the
+  //    cap can't be bypassed by mode.
+  if (await enforceDailyLossHalt(engine, client, today)) return;
 
   // 3. Market health check — SPY trend filter
   const provider = getMarketDataProvider();
@@ -4777,7 +4862,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
         if (status?.mode?.startsWith("paper:")) {
           const parts = status.mode.split(":");
           const savedMode = parts.length > 1 ? (parts[1] as EngineMode) : null;
-          const validModes: EngineMode[] = ["conservative", "moderate", "optimized", "aggressive", "tactical", "tactical-smart"];
+          const validModes: EngineMode[] = ["conservative", "moderate", "optimized", "aggressive", "tactical", "tactical-smart", "adaptive"];
           if (savedMode && validModes.includes(savedMode)) lastMode = savedMode;
         }
       } catch (err) {
