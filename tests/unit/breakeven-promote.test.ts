@@ -1,113 +1,207 @@
 /**
- * Tests for maybePromoteBreakeven — the v3 stop-promotion helper that
- * ratchets pos.stopLoss up to entry + buffer once unrealized profit
- * crosses BREAKEVEN_TRIGGER_PCT (currently 2%).
+ * Tests for maybePromoteBreakeven — the v3 tiered stop-promotion
+ * helper that ratchets pos.stopLoss up at four profit thresholds
+ * (+2%, +5%, +10%, +15%), with per-mode opt-out for engine modes
+ * that shouldn't use the full ladder.
+ *
+ * Tier ladder under "full" mode:
+ *   +2%  → entry × 1.001  (breakeven + 0.1% slippage buffer)
+ *   +5%  → entry × 1.025  (lock 2.5%)
+ *   +10% → entry × 1.05   (lock 5%)
+ *   +15% → entry × 1.075  (lock 7.5%)
+ *
+ * Above +15%, the dynamic trail takes over.
+ *
+ * "breakeven_only" applies only the +2% tier.
+ * "disabled" disables all tiers.
  *
  * Behavior contract:
- *   - Returns false + leaves pos.stopLoss unchanged when profit < 2%
- *   - Returns true + sets pos.stopLoss = entryPrice × 1.001 when
- *     profit crosses 2% AND current stop is below breakeven level
- *   - Idempotent — subsequent calls return false because pos.stopLoss
- *     is already at-or-above breakeven
- *   - Never lowers pos.stopLoss (e.g., if the trail has lifted it
- *     past breakeven, this function leaves it alone)
- *   - Doesn't depend on TrackedPosition — accepts any object with
- *     entryPrice + stopLoss numeric fields
+ *   - Idempotent — once pos.stopLoss is at-or-above the highest
+ *     qualifying tier's target, subsequent calls are no-ops
+ *   - Never lowers pos.stopLoss (handles trail-promoted positions)
+ *   - Walks tiers low-to-high and applies the HIGHEST qualifying tier
+ *     (so a position that jumps from +1% to +12% in one scan promotes
+ *     directly to the +10% tier, skipping intermediate tiers)
+ *   - Structural type on pos — only needs entryPrice + stopLoss
  */
 
 import { describe, it, expect } from "vitest";
-import { maybePromoteBreakeven } from "../../src/lib/trading-engine";
+import {
+  maybePromoteBreakeven,
+  getBreakevenLadderMode,
+  type BreakevenLadderMode,
+} from "../../src/lib/trading-engine";
 
-describe("maybePromoteBreakeven", () => {
-  it("does not promote below the 2% trigger", () => {
-    const pos = { entryPrice: 100, stopLoss: 88 }; // 12% disaster stop
-    const promoted = maybePromoteBreakeven(pos, 101.5); // +1.5% profit
-    expect(promoted).toBe(false);
-    expect(pos.stopLoss).toBe(88); // unchanged
-  });
-
-  it("does not promote at exactly the boundary minus epsilon", () => {
+describe("maybePromoteBreakeven — full ladder", () => {
+  it("does not promote below the +2% trigger", () => {
     const pos = { entryPrice: 100, stopLoss: 88 };
-    const promoted = maybePromoteBreakeven(pos, 101.9999);
-    expect(promoted).toBe(false);
+    expect(maybePromoteBreakeven(pos, 101.5)).toBe(false); // +1.5%
     expect(pos.stopLoss).toBe(88);
   });
 
-  it("promotes exactly at the 2% threshold", () => {
+  it("does not promote at +2% minus epsilon", () => {
     const pos = { entryPrice: 100, stopLoss: 88 };
-    const promoted = maybePromoteBreakeven(pos, 102.0);
-    expect(promoted).toBe(true);
-    expect(pos.stopLoss).toBeCloseTo(100.1, 5); // entry × (1 + 0.001)
+    expect(maybePromoteBreakeven(pos, 101.9999)).toBe(false);
+    expect(pos.stopLoss).toBe(88);
   });
 
-  it("promotes well past the threshold", () => {
-    const pos = { entryPrice: 50, stopLoss: 44 }; // 12% stop
-    const promoted = maybePromoteBreakeven(pos, 55); // +10%
-    expect(promoted).toBe(true);
-    expect(pos.stopLoss).toBeCloseTo(50.05, 5); // 50 × 1.001
+  it("promotes to tier-1 (breakeven) at exactly +2%", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    expect(maybePromoteBreakeven(pos, 102.0)).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(100.1, 5); // entry × 1.001
   });
 
-  it("is idempotent — second call after promotion returns false", () => {
+  it("promotes to tier-2 (lock 2.5%) at +5%", () => {
     const pos = { entryPrice: 100, stopLoss: 88 };
-    const first = maybePromoteBreakeven(pos, 103);
-    expect(first).toBe(true);
+    expect(maybePromoteBreakeven(pos, 105.0)).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(102.5, 5); // entry × 1.025
+  });
+
+  it("promotes to tier-3 (lock 5%) at +10%", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    expect(maybePromoteBreakeven(pos, 110.0)).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(105.0, 5); // entry × 1.05
+  });
+
+  it("promotes to tier-4 (lock 7.5%) at +15%", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    expect(maybePromoteBreakeven(pos, 115.0)).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(107.5, 5); // entry × 1.075
+  });
+
+  it("caps at tier-4 above +15% (no tier-5 exists)", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    expect(maybePromoteBreakeven(pos, 130.0)).toBe(true); // +30%
+    expect(pos.stopLoss).toBeCloseTo(107.5, 5); // still tier 4
+  });
+
+  it("jumps directly to highest qualifying tier (skip intermediates)", () => {
+    // Position gaps up overnight from entry → +12% on first scan after
+    // open. Should promote directly to tier-3 (+10% threshold).
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    expect(maybePromoteBreakeven(pos, 112.0)).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(105.0, 5);
+  });
+});
+
+describe("maybePromoteBreakeven — idempotency + ratchet-only", () => {
+  it("is idempotent — second call at same profit returns false", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    expect(maybePromoteBreakeven(pos, 103)).toBe(true); // tier 1 fires
     expect(pos.stopLoss).toBeCloseTo(100.1, 5);
+    expect(maybePromoteBreakeven(pos, 103)).toBe(false); // already at tier 1 target
+    expect(pos.stopLoss).toBeCloseTo(100.1, 5);
+  });
 
-    const second = maybePromoteBreakeven(pos, 105);
-    expect(second).toBe(false); // already promoted
-    expect(pos.stopLoss).toBeCloseTo(100.1, 5); // unchanged
+  it("ratchets up through tiers as profit grows", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    // First scan: +3% → tier 1
+    expect(maybePromoteBreakeven(pos, 103)).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(100.1, 5);
+    // Later scan: +7% → tier 2
+    expect(maybePromoteBreakeven(pos, 107)).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(102.5, 5);
+    // Later scan: +12% → tier 3
+    expect(maybePromoteBreakeven(pos, 112)).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(105.0, 5);
+    // Later scan: +20% → tier 4
+    expect(maybePromoteBreakeven(pos, 120)).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(107.5, 5);
+    // Even later: +40% → still tier 4 (no tier 5)
+    expect(maybePromoteBreakeven(pos, 140)).toBe(false);
+    expect(pos.stopLoss).toBeCloseTo(107.5, 5);
   });
 
   it("does not lower a trail-promoted stop", () => {
-    // Simulate: trail has already lifted stop past breakeven (e.g., to 105)
-    const pos = { entryPrice: 100, stopLoss: 105 };
-    const promoted = maybePromoteBreakeven(pos, 108);
-    expect(promoted).toBe(false);
-    expect(pos.stopLoss).toBe(105); // trail wins, breakeven leaves it alone
+    // Trail has already lifted stop past tier-2's target
+    const pos = { entryPrice: 100, stopLoss: 110 };
+    expect(maybePromoteBreakeven(pos, 108)).toBe(false); // +8% → tier 2 (102.5) is below 110
+    expect(pos.stopLoss).toBe(110);
   });
 
+  it("promotes when trail-promoted stop is below qualifying tier", () => {
+    // Trail at e.g. entry × 1.01 (slight ratchet), +12% profit → tier 3 (105) wins
+    const pos = { entryPrice: 100, stopLoss: 101 };
+    expect(maybePromoteBreakeven(pos, 112)).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(105.0, 5);
+  });
+});
+
+describe("maybePromoteBreakeven — ladder mode opt-out", () => {
+  it("breakeven_only — only tier 1 fires", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    expect(maybePromoteBreakeven(pos, 103, "breakeven_only")).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(100.1, 5);
+  });
+
+  it("breakeven_only — higher profit does not promote past tier 1", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    expect(maybePromoteBreakeven(pos, 130, "breakeven_only")).toBe(true);
+    expect(pos.stopLoss).toBeCloseTo(100.1, 5); // tier 1 only — tactical-smart semantics
+  });
+
+  it("breakeven_only — idempotent after first fire", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    maybePromoteBreakeven(pos, 103, "breakeven_only");
+    expect(maybePromoteBreakeven(pos, 130, "breakeven_only")).toBe(false);
+    expect(pos.stopLoss).toBeCloseTo(100.1, 5);
+  });
+
+  it("disabled — never fires regardless of profit", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    expect(maybePromoteBreakeven(pos, 200, "disabled")).toBe(false);
+    expect(pos.stopLoss).toBe(88);
+  });
+
+  it("disabled — leaves trail-promoted stop alone", () => {
+    const pos = { entryPrice: 100, stopLoss: 115 };
+    expect(maybePromoteBreakeven(pos, 130, "disabled")).toBe(false);
+    expect(pos.stopLoss).toBe(115);
+  });
+});
+
+describe("maybePromoteBreakeven — edge cases", () => {
   it("handles fractional shares + dollar prices precisely", () => {
     const pos = { entryPrice: 1393.91, stopLoss: 1226.64 }; // SNDK-style 12% stop
-    // Need +2% to fire: 1393.91 × 1.02 = 1421.7882
-    expect(maybePromoteBreakeven(pos, 1421.78)).toBe(false);
-    expect(maybePromoteBreakeven(pos, 1421.79)).toBe(true);
-    expect(pos.stopLoss).toBeCloseTo(1395.30, 2); // entry × 1.001
+    expect(maybePromoteBreakeven(pos, 1421.78)).toBe(false); // +2.0%-ε
+    expect(maybePromoteBreakeven(pos, 1421.79)).toBe(true); // +2.0% (tier 1)
+    expect(pos.stopLoss).toBeCloseTo(1395.30, 1); // 1393.91 × 1.001
   });
 
-  it("works structurally — doesn't require full TrackedPosition", () => {
-    // Caller can pass anything shaped { entryPrice; stopLoss } — useful
-    // for ad-hoc spreadsheets, optimizer harnesses, replay tooling.
+  it("handles negative price movement (no false promotion)", () => {
+    const pos = { entryPrice: 100, stopLoss: 88 };
+    expect(maybePromoteBreakeven(pos, 95)).toBe(false); // −5%
+    expect(pos.stopLoss).toBe(88);
+  });
+
+  it("works structurally — accepts any { entryPrice, stopLoss } shape", () => {
     const wrapper: { entryPrice: number; stopLoss: number; extra: string } = {
       entryPrice: 200,
       stopLoss: 176,
       extra: "ignored",
     };
-    const promoted = maybePromoteBreakeven(wrapper, 210); // +5%
-    expect(promoted).toBe(true);
-    expect(wrapper.stopLoss).toBeCloseTo(200.2, 5);
-    expect(wrapper.extra).toBe("ignored"); // other fields untouched
+    expect(maybePromoteBreakeven(wrapper, 210)).toBe(true); // +5% → tier 2
+    expect(wrapper.stopLoss).toBeCloseTo(205.0, 5); // 200 × 1.025
+    expect(wrapper.extra).toBe("ignored");
   });
+});
 
-  it("handles negative price movement correctly (no false promotion)", () => {
-    const pos = { entryPrice: 100, stopLoss: 88 };
-    const promoted = maybePromoteBreakeven(pos, 95); // −5%
-    expect(promoted).toBe(false);
-    expect(pos.stopLoss).toBe(88);
-  });
+describe("getBreakevenLadderMode — per-engine-mode defaults", () => {
+  const cases: [string, BreakevenLadderMode][] = [
+    ["conservative", "full"],
+    ["moderate", "full"],
+    ["optimized", "full"],
+    ["aggressive", "full"],
+    ["intraday", "full"],
+    ["tactical", "disabled"],
+    ["tactical-smart", "breakeven_only"],
+    ["adaptive", "full"],
+  ];
 
-  it("scenario: tactical-smart position that ran up then reverses", () => {
-    // The exact failure mode the v3 fix is designed to catch:
-    // tactical-smart enters with 12% disaster stop, position runs +3%,
-    // gives it all back to -8%. With the old logic the position would
-    // ride down to -12% before stop_loss fires (-$12 per share on $100).
-    // With breakeven-promote, the stop snaps to entry on the way up
-    // and exits flat on the reversal.
-    const pos = { entryPrice: 100, stopLoss: 88 };
-    maybePromoteBreakeven(pos, 103); // +3% — promotes
-    expect(pos.stopLoss).toBeCloseTo(100.1, 5);
-    // Now price reverses — the engine's exit check at currentPrice
-    // <= pos.stopLoss would now fire at ~$100.1 instead of $88.
-    // (Actual exit firing is the engine's job; this test just
-    // confirms the stop is at the right level.)
-  });
+  for (const [mode, expected] of cases) {
+    it(`${mode} → ${expected}`, () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(getBreakevenLadderMode(mode as any)).toBe(expected);
+    });
+  }
 });

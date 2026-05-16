@@ -518,7 +518,7 @@ Dated retrospectives of major rollouts (2026-05-12 through 2026-05-14) — cover
 User-facing HTML documentation lives in **`public/docs/`** (not the repo-root `docs/` folder which holds markdown):
 
 - `public/docs/engine-ruleset.html` — trading engine internals (kept in sync with `docs/ENGINE_RULESET.md`)
-- `public/docs/sentinel-features.html` — per-page/per-feature user training reference
+- `public/docs/beacontry-features.html` — per-page/per-feature user training reference
 - `public/docs/tiers.html` — full tier breakdown + feature matrix (~60 rows × 5 columns) + pricing FAQ
 - `public/docs/usage-slides.html` — onboarding slides
 

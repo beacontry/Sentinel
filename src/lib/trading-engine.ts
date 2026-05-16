@@ -1194,41 +1194,119 @@ const MOMENTUM_RATE_SCALE = 0.3;
 // be passed explicitly).
 const DRAWDOWN_TIGHTEN_MULT = 2;
 
-// v3 — Breakeven-promote. Once a position is in profit by this much,
-// ratchet pos.stopLoss up to entry + a small buffer. Converts
-// "ran up, gave it back to a loss" trades from losses to flat.
-// Independent of the trailing-stop machinery — fires even before the
-// trail floor catches up.
+// v3 — Breakeven-promote, tiered ladder.
 //
-// Why this matters for tactical-smart specifically: entries init the
-// disaster stop at 12% below entry (price * 0.88). With no breakeven
-// step, a position that runs +3% then reverses still has 12% of
-// downside before stop_loss fires. Promoting at +2% caps the
-// downside at ~0 once the position has shown initial conviction.
-const BREAKEVEN_TRIGGER_PCT = 0.02; // promote once unrealized profit >= 2%
-const BREAKEVEN_BUFFER_PCT = 0.001; // stop sits 0.1% above entry — covers slippage + commissions
+// Ratchets pos.stopLoss up at four profit thresholds. Each tier locks
+// in a portion of the unrealized gain. Independent of the dynamic
+// trailing stop — fires even before the trail tightens enough to sit
+// above entry. The effective stop on any scan is always
+// max(pos.stopLoss, trailingStop).
+//
+// Why this exists: before tiered breakeven-promote, a position could
+// run +5% and reverse to give back 5–10% (the trail at +5% sits at
+// peak × (1 − 10.3%) ≈ entry × 0.94 — a 6% giveback). The +2% tier
+// caps that giveback at breakeven; higher tiers progressively lock
+// in real gain.
+//
+// Tiers (trigger = unrealized profit %, lock = where pos.stopLoss
+// gets ratcheted relative to entry):
+//   +2%  → entry × 1.001  (breakeven + 0.1% slippage buffer)
+//   +5%  → entry × 1.025  (lock 2.5%)
+//   +10% → entry × 1.05   (lock 5%)
+//   +15% → entry × 1.075  (lock 7.5%)
+// Above ~+15%, the dynamic trail is already tighter than entry × 1.075
+// so it dominates naturally — no further breakeven tiers needed.
+const BREAKEVEN_TIERS: readonly { trigger: number; lock: number }[] = [
+  { trigger: 0.02, lock: 0.001 },
+  { trigger: 0.05, lock: 0.025 },
+  { trigger: 0.10, lock: 0.05 },
+  { trigger: 0.15, lock: 0.075 },
+];
 
 /**
- * Ratchet pos.stopLoss to entry + BREAKEVEN_BUFFER_PCT once unrealized
- * profit at currentPrice exceeds BREAKEVEN_TRIGGER_PCT. Idempotent:
- * once promoted, subsequent calls are no-ops because pos.stopLoss is
- * already at-or-above the breakeven level (or the trail has lifted
- * it higher). Mutates pos.stopLoss; returns true on the promotion
- * call so caller can log.
+ * Per-mode opt-out for the tiered ladder.
  *
- * Structural type — only needs entryPrice + stopLoss, so unit tests
- * and external utilities can call without constructing a full
- * TrackedPosition.
+ *   "full"            — all 4 tiers active (default for most modes)
+ *   "breakeven_only"  — only the +2% tier fires; let the dynamic
+ *                       trail handle gain capture above that
+ *   "disabled"        — no breakeven promotion at all (mode relies
+ *                       on SPY regime or other portfolio-level exits)
+ *
+ * tactical-smart specifically uses breakeven_only because its strategy
+ * is to hold through normal pullbacks for big winners (50% take-profit
+ * target). Locking in gains at +5/+10/+15% would prematurely exit
+ * positions that could have run to 30%+.
+ *
+ * tactical (pure SPY-driven) disables breakeven entirely — individual
+ * position management contradicts the mode's "all in / all out on SPY"
+ * philosophy.
+ */
+export type BreakevenLadderMode = "full" | "breakeven_only" | "disabled";
+
+const MODE_LADDER_DEFAULT: Record<EngineMode, BreakevenLadderMode> = {
+  conservative: "full",
+  moderate: "full",
+  optimized: "full",
+  aggressive: "full",
+  intraday: "full",
+  tactical: "disabled",
+  "tactical-smart": "breakeven_only",
+  adaptive: "full", // resolves to effective mode at call time; this key is for type completeness
+};
+
+/**
+ * Resolve the ladder mode for the engine's currently-active mode.
+ * Handles adaptive by reading the effective mode (post regime
+ * resolution).
+ */
+export function getBreakevenLadderMode(activeMode: EngineMode): BreakevenLadderMode {
+  return MODE_LADDER_DEFAULT[activeMode];
+}
+
+/**
+ * Ratchet pos.stopLoss up the tiered ladder based on unrealized profit
+ * at currentPrice. Walks BREAKEVEN_TIERS from lowest-trigger to highest
+ * and applies the highest tier the position qualifies for. Idempotent:
+ * if pos.stopLoss is already at-or-above the target for the highest
+ * qualifying tier, returns false without mutating.
+ *
+ * Never lowers pos.stopLoss — if the trail has already ratcheted it
+ * higher than the highest qualifying tier's target, this is a no-op.
+ *
+ * ladderMode:
+ *   - "full" (default)      → all 4 tiers
+ *   - "breakeven_only"      → only the first tier (+2%)
+ *   - "disabled"            → no-op
+ *
+ * Structural type on pos — only needs entryPrice + stopLoss, so unit
+ * tests and external tooling can call without a full TrackedPosition.
  */
 export function maybePromoteBreakeven(
   pos: { entryPrice: number; stopLoss: number },
-  currentPrice: number
+  currentPrice: number,
+  ladderMode: BreakevenLadderMode = "full"
 ): boolean {
-  const breakevenStop = pos.entryPrice * (1 + BREAKEVEN_BUFFER_PCT);
-  if (pos.stopLoss >= breakevenStop) return false;
+  if (ladderMode === "disabled") return false;
   const profitPct = (currentPrice - pos.entryPrice) / pos.entryPrice;
-  if (profitPct < BREAKEVEN_TRIGGER_PCT) return false;
-  pos.stopLoss = breakevenStop;
+  const tiers =
+    ladderMode === "breakeven_only" ? BREAKEVEN_TIERS.slice(0, 1) : BREAKEVEN_TIERS;
+
+  // Walk from low to high; remember the highest tier we qualify for.
+  // Tiers are sorted by ascending trigger so we can break as soon as
+  // we encounter one we don't meet.
+  let highestLock: number | null = null;
+  for (const tier of tiers) {
+    if (profitPct >= tier.trigger) {
+      highestLock = tier.lock;
+    } else {
+      break;
+    }
+  }
+  if (highestLock === null) return false;
+
+  const targetStop = pos.entryPrice * (1 + highestLock);
+  if (pos.stopLoss >= targetStop) return false; // already at-or-above (or trail-promoted past)
+  pos.stopLoss = targetStop;
   return true;
 }
 
@@ -1687,9 +1765,12 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
 
       // v3 breakeven-promote — run BEFORE the stop math so the same
       // scan can both promote and exit if the price round-trips fast.
-      if (maybePromoteBreakeven(pos, currentPrice)) {
+      // Ladder mode resolves from the engine's active mode (tactical-smart
+      // uses breakeven_only, tactical disabled, others full).
+      const ladderMode = getBreakevenLadderMode(getActiveMode(engine));
+      if (maybePromoteBreakeven(pos, currentPrice, ladderMode)) {
         log.info(
-          { symbol, newStopLoss: pos.stopLoss, entry: pos.entryPrice, currentPrice },
+          { symbol, newStopLoss: pos.stopLoss, entry: pos.entryPrice, currentPrice, ladderMode },
           "Breakeven promoted (1-min check)"
         );
       }
@@ -3541,17 +3622,20 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         let shouldExit = false;
         let exitReason = "";
 
-        // v3 breakeven-promote — fires once profit crosses
-        // BREAKEVEN_TRIGGER_PCT. Mutates heldPosition.stopLoss in place
-        // so the stop-loss check below sees the promoted value, and
-        // syncBrokerStops on this scan propagates it to the broker.
-        if (maybePromoteBreakeven(heldPosition, currentPrice)) {
+        // v3 breakeven-promote (tiered ladder). Mutates
+        // heldPosition.stopLoss in place so the stop-loss check below
+        // sees the promoted value, and syncBrokerStops on this scan
+        // propagates it to the broker. Ladder mode resolves from
+        // engine's active mode — see MODE_LADDER_DEFAULT.
+        const ladderMode = getBreakevenLadderMode(getActiveMode(engine));
+        if (maybePromoteBreakeven(heldPosition, currentPrice, ladderMode)) {
           log.info(
             {
               symbol,
               newStopLoss: heldPosition.stopLoss,
               entry: heldPosition.entryPrice,
               currentPrice,
+              ladderMode,
             },
             "Breakeven promoted (main scan)"
           );
