@@ -31,13 +31,9 @@ export default function RootLayout({
       <head>
         <meta name="theme-color" content="#0d1511" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-        <script dangerouslySetInnerHTML={{ __html: `
-          if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-              navigator.serviceWorker.register('/sw.js').catch(() => {});
-            });
-          }
-        ` }} />
+        {/* SW registration extracted to /public/sw-register.js so CSP
+            can drop script-src 'unsafe-inline'. */}
+        <script src="/sw-register.js" defer />
       </head>
       <body className="min-h-screen bg-bg-primary text-text-primary antialiased">
         <ThemeProvider>{children}</ThemeProvider>
