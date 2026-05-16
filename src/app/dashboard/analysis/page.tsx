@@ -500,9 +500,10 @@ function AnalysisCockpit() {
 
               <button
                 onClick={() => setShowAddInput(!showAddInput)}
-                className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full border border-border text-text-muted transition-colors hover:border-accent/30 hover:text-accent"
+                aria-label="Add symbol to watchlist"
+                className="shrink-0 flex h-11 w-11 items-center justify-center rounded-full border border-border text-text-muted transition-colors hover:border-accent/30 hover:text-accent"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-5 h-5" />
               </button>
             </div>
 

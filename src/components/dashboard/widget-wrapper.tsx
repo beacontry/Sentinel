@@ -50,10 +50,10 @@ export function WidgetWrapper({
             {editMode && onRemove && (
               <button
                 onClick={onRemove}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-text-muted hover:bg-bearish/10 hover:text-bearish cursor-pointer transition-colors"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-text-muted hover:bg-bearish/10 hover:text-bearish cursor-pointer transition-colors"
                 aria-label={`Remove ${title}`}
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-4 w-4" />
               </button>
             )}
           </div>
