@@ -83,7 +83,7 @@ All conditions evaluated per stock at each scan interval:
 
 Positions are closed when ANY of these trigger:
 
-1. **Fixed stop loss** — price drops below entry × (1 - stopLossPct)
+1. **Fixed stop loss** — price drops below `pos.stopLoss`. Initialized at entry × (1 − stopLossPct); ratcheted up to entry × 1.001 once unrealized profit crosses +2% (see Breakeven-Promote below)
 2. **Dynamic trailing stop** — price drops below peak × (1 - dynTrailPct)
 3. **Take profit** — price exceeds entry × (1 + takeProfitPct)
 4. **Sell signal** — technical analysis generates SELL/STRONG_SELL
@@ -108,6 +108,28 @@ trail = 2% + (baseTrail - 2%) × e^(-3 × profitPct)
 
 Floor: 2% minimum trailing stop regardless of profit level.
 
+> **Note on "Locked-in Minimum":** the column above shows the contribution of the trailing stop *alone*. Below ~+10% profit, the trail itself sits *below* entry (e.g., at +5% profit the trail is at peak × (1 − 10.3%) ≈ entry × 0.94 — a 6% giveback). Breakeven-promote (next section) is what actually locks the position at ~0% giveback from +2% profit onward. Above ~+10% profit, the trail is already tighter than entry + 0.1% and the table's locked-in values rule on their own.
+
+### Breakeven-Promote (Fixed-Stop Ratchet)
+
+Independent of the trailing stop. Once unrealized profit at the live price exceeds **2%**, the fixed stop `pos.stopLoss` snaps up to `entry × 1.001` — entry plus a 0.1% buffer for slippage and commissions. The dynamic trail keeps doing its thing on top; the effective stop on any scan is `max(pos.stopLoss, trailingStop)`.
+
+| Profit | Effective fixed stop | Effective trailing stop | Engine exit fires at |
+|---|---|---|---|
+| 0% | entry × (1 − stopLossPct) | peak × (1 − 12.6%) | the higher of the two (typically fixed since peak ≈ entry) |
+| +1.9% | entry × (1 − stopLossPct) | ~entry × 0.91 | fixed (no promotion yet) |
+| **+2.0%** | **entry × 1.001 ← promotes** | ~entry × 0.91 | fixed (now at breakeven) |
+| +5% | entry × 1.001 | ~entry × 0.94 | fixed (breakeven dominates) |
+| +10% | entry × 1.001 | ~entry × 1.005 | trail (just past breakeven) |
+| +20% | entry × 1.001 | ~entry × 1.134 | trail (locks in 13.4%) |
+| +50% | entry × 1.001 | ~entry × 1.464 | trail (locks in 46.4%) |
+
+**Why this matters for tactical-smart specifically:** entries init the disaster stop 12% below entry. Before this layer, a position that ran +3% and reversed gave back the gain plus 12% before the fixed stop caught it. Now it caps at ~breakeven once initial conviction is shown.
+
+**Why this doesn't break the dynamic-trail formula:** the trail math is untouched. Below ~+10% profit, breakeven-promote dominates because the trail still allows a meaningful giveback. Above ~+10%, the trail is already tighter than entry + 0.1% so the trail wins and behavior matches the table above.
+
+**Idempotent.** Once promoted, `pos.stopLoss` stays at or above breakeven for the rest of the position's life. The trail can ratchet it higher; nothing lowers it.
+
 ---
 
 ## Exit Behavior by Mode
@@ -120,7 +142,7 @@ Exit logic varies dramatically between mode families. Signal-based modes (like O
 |--------|---|---|---|
 | **Exit scope** | Individual position | Portfolio-wide + individual swaps | Portfolio-wide only |
 | **Primary exit** | First of 5 conditions fires | SPY < 20-SMA for 3 days | SPY < 20-SMA for 3 days |
-| **Stop loss** | ~8.5% (GA-tuned) | 12% (set at entry, rarely fires first) | None (SPY-driven exits) |
+| **Stop loss** | ~8.5% (GA-tuned) → breakeven at +2% profit | 12% initial → breakeven at +2% profit | None (SPY-driven exits) |
 | **Take profit** | ATR × mult or ~37% (GA-tuned) | 50% (set at entry, rarely fires first) | None (SPY-driven exits) |
 | **Trailing stop** | ~12.6% base, tightens with profit | 11.7% base, tightens with profit | None (SPY-driven exits) |
 | **Hold period** | ~33 days (GA-tuned) | 999 days (effectively never) | None (SPY-driven exits) |
