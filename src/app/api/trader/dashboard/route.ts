@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { traderStatus, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
 import { getBrokerPositionCache, getTrackedPositionData } from "@/lib/trading-engine";
@@ -96,7 +96,7 @@ export async function GET() {
 
     // All remaining DB reads in a single timeout
     const today = new Date().toISOString().slice(0, 10);
-    const { todayPnl, trades, signals, pnlHistory, filledTrades } = await withTimeout(3000, async (tx) => {
+    const { todayPnl, trades, signals, pnlHistory, filledTrades, todayTradesActual } = await withTimeout(3000, async (tx) => {
       // Today's P&L — scoped to current user
       const [tp] = await tx
         .select()
@@ -134,7 +134,36 @@ export async function GET() {
         .from(traderTrades)
         .where(and(eq(traderTrades.status, "FILLED"), isNotNull(traderTrades.pnl), eq(traderTrades.userId, session.userId)));
 
-      return { todayPnl: tp ?? null, trades: tr, signals: sig, pnlHistory: ph, filledTrades: ft };
+      // v3 — real today's-trade stats. The dashboard's "Trades Today"
+      // and "Realized today" used to fall back to brokerPositions.length
+      // and the daily_pnl row, which silently rendered "12 trades today"
+      // when really 12 = open-positions count and "+$1594 today" when
+      // really that's total-unrealized-since-position-opened. Pull the
+      // truth from trader_trades filtered to the current US/Eastern
+      // calendar day: fillTime >= start-of-today-ET. ET because trading
+      // sessions are anchored there; UTC midnight is mid-trading-day.
+      const todayET = await tx
+        .select({
+          count: sql<number>`COUNT(*)::int`,
+          realizedSum: sql<number>`COALESCE(SUM(${traderTrades.pnl}), 0)::float`,
+        })
+        .from(traderTrades)
+        .where(
+          and(
+            eq(traderTrades.userId, session.userId),
+            eq(traderTrades.status, "FILLED"),
+            sql`${traderTrades.fillTime} >= ((NOW() AT TIME ZONE 'America/New_York')::date AT TIME ZONE 'America/New_York')`
+          )
+        );
+
+      return {
+        todayPnl: tp ?? null,
+        trades: tr,
+        signals: sig,
+        pnlHistory: ph,
+        filledTrades: ft,
+        todayTradesActual: todayET[0] ?? { count: 0, realizedSum: 0 },
+      };
     });
 
     const pnls = filledTrades.map((t) => t.pnl ?? 0);
@@ -269,30 +298,59 @@ export async function GET() {
         portfolioValue: brokerAccount.portfolioValue,
       } : null,
       todayPnl: (() => {
-        // Always prefer live broker P&L when connected. Bug fix: was summing
-        // p.unrealizedPnl (TOTAL unrealized since position opened — could be
-        // weeks of accumulated gains). Now sums p.unrealizedIntradayPnl which
-        // is Alpaca's "today only" intraday P&L — change since prev close.
-        // Falls back to total unrealizedPnl when intraday is unavailable
-        // (IBKR / Tradier — neither exposes intraday).
+        // v3 — three UI-lie fixes that surfaced in the May 16 audit:
         //
-        // Phase 1 (UI-lie audit fix): include `source` + `staleSeconds` so
-        // the UI can render a "stale" indicator when we fell through to
-        // the DB cache. The two fields previously got silently mixed —
-        // users couldn't tell whether the number was live or hours old.
+        //   1) "Today: +$1,594" was actually total-unrealized-since-open.
+        //      The old fallback summed p.unrealizedPnl (cumulative P&L
+        //      since each position was opened, could be weeks of gain)
+        //      whenever Alpaca's per-position unrealizedIntradayPnl was
+        //      0 across the board — which happens pre-market because
+        //      there are no regular-session prints yet. Result: a
+        //      pre-market dashboard view showed "today" as the lifetime
+        //      gain on currently-held positions.
+        //
+        //   2) "Realized Today: +$0.00" was reading from the daily_pnl
+        //      row, which is an end-of-day snapshot. If today's row
+        //      hadn't been written yet (e.g., before EOD scheduler) the
+        //      value showed 0 even when intraday fills had happened.
+        //      Now derives from trader_trades filtered to today.
+        //
+        //   3) "Trades Today: 12" was actually brokerPositions.length —
+        //      the count of currently-open positions, not today's
+        //      trades. Fell back when daily_pnl row absent. Now derives
+        //      from real trader_trades filtered to today.
+        //
+        // All three now read from todayTradesActual (real ET-anchored
+        // query against trader_trades) + intraday-only broker fields.
+        // No silent fallback to lifetime numbers — if today's numbers
+        // are 0, today's numbers ARE 0.
+
+        const realized = todayTradesActual.realizedSum;
+        const tradesCount = todayTradesActual.count;
+
         if (brokerConnected && brokerPositions.length > 0) {
-          const hasIntraday = brokerPositions.some((p) => p.unrealizedIntradayPnl !== 0);
-          const unrealized = hasIntraday
-            ? brokerPositions.reduce((sum, p) => sum + p.unrealizedIntradayPnl, 0)
-            : brokerPositions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
-          const realized = todayPnl?.realizedPnl ?? 0;
+          // Sum the broker's intraday P&L. Alpaca: real "change since
+          // prev close" per position. IBKR/Tradier: hardcoded 0 (no
+          // intraday support — surfaced via the `source` field below).
+          const unrealizedToday = brokerPositions.reduce(
+            (sum, p) => sum + p.unrealizedIntradayPnl,
+            0
+          );
+          const brokerExposesIntraday = brokerPositions.some(
+            (p) => p.unrealizedIntradayPnl !== 0
+          );
           return {
             realizedPnl: realized,
-            unrealizedPnl: unrealized,
-            totalPnl: realized + unrealized,
-            tradesCount: todayPnl?.tradesCount ?? brokerPositions.length,
+            unrealizedPnl: unrealizedToday,
+            totalPnl: realized + unrealizedToday,
+            tradesCount,
             halted: todayPnl?.halted ?? false,
-            source: hasIntraday ? "broker_intraday" : "broker_total",
+            // "broker_intraday" — Alpaca, real intraday change.
+            // "broker_intraday_flat" — Alpaca-like, no movement yet
+            //   (pre-market, or genuinely 0 change during RTH).
+            // "broker_no_intraday" — IBKR/Tradier — today's change
+            //   cannot be reported; client should label appropriately.
+            source: brokerExposesIntraday ? "broker_intraday" : "broker_intraday_flat",
             staleSeconds: 0,
           };
         }
@@ -302,13 +360,26 @@ export async function GET() {
             ? Math.max(0, Math.floor((Date.now() - rowDate.getTime()) / 1000))
             : 0;
           return {
-            realizedPnl: todayPnl.realizedPnl,
+            realizedPnl: realized,
             unrealizedPnl: todayPnl.unrealizedPnl,
-            totalPnl: todayPnl.realizedPnl + todayPnl.unrealizedPnl,
-            tradesCount: todayPnl.tradesCount,
+            totalPnl: realized + todayPnl.unrealizedPnl,
+            tradesCount,
             halted: todayPnl.halted,
             source: "db_snapshot",
             staleSeconds,
+          };
+        }
+        if (tradesCount > 0 || realized !== 0) {
+          // No broker, no daily_pnl row, but we DID see trades today —
+          // still surface realized side so the UI isn't a flat 0.
+          return {
+            realizedPnl: realized,
+            unrealizedPnl: 0,
+            totalPnl: realized,
+            tradesCount,
+            halted: false,
+            source: "trades_only",
+            staleSeconds: 0,
           };
         }
         return null;

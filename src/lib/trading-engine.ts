@@ -1194,6 +1194,44 @@ const MOMENTUM_RATE_SCALE = 0.3;
 // be passed explicitly).
 const DRAWDOWN_TIGHTEN_MULT = 2;
 
+// v3 — Breakeven-promote. Once a position is in profit by this much,
+// ratchet pos.stopLoss up to entry + a small buffer. Converts
+// "ran up, gave it back to a loss" trades from losses to flat.
+// Independent of the trailing-stop machinery — fires even before the
+// trail floor catches up.
+//
+// Why this matters for tactical-smart specifically: entries init the
+// disaster stop at 12% below entry (price * 0.88). With no breakeven
+// step, a position that runs +3% then reverses still has 12% of
+// downside before stop_loss fires. Promoting at +2% caps the
+// downside at ~0 once the position has shown initial conviction.
+const BREAKEVEN_TRIGGER_PCT = 0.02; // promote once unrealized profit >= 2%
+const BREAKEVEN_BUFFER_PCT = 0.001; // stop sits 0.1% above entry — covers slippage + commissions
+
+/**
+ * Ratchet pos.stopLoss to entry + BREAKEVEN_BUFFER_PCT once unrealized
+ * profit at currentPrice exceeds BREAKEVEN_TRIGGER_PCT. Idempotent:
+ * once promoted, subsequent calls are no-ops because pos.stopLoss is
+ * already at-or-above the breakeven level (or the trail has lifted
+ * it higher). Mutates pos.stopLoss; returns true on the promotion
+ * call so caller can log.
+ *
+ * Structural type — only needs entryPrice + stopLoss, so unit tests
+ * and external utilities can call without constructing a full
+ * TrackedPosition.
+ */
+export function maybePromoteBreakeven(
+  pos: { entryPrice: number; stopLoss: number },
+  currentPrice: number
+): boolean {
+  const breakevenStop = pos.entryPrice * (1 + BREAKEVEN_BUFFER_PCT);
+  if (pos.stopLoss >= breakevenStop) return false;
+  const profitPct = (currentPrice - pos.entryPrice) / pos.entryPrice;
+  if (profitPct < BREAKEVEN_TRIGGER_PCT) return false;
+  pos.stopLoss = breakevenStop;
+  return true;
+}
+
 interface TrailOptions {
   /** 14-day Average True Range in DOLLARS (not %). When supplied, drives the per-stock base trail via ATR_BASE_MULT × ATR / peakPrice. */
   atr?: number;
@@ -1647,13 +1685,27 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
       const params = await resolveStrategy(engine.userId, symbol);
       let exitReason = "";
 
+      // v3 breakeven-promote — run BEFORE the stop math so the same
+      // scan can both promote and exit if the price round-trips fast.
+      if (maybePromoteBreakeven(pos, currentPrice)) {
+        log.info(
+          { symbol, newStopLoss: pos.stopLoss, entry: pos.entryPrice, currentPrice },
+          "Breakeven promoted (1-min check)"
+        );
+      }
+
       // Stop loss with profit-based tightening.
       // v2 + v2.5 — pos.atr / pos.rsi cached on entry + refreshed each
       // main scan. engine.adaptiveRegime.vix from the regime snapshot.
       // currentPrice is from the 1-min poll — drives drawdown
       // tightening when price has pulled back from peak. All optional
       // — falls back to fixed-% when absent.
-      const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
+      //
+      // v3 — read pos.stopLoss as source of truth instead of recomputing
+      // from entryPrice * (1 - stopLossPct). pos.stopLoss reflects
+      // broker reconciliation (syncBrokerStops) AND breakeven promotions
+      // from this and prior scans; recomputing would silently undo both.
+      const fixedStop = pos.stopLoss;
       const dynTrailPct = getDynamicTrailingPct(
         pos.entryPrice,
         pos.peakPrice,
@@ -3489,6 +3541,22 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         let shouldExit = false;
         let exitReason = "";
 
+        // v3 breakeven-promote — fires once profit crosses
+        // BREAKEVEN_TRIGGER_PCT. Mutates heldPosition.stopLoss in place
+        // so the stop-loss check below sees the promoted value, and
+        // syncBrokerStops on this scan propagates it to the broker.
+        if (maybePromoteBreakeven(heldPosition, currentPrice)) {
+          log.info(
+            {
+              symbol,
+              newStopLoss: heldPosition.stopLoss,
+              entry: heldPosition.entryPrice,
+              currentPrice,
+            },
+            "Breakeven promoted (main scan)"
+          );
+        }
+
         // Stop loss
         if (currentPrice <= heldPosition.stopLoss) {
           shouldExit = true;
@@ -4253,8 +4321,14 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
         { atr: pos.atr, vix: regimeVix, rsi: pos.rsi }
       );
       const trailStop = pos.peakPrice * (1 - dynTrailPct);
-      const fixedStop = pos.entryPrice * (1 - strategy.stopLossPct);
-      const targetStop = Math.max(fixedStop, trailStop);
+      // v3 — use pos.stopLoss as the fixed-stop floor instead of
+      // recomputing from entryPrice * (1 - strategy.stopLossPct).
+      // pos.stopLoss carries:
+      //   - the entry-time floor (initialized at entry)
+      //   - any breakeven promotion from runExitCheck / main scan exit
+      //   - any prior broker-stop ratchet from this function
+      // Recomputing would silently undo all three.
+      const targetStop = Math.max(pos.stopLoss, trailStop);
 
       // No stop on broker yet (e.g., position opened mid-run, before any stop/start cycle).
       // Place one now so the position has protection if the server crashes.

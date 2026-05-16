@@ -33,6 +33,7 @@ export default function PricingPage() {
     { label: "How It Works", href: "/#process" },
     { label: "Pricing", href: "/pricing" },
     { label: "Why Beacontry", href: "/#trust" },
+    { label: "Explore Freely", href: "/#explore" },
   ];
 
   // ─── Tier cards (kept in sync with landing teaser) ──────────────────
