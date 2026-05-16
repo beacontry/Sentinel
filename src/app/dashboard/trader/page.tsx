@@ -903,8 +903,24 @@ export default function TraderPage() {
         )}
       </Card>
 
-      {/* Open Orders */}
-      {openOrders.length > 0 && (
+      {/* Open Orders — always renders so the 2xl:grid-cols-2 right slot
+          stays filled. Empty state explains where the actual stops live
+          (broker-side GTC) instead of leaving a blank rectangle. */}
+      {openOrders.length === 0 ? (
+        <Card>
+          <CardHeader className="p-0 pb-3">
+            <CardTitle>Open Orders (0)</CardTitle>
+          </CardHeader>
+          <div className="py-6 text-center">
+            <p className="text-sm text-text-muted">No resting orders</p>
+            <p className="mt-2 text-xs text-text-muted max-w-xs mx-auto leading-relaxed">
+              Stop-loss + trailing-stop levels live on the broker as GTC orders.
+              See the <strong className="text-text-secondary">Stop</strong> column
+              in Open Positions for the current ratcheted level per symbol.
+            </p>
+          </div>
+        </Card>
+      ) : (
         <Card>
           <CardHeader className="p-0 pb-3">
             <CardTitle>Open Orders ({openOrders.length})</CardTitle>
