@@ -749,7 +749,7 @@
         <tbody>
           <tr><td><strong>Exit scope</strong></td><td>Individual position</td><td>Portfolio-wide + individual swaps</td><td>Portfolio-wide only</td></tr>
           <tr><td><strong>Primary exit</strong></td><td>First of 5 conditions fires</td><td>SPY &lt; 20-SMA &times;3d</td><td>SPY &lt; 20-SMA &times;3d</td></tr>
-          <tr><td><strong>Stop loss</strong></td><td class="mono">~8.5% (GA-tuned)<br><span style="color:var(--text-muted);font-size:0.82rem">&rarr; breakeven at +2%</span></td><td class="mono">12% initial<br><span style="color:var(--text-muted);font-size:0.82rem">&rarr; breakeven at +2%</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
+          <tr><td><strong>Stop loss</strong></td><td class="mono">~8.5% initial<br><span style="color:var(--text-muted);font-size:0.82rem">&rarr; 4-tier ladder (full)</span></td><td class="mono">12% initial<br><span style="color:var(--text-muted);font-size:0.82rem">&rarr; +2% tier only (breakeven_only)</span></td><td style="color:var(--text-muted)">None (SPY-driven, disabled)</td></tr>
           <tr><td><strong>Take profit</strong></td><td class="mono">ATR &times; mult <span style="color:var(--text-muted)">(GA-tuned)</span></td><td class="mono">50% <span style="color:var(--text-muted)">(rarely fires first)</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
           <tr><td><strong>Trailing stop</strong></td><td class="mono">~12.6% <span style="color:var(--text-muted)">(dynamic)</span></td><td class="mono">11.7% <span style="color:var(--text-muted)">(dynamic)</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
           <tr><td><strong>Hold period</strong></td><td class="mono">~33 days <span style="color:var(--text-muted)">(GA-tuned)</span></td><td class="mono">999 days <span style="color:var(--text-muted)">(effectively never)</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
@@ -799,7 +799,9 @@
     </div>
     <p>The trailing stop tightens exponentially as profit increases, locking in more gains as the trade runs. Floor is always 2% &mdash; the stop never gets tighter than that.</p>
 
-    <div class="formula-block">trail = 2% + (baseTrail &minus; 2%) &times; e<sup>&minus;3 &times; profitPct</sup></div>
+    <div class="formula-block">trail = floor + (baseTrail &minus; floor) &times; e<sup>&minus;3 &times; profitPct</sup></div>
+
+    <p style="color:var(--text-muted);margin-top:8px;font-size:0.94rem">Values below assume <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">baseTrail = 12.6%</code> (optimized preset) and <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">floor = 2%</code> (legacy fallback &mdash; see regime note below).</p>
 
     <div class="table-wrap">
       <table class="data-table">
@@ -807,32 +809,95 @@
           <tr>
             <th class="right">Profit</th>
             <th class="right">Trail Width</th>
-            <th class="right">Locked-in Min</th>
+            <th class="right">Trail-only locked-in</th>
           </tr>
         </thead>
         <tbody>
           <tr><td class="right mono">0%</td><td class="right mono">12.6%</td><td class="right mono" style="color:var(--text-muted)">&mdash;</td></tr>
-          <tr><td class="right mono">5%</td><td class="right mono">10.3%</td><td class="right mono" style="color:var(--bullish)">~0%</td></tr>
-          <tr><td class="right mono">10%</td><td class="right mono">8.6%</td><td class="right mono" style="color:var(--bullish)">~1.4%</td></tr>
-          <tr><td class="right mono">20%</td><td class="right mono">5.5%</td><td class="right mono" style="color:var(--bullish)">~14.5%</td></tr>
-          <tr><td class="right mono">30%</td><td class="right mono">3.7%</td><td class="right mono" style="color:var(--bullish)">~26.3%</td></tr>
-          <tr><td class="right mono">50%</td><td class="right mono">2.4%</td><td class="right mono" style="color:var(--bullish)">~47.6%</td></tr>
+          <tr><td class="right mono">5%</td><td class="right mono">11.1%</td><td class="right mono" style="color:var(--bearish)">&minus;6.6% giveback</td></tr>
+          <tr><td class="right mono">10%</td><td class="right mono">9.9%</td><td class="right mono" style="color:var(--bearish)">&minus;0.8% giveback</td></tr>
+          <tr><td class="right mono">15%</td><td class="right mono">8.8%</td><td class="right mono" style="color:var(--bullish)">+4.9%</td></tr>
+          <tr><td class="right mono">20%</td><td class="right mono">7.8%</td><td class="right mono" style="color:var(--bullish)">+10.6%</td></tr>
+          <tr><td class="right mono">30%</td><td class="right mono">6.3%</td><td class="right mono" style="color:var(--bullish)">+21.8%</td></tr>
+          <tr><td class="right mono">50%</td><td class="right mono">4.4%</td><td class="right mono" style="color:var(--bullish)">+43.4%</td></tr>
         </tbody>
       </table>
-    </div>
-    <div class="callout safe">
-      <span class="callout-icon">&#10003;</span>
-      <span>At 50% profit, the trailing stop is only 2.4% wide &mdash; locking in at least 47.6% of the trade.</span>
     </div>
 
     <div class="callout info">
       <span class="callout-icon">&#8505;</span>
-      <span><strong>Note on "Locked-in Min":</strong> the column above shows the trailing stop's contribution alone. Below ~+10% profit, the trail still sits below entry (e.g., at +5% profit the trail is at peak &times; (1 &minus; 10.3%) &approx; entry &times; 0.94 &mdash; a 6% giveback). Breakeven-Promote (below) is what actually locks the position at ~0% giveback from +2% onward.</span>
+      <span>Below ~+15% profit the trail alone sits below entry &mdash; Breakeven-Promote (next section) is the layer that locks gains in that band. Above ~+15% the trail dominates and gain capture compounds.</span>
     </div>
 
-    <h3>Breakeven-Promote (Fixed-Stop Ratchet)</h3>
-    <p>Independent of the trailing stop. Once unrealized profit at the live price exceeds <strong>+2%</strong>, the fixed stop <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> snaps up to <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">entry &times; 1.001</code> &mdash; entry plus a 0.1% buffer for slippage and commissions. The dynamic trail keeps doing its thing on top; the effective stop on any scan is <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">max(pos.stopLoss, trailingStop)</code>.</p>
+    <h4 style="margin-top:18px;color:var(--text-primary);font-size:1.02rem;font-weight:600">Floor is regime-aware</h4>
+    <p>The 2% above is the legacy fallback used when VIX is unavailable. With the adaptive regime classifier feeding VIX into <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">getDynamicTrailingPct()</code>:</p>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr><th>Regime</th><th class="right">VIX</th><th class="right">Floor</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Calm</td><td class="right mono">&le; 18</td><td class="right mono" style="color:var(--bullish)">1.5%</td></tr>
+          <tr><td>Neutral</td><td class="right mono">18 &mdash; 25</td><td class="right mono">2.5%</td></tr>
+          <tr><td>Panic</td><td class="right mono">&gt; 25</td><td class="right mono" style="color:var(--bearish)">4.0%</td></tr>
+        </tbody>
+      </table>
+    </div>
 
+    <h4 style="margin-top:18px;color:var(--text-primary);font-size:1.02rem;font-weight:600">Base is volatility-aware</h4>
+    <p>With per-symbol ATR available, base trail starts at <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">min(25%, 2.5 &times; ATR / peakPrice)</code> rather than the preset's flat <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">trailingStopPct</code>. Capped at 25% to protect against penny-stock ATR explosions.</p>
+
+    <h4 style="margin-top:18px;color:var(--text-primary);font-size:1.02rem;font-weight:600">Rate is momentum-aware</h4>
+    <p>Decay rate scales with RSI: strong momentum (RSI &gt; 50) slows the tightening (let the trend run); weakening (RSI &lt; 50) speeds it (lock before the pullback). Bounded &plusmn;30% of the base rate of 3.</p>
+
+    <h4 style="margin-top:18px;color:var(--text-primary);font-size:1.02rem;font-weight:600">Drawdown-from-peak tightening</h4>
+    <p>Once price has pulled back from the peak by more than 1/2 of the current trail width, an extra tightening factor kicks in &mdash; trail collapses toward floor proportionally to the pullback severity.</p>
+
+    <h3>Breakeven-Promote (Tiered Fixed-Stop Ratchet)</h3>
+    <p>Independent of the trailing stop. As unrealized profit grows, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> ratchets up through <strong>four tiers</strong> &mdash; each tier locks in a portion of the gain. The dynamic trail keeps doing its thing on top; the effective stop on any scan is <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">max(pos.stopLoss, trailingStop)</code>.</p>
+
+    <p style="color:var(--text-muted);margin-top:8px;font-size:0.94rem">The ladder is one-way: <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> only moves up. A position that skips intermediate tiers (gap up overnight, fast intraday run) promotes directly to the highest qualifying tier.</p>
+
+    <h4 style="margin-top:18px;color:var(--text-primary);font-size:1.02rem;font-weight:600">Tier ladder (under default <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">full</code> mode)</h4>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th class="right">Profit reached</th>
+            <th>Tier fires</th>
+            <th class="right"><code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> becomes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="right mono">+2%</td><td>Tier 1 &mdash; breakeven + slippage buffer</td><td class="right mono">entry &times; 1.001</td></tr>
+          <tr><td class="right mono">+5%</td><td>Tier 2 &mdash; lock 2.5%</td><td class="right mono">entry &times; 1.025</td></tr>
+          <tr><td class="right mono">+10%</td><td>Tier 3 &mdash; lock 5%</td><td class="right mono">entry &times; 1.05</td></tr>
+          <tr><td class="right mono">+15%</td><td>Tier 4 &mdash; lock 7.5%</td><td class="right mono">entry &times; 1.075</td></tr>
+          <tr><td class="right mono">&gt; +15%</td><td style="color:var(--text-muted)">no higher tier &mdash; dynamic trail takes over</td><td class="right mono">entry &times; 1.075</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4 style="margin-top:18px;color:var(--text-primary);font-size:1.02rem;font-weight:600">Per-mode opt-out (<code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">MODE_LADDER_DEFAULT</code>)</h4>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Engine mode</th>
+            <th>Ladder mode</th>
+            <th>Why</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>conservative / moderate / aggressive / optimized / intraday</td><td class="mono">full</td><td>All four tiers active. Shorter holds; lock gains progressively as price runs</td></tr>
+          <tr><td>tactical-smart</td><td class="mono">breakeven_only</td><td>Only the +2% tier fires. Higher tiers would prematurely exit positions the strategy expects to hold for 30%+ moves toward the 50% take-profit target</td></tr>
+          <tr><td>tactical</td><td class="mono">disabled</td><td>Pure SPY-driven; individual stops contradict "all in / all out" philosophy</td></tr>
+          <tr><td>adaptive</td><td>resolves to effective mode at scan time</td><td>Inherits the current effective mode's default</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4 style="margin-top:18px;color:var(--text-primary);font-size:1.02rem;font-weight:600">Combined picture &mdash; what actually decides the exit at each profit level (full ladder)</h4>
     <div class="table-wrap">
       <table class="data-table">
         <thead>
@@ -840,27 +905,28 @@
             <th class="right">Profit</th>
             <th class="right">Effective fixed stop</th>
             <th class="right">Effective trailing stop</th>
-            <th>Engine exit fires at</th>
+            <th>Exit decided by</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td class="right mono">0%</td><td class="right mono">entry &times; (1 &minus; stopLossPct)</td><td class="right mono">peak &times; (1 &minus; 12.6%)</td><td>fixed (peak &asymp; entry)</td></tr>
+          <tr><td class="right mono">0%</td><td class="right mono">entry &times; (1 &minus; stopLossPct)</td><td class="right mono">peak &times; (1 &minus; 12.6%) &asymp; entry &times; 0.874</td><td>fixed (peak &asymp; entry)</td></tr>
           <tr><td class="right mono">+1.9%</td><td class="right mono">entry &times; (1 &minus; stopLossPct)</td><td class="right mono">~entry &times; 0.91</td><td>fixed (no promote yet)</td></tr>
-          <tr style="background:var(--accent-bg);"><td class="right mono"><strong>+2.0%</strong></td><td class="right mono" style="color:var(--accent)"><strong>entry &times; 1.001 &larr; promotes</strong></td><td class="right mono">~entry &times; 0.91</td><td>fixed (now at breakeven)</td></tr>
-          <tr><td class="right mono">+5%</td><td class="right mono">entry &times; 1.001</td><td class="right mono">~entry &times; 0.94</td><td>fixed (breakeven wins)</td></tr>
-          <tr><td class="right mono">+10%</td><td class="right mono">entry &times; 1.001</td><td class="right mono">~entry &times; 1.005</td><td>trail (just past breakeven)</td></tr>
-          <tr><td class="right mono">+20%</td><td class="right mono">entry &times; 1.001</td><td class="right mono">~entry &times; 1.134</td><td>trail (locks in 13.4%)</td></tr>
-          <tr><td class="right mono">+50%</td><td class="right mono">entry &times; 1.001</td><td class="right mono">~entry &times; 1.464</td><td>trail (locks in 46.4%)</td></tr>
+          <tr style="background:var(--accent-bg);"><td class="right mono"><strong>+2.0%</strong></td><td class="right mono" style="color:var(--accent)"><strong>entry &times; 1.001 &larr; tier 1</strong></td><td class="right mono">~entry &times; 0.91</td><td>fixed (breakeven)</td></tr>
+          <tr style="background:var(--accent-bg);"><td class="right mono"><strong>+5%</strong></td><td class="right mono" style="color:var(--accent)"><strong>entry &times; 1.025 &larr; tier 2</strong></td><td class="right mono">~entry &times; 0.94</td><td>fixed (lock 2.5%)</td></tr>
+          <tr style="background:var(--accent-bg);"><td class="right mono"><strong>+10%</strong></td><td class="right mono" style="color:var(--accent)"><strong>entry &times; 1.05 &larr; tier 3</strong></td><td class="right mono">~entry &times; 1.005</td><td>fixed (lock 5%)</td></tr>
+          <tr style="background:var(--accent-bg);"><td class="right mono"><strong>+15%</strong></td><td class="right mono" style="color:var(--accent)"><strong>entry &times; 1.075 &larr; tier 4</strong></td><td class="right mono">~entry &times; 1.07</td><td>fixed/trail roughly tied</td></tr>
+          <tr><td class="right mono">+20%</td><td class="right mono">entry &times; 1.075</td><td class="right mono">~entry &times; 1.134</td><td>trail (locks in 13.4%)</td></tr>
+          <tr><td class="right mono">+50%</td><td class="right mono">entry &times; 1.075</td><td class="right mono">~entry &times; 1.464</td><td>trail (locks in 46.4%)</td></tr>
         </tbody>
       </table>
     </div>
 
     <div class="callout safe">
       <span class="callout-icon">&#10003;</span>
-      <span><strong>Why this matters for tactical-smart specifically:</strong> entries init the disaster stop 12% below entry. Before this layer, a position that ran +3% then reversed gave back the gain <em>plus</em> 12% before the fixed stop caught it. Now it caps at ~breakeven once initial conviction is shown.</span>
+      <span><strong>Why this matters for tactical-smart specifically:</strong> entries init the disaster stop 12% below entry. Before this layer, a position that ran +3% then reversed gave back the gain <em>plus</em> 12% before the fixed stop caught it. With <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">breakeven_only</code>, it now caps at ~breakeven once initial conviction is shown &mdash; without prematurely exiting positions that could run to the 50%+ take-profit target.</span>
     </div>
 
-    <p style="color:var(--text-muted);margin-top:14px;font-size:0.92rem"><strong>Idempotent.</strong> Once promoted, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> stays at or above breakeven for the rest of the position's life. The trail can ratchet it higher; nothing lowers it.</p>
+    <p style="color:var(--text-muted);margin-top:14px;font-size:0.92rem"><strong>Idempotent.</strong> Once promoted to a tier, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> stays at or above that tier's target. The trail can ratchet it higher; nothing lowers it.</p>
   </section>
 
   <!-- ===== 6 · PRE-BUY FILTERS ===== -->

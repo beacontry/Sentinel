@@ -94,41 +94,80 @@ Positions are closed when ANY of these trigger:
 ### Dynamic Trailing Stop (Exponential Decay)
 
 ```
-trail = 2% + (baseTrail - 2%) × e^(-3 × profitPct)
+trail = floor + (baseTrail - floor) × e^(-3 × profitPct)
 ```
 
-| Profit | Trailing Stop | Locked-in Minimum |
-|--------|--------------|-------------------|
-| 0% | 12.6% (base) | Could go negative |
-| 5% | 10.3% | ~0% |
-| 10% | 8.6% | ~1.4% |
-| 20% | 5.5% | ~14.5% |
-| 30% | 3.7% | ~26.3% |
-| 50% | 2.4% | ~47.6% |
+Values below assume `baseTrail = 12.6%` (optimized preset) and `floor = 2%` (legacy fallback — see regime note below).
 
-Floor: 2% minimum trailing stop regardless of profit level.
+| Profit | Trailing Stop | Trail-only locked-in (peak × (1−trail) − entry) |
+|--------|--------------|-------------------------------------------------|
+| 0% | 12.6% | — |
+| 5% | 11.1% | −6.6% giveback (trail still below entry) |
+| 10% | 9.9% | −0.8% giveback |
+| 15% | 8.8% | +4.9% |
+| 20% | 7.8% | +10.6% |
+| 30% | 6.3% | +21.8% |
+| 50% | 4.4% | +43.4% |
 
-> **Note on "Locked-in Minimum":** the column above shows the contribution of the trailing stop *alone*. Below ~+10% profit, the trail itself sits *below* entry (e.g., at +5% profit the trail is at peak × (1 − 10.3%) ≈ entry × 0.94 — a 6% giveback). Breakeven-promote (next section) is what actually locks the position at ~0% giveback from +2% profit onward. Above ~+10% profit, the trail is already tighter than entry + 0.1% and the table's locked-in values rule on their own.
+Below ~+15% profit the trail alone sits below entry — Breakeven-Promote (next section) is the layer that locks gains in that band. Above ~+15% the trail dominates and gain capture compounds.
 
-### Breakeven-Promote (Fixed-Stop Ratchet)
+**Floor is regime-aware.** The 2% above is the legacy fallback used when VIX is unavailable. In production with the adaptive regime classifier feeding a VIX value:
 
-Independent of the trailing stop. Once unrealized profit at the live price exceeds **2%**, the fixed stop `pos.stopLoss` snaps up to `entry × 1.001` — entry plus a 0.1% buffer for slippage and commissions. The dynamic trail keeps doing its thing on top; the effective stop on any scan is `max(pos.stopLoss, trailingStop)`.
+| Regime | VIX | Floor |
+|---|---|---|
+| Calm | ≤ 18 | **1.5%** |
+| Neutral | 18 — 25 | 2.5% |
+| Panic | > 25 | **4.0%** |
 
-| Profit | Effective fixed stop | Effective trailing stop | Engine exit fires at |
+**Base is volatility-aware.** With per-symbol ATR available, base trail starts at `min(25%, 2.5 × ATR / peakPrice)` rather than the preset's flat `trailingStopPct`. Capped at 25% to protect against penny-stock ATR explosions.
+
+**Rate is momentum-aware.** Decay rate scales with RSI: strong momentum (RSI > 50) slows the tightening (let the trend run); weakening (RSI < 50) speeds it (lock before the pullback). Bounded `±30%` of the base rate of 3.
+
+**Drawdown-from-peak tightening.** Once price has pulled back from the peak by more than 1/2 of the current trail width, an extra tightening factor kicks in — trail collapses toward floor proportionally to the pullback severity.
+
+### Breakeven-Promote (Tiered Fixed-Stop Ratchet)
+
+Independent of the trailing stop. As unrealized profit grows, `pos.stopLoss` ratchets up through **four tiers** — each tier locks in a portion of the gain. The dynamic trail keeps doing its thing on top; the effective stop on any scan is `max(pos.stopLoss, trailingStop)`.
+
+**Tier ladder** (under the default `full` mode):
+
+| Profit reached | Tier fires | `pos.stopLoss` becomes |
+|---|---|---|
+| +2% | Tier 1 — breakeven + slippage buffer | entry × 1.001 |
+| +5% | Tier 2 — lock 2.5% | entry × 1.025 |
+| +10% | Tier 3 — lock 5% | entry × 1.05 |
+| +15% | Tier 4 — lock 7.5% | entry × 1.075 |
+| > +15% | (no higher tier) — dynamic trail takes over | entry × 1.075 |
+
+The ladder is one-way: `pos.stopLoss` only moves up. If a position skips intermediate tiers (gap up overnight, fast intraday run), the highest qualifying tier fires directly — no need to wait for each rung in sequence.
+
+**Per-mode opt-out** — `MODE_LADDER_DEFAULT`:
+
+| Engine mode | Ladder mode | Why |
+|---|---|---|
+| conservative / moderate / aggressive / optimized / intraday | `full` | All four tiers active. Modes target shorter holds; locking gains progressively matches the strategy intent |
+| tactical-smart | `breakeven_only` | Only the +2% tier fires. Higher tiers would prematurely exit positions that the strategy expects to hold for 30%+ moves |
+| tactical | `disabled` | Pure SPY-driven; individual position management contradicts "all in / all out" philosophy |
+| adaptive | resolves to effective mode at scan time | (the current effective mode's default applies) |
+
+**Combined picture** — what actually decides the exit at each profit level, under `full` ladder:
+
+| Profit reached | Effective fixed stop | Effective trailing stop | Exit decided by |
 |---|---|---|---|
-| 0% | entry × (1 − stopLossPct) | peak × (1 − 12.6%) | the higher of the two (typically fixed since peak ≈ entry) |
-| +1.9% | entry × (1 − stopLossPct) | ~entry × 0.91 | fixed (no promotion yet) |
-| **+2.0%** | **entry × 1.001 ← promotes** | ~entry × 0.91 | fixed (now at breakeven) |
-| +5% | entry × 1.001 | ~entry × 0.94 | fixed (breakeven dominates) |
-| +10% | entry × 1.001 | ~entry × 1.005 | trail (just past breakeven) |
-| +20% | entry × 1.001 | ~entry × 1.134 | trail (locks in 13.4%) |
-| +50% | entry × 1.001 | ~entry × 1.464 | trail (locks in 46.4%) |
+| 0% | entry × (1 − stopLossPct) | peak × (1 − 12.6%) ≈ entry × 0.874 | fixed (peak ≈ entry) |
+| +1.9% | entry × (1 − stopLossPct) | ~entry × 0.91 | fixed (no promote yet) |
+| **+2.0%** | **entry × 1.001 ← tier 1** | ~entry × 0.91 | fixed (now at breakeven) |
+| **+5%** | **entry × 1.025 ← tier 2** | ~entry × 0.94 | fixed (lock 2.5%) |
+| **+10%** | **entry × 1.05 ← tier 3** | ~entry × 1.005 | fixed (lock 5%) |
+| **+15%** | **entry × 1.075 ← tier 4** | ~entry × 1.07 | fixed/trail roughly tied |
+| +20% | entry × 1.075 | ~entry × 1.134 | trail (locks in 13.4%) |
+| +50% | entry × 1.075 | ~entry × 1.464 | trail (locks in 46.4%) |
 
-**Why this matters for tactical-smart specifically:** entries init the disaster stop 12% below entry. Before this layer, a position that ran +3% and reversed gave back the gain plus 12% before the fixed stop caught it. Now it caps at ~breakeven once initial conviction is shown.
+**Why this matters for tactical-smart specifically:** entries init the disaster stop 12% below entry. Before this layer, a position that ran +3% and reversed gave back the gain plus 12% before the fixed stop caught it. With `breakeven_only`, it now caps at ~breakeven once initial conviction is shown — without prematurely exiting positions that could run to the 50%+ take-profit target.
 
-**Why this doesn't break the dynamic-trail formula:** the trail math is untouched. Below ~+10% profit, breakeven-promote dominates because the trail still allows a meaningful giveback. Above ~+10%, the trail is already tighter than entry + 0.1% so the trail wins and behavior matches the table above.
+**Why this doesn't break the dynamic-trail formula:** the trail math is untouched. Below ~+15% profit (under `full`), the ladder dominates because the trail still allows a meaningful giveback. Above ~+15%, the trail is tighter than the highest tier's lock so the trail wins and gain capture continues smoothly.
 
-**Idempotent.** Once promoted, `pos.stopLoss` stays at or above breakeven for the rest of the position's life. The trail can ratchet it higher; nothing lowers it.
+**Idempotent.** Once promoted to a tier, `pos.stopLoss` stays at or above that tier's target for the rest of the position's life. The trail can ratchet it higher; nothing lowers it.
 
 ---
 
@@ -142,7 +181,7 @@ Exit logic varies dramatically between mode families. Signal-based modes (like O
 |--------|---|---|---|
 | **Exit scope** | Individual position | Portfolio-wide + individual swaps | Portfolio-wide only |
 | **Primary exit** | First of 5 conditions fires | SPY < 20-SMA for 3 days | SPY < 20-SMA for 3 days |
-| **Stop loss** | ~8.5% (GA-tuned) → breakeven at +2% profit | 12% initial → breakeven at +2% profit | None (SPY-driven exits) |
+| **Stop loss** | ~8.5% initial → 4-tier ladder (+2/+5/+10/+15%) locks in 0.1 / 2.5 / 5 / 7.5% | 12% initial → +2% tier only (breakeven_only) | None (SPY-driven exits) |
 | **Take profit** | ATR × mult or ~37% (GA-tuned) | 50% (set at entry, rarely fires first) | None (SPY-driven exits) |
 | **Trailing stop** | ~12.6% base, tightens with profit | 11.7% base, tightens with profit | None (SPY-driven exits) |
 | **Hold period** | ~33 days (GA-tuned) | 999 days (effectively never) | None (SPY-driven exits) |
