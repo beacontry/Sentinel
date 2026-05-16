@@ -1,41 +1,12 @@
 import type { NextConfig } from "next";
 
-const isDev = process.env.NODE_ENV !== "production";
 const useHttps = process.env.FORCE_HTTPS === "true";
 
-const csp = [
-  "default-src 'self'",
-  // Next.js dev mode requires 'unsafe-eval' for hot reload.
-  // Cloudflare Web Analytics injects beacon.min.js when CF Insights is enabled
-  // on the domain — allow its origins so the CSP doesn't block it.
-  // TradingView Advanced Chart loads s3.tradingview.com/tv.js which then
-  // injects iframes from s.tradingview.com / charting-library and pulls
-  // images for ticker logos. Whitelist all three origins.
-  // 'unsafe-inline' restored — Next.js inlines hydration/chunk-loader
-  // scripts at build time and they need it to execute. Dropping the
-  // directive (Batch 1) broke production with a white page (hydration
-  // never ran). Proper fix is nonce-based CSP via middleware, scheduled
-  // for a separate batch. 'unsafe-eval' is dev-only for HMR.
-  `script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://s3.tradingview.com${isDev ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  // Finnhub serves stock logos from static2.finnhub.io (and historically
-  // static.finnhub.io). Wildcard the subdomain so the company-profile card
-  // and any future Finnhub image surface render without a CSP block.
-  "img-src 'self' data: https://s3.tradingview.com https://*.tradingview.com https://*.finnhub.io",
-  "font-src 'self' https://fonts.gstatic.com",
-  // Cloudflare Insights uses TWO origins: `cloudflareinsights.com` for
-  // the beacon, and `static.cloudflareinsights.com` for the
-  // beacon.min.js loader fetch. Whitelist both. Without the static
-  // subdomain the console fills with CSP errors and the analytics
-  // never report.
-  `connect-src 'self' https://query1.finance.yahoo.com https://finnhub.io https://cloudflareinsights.com https://static.cloudflareinsights.com https://*.tradingview.com${isDev ? " ws://localhost:* ws://127.0.0.1:*" : ""}`,
-  "object-src 'none'",
-  "form-action 'self'",
-  "frame-src https://s.tradingview.com https://www.tradingview.com",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  ...(useHttps ? ["upgrade-insecure-requests"] : []),
-].join("; ");
+// Content-Security-Policy moved to src/middleware.ts so each request
+// can carry its own nonce. The static CSP that used to live here would
+// have needed 'unsafe-inline' for Next.js's framework-emitted inline
+// scripts; middleware-set CSP with a per-request nonce drops that
+// requirement.
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -80,10 +51,9 @@ const nextConfig: NextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
           },
-          {
-            key: "Content-Security-Policy",
-            value: csp,
-          },
+          // Content-Security-Policy is set per-request in src/middleware.ts
+          // (per-request nonce). Setting it here would static-allow
+          // 'unsafe-inline' or get overridden by middleware anyway.
         ],
       },
     ];
