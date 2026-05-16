@@ -25,6 +25,10 @@ export default function LandingPage() {
     // down this landing stays as a quick glance for scroll readers.
     { label: "Pricing", href: "/pricing" },
     { label: "Why Beacontry", href: "#trust" },
+    // Anchors the no-account browse card at the bottom of the final
+    // CTA section. Lets curious visitors jump straight to it instead
+    // of scrolling through the whole landing.
+    { label: "Explore Freely", href: "#explore" },
   ];
 
   // Public-browse links shown on the landing's final CTA section.
@@ -743,8 +747,9 @@ export default function LandingPage() {
               All six surfaces are public (no account required), so a
               curious visitor can poke around before committing to a
               signup. Education + tools + engine docs are the substance
-              proofs; source code is the transparency signal. */}
-          <div className="mx-auto mt-12 max-w-[760px] rounded-2xl border border-ld-border bg-ld-card p-6 lg:p-7">
+              proofs; source code is the transparency signal.
+              `id="explore"` is the anchor target for the nav link. */}
+          <div id="explore" className="mx-auto mt-12 max-w-[760px] rounded-2xl border border-ld-border bg-ld-card p-6 lg:p-7 scroll-mt-24">
             <p className="font-mono text-xs uppercase tracking-[0.14em] text-ld-text-muted text-center">
               Or explore freely — no account needed
             </p>
