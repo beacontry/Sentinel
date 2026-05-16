@@ -19,10 +19,12 @@ The trading engine scans the S&P 500, generates signals using technical analysis
 
 ### Tactical Modes (market-level timing)
 
-| Mode | Entry Logic | Exit Logic | Stock Selection |
+| Mode | Entry Logic | Primary Exit | Stock Selection |
 |------|------------|------------|-----------------|
 | **Tactical** | SPY > 50-day SMA | SPY < 20-day SMA for 3 days | Equal-weight all stocks |
 | **Tactical Smart** | SPY > 50-day SMA | SPY < 20-day SMA for 3 days | Momentum + signal + inverse volatility scored |
+
+> **Per-position safety stops still fire.** Tactical entries set `stopLoss = entry × 0.88` (12% disaster), `takeProfit = entry × 1.5`, `trailingStopPct = 11.7%`. The 1-minute `runExitCheck` runs in **every mode** — a tactical position will be sold by the stop/trail/TP path independent of SPY trend if those trigger. SPY weakness remains the primary exit; individual stops are catastrophe protection. Breakeven-promote ladder is disabled on tactical and breakeven-only on tactical-smart.
 
 ---
 
@@ -30,7 +32,7 @@ The trading engine scans the S&P 500, generates signals using technical analysis
 
 ### Unified Signal Pipeline
 
-All components use the same signal function — `analyzeBars()` from `src/lib/indicators/analyzer.ts`. The optimizer backtests against this function, the engine calls it live, and the screener uses it for scanning. There is no separate signal evaluator.
+The technical core is `analyzeBars()` from `src/lib/indicators/analyzer.ts` — used by the optimizer for backtests, the screener for batch scanning, and indirectly by the engine via `analyzeHybrid()`. There is no separate signal evaluator at the core layer; the engine's hybrid pipeline is a *wrapper* that starts with `analyzeBars()` output and optionally adjusts confidence (or occasionally the signal direction) using Finnhub sentiment, options flow, analyst recommendations, and AI scoring. Trader-tier users get the Finnhub layers; Premium users additionally get AI scoring; the screener + optimizer + mode-compare backtest call `analyzeBars()` directly without the hybrid layers because those layers serialize through Finnhub's 60-req/min rate limit and would block universe-wide scans.
 
 **`analyzeBars(symbol, bars, signalParams?)`** accepts optional `SignalParams` to tune EMA periods and RSI thresholds:
 
@@ -235,7 +237,11 @@ Re-entry occurs when SPY recovers above the 50-day SMA (or above 20-SMA with RSI
 
 ## Pre-Buy Safety Filters
 
-Every buy signal passes through ten sequential gates before an order is placed:
+Every buy signal passes through a layered gate sequence before an order is placed.
+
+> **Two stages, two scopes.** `runScan()` calls `passesSmartFilters()` (RS + bearish sentiment) BEFORE `canPlaceBuyOrder()`. Tactical and tactical-smart skip the smart-filter step (they have their own scoring) and call `canPlaceBuyOrder()` directly. Both paths run the same risk-side gates inside `canPlaceBuyOrder()`: **earnings blackout → sector exposure → wash-sale → PDT → daily notional cap → order rate limit**. First failing gate is what the audit log records.
+
+Reference list of all gates a main-scan BUY traverses:
 
 ### 1. Market Hours
 - **Rule:** Only trade 9:30 AM – 4:00 PM ET, Monday – Friday
@@ -591,7 +597,13 @@ Updated on every scan cycle — changes take effect within 15 minutes.
 
 The engine code is **100% identical between paper and live**. The only environment-specific code is the Alpaca client constructor (picking the base URL), the boot-time env gate, and the UI banner. Signal generation, order construction, stop calculation, and all five circuit breakers (below) operate identically in both environments.
 
-**Boot gate.** At `startEngine()` the engine resolves the active broker connection. If `environment="live"` and `ALLOW_LIVE_TRADING !== "1"`, the engine refuses to start, emits an `engine.live_blocked` audit row, and returns a clear error to the UI naming the env var. When unlocked, every live boot fires a warn-level log, captures `metadata.environment="live"` on the `engine.started` audit row, and the Trader UI shows a persistent red **LIVE** banner with last-4 of the broker account number.
+**Boot gate.** Two gates, both must pass:
+
+1. **`ALLOW_LIVE_TRADING=1`** (env). Set in `/opt/apps/sentinel/.env` on the droplet. Without it, any `environment="live"` boot is refused — emits `engine.live_blocked` audit row with `metadata.reason="ALLOW_LIVE_TRADING_not_set"`.
+
+2. **`users.live_trading_enabled === true`** (DB column). Admin-grantable per-user permission. The engine reads this on every live boot attempt; if `false`, emits `engine.live_blocked` with `metadata.reason="user_not_granted_live"`. **Fail-closed**: a DB read failure on this gate also refuses the boot — env-only unlock is not enough.
+
+When both gates pass, every live boot fires a warn-level log, captures `metadata.environment="live"` on the `engine.started` audit row, and the Trader UI shows a persistent red **LIVE** banner with last-4 of the broker account number.
 
 **Paper vs live outcomes.** Same code, different broker reality. Live will have lower fill rates on limit BUYs (paper fills aggressively), real slippage on market sells (paper compresses to zero), partial fills on larger orders, more rejections (PDT, buying-power strictness, wash-sale flags, halted symbols), T+1 settlement timing, real 18% stop slippage on volatile names, and PDT lock risk on accounts under $25k. Paper trading is a faithful test of signal quality and risk-profile sizing; it is **not** a test of fill quality, slippage, or PDT survival.
 
@@ -705,7 +717,7 @@ Migration `0029_engine_intelligence.sql` added three columns to `user_risk_profi
 
 ## Phase 8 — Adaptive engine mode
 
-`EngineMode` now includes `"adaptive"` (8th option). When a user selects adaptive, the engine reads market regime at each scan boundary and runs as one of conservative / moderate / optimized / aggressive / tactical underneath. The user-selected mode stays `"adaptive"`; strategy decisions go through `getActiveMode(engine)` which returns the effective base mode.
+`EngineMode` includes `"adaptive"`. When a user selects adaptive, the engine reads market regime at each scan boundary and runs as one of `conservative / moderate / optimized / aggressive` underneath. The user-selected mode stays `"adaptive"`; strategy decisions go through `getActiveMode(engine)` which returns the effective base mode. (`tactical` is excluded from adaptive's targets — its all-in/all-out philosophy contradicts a regime classifier that would switch off it.)
 
 **Classifier**: `src/lib/market-regime.ts` — pure function, input `{ vix, spyPrice, spyMA50, spyMA200, breadthScore? }`, output `{ regime, recommendedMode, reasons }`.
 
@@ -729,7 +741,7 @@ Migration `0029_engine_intelligence.sql` added three columns to `user_risk_profi
 
 **Failure handling:** if VIX/SPY fetch fails, engine keeps the previous `effectiveMode` (does NOT halt — adaptive is a meta-decision, not a safety check). Logs a warning.
 
-**Live vs backtest difference:** live mode uses VIX + SPY + breadth (full breadth scan is too expensive to replay historically). Backtest replays VIX + SPY only — the strong-risk-on → `aggressive` bump simply doesn't fire in backtest. Defensible simplification.
+**Live vs backtest difference:** live mode uses **VIX + SPY only** — `refreshAdaptiveMode()` does NOT fetch breadth (full breadth scan = 50 stocks × N days, kept as a v2 enhancement; the cost would land on every scan tick). The strong-risk-on → `aggressive` bump in the classifier **requires** a breadth score, so in practice live adaptive can resolve only to `conservative`, `moderate`, or `optimized`. Backtest replays VIX + SPY only too. Defensible simplification — if you specifically want `aggressive` sizing in a strong bull, pick it directly instead of relying on adaptive.
 
 See `public/docs/engine-ruleset.html` (web view of this doc, served at `/docs/engine-ruleset.html` on any deployment) for the same content in HTML form. Both files are intentionally kept in sync — edit one, mirror to the other.
 
