@@ -11,25 +11,39 @@ const isDev = process.env.NODE_ENV !== "production";
 const useHttps = process.env.FORCE_HTTPS === "true";
 
 /**
- * Build the per-request Content-Security-Policy. The nonce is the
- * critical bit — it lets us drop `'unsafe-inline'` from script-src
- * without breaking Next.js's own hydration / chunk-loader inline
- * scripts. Next.js auto-attaches the nonce when we set the `x-nonce`
- * request header from middleware.
+ * Build the per-request Content-Security-Policy.
  *
- * We keep host-based allowlisting alongside the nonce (no
- * `'strict-dynamic'`) because Cloudflare Insights and TradingView
- * inject scripts via `<script src=...>` that aren't loaded by a
- * nonce-trusted Next.js bootstrap — they're independent external
- * sources. With `'strict-dynamic'` the host allowlist gets ignored,
- * which would block both of them.
+ * KNOWN LIMITATION — `'unsafe-inline'` is kept on script-src:
+ *
+ * Next.js's documented automatic nonce-stamping of inline scripts
+ * only works for *dynamically rendered* routes. Static-rendered
+ * pages (most of our public-marketing surface — landing, /pricing,
+ * /login, /register, /terms, etc. — flagged `○` in the build
+ * output) have their hydration / chunk-loader inline scripts baked
+ * into the HTML at build time, before middleware ever runs. The
+ * fresh per-request nonce on the CSP header doesn't match the
+ * already-built script tags (which have no nonce attribute at all)
+ * → every inline script gets blocked → white page.
+ *
+ * Removing 'unsafe-inline' broke prod twice today (commits c394e9d
+ * and 14743d3). Documenting the trap here so the next person
+ * doesn't try the same thing.
+ *
+ * The nonce is still generated and attached as `x-nonce` on the
+ * request for the dynamic routes that *do* benefit (the dashboard
+ * pages mostly), but the CSP keeps 'unsafe-inline' as a fallback
+ * for the static pages. Net security: marginal improvement over
+ * pure 'unsafe-inline' for the dynamic routes; same as before for
+ * static. Real upgrade path is either (a) accept this, (b) build-
+ * time script hashing post-prerender, or (c) Cloudflare Worker
+ * injecting CSP with computed hashes per asset.
  *
  * `'unsafe-eval'` stays dev-only for HMR.
  */
 function buildCsp(nonce: string): string {
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://static.cloudflareinsights.com https://s3.tradingview.com${isDev ? " 'unsafe-eval'" : ""}`,
+    `script-src 'self' 'unsafe-inline' 'nonce-${nonce}' https://static.cloudflareinsights.com https://s3.tradingview.com${isDev ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: https://s3.tradingview.com https://*.tradingview.com https://*.finnhub.io",
     "font-src 'self' https://fonts.gstatic.com",
