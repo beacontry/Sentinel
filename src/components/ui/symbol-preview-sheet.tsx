@@ -24,12 +24,13 @@
  * `symbol` prop. `null` hides it.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { X, BarChart3, Send, TrendingUp, TrendingDown, Minus, Plus, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { useDrawerA11y } from "@/hooks/useDrawerA11y";
 
 interface SymbolPreviewSheetProps {
   symbol: string | null;
@@ -106,6 +107,11 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
     return () => window.removeEventListener("keydown", onKey);
   }, [symbol, onClose]);
 
+  // Focus trap + restore on close (a11y).
+  const containerRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  useDrawerA11y({ open: !!symbol, containerRef, closeRef: closeButtonRef });
+
   async function handleAddToWatchlist() {
     if (!symbol) return;
     setAdding(true);
@@ -154,10 +160,14 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
 
       {/* Sheet */}
       <div
+        ref={containerRef}
         role="dialog"
+        aria-modal="true"
         aria-label={`${symbol} quick info`}
+        tabIndex={-1}
         className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm overflow-y-auto
-          border-l border-border bg-bg-surface shadow-2xl animate-slide-in-right"
+          border-l border-border bg-bg-surface shadow-2xl animate-slide-in-right
+          focus:outline-none"
       >
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-bg-surface px-5 py-4">
@@ -184,9 +194,10 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
             )}
           </div>
           <button
+            ref={closeButtonRef}
             onClick={onClose}
-            aria-label="Close"
-            className="text-text-muted hover:text-text-primary p-1"
+            aria-label="Close quick info"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-text-muted hover:bg-bg-hover hover:text-text-primary"
           >
             <X className="w-5 h-5" />
           </button>

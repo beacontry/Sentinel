@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDrawerA11y } from "@/hooks/useDrawerA11y";
 import {
   LogOut,
   Menu,
@@ -32,6 +33,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // server-side enforces role.
   const { role } = useTier();
   const navItems = visibleNavItems(role);
+
+  // Mobile drawer a11y — focus trap, restore on close, dialog semantics.
+  const mobileDrawerRef = useRef<HTMLElement>(null);
+  const mobileCloseRef = useRef<HTMLButtonElement>(null);
+  useDrawerA11y({
+    open: mobileOpen,
+    containerRef: mobileDrawerRef,
+    closeRef: mobileCloseRef,
+  });
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -174,14 +184,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <>
           <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setMobileOpen(false)} />
           <aside
-            className="fixed left-0 top-0 bottom-0 z-50 lg:hidden animate-slide-in-left"
+            ref={mobileDrawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            tabIndex={-1}
+            className="fixed left-0 top-0 bottom-0 z-50 lg:hidden animate-slide-in-left focus:outline-none"
             style={{ width: 280, backgroundColor: "var(--color-bg-elevated)", display: "flex", flexDirection: "column" }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px" }}>
               <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>Menu</span>
               <button
+                ref={mobileCloseRef}
                 onClick={() => setMobileOpen(false)}
-                style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, border: "none", cursor: "pointer", color: "var(--color-text-secondary)", backgroundColor: "transparent" }}
+                aria-label="Close navigation menu"
+                style={{ width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 8, border: "none", cursor: "pointer", color: "var(--color-text-secondary)", backgroundColor: "transparent" }}
               >
                 <X style={{ width: 20, height: 20 }} />
               </button>
