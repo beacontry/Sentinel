@@ -10,11 +10,12 @@ The trading engine scans the S&P 500, generates signals using technical analysis
 
 | Mode | Stop Loss | Take Profit | Trailing Stop | Hold Period | Position Size | Max Positions |
 |------|-----------|-------------|---------------|-------------|---------------|---------------|
-| Conservative | 1.5% | 2% | 1% | 30 bars | From risk settings | From risk settings |
-| Moderate | 2% | 3% | 1.5% | 20 bars | From risk settings | From risk settings |
+| Conservative¹ | 1.5% | 2% | 1% | 30 bars | From risk settings | From risk settings |
+| Moderate¹ | 2% | 3% | 1.5% | 20 bars | From risk settings | From risk settings |
 | **Optimized** | GA-tuned | GA-tuned | GA-tuned | GA-tuned | From risk settings | From risk settings |
-| Aggressive | 3% | 5% | 2.5% | 15 bars | From risk settings | From risk settings |
-| Intraday | 1.5% | 2.5% | 1% | 12 bars (1hr) | From risk settings | From risk settings |
+| Aggressive¹ | 3% | 5% | 2.5% | 15 bars | From risk settings | From risk settings |
+
+¹ Reachable only via adaptive — not directly user-selectable. User-facing picker shows **Optimized / Tactical / Tactical Smart / Adaptive**.
 
 ### Tactical Modes (market-level timing)
 
@@ -115,7 +116,7 @@ Below ~+15% profit the trail alone sits below entry — Breakeven-Promote (next 
 
 | Regime | VIX | Floor |
 |---|---|---|
-| Calm | ≤ 18 | **1.5%** |
+| Calm | ≤ 18 | **1.0%** (v3.1 — tightened from 1.5%) |
 | Neutral | 18 — 25 | 2.5% |
 | Panic | > 25 | **4.0%** |
 
@@ -145,7 +146,7 @@ The ladder is one-way: `pos.stopLoss` only moves up. If a position skips interme
 
 | Engine mode | Ladder mode | Why |
 |---|---|---|
-| conservative / moderate / aggressive / optimized / intraday | `full` | All four tiers active. Modes target shorter holds; locking gains progressively matches the strategy intent |
+| conservative / moderate / aggressive / optimized | `full` | All four tiers active. Locking gains progressively matches the strategy intent |
 | tactical-smart | `breakeven_only` | Only the +2% tier fires. Higher tiers would prematurely exit positions that the strategy expects to hold for 30%+ moves |
 | tactical | `disabled` | Pure SPY-driven; individual position management contradicts "all in / all out" philosophy |
 | adaptive | resolves to effective mode at scan time | (the current effective mode's default applies) |
@@ -366,7 +367,7 @@ Every buy signal passes through ten sequential gates before an order is placed:
 - Current engine mode saved to `traderStatus.mode` on every heartbeat
 - Format: `paper:optimized`, `paper:tactical`, etc.
 - Auto-restart reads last mode from DB
-- Valid modes for auto-restart: conservative, moderate, optimized, aggressive, intraday, tactical, tactical-smart
+- Valid modes for auto-restart: conservative, moderate, optimized, aggressive, tactical, tactical-smart
 
 ### Position Reconciliation
 - On each scan cycle, the engine compares its in-memory position map against actual broker positions
@@ -447,21 +448,6 @@ Without all three, a limit buy placed at scan T can be missing from `getPosition
 
 ---
 
-## Intraday Mode Rules
-
-### Scan Interval
-- Signal scan: every 5 minutes
-- Exit check: every 1 minute (live quotes)
-
-### Bar Resolution
-- 5-minute bars (fetches 5 days of 5-min data)
-
-### Flatten Time
-- **3:00 PM ET:** Close ALL positions at market
-- No new positions opened after 3:00 PM
-
----
-
 ## Screener → Engine Signal Flow
 
 The screener (`src/lib/screener.ts`) is a shared, user-independent market scanner that feeds signals to the trading engine.
@@ -483,7 +469,6 @@ The screener (`src/lib/screener.ts`) is a shared, user-independent market scanne
 | Moderate | Yes | Same |
 | Optimized | Yes | Same |
 | Aggressive | Yes | Same |
-| Intraday | Yes | Same (on 5-min bars) |
 | Tactical | **No** | Ignores screener — pure SPY timing |
 | Tactical Smart | **Yes** | Boosts candidate scores during stock selection (STRONG_BUY +3pts, BUY +1pt) |
 
@@ -555,13 +540,14 @@ The screener only pushes BUY/STRONG_BUY signals to the engine — never SELL sig
 
 | Mode | Signal Params (EMA/RSI) | Exit Params | Take Profit | RS Threshold | Screener |
 |------|------------------------|-------------|-------------|-------------|----------|
-| Conservative | Defaults | Hardcoded preset | Fixed % | From optimizer | Yes |
-| Moderate | Defaults | Hardcoded preset | Fixed % | From optimizer | Yes |
+| Conservative¹ | Defaults | Hardcoded preset | Fixed % | From optimizer | Yes |
+| Moderate¹ | Defaults | Hardcoded preset | Fixed % | From optimizer | Yes |
 | **Optimized** | **GA-tuned** | **GA-tuned** | **ATR × mult** | **GA-tuned** | Yes |
-| Aggressive | Defaults | Hardcoded preset | Fixed % | From optimizer | Yes |
-| Intraday | Defaults | Hardcoded intraday | Fixed % | From optimizer | Yes |
+| Aggressive¹ | Defaults | Hardcoded preset | Fixed % | From optimizer | Yes |
 | Tactical | N/A (SPY only) | GA or swing preset | Fixed % | N/A | No |
 | Tactical Smart | Defaults | GA-tuned | Fixed % | N/A | **Yes (boost)** |
+
+¹ Adaptive-only — see top-of-doc footnote.
 
 **Note:** rsThreshold affects ALL standard modes via `passesSmartFilters()`, not just optimized mode. Tactical modes don't use smart filters.
 
@@ -633,7 +619,7 @@ Three personalized protections that vary by account state and user election.
 
 **PDT protection** — Auto-detected from `account.equity < $25,000`. Three behaviors:
 
-1. **Boot mode-refusal**: refuses to start `intraday` mode when PDT-vulnerable. Other modes allowed.
+1. **Boot mode-refusal**: previously refused `intraday` mode when PDT-vulnerable. Intraday mode has since been removed entirely (v3.1); the boot refusal is gone with it.
 2. **Mid-session re-evaluation**: every scan calls `evaluatePdtState()` against live equity + `daytradeCount`. Transition not-vulnerable → vulnerable emits one `engine.pdt_vulnerable` informational audit row (no halt) and flips the UI warning.
 3. **Buy-block**: `pdtVulnerable && daytradeCount >= 3` (one shy of the 4-trade flag) blocks all new BUYs. SELLs always allowed.
 
@@ -657,7 +643,7 @@ Append-only, hash-chained record of every privileged action. Schema in `drizzle/
 2. Add live broker connection (Settings → Add Broker). Environment=Live, type "LIVE" to confirm, Test, Save.
 3. Deactivate paper connection (`isActive=false`).
 4. Flip env-gate on droplet — `ALLOW_LIVE_TRADING=1` in `/opt/apps/sentinel/.env`, then `podman stop && rm && run` (restart does NOT re-read env-file).
-5. Start engine in a swing mode (not `intraday` — engine refuses at <$25k).
+5. Start engine in any user-facing mode (optimized / tactical / tactical-smart / adaptive). Intraday is no longer available.
 
 **Rollback** (cheapest first):
 
@@ -729,13 +715,13 @@ Migration `0029_engine_intelligence.sql` added three columns to `user_risk_profi
 - `VIX <= 18` AND `SPY > SMA50` → risk_on → optimized
 - `VIX <= 14` AND `SPY > SMA200` AND breadth > 75 (live only) → strong risk_on → aggressive
 
-**Never auto-selected:** `intraday` (PDT-sensitive), `tactical-smart` (already adaptive), `adaptive` itself.
+**Never auto-selected:** `tactical` (all-in/all-out contradicts a regime classifier that would switch off it), `tactical-smart` (already adaptive), `adaptive` itself.
 
-**Engine wiring:** `refreshAdaptiveMode(engine)` runs at the top of each scan path (main, tactical-smart, intraday). Fetches ^VIX + SPY bars via the existing market-data provider, computes SPY SMA50/200, calls `detectMarketRegime`, sets `engine.effectiveMode` + `engine.adaptiveRegime`. Emits `ENGINE_MODE_SWITCHED` audit row only when `effectiveMode` actually changes scan-to-scan.
+**Engine wiring:** `refreshAdaptiveMode(engine)` runs at the top of each scan path (main, tactical-smart). Fetches ^VIX + SPY bars via the existing market-data provider, computes SPY SMA50/200, calls `detectMarketRegime`, sets `engine.effectiveMode` + `engine.adaptiveRegime`. Emits `ENGINE_MODE_SWITCHED` audit row only when `effectiveMode` actually changes scan-to-scan.
 
 **Backtester:** `runBacktest(symbol, bars, ..., mode?, marketContext?)` accepts optional `mode` + `marketContext: { spyBars, vixBars }`. When `mode === "adaptive"` AND marketContext provided, the backtester re-resolves the effective config per bar (looks up SPY/VIX for that date, runs the classifier, swaps `BacktestConfig`). Returns `modeTimeline: { date, mode }[]` so the UI can visualize regime swings.
 
-**Mode-compare page** at `/dashboard/backtest/mode-compare?symbol=AAPL`: runs all 6 comparable modes (5 base + adaptive; `intraday` + `tactical-smart` excluded) in parallel via `Promise.allSettled`. Returns stats + equity curves + adaptive's modeTimeline.
+**Mode-compare page** at `/dashboard/backtest/mode-compare?symbol=AAPL`: runs the 3 user-selectable comparable modes (optimized / tactical / adaptive; `tactical-smart` excluded as its own active-management logic doesn't translate to backtesting) in parallel via `Promise.allSettled`. Returns stats + equity curves + adaptive's modeTimeline.
 
 **Trader page status banner** shows two lines when running adaptive:
 1. `Running (adaptive) · PAPER · 14 scans · 3 positions`

@@ -57,7 +57,10 @@ interface CompareResponse {
 }
 
 // Stable color palette — one per mode so the same mode always renders the
-// same color across the table AND the equity curves.
+// same color across the table AND the equity curves. Kept entries for
+// conservative / moderate / aggressive so adaptive's regime overlay
+// (which shows which base mode adaptive was running at each point in
+// time) still has consistent coloring per resolved-to mode.
 const MODE_COLORS: Record<string, string> = {
   conservative: "#5b8def", // blue
   moderate:     "#9580f0", // violet
@@ -258,7 +261,7 @@ function ModeComparePage() {
         <EmptyState
           icon={<BarChart3 className="w-12 h-12" />}
           title="Run a comparison"
-          description="Enter a symbol and a date range. The backtest runs all 6 comparable engine modes (conservative through adaptive) in parallel."
+          description="Enter a symbol and a date range. The backtest runs each user-selectable engine mode (optimized / tactical / adaptive) in parallel."
         />
       )}
 

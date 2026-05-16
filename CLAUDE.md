@@ -227,12 +227,12 @@ All halts emit `engine.halted` audit events with `metadata.reason ∈ {broker_un
 **Phase 5 — Personalized live protections** (layered on the safeguards above):
 - **MTM election** (Trader → Tax election card): self-attested §475(f), writes `user_tax_status`. MTM unchecked → wash-sale protection ON; MTM checked → OFF (MTM exempt from §1091). Toggle takes effect on next engine start.
 - **Wash-sale protection**: blocks BUYs on any symbol with a losing exit (`action IN ('SELL','manual_close') AND pnl < 0`) within the last 31 calendar days. Symbol-level, not lot-level — over-conservative but simpler. Wash-sale set refreshed every 5 min from `trader_trades`. Audit reason: `wash_sale_protection`. Does NOT catch manual buys via Alpaca's UI, "substantially identical" ETFs, or different share classes (GOOG ≠ GOOGL).
-- **PDT protection**: auto-detected from `account.equity < $25,000`. At startup refuses `intraday` mode if PDT-vulnerable (other modes allowed — swing-oriented). Mid-session re-evaluates every scan; transition emits `engine.pdt_vulnerable`. Blocks BUYs (not SELLs) when `pdtVulnerable && daytradeCount >= 3`. Audit reason: `pdt_protection`.
+- **PDT protection**: auto-detected from `account.equity < $25,000`. Mid-session re-evaluates every scan; transition emits `engine.pdt_vulnerable`. Blocks BUYs (not SELLs) when `pdtVulnerable && daytradeCount >= 3`. Audit reason: `pdt_protection`. (v3.1 — startup intraday-mode refusal removed alongside the intraday mode itself.)
 
 Gate ordering inside `canPlaceBuyOrder()`: wash-sale → PDT → notional → rate-limit (cheapest first).
 
 **Recommended risk profile for $5k cash-only live account:**
-- Mode: `conservative` / `moderate` / `optimized` (avoid `intraday` and `tactical-smart`)
+- Mode: `optimized` or `adaptive` (tactical-smart's loose stops + 50% take-profit assume larger equity to absorb drawdowns)
 - `maxPositionPct` 25-33% (3-4 positions max — meaningful per-trade size)
 - `maxDailyLossPct` 2% ($100/day stop)
 - `maxDailyNotionalPct` 0.5 (50% of equity/day)
@@ -243,7 +243,9 @@ Gate ordering inside `canPlaceBuyOrder()`: wash-sale → PDT → notional → ra
 
 ## Adaptive engine mode (8th mode, regime-driven)
 
-`EngineMode` now includes `"adaptive"` (`src/lib/trading-engine.ts`). When a user selects adaptive, the engine reads market regime at each scan boundary (VIX + SPY trend) and sets `engine.effectiveMode` to one of `conservative` / `moderate` / `optimized` / `aggressive` / `tactical`. The user-selected mode (`engine.mode`) stays `"adaptive"`; everywhere strategy decisions are made, code goes through `getActiveMode(engine)` which returns the effective mode.
+`EngineMode` includes `"adaptive"` (`src/lib/trading-engine.ts`). When a user selects adaptive, the engine reads market regime at each scan boundary (VIX + SPY trend) and sets `engine.effectiveMode` to one of `conservative` / `moderate` / `optimized` / `aggressive`. The user-selected mode (`engine.mode`) stays `"adaptive"`; everywhere strategy decisions are made, code goes through `getActiveMode(engine)` which returns the effective mode.
+
+**User-facing mode picker** (v3.1) shows only `optimized` / `tactical` / `tactical-smart` / `adaptive`. The four "base" modes (`conservative` / `moderate` / `aggressive`) remain in the `EngineMode` enum because the adaptive regime classifier maps to them internally — but they aren't directly selectable. Use `USER_FACING_MODES` constant from `src/lib/trading-engine.ts` whenever you need to iterate the picker surface (Trader page mode select, backtest mode-compare, optimizer compare). Intraday mode was fully removed in v3.1.
 
 **Regime rules** (centralized in `src/lib/market-regime.ts`):
 - `VIX > 28` OR `SPY < SMA50` → risk_off → `conservative`
@@ -251,13 +253,13 @@ Gate ordering inside `canPlaceBuyOrder()`: wash-sale → PDT → notional → ra
 - `VIX <= 18` AND `SPY > SMA50` → risk_on → `optimized`
 - `VIX <= 14` AND `SPY > SMA200` AND `breadth > 75` (live only) → strong risk_on → `aggressive`
 
-**Never auto-selected**: `intraday` (PDT-sensitive), `tactical-smart` (already adaptive), `adaptive` itself.
+**Never auto-selected**: `tactical` (all-in/all-out contradicts a regime classifier), `tactical-smart` (already adaptive), `adaptive` itself.
 
 **Audit:** every regime-driven mode switch writes an `ENGINE_MODE_SWITCHED` audit row with metadata `{ adaptive: true, from, to, regime, vix, spyPrice, spyMA50, reasons }`. No-op when regime stays put scan-to-scan.
 
 **Live vs backtest:** live engine reads VIX + SPY + breadth. Backtest replays VIX + SPY only (breadth replay is expensive: 50 stocks × N days). The classifier handles missing breadth gracefully — the strong-risk-on `aggressive` bump just doesn't fire in backtest.
 
-**Mode-compare backtest** at `/dashboard/backtest/mode-compare?symbol=AAPL` runs all 6 comparable modes (5 base + adaptive; `intraday` + `tactical-smart` excluded) against the same symbol+date-range. Stats table + equity-curve overlay + adaptive's modeTimeline visualization.
+**Mode-compare backtest** at `/dashboard/backtest/mode-compare?symbol=AAPL` runs the user-selectable comparable modes (`optimized` / `tactical` / `adaptive`; `tactical-smart` excluded as its active-management logic doesn't translate to backtesting) against the same symbol+date-range. Stats table + equity-curve overlay + adaptive's modeTimeline visualization. (v3.1 — pre-trim this ran 6 modes including conservative/moderate/aggressive; those are reachable via adaptive only and no longer shown standalone.)
 
 ## Congressional trades (official source)
 
@@ -493,7 +495,7 @@ ssh deploy@<host> "sudo -u postgres psql sentinel_db -v ON_ERROR_STOP=1 -f /tmp/
 - `tests/unit/spaced-repetition.test.ts` (11 tests) — SM-2 algorithm
 
 ### Backtest Page
-- **Strategy presets** are filtered to the 7 engine-runnable base modes (`conservative`, `moderate`, `aggressive`, `optimized`, `intraday`, `tactical`, `tactical-smart`) plus `adaptive` (8th, regime-driven), `custom`, and `auto` — backtest and Live Trader share the same preset universe so what you tune is what you can deploy.
+- **Strategy presets** are filtered to the 6 engine-runnable base modes (`conservative`, `moderate`, `aggressive`, `optimized`, `tactical`, `tactical-smart`) plus `adaptive` (7th, regime-driven), `custom`, and `auto`. The live-trader mode picker is filtered further to `USER_FACING_MODES` (optimized / tactical / tactical-smart / adaptive); the others remain in the backtest preset list for offline research.
 - **Date-range mode**: `/api/backtest/[symbol]` accepts `startDate`/`endDate` (`YYYY-MM-DD`) in addition to `days`. Provider `fetchBars()` accepts an optional `endDate`; historical fetches (>24h in the past) bypass the disk cache. Daily bars only — Yahoo retains ~60 days of intraday history, so multi-year 5m backtests aren't possible without a paid feed.
 
 ### Sub-Navigation Groups

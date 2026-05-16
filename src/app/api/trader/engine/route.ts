@@ -15,7 +15,7 @@ const log = createRouteLogger("trader-engine-api");
 
 const engineActionSchema = z.object({
   action: z.enum(["start", "stop", "halt", "switch"]),
-  mode: z.enum(["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical", "tactical-smart", "adaptive"]).optional().default("optimized"),
+  mode: z.enum(["conservative", "moderate", "optimized", "aggressive", "tactical", "tactical-smart", "adaptive"]).optional().default("optimized"),
 });
 
 // ─── GET /api/trader/engine — Engine Status (per-user) ──────────────────────

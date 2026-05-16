@@ -170,8 +170,11 @@ describe("detectMarketRegime", () => {
   // ─── Invariants ────────────────────────────────────────────────────────
 
   describe("invariants", () => {
-    it("never recommends adaptive, intraday, or tactical-smart", () => {
+    it("never recommends adaptive, tactical, or tactical-smart", () => {
       // Test a spread of inputs and verify no excluded mode ever surfaces.
+      // (tactical removed from recommendable set when intraday came out —
+      // tactical's all-in/all-out philosophy contradicts a regime classifier
+      // that would switch off it.)
       const cases: Array<{ vix: number; spyPrice: number; spyMA50: number; spyMA200: number; breadthScore?: number }> = [
         { vix: 8,  spyPrice: 500, spyMA50: 440, spyMA200: 400, breadthScore: 90 },
         { vix: 14, spyPrice: 460, spyMA50: 450, spyMA200: 420, breadthScore: 75 },
@@ -183,9 +186,9 @@ describe("detectMarketRegime", () => {
 
       for (const input of cases) {
         const r = detectMarketRegime(input);
-        expect(["conservative", "moderate", "optimized", "aggressive", "tactical"]).toContain(r.recommendedMode);
+        expect(["conservative", "moderate", "optimized", "aggressive"]).toContain(r.recommendedMode);
         expect(r.recommendedMode).not.toBe("adaptive");
-        expect(r.recommendedMode).not.toBe("intraday");
+        expect(r.recommendedMode).not.toBe("tactical");
         expect(r.recommendedMode).not.toBe("tactical-smart");
       }
     });

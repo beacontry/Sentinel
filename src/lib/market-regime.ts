@@ -25,9 +25,10 @@
  * to the standard risk_on / neutral / risk_off ladder.
  *
  * Modes intentionally NEVER recommended by adaptive:
- *  - `intraday` — PDT-sensitive at <$25k equity. Users must opt in by name.
  *  - `tactical-smart` — already adaptive in its own way (re-ranks weekly).
  *    Users who want that algorithm pick it explicitly.
+ *  - `tactical` — pure SPY-driven exit philosophy contradicts a regime
+ *    classifier that would switch off it.
  *  - `adaptive` itself — would be a self-reference loop.
  */
 
@@ -54,14 +55,14 @@ export interface RegimeInput {
  * Modes the regime classifier is allowed to return. Excludes the
  * self-reference (`adaptive`) and the two opt-in-only modes.
  */
-export type AdaptiveTarget = Exclude<EngineMode, "adaptive" | "intraday" | "tactical-smart">;
+export type AdaptiveTarget = Exclude<EngineMode, "adaptive" | "tactical" | "tactical-smart">;
 
 export interface RegimeReport {
   /** High-level regime classification. */
   regime: "risk_on" | "neutral" | "risk_off";
   /**
    * Engine mode the engine should run for this regime. Never `adaptive`,
-   * `intraday`, or `tactical-smart` — see file-level docs.
+   * `tactical`, or `tactical-smart` — see file-level docs.
    */
   recommendedMode: AdaptiveTarget;
   /** Human-readable reasons the classifier landed here. Audit-friendly. */

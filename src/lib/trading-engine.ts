@@ -50,11 +50,25 @@ const log = createRouteLogger("trading-engine");
 
 // ─── Engine State (globalThis singleton) ─────────────────────────────────────
 
-export type EngineMode = "conservative" | "moderate" | "optimized" | "aggressive" | "intraday" | "tactical" | "tactical-smart" | "adaptive";
+export type EngineMode = "conservative" | "moderate" | "optimized" | "aggressive" | "tactical" | "tactical-smart" | "adaptive";
 
-function isIntradayMode(mode: EngineMode): boolean {
-  return mode === "intraday";
-}
+/**
+ * Modes shown in the user-facing mode picker (Trader page, backtest
+ * compare, optimizer compare). conservative / moderate / aggressive
+ * remain in EngineMode because the adaptive regime classifier maps
+ * to them internally at runtime — they're just not directly
+ * selectable.
+ *
+ * UI surfaces should iterate this list rather than hard-coding the
+ * picker, so adding/removing a user-facing mode is a one-line change
+ * here that propagates everywhere.
+ */
+export const USER_FACING_MODES: readonly EngineMode[] = [
+  "optimized",
+  "tactical",
+  "tactical-smart",
+  "adaptive",
+] as const;
 
 /**
  * Resolve which mode the engine is actually executing right now. When the
@@ -246,9 +260,8 @@ function getEngine(userId?: string): EngineState {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const SWING_SCAN_MS = 15 * 60 * 1000;    // 15 minutes for swing mode
-const INTRADAY_SCAN_MS = 5 * 60 * 1000;  // 5 minutes for intraday signal scan
-const EXIT_CHECK_MS = 60 * 1000;          // 1 minute for intraday exit checks
+const SWING_SCAN_MS = 15 * 60 * 1000;    // 15 minutes for the signal scan
+const EXIT_CHECK_MS = 60 * 1000;          // 1 minute for the live-quote exit check (every mode)
 /** Tactical mode: always invested, exit on market weakness */
 const TACTICAL_CONFIG = {
   trendSMA: 50,       // SPY above this = safe to be invested
@@ -1020,13 +1033,7 @@ function evaluatePdtState(engine: EngineState, account: BrokerAccount): void {
   }
 }
 
-/** Intraday strategy: tighter stops, faster exits */
-const INTRADAY_PARAMS: StrategyParams = {
-  stopLossPct: 0.015,      // 1.5% stop loss
-  takeProfitPct: 0.025,    // 2.5% take profit
-  trailingStopPct: 0.01,   // 1% trailing stop
-  holdPeriod: 12,           // 12 bars = 1 hour on 5-min
-};
+// Intraday strategy preset removed alongside the intraday mode itself.
 
 // ─── Profit-Based Trailing Stop ──────────────────────────────────────────────
 
@@ -1172,7 +1179,12 @@ const ATR_TRAIL_CAP = 0.25;   // 25% absolute cap — protects against penny-sto
 // the regime story stays consistent across the engine.
 const TRAIL_FLOOR_VIX_PANIC = 0.04;   // VIX > 25
 const TRAIL_FLOOR_VIX_NEUTRAL = 0.025; // 18 < VIX <= 25
-const TRAIL_FLOOR_VIX_CALM = 0.015;   // VIX <= 18
+// v3.1 — calm-regime floor tightened 1.5% → 1.0%. Only affects positions
+// up enough that the trail has decayed near the floor (typically +25-30%
+// profit). At low profit the regime floor is well above the trail width
+// so this is a no-op. Net effect: big winners (>+30%) lock in slightly
+// more peak gain before a giveback exit fires.
+const TRAIL_FLOOR_VIX_CALM = 0.01;   // VIX <= 18
 const VIX_PANIC_THRESHOLD = 25;
 const VIX_CALM_THRESHOLD = 18;
 
@@ -1248,7 +1260,6 @@ const MODE_LADDER_DEFAULT: Record<EngineMode, BreakevenLadderMode> = {
   moderate: "full",
   optimized: "full",
   aggressive: "full",
-  intraday: "full",
   tactical: "disabled",
   "tactical-smart": "breakeven_only",
   adaptive: "full", // resolves to effective mode at call time; this key is for type completeness
@@ -1443,12 +1454,11 @@ import {
   isMarketOpen as isMarketOpenShared,
   msUntilMarketOpen as msUntilMarketOpenShared,
   getETDateString as getETDateStringShared,
-  getETDate as getETDateShared,
 } from "./market-hours";
 
-function getETDate(): Date {
-  return getETDateShared();
-}
+// getETDate wrapper removed — only caller was the intraday 3 PM ET
+// flatten block which went away with intraday mode itself. getETDateShared
+// can be imported directly if a future scan path needs it.
 
 function getETDateString(): string {
   return getETDateStringShared();
@@ -1721,7 +1731,6 @@ async function resolveStrategy(
     moderate: STRATEGY_PRESETS.moderate,
     optimized: STRATEGY_PRESETS.optimized,
     aggressive: STRATEGY_PRESETS.aggressive,
-    intraday: INTRADAY_PARAMS,
     tactical: STRATEGY_PRESETS.swing,
     "tactical-smart": STRATEGY_PRESETS.swing,
   };
@@ -3272,32 +3281,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     return;
   }
 
-  // Intraday mode: flatten all positions at 3:00 PM ET.
-  // Use active mode — adaptive never picks intraday so this is a no-op for
-  // adaptive users, but using the helper keeps the pattern consistent.
-  if (isIntradayMode(getActiveMode(engine))) {
-    const now = getETDate();
-    if (now.getHours() >= 15) {
-      const positionMap = getPositionMap(engine?.userId ?? engineUserId);
-      if (positionMap.size > 0) {
-        log.info({ positions: positionMap.size }, "Flatten time (3:00 PM ET) — closing all intraday positions");
-        for (const [sym, pos] of positionMap) {
-          try {
-            const resolved = await resolveBrokerClient(engine.userId);
-            if (resolved) {
-              const flattenOrder = await placeEngineOrder(resolved.client, { symbol: sym, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
-              await logTrade(sym, "flatten", "SELL", pos.qty, pos.entryPrice, "PENDING", null, "EOD flatten", flattenOrder.id, null, engine.userId);
-            }
-            positionMap.delete(sym);
-          } catch (err) {
-            log.error({ symbol: sym, err: err instanceof Error ? err.message : "unknown" }, "Flatten failed");
-          }
-        }
-        engine.positionCount = 0;
-      }
-      return; // Don't open new positions after 3 PM
-    }
-  }
+  // Intraday-mode 3 PM ET flatten removed alongside the intraday mode
+  // itself. All remaining modes hold across the session and exit via
+  // stops, trail, take-profit, or SPY regime.
 
   // Reset daily loss tracking if date changed — and clear any halt that came
   // from yesterday's daily-loss limit, so a halted engine resumes on the next
@@ -4092,16 +4078,10 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     return { ok: false, error: `Broker connection test failed: ${msg}` };
   }
 
-  // Phase 5: refuse to start intraday mode when the account is PDT-vulnerable
-  // (< $25k). Other modes still allowed — they're swing-oriented and rarely
-  // produce same-day round-trips. Mode refusal is a startup check only; once
-  // running, mid-session equity drops are handled per-scan by evaluatePdtState.
-  if (isPdtVulnerable(bootAccount) && mode === "intraday") {
-    return {
-      ok: false,
-      error: `Cannot start engine in intraday mode: account equity is $${bootAccount.equity.toFixed(2)} (< $${PDT_EQUITY_THRESHOLD.toLocaleString()}) and is subject to PDT rule. Choose conservative / moderate / optimized / tactical / tactical-smart, or raise equity above $${PDT_EQUITY_THRESHOLD.toLocaleString()}.`,
-    };
-  }
+  // Intraday mode startup PDT-refusal removed alongside the intraday
+  // mode itself. PDT state is still evaluated per-scan by
+  // evaluatePdtState — that path now applies uniformly to all modes
+  // (blocking BUYs when PDT-vulnerable and day-trade-count >= 3).
 
   // Replace old safety stops with wide disaster stops (engine manages tighter exits dynamically).
   // placeDisasterStops cancels existing orders and waits for shares to release before placing.
@@ -4195,9 +4175,11 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     );
   }
 
-  const intraday = isIntradayMode(mode);
-  const scanIntervalMs = intraday ? INTRADAY_SCAN_MS : SWING_SCAN_MS;
-  const barResolution = intraday ? "5m" : "1d";
+  // Intraday-mode scan resolution removed alongside the intraday mode.
+  // All remaining modes use the swing scan cadence + daily bars; the
+  // 5m-bar code path that drove intraday is gone too.
+  const scanIntervalMs = SWING_SCAN_MS;
+  const barResolution = "1d" as const;
 
   log.info({ userId, mode, scanIntervalMs }, "Trading engine started");
 
@@ -4795,7 +4777,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
         if (status?.mode?.startsWith("paper:")) {
           const parts = status.mode.split(":");
           const savedMode = parts.length > 1 ? (parts[1] as EngineMode) : null;
-          const validModes: EngineMode[] = ["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical", "tactical-smart"];
+          const validModes: EngineMode[] = ["conservative", "moderate", "optimized", "aggressive", "tactical", "tactical-smart"];
           if (savedMode && validModes.includes(savedMode)) lastMode = savedMode;
         }
       } catch (err) {

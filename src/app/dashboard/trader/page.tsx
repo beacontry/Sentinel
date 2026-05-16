@@ -42,10 +42,14 @@ import { TraderTaxCallouts } from "@/components/trader/tax-callouts";
 // base modes per-scan from market regime. Label it inline.
 const ADAPTIVE_MODE_LABEL = "Adaptive (auto-switches based on VIX + SPY regime)";
 
+// User-facing mode picker. conservative / moderate / aggressive stay
+// in the EngineMode enum because the adaptive regime classifier maps
+// to them at runtime, but they aren't directly selectable any more —
+// users pick adaptive if they want regime-driven behavior. Intraday
+// was removed from the enum entirely.
 const ENGINE_MODES: { value: string; label: string }[] = [
   ...[
-    "conservative", "moderate", "optimized", "aggressive",
-    "intraday", "tactical", "tactical-smart",
+    "optimized", "tactical", "tactical-smart",
   ].map(key => ({
     value: key,
     label: `${PRESET_LABELS[key as keyof typeof PRESET_LABELS]?.label ?? key} (${PRESET_LABELS[key as keyof typeof PRESET_LABELS]?.description ?? ""})`,
