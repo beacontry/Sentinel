@@ -85,7 +85,10 @@
     --color-border-hover: #3d5349;
     --color-text-primary: #edf3f0;
     --color-text-secondary: #8da69c;
-    --color-text-muted: #607b71;
+    /* v3.1 — bumped from #607b71 to #7f9389 to clear WCAG AA (≥4.5:1)
+       on bg-surface #18241e. Old contrast ~3.5:1 (failed AA for
+       normal text); new ~4.9:1. */
+    --color-text-muted: #7f9389;
     --color-accent: #10b981;
     --color-accent-hover: #34d399;
     --color-accent-muted: rgba(16, 185, 129, 0.15);
@@ -111,7 +114,9 @@
     --color-ld-border-accent: #0a3d2a;
     --color-ld-text: #e8e6f0;
     --color-ld-text-secondary: #9b96b3;
-    --color-ld-text-muted: #67627e;
+    /* v3.1 — bumped from #67627e to #8780a3 to clear WCAG AA on
+       ld-deep #0a0a0f. Old contrast ~3.4:1; new ~5.6:1. */
+    --color-ld-text-muted: #8780a3;
     --color-ld-accent: #10b981;
     --color-ld-accent-dim: #059669;
     --color-ld-red: #ef4444;
@@ -261,7 +266,9 @@
     --color-border-hover: #52525b;
     --color-text-primary: #fafafa;
     --color-text-secondary: #a1a1aa;
-    --color-text-muted: #71717a;
+    /* v3.1 — bumped from #71717a to #8d8d96 for AA on bg-surface
+       #1f1f23. Old ~3.3:1; new ~5.0:1. */
+    --color-text-muted: #8d8d96;
     --color-accent: #10b981;
     --color-accent-hover: #34d399;
     --color-accent-muted: rgba(16, 185, 129, 0.15);
@@ -287,7 +294,8 @@
     --color-ld-border-accent: #404040;
     --color-ld-text: #fafafa;
     --color-ld-text-secondary: #a1a1aa;
-    --color-ld-text-muted: #71717a;
+    /* v3.1 — same bump as dashboard muted for AA on ld-deep #0a0a0a. */
+    --color-ld-text-muted: #8d8d96;
     --color-ld-accent: #10b981;
     --color-ld-accent-dim: #059669;
     --color-ld-red: #ef4444;
