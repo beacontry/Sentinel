@@ -192,7 +192,6 @@ describe("getBreakevenLadderMode — per-engine-mode defaults", () => {
     ["moderate", "full"],
     ["optimized", "full"],
     ["aggressive", "full"],
-    ["intraday", "full"],
     ["tactical", "disabled"],
     ["tactical-smart", "breakeven_only"],
     ["adaptive", "full"],

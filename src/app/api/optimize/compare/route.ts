@@ -599,18 +599,14 @@ export async function GET() {
       sharpe: 0, trades: 1, timeInMarket: 100,
     });
 
-    // Signal-based modes (non-optimized use analyzeBars)
-    const modes = [
-      { mode: "conservative", label: "Conservative", params: STRATEGY_PRESETS.conservative, maxPos: 10, posPct: 0.10 },
-      { mode: "moderate", label: "Moderate", params: STRATEGY_PRESETS.moderate, maxPos: 12, posPct: 0.12 },
-      { mode: "aggressive", label: "Aggressive", params: STRATEGY_PRESETS.aggressive, maxPos: 14, posPct: 0.15 },
-    ];
-
-    for (const m of modes) {
-      const r = simulateSignalStrategy(allBars, m.params, m.maxPos, m.posPct);
-      results.push({ ...r, mode: m.mode, label: m.label });
-      await new Promise(r => setTimeout(r, 1));
-    }
+    // Signal-based modes — only the ones a user can actually pick.
+    // conservative / moderate / aggressive remain in STRATEGY_PRESETS
+    // because the adaptive regime classifier maps to them at runtime,
+    // but they aren't directly selectable so showing them in the
+    // comparison would surface unreachable choices.
+    //
+    // (Tactical, Tactical Smart, and Optimized are computed below
+    // with their respective simulators.)
 
     // Optimized (GA) — uses tuned signal params when available
     const optResult = simulateSignalStrategy(

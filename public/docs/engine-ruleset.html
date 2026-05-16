@@ -547,7 +547,6 @@
       <a href="#execution" data-num="07">Order Execution</a>
       <a href="#safety" data-num="08">Safety Systems</a>
       <a href="#tactical" data-num="09">Tactical Modes</a>
-      <a href="#intraday" data-num="10">Intraday Mode</a>
       <a href="#optimizer" data-num="11">Optimizer Flow</a>
       <a href="#risk" data-num="12">Risk Overrides</a>
       <a href="#screener" data-num="13">Screener Flow</a>
@@ -614,17 +613,6 @@
           <span class="mode-param-label">Take Profit</span><span class="mode-param-val">5%</span>
           <span class="mode-param-label">Trailing</span><span class="mode-param-val">2.5%</span>
           <span class="mode-param-label">Hold Period</span><span class="mode-param-val">15 bars</span>
-        </div>
-      </div>
-      <div class="mode-card">
-        <span class="mode-tag tag-signal">Signal</span>
-        <div class="mode-name">Intraday</div>
-        <div class="mode-params">
-          <span class="mode-param-label">Stop Loss</span><span class="mode-param-val">1.5%</span>
-          <span class="mode-param-label">Take Profit</span><span class="mode-param-val">2.5%</span>
-          <span class="mode-param-label">Trailing</span><span class="mode-param-val">1%</span>
-          <span class="mode-param-label">Hold Period</span><span class="mode-param-val">12 bars</span>
-          <span class="mode-param-label">Bar Size</span><span class="mode-param-val">5 min</span>
         </div>
       </div>
       <div class="mode-card">
@@ -837,7 +825,7 @@
           <tr><th>Regime</th><th class="right">VIX</th><th class="right">Floor</th></tr>
         </thead>
         <tbody>
-          <tr><td>Calm</td><td class="right mono">&le; 18</td><td class="right mono" style="color:var(--bullish)">1.5%</td></tr>
+          <tr><td>Calm</td><td class="right mono">&le; 18</td><td class="right mono" style="color:var(--bullish)">1.0% <span style="color:var(--text-muted);font-size:0.82rem">(v3.1 — was 1.5%)</span></td></tr>
           <tr><td>Neutral</td><td class="right mono">18 &mdash; 25</td><td class="right mono">2.5%</td></tr>
           <tr><td>Panic</td><td class="right mono">&gt; 25</td><td class="right mono" style="color:var(--bearish)">4.0%</td></tr>
         </tbody>
@@ -889,7 +877,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td>conservative / moderate / aggressive / optimized / intraday</td><td class="mono">full</td><td>All four tiers active. Shorter holds; lock gains progressively as price runs</td></tr>
+          <tr><td>conservative / moderate / aggressive / optimized</td><td class="mono">full</td><td>All four tiers active. Lock gains progressively as price runs</td></tr>
           <tr><td>tactical-smart</td><td class="mono">breakeven_only</td><td>Only the +2% tier fires. Higher tiers would prematurely exit positions the strategy expects to hold for 30%+ moves toward the 50% take-profit target</td></tr>
           <tr><td>tactical</td><td class="mono">disabled</td><td>Pure SPY-driven; individual stops contradict "all in / all out" philosophy</td></tr>
           <tr><td>adaptive</td><td>resolves to effective mode at scan time</td><td>Inherits the current effective mode's default</td></tr>
@@ -1104,7 +1092,7 @@
     <p>SIGTERM and SIGINT handlers call <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">shutdownAllEngines()</code> &mdash; for each running engine, it clears the scan/exit-check intervals and runs <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">placeSafetyStops()</code> so every position has a tighter GTC stop on Alpaca before the process exits. Hard 8s budget, well under podman's 10s grace period &mdash; if the broker is slow, the handler force-exits rather than block the rebuild.</p>
 
     <h3>Mode Persistence</h3>
-    <p>The current mode is saved on every heartbeat as <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">paper:optimized</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">paper:tactical</code>, etc. Auto-restart reads this to resume the correct mode. Valid modes: conservative, moderate, optimized, aggressive, intraday, tactical, tactical-smart.</p>
+    <p>The current mode is saved on every heartbeat as <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">paper:optimized</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">paper:tactical</code>, etc. Auto-restart reads this to resume the correct mode. Valid modes: conservative, moderate, optimized, aggressive, tactical, tactical-smart, adaptive.</p>
 
     <h3>Daily-Loss Halt &amp; Auto-Recovery</h3>
     <p>When daily realized losses exceed <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">dailyLossPct</code> of equity, the engine sets <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">halted=true</code> and stops opening new positions. On the next trading day's first scan, the date-rollover block clears the halt automatically and prunes the daily-loss error from <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">engine.errors</code> &mdash; no manual restart needed. Applies to all three scan functions (<code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runScan</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runTacticalScan</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runTacticalSmartScan</code>).</p>
@@ -1171,44 +1159,10 @@
     <p>Both Tactical and Tactical Smart modes call <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">upsertDailyPnl</code> on each scan cycle. Daily P&amp;L is recorded for the P&amp;L Calendar and performance tracking.</p>
   </section>
 
-  <!-- ===== 10 · INTRADAY MODE ===== -->
-  <section class="section" id="intraday">
-    <div class="section-header">
-      <div class="section-num">10</div>
-      <h2>Intraday Mode</h2>
-    </div>
-
-    <div class="card">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;text-align:center">
-        <div>
-          <div class="card-title">Signal Scan</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:700;color:var(--accent)">5 min</div>
-        </div>
-        <div>
-          <div class="card-title">Exit Check</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:700;color:var(--accent)">1 min</div>
-        </div>
-        <div>
-          <div class="card-title">Bar Resolution</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:700;color:var(--accent)">5 min</div>
-        </div>
-        <div>
-          <div class="card-title">Flatten Time</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:1.2rem;font-weight:700;color:var(--bearish)">3:00 PM</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="callout warn">
-      <span class="callout-icon">&#9888;</span>
-      <span><strong>Hard close at 3:00 PM ET.</strong> All positions are flattened at market. No new positions are opened after this time.</span>
-    </div>
-
-    <div class="callout info">
-      <span class="callout-icon">&#8505;</span>
-      <span>The 1-min exit check is no longer intraday-exclusive &mdash; it runs in <strong>every mode</strong>. What's specific to Intraday is the 5-min signal scan and the 3:00 PM flatten. Other modes use the 1-min loop only for live-quote stop/trail/TP enforcement.</span>
-    </div>
-  </section>
+  <!-- Intraday Mode section removed (v3.1) — intraday mode itself was
+       retired. The 1-min exit-check loop documented in section 04
+       still runs in every remaining mode for live-quote stop/trail/TP
+       enforcement. -->
 
   <!-- ===== 11 · OPTIMIZER FLOW ===== -->
   <section class="section" id="optimizer">

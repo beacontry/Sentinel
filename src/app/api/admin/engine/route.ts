@@ -35,7 +35,7 @@ const adminEngineSchema = z.object({
   targetUserId: z.string().uuid("targetUserId must be a UUID"),
   action: z.enum(["start", "stop", "halt", "switch"]),
   mode: z
-    .enum(["conservative", "moderate", "optimized", "aggressive", "intraday", "tactical", "tactical-smart"])
+    .enum(["conservative", "moderate", "optimized", "aggressive", "tactical", "tactical-smart", "adaptive"])
     .optional()
     .default("optimized"),
 });

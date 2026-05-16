@@ -199,12 +199,14 @@ describe("getDynamicTrailingPct — combined ATR + VIX", () => {
   });
 
   it("low-vol utility at +27% profit, calm VIX, ATR 1%", () => {
-    // Peak $100, ATR $1.0 (1% of price), VIX 14 → calm 1.5% floor
-    // Base = 2.5 × 1 / 100 = 2.5%, floor = 1.5%
-    // range = 1%, at 27% profit decay = exp(-0.81) ≈ 0.4449
-    // trail = 0.015 + 0.01 × 0.4449 = 0.0195
+    // Peak $100, ATR $1.0 (1% of price), VIX 14 → calm 1.0% floor
+    // (v3.1 — tightened from 1.5% to 1.0% to lock in slightly more
+    //  on big winners in calm regimes)
+    // Base = 2.5 × 1 / 100 = 2.5%, floor = 1.0%
+    // range = 1.5%, at 27% profit decay = exp(-0.81) ≈ 0.4449
+    // trail = 0.010 + 0.015 × 0.4449 = 0.01667
     const trail = getDynamicTrailingPct(78.7, 100, 0.05, { atr: 1.0, vix: 14 });
-    expect(trail).toBeCloseTo(0.0195, 3);
+    expect(trail).toBeCloseTo(0.0167, 3);
   });
 
   it("high-vol semi at +27% profit, panic VIX, ATR 6%", () => {

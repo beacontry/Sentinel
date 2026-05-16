@@ -27,10 +27,14 @@ const EXIT_REASON_LABELS: Record<string, { label: string; color: string }> = {
   end_of_data: { label: "End of Data", color: "text-text-muted" },
 };
 
-// Only presets that are runnable by the live engine (EngineMode in trading-engine.ts).
+// Only presets that are runnable by the live engine (EngineMode in
+// trading-engine.ts). conservative / moderate / aggressive remain
+// available here for offline parameter-sweep curiosity even though
+// they're not directly selectable in the live engine picker — backtest
+// is a research surface, not a live-trading config.
 const ENGINE_PRESET_KEYS: PresetName[] = [
   "conservative", "moderate", "aggressive", "optimized",
-  "intraday", "tactical", "tactical-smart",
+  "tactical", "tactical-smart",
 ];
 
 const BASE_PRESET_OPTIONS = [

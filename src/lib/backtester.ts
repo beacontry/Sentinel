@@ -50,8 +50,11 @@ export interface BacktestMarketContext {
   vixBars: Bar[];
 }
 
-/** Maps a base engine mode to its corresponding BacktestConfig. */
-function configForMode(mode: AdaptiveTarget): BacktestConfig {
+/** Maps a base engine mode to its corresponding BacktestConfig. Accepts
+ *  AdaptiveTarget OR `"tactical"`. (Tactical isn't recommendable by the
+ *  regime classifier but the backtest mode-compare passes it in via the
+ *  `mode as AdaptiveTarget` cast below; keep the union explicit here.) */
+function configForMode(mode: AdaptiveTarget | "tactical"): BacktestConfig {
   // `tactical` maps to the swing preset (matches trading-engine's modePresetMap).
   const preset =
     mode === "tactical"
@@ -123,7 +126,7 @@ export function runBacktest(
   // per-bar inside the loop). User-supplied `config` still wins on conflict
   // so per-strategy overrides remain supported.
   const baseCfg: BacktestConfig =
-    mode && mode !== "adaptive" && mode !== "intraday" && mode !== "tactical-smart"
+    mode && mode !== "adaptive" && mode !== "tactical-smart"
       ? configForMode(mode as AdaptiveTarget)
       : DEFAULT_CONFIG;
   const cfg = { ...baseCfg, ...config };

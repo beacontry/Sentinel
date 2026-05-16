@@ -31,16 +31,17 @@ const log = createRouteLogger("backtest/mode-compare");
 const SYMBOL_RE = /^[A-Z]{1,10}$/;
 
 /**
- * Modes we compare. `tactical-smart` and `intraday` are excluded:
- *  - `intraday` needs 5m bars (we only have daily for backtests)
- *  - `tactical-smart` is already adaptive; comparing it side-by-side with
- *    `adaptive` is confusing and produces near-identical curves.
+ * Modes we compare. Aligned with the user-facing mode picker on the
+ * Trader page — conservative / moderate / aggressive are reachable
+ * only via adaptive's regime classifier so showing them in this
+ * comparison would surface choices the user can't actually make.
+ *
+ * `tactical-smart` is excluded because it's already adaptive in its
+ * own way (re-ranks weekly); comparing it side-by-side with `adaptive`
+ * produces near-identical curves and confuses the read.
  */
 const COMPARE_MODES: EngineMode[] = [
-  "conservative",
-  "moderate",
   "optimized",
-  "aggressive",
   "tactical",
   "adaptive",
 ];
