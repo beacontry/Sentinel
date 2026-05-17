@@ -14,12 +14,18 @@ import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface AlertRule {
   id: string;
-  name: string;
   symbol: string;
-  ruleType: string;
-  threshold: number;
+  // Friendly label shown in the rules list (e.g. "AAPL above $200"). Stored
+  // in DB as `indicator_field` for legacy reasons — was originally the
+  // name of the indicator column being watched; now it's the human label.
+  indicatorField: string;
+  // Rule-type code: "price_above" / "rsi_below" / "macd_crossover" / etc.
+  // Stored in DB as `operator` for legacy reasons.
+  operator: string;
+  value: number;
+  channel?: string;
   enabled: boolean;
-  lastTriggeredAt: string | null;
+  lastTriggered: string | null;
   createdAt: string;
 }
 
@@ -78,11 +84,12 @@ export default function AlertsPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
 
-  // Form state
-  const [name, setName] = useState("");
+  // Form state. Field names match the API contract — see
+  // src/app/api/alerts/route.ts createAlertSchema.
+  const [indicatorField, setIndicatorField] = useState("");
   const [symbol, setSymbol] = useState("");
-  const [ruleType, setRuleType] = useState("price_above");
-  const [threshold, setThreshold] = useState(0);
+  const [operator, setOperator] = useState("price_above");
+  const [value, setValue] = useState(0);
 
   async function loadRules() {
     try {
@@ -113,17 +120,48 @@ export default function AlertsPage() {
   }, []);
 
   async function handleCreate() {
-    if (!name.trim() || !symbol.trim()) return;
+    if (!indicatorField.trim() || !symbol.trim()) return;
     const res = await fetch("/api/alerts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, symbol: symbol.toUpperCase(), ruleType, threshold }),
+      body: JSON.stringify({
+        symbol: symbol.toUpperCase(),
+        indicatorField,
+        operator,
+        value,
+      }),
     });
     if (res.ok) {
       setShowCreate(false);
-      setName("");
+      setIndicatorField("");
       setSymbol("");
-      setThreshold(0);
+      setValue(0);
+      await loadRules();
+    }
+  }
+
+  /**
+   * One-click template — pre-fills the form with a sensible rule and
+   * fires create immediately. Saves the new user from having to
+   * understand the rule-type dropdown.
+   */
+  async function applyTemplate(template: {
+    label: string;
+    symbol: string;
+    operator: string;
+    value: number;
+  }) {
+    const res = await fetch("/api/alerts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        symbol: template.symbol.toUpperCase(),
+        indicatorField: template.label,
+        operator: template.operator,
+        value: template.value,
+      }),
+    });
+    if (res.ok) {
       await loadRules();
     }
   }
@@ -183,8 +221,8 @@ export default function AlertsPage() {
             <div className="flex flex-col sm:flex-row gap-3">
               <Input
                 label="Name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={indicatorField}
+                onChange={(e) => setIndicatorField(e.target.value)}
                 placeholder="AAPL above $200"
               />
               <Input
@@ -199,16 +237,16 @@ export default function AlertsPage() {
                 <Select
                   label="Rule Type"
                   options={ruleTypeOptions}
-                  value={ruleType}
-                  onChange={(value) => setRuleType(value)}
+                  value={operator}
+                  onChange={(v) => setOperator(v)}
                 />
               </div>
               <Input
-                label={thresholdConfig[ruleType]?.label ?? "Threshold"}
+                label={thresholdConfig[operator]?.label ?? "Threshold"}
                 type="number"
-                value={threshold}
-                onChange={(e) => setThreshold(Number(e.target.value))}
-                placeholder={thresholdConfig[ruleType]?.placeholder ?? "0"}
+                value={value}
+                onChange={(e) => setValue(Number(e.target.value))}
+                placeholder={thresholdConfig[operator]?.placeholder ?? "0"}
               />
               <div className="flex items-end">
                 <Button onClick={handleCreate}>Create Alert</Button>
@@ -227,15 +265,82 @@ export default function AlertsPage() {
           </CardTitle>
         </CardHeader>
         {rules.length === 0 ? (
-          <div className="py-8 text-center">
+          <div className="py-6 text-center">
             <p className="text-sm text-text-muted">No alert rules yet</p>
             <p className="text-xs text-text-muted mt-1 max-w-md mx-auto">
-              Create a rule to get notified when a price crosses a level, RSI flips overbought, a signal fires, or volume spikes.
+              Pick a template below for a one-click start, or build a custom rule.
             </p>
-            <Button size="sm" variant="secondary" className="mt-4" onClick={() => setShowCreate(true)}>
-              <Plus className="w-3.5 h-3.5" />
-              Create your first alert
-            </Button>
+
+            {/* One-click templates */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-5 max-w-xl mx-auto text-left">
+              {[
+                {
+                  label: "AAPL oversold (RSI < 30)",
+                  symbol: "AAPL",
+                  operator: "rsi_below",
+                  value: 30,
+                  desc: "Notify when AAPL's 14-day RSI drops below 30 (oversold territory).",
+                },
+                {
+                  label: "SPY overbought (RSI > 70)",
+                  symbol: "SPY",
+                  operator: "rsi_above",
+                  value: 70,
+                  desc: "Notify when SPY's 14-day RSI rises above 70 (overbought territory).",
+                },
+                {
+                  label: "NVDA strong signal",
+                  symbol: "NVDA",
+                  operator: "signal_generated",
+                  value: 2,
+                  desc: "Notify when the engine generates a STRONG_BUY or STRONG_SELL on NVDA.",
+                },
+                {
+                  label: "TSLA 5% drop",
+                  symbol: "TSLA",
+                  operator: "pct_drop",
+                  value: 5,
+                  desc: "Notify when TSLA drops 5%+ from its recent high.",
+                },
+                {
+                  label: "QQQ above SMA-20",
+                  symbol: "QQQ",
+                  operator: "price_above_sma",
+                  value: 20,
+                  desc: "Notify when QQQ's price crosses above its 20-day moving average.",
+                },
+                {
+                  label: "MSFT EMA bullish cross",
+                  symbol: "MSFT",
+                  operator: "ema_crossover",
+                  value: 0,
+                  desc: "Notify when MSFT's 9-EMA crosses above its 21-EMA (bullish trend).",
+                },
+              ].map((t) => (
+                <button
+                  key={t.label}
+                  onClick={() => applyTemplate(t)}
+                  className="text-left rounded-lg border border-border bg-bg-elevated p-3 hover:border-accent hover:bg-bg-hover transition-colors min-h-[44px]"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Plus className="w-3.5 h-3.5 text-accent shrink-0" />
+                    <span className="text-sm font-medium text-text-primary">
+                      {t.label}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-text-muted leading-snug">
+                    {t.desc}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 justify-center mt-5">
+              <span className="text-xs text-text-muted">or</span>
+              <Button size="sm" variant="ghost" onClick={() => setShowCreate(true)}>
+                Build a custom alert
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="space-y-2">
@@ -250,15 +355,15 @@ export default function AlertsPage() {
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-sm font-medium truncate">{rule.name}</span>
+                    <span className="text-sm font-medium truncate">{rule.indicatorField}</span>
                     <Badge variant="neutral">{rule.symbol}</Badge>
-                    <Badge variant="neutral">{ruleTypeLabels[rule.ruleType] ?? rule.ruleType}</Badge>
+                    <Badge variant="neutral">{ruleTypeLabels[rule.operator] ?? rule.operator}</Badge>
                   </div>
                   <p className="text-xs text-text-muted">
-                    Threshold: {rule.threshold}
-                    {rule.lastTriggeredAt && (
+                    Threshold: {rule.value}
+                    {rule.lastTriggered && (
                       <span className="ml-3">
-                        Last fired: {new Date(rule.lastTriggeredAt).toLocaleString()}
+                        Last fired: {new Date(rule.lastTriggered).toLocaleString()}
                       </span>
                     )}
                   </p>
