@@ -192,19 +192,26 @@ src/
 
 The automated trading engine (`src/lib/trading-engine.ts`) scans the full S&P 500, generates signals, and executes trades through Alpaca.
 
-### 7 Engine Modes
+### Engine Modes — 4 you pick, 3 reachable via adaptive
+
+The Trader page picker shows **4 modes you can select directly**:
 
 | Mode | Strategy | Bars | Scan Interval |
 |------|----------|------|---------------|
-| Conservative | 1.5% SL, 2% TP, 30-bar hold | Daily | 15 min |
-| Moderate | 2% SL, 3% TP, 20-bar hold | Daily | 15 min |
-| **Optimized** | 9% SL, 40% TP, 33-bar hold (GA-tuned) | Daily | 15 min |
-| Aggressive | 3% SL, 5% TP, 15-bar hold | Daily | 15 min |
+| **Optimized** | 9% SL, 40% TP, 33-bar hold (GA-tuned per-symbol from optimizer runs) | Daily | 15 min |
 | **Tactical** | Always invested, exit on SPY weakness | Daily | 15 min |
-| **Tactical Smart** | Momentum + signal scored entries, SPY exit | Daily | 15 min |
-| **Adaptive** | Regime-driven (VIX + SPY trend) — resolves to conservative/moderate/optimized/aggressive at each scan boundary | Daily | 15 min |
+| **Tactical Smart** | Momentum + signal-scored entries, SPY exit on market weakness | Daily | 15 min |
+| **Adaptive** | Regime-driven (VIX + SPY trend). Resolves to one of the 3 base signal modes below at each scan boundary. | Daily | 15 min |
 
-The picker in `/dashboard/trader` exposes only `optimized / tactical / tactical-smart / adaptive` — the four base modes remain in `EngineMode` because adaptive resolves to them internally, but they're not directly selectable. Intraday was removed in v3.1.
+**3 base signal modes reachable only via adaptive's regime classifier** (kept in `EngineMode` so adaptive has something to switch to; not directly selectable in the picker):
+
+| Mode | Strategy | When adaptive picks it |
+|------|----------|------------------------|
+| Conservative | 1.5% SL, 2% TP, 30-bar hold | VIX > 28 OR SPY < SMA50 (risk-off) |
+| Moderate | 2% SL, 3% TP, 20-bar hold | VIX 18–28 AND SPY ≥ SMA50 (neutral) |
+| Aggressive | 3% SL, 5% TP, 15-bar hold | VIX ≤ 14 AND SPY > SMA200 AND breadth > 75 (strong risk-on, live-only) |
+
+(Intraday mode was removed in v3.1 — historically a 7th mode using 5-min bars; replaced by the adaptive regime switch which adapts the daily strategy instead of changing the bar resolution.)
 
 ### Mode Comparison (5-year backtest, $10,000)
 
@@ -257,7 +264,7 @@ trail = 2% + (base - 2%) × e^(-3 × profitPct)
 
 - **Per-user live trading gate** — global `ALLOW_LIVE_TRADING=1` env var + per-user `live_trading_enabled` DB flag must both be true; otherwise the engine refuses to start on a live broker connection (logs `engine.live_blocked` audit row)
 - **Broker-side stop orders** — placed on Alpaca when engine stops/crashes
-- **Auto-restart with position sync** — detects open positions after deploy, syncs broker positions into memory, resumes with last mode (all 7 modes incl. adaptive supported)
+- **Auto-restart with position sync** — detects open positions after deploy, syncs broker positions into memory, resumes with the last mode used (any of the 7 — 4 user-selectable + 3 adaptive-reachable)
 - **Daily loss auto-halt** — stops trading if losses exceed configured % of equity
 - **Account-switch detection** — halts if `account_number` changes mid-session OR equity drops > 50% from boot snapshot
 - **Order rate limit** — 30 orders / 60s sliding window per engine
