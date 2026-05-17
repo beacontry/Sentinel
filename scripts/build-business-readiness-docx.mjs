@@ -1,13 +1,18 @@
 // Generates docs/legal/business-readiness.docx
-// Run via: $env:NODE_PATH = "C:\Users\Avalon\AppData\Roaming\npm\node_modules"; node scripts/build-business-readiness-docx.js
+// Run via: node scripts/build-business-readiness-docx.mjs
+// (docx is in devDependencies; no NODE_PATH needed.)
 
-const {
+import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
-  Header, Footer, AlignmentType, LevelFormat, HeadingLevel, BorderStyle,
-  WidthType, ShadingType, PageNumber, PageBreak,
-} = require("docx");
-const fs = require("fs");
-const path = require("path");
+  Footer, AlignmentType, LevelFormat, HeadingLevel, BorderStyle,
+  WidthType, ShadingType, PageNumber,
+} from "docx";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── Tokens ───────────────────────────────────────────────────────────────
 const FONT = "Arial";
@@ -63,12 +68,6 @@ const BULLET = (text, level = 0) => new Paragraph({
   children: [new TextRun({ text, font: FONT })],
 });
 
-const BULLET_RUNS = (runs, level = 0) => new Paragraph({
-  numbering: { reference: "bullets", level },
-  spacing: { after: 80 },
-  children: runs,
-});
-
 const NUM = (text, level = 0) => new Paragraph({
   numbering: { reference: "numbers", level },
   spacing: { after: 80 },
@@ -119,12 +118,6 @@ function headerRow(cols, widths) {
         children: [new TextRun({ text: c, font: FONT, size: 20, bold: true })],
       })],
     })),
-  });
-}
-
-function dataRow(cols, widths) {
-  return new TableRow({
-    children: cols.map((c, i) => textCell(c, widths[i])),
   });
 }
 
