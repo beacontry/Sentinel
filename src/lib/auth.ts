@@ -36,7 +36,11 @@ export async function createToken(payload: JWTPayload): Promise<string> {
 
 export async function verifyToken(token: string): Promise<JWTPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, secret);
+    // Pin algorithm to HS256 (matches the signer in createToken). Without
+    // this, jose would accept any algorithm the token header claims —
+    // jose 5+ rejects `alg: none` by default, but explicit pinning is
+    // cheap and forecloses any future alg-confusion attack.
+    const { payload } = await jwtVerify(token, secret, { algorithms: ["HS256"] });
     return payload as unknown as JWTPayload;
   } catch {
     return null;

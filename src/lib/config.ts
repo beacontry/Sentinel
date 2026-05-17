@@ -4,8 +4,28 @@ export const APP_CONFIG = {
   url: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
 } as const;
 
+// JWT_SECRET MUST be set in every environment. No fallback — the
+// repo is public on GitHub, so any literal default here becomes a
+// universal-admin-token issuer for anyone who reads the source. If
+// you see this throw, set JWT_SECRET in your .env to 32+ random
+// bytes (e.g. `openssl rand -base64 48`).
+function getJwtSecret(): string {
+  const v = process.env.JWT_SECRET;
+  if (!v || v.length < 32) {
+    throw new Error(
+      "JWT_SECRET must be set to a string of at least 32 characters. " +
+        "Generate with `openssl rand -base64 48`. " +
+        "Set in .env or your container's env-file. " +
+        "(Never hardcoded — the source is public.)"
+    );
+  }
+  return v;
+}
+
 export const AUTH_CONFIG = {
-  jwtSecret: process.env.JWT_SECRET ?? "dev-secret-change-in-production",
+  get jwtSecret() {
+    return getJwtSecret();
+  },
   cookieName: "sentinel-session",
   maxAge: 60 * 60 * 24 * 7, // 7 days
   bcryptRounds: 12,

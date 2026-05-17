@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { marketDigests, users, discordWebhooks, articles } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
+import { safeCompare } from "@/lib/crypto";
 import { sendAlertEmail } from "@/lib/email";
 
 const log = createRouteLogger("cron-market-digest");
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
   const secret = request.headers.get("x-cron-secret");
   const expected = process.env.CRON_SECRET;
 
-  if (!expected || secret !== expected) {
+  if (!expected || !secret || !safeCompare(secret, expected)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
