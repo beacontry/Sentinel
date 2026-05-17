@@ -211,7 +211,59 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base font-semibold text-text-primary">12. Governing Law &amp; Venue</h2>
+          <h2 className="text-base font-semibold text-text-primary">12. Limitation of Liability</h2>
+          <p>
+            To the maximum extent permitted by law, {LEGAL_ENTITY.name},
+            its officers, employees, affiliates, and licensors will not be
+            liable for any <strong className="text-text-primary">indirect, incidental,
+            consequential, special, exemplary, or punitive damages</strong> arising
+            out of or relating to these Terms or your use of Beacontry — including
+            but not limited to lost profits, lost trading opportunities, lost
+            data, business interruption, or loss of goodwill — even if we have
+            been advised of the possibility of such damages.
+          </p>
+          <p>
+            Our <strong className="text-text-primary">total aggregate liability</strong>{" "}
+            to you for all claims arising from or relating to these Terms or
+            your use of Beacontry, regardless of the form of action, will not
+            exceed the greater of (a) the total amount you have paid us in the
+            twelve (12) months preceding the event giving rise to the claim, or
+            (b) one hundred U.S. dollars (US$100).
+          </p>
+          <p>
+            This cap reflects an allocation of risk between you and us, and it
+            applies even if a remedy fails of its essential purpose. Some
+            jurisdictions do not allow the exclusion or limitation of certain
+            damages — in those jurisdictions, the limitations above apply to the
+            maximum extent the law permits.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-text-primary">13. Indemnification</h2>
+          <p>
+            You agree to defend, indemnify, and hold harmless {LEGAL_ENTITY.name}
+            and its officers, employees, affiliates, and licensors from and
+            against any claims, liabilities, damages, losses, and expenses
+            (including reasonable attorneys&apos; fees) arising out of or in any
+            way connected with:
+          </p>
+          <ul className="list-disc list-inside space-y-1 text-sm">
+            <li>your access to or use of Beacontry, including any trades or orders placed through your connected broker account;</li>
+            <li>your violation of these Terms;</li>
+            <li>your violation of any third-party right, including but not limited to your brokerage agreement or applicable securities laws;</li>
+            <li>any dispute between you and a third party regarding your trading activity, account, or use of Beacontry.</li>
+          </ul>
+          <p>
+            We reserve the right, at our own expense, to assume the exclusive
+            defense and control of any matter otherwise subject to indemnification
+            by you, in which case you agree to cooperate with our defense of such
+            claim. You will not settle any claim without our prior written consent.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-text-primary">14. Governing Law &amp; Venue</h2>
           <p>
             These Terms are governed by the laws of the State of{" "}
             {LEGAL_ENTITY.governingLaw.state}, without regard to its
@@ -230,7 +282,7 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base font-semibold text-text-primary">13. Changes</h2>
+          <h2 className="text-base font-semibold text-text-primary">15. Changes</h2>
           <p>
             These terms may change. Material changes will prompt you to re-accept
             on next sign-in. The version stamp at the top reflects the current text.
@@ -238,7 +290,7 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base font-semibold text-text-primary">14. About Us</h2>
+          <h2 className="text-base font-semibold text-text-primary">16. About Us</h2>
           <p>
             Beacontry is operated by{" "}
             <strong className="text-text-primary">{LEGAL_ENTITY.name}</strong>,

@@ -6,4 +6,4 @@
 // semver — easier to read in audit dumps + matches what the page
 // shows in its "Last updated:" line.
 
-export const TERMS_VERSION = "2026-05-17";
+export const TERMS_VERSION = "2026-05-17b";
