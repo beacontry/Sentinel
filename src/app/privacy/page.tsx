@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { Radar, Shield } from "lucide-react";
 import { TERMS_VERSION } from "@/lib/terms-version";
+import { LEGAL_ENTITY, formatAddressOneLine } from "@/lib/legal-entity";
 
 export const metadata = {
   title: "Privacy Policy — Beacontry",
@@ -49,7 +50,32 @@ export default function PrivacyPage() {
           </p>
         </div>
 
-        {/* Plain-language summary up top — the actual policy follows in case
+        {/* Data controller identity — required by CCPA/CDPA/CPA/etc. for
+            US state privacy laws and by GDPR Article 13 once we accept
+            EU/UK customers. Up top so a regulator (or curious user)
+            doesn't have to scroll. */}
+        <section className="rounded-xl border border-border bg-bg-elevated p-5 space-y-2">
+          <h2 className="text-base font-semibold text-text-primary">Who controls your data</h2>
+          <p className="text-[0.92rem]">
+            The data controller for personal information processed by Beacontry is{" "}
+            <strong className="text-text-primary">{LEGAL_ENTITY.name}</strong>, a{" "}
+            {LEGAL_ENTITY.formationState} limited liability company doing business as{" "}
+            &quot;{LEGAL_ENTITY.tradeName}.&quot; Mailing address: {formatAddressOneLine()}.
+          </p>
+          <p className="text-[0.92rem]">
+            For privacy requests (access, deletion, export, correction), email{" "}
+            <a
+              href={`mailto:${LEGAL_ENTITY.privacyEmail}?subject=${LEGAL_ENTITY.privacySubject}`}
+              className="text-accent hover:text-accent-hover underline"
+            >
+              {LEGAL_ENTITY.privacyEmail}
+            </a>{" "}
+            with subject line &quot;{LEGAL_ENTITY.privacySubject}.&quot; We respond
+            within 30 days.
+          </p>
+        </section>
+
+        {/* Plain-language summary — the actual policy follows in case
             anyone wants the lawyered version. The summary is what 99% of
             users actually want to know. */}
         <section className="rounded-xl border border-border bg-bg-surface p-5 space-y-2">
