@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SubNav } from "@/components/layout/sub-nav";
+import { SUB_NAV } from "@/components/layout/nav-config";
 import { MessageCircle } from "lucide-react";
 
 interface DmThreadRow {
@@ -76,6 +78,7 @@ export default function MessagesPage() {
           { label: "Unread", value: totalUnread, tone: totalUnread > 0 ? "brand" : "neutral" },
         ]}
       />
+      <SubNav tabs={SUB_NAV.community} />
 
       {loading ? (
         <div className="space-y-2">

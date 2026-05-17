@@ -24,6 +24,8 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
+import { SubNav } from "@/components/layout/sub-nav";
+import { SUB_NAV } from "@/components/layout/nav-config";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -282,6 +284,7 @@ export default function OptimizerPage() {
           </Button>
         </div>
       </div>
+      <SubNav tabs={SUB_NAV.trader} />
 
       {/* Config Panel */}
       {showConfig && (

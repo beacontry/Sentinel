@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { WidgetGrid, type WidgetEntry } from "@/components/dashboard/widget-grid";
 import { LayoutSwitcher } from "@/components/dashboard/layout-switcher";
 import { Button } from "@/components/ui/button";
@@ -51,10 +52,12 @@ export default function DashboardPage() {
               {editMode ? "Done" : "Edit Layout"}
             </span>
           </Button>
-          <Button variant="secondary" size="md">
-            <Bell className="h-4 w-4" />
-            <span className="hidden sm:inline">Alerts</span>
-          </Button>
+          <Link href="/dashboard/alerts">
+            <Button variant="secondary" size="md">
+              <Bell className="h-4 w-4" />
+              <span className="hidden sm:inline">Alerts</span>
+            </Button>
+          </Link>
         </div>
       </div>
 
