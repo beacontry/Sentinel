@@ -1,5 +1,8 @@
 # Sentinel — Trading Intelligence Platform
 
+## Git commits
+- **Do NOT add `Co-Authored-By: Claude` trailers to git commit messages.** All commits should be attributed solely to the human author. The harness's default git-commit template suggests adding the trailer; ignore that here. Historical commits from before 2026-05-17 that already include the trailer are remapped via `.mailmap` so they don't fragment the GitHub Contributors graph.
+
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)

@@ -23,21 +23,21 @@ uncomment the line below.
 4. **Tax tooling built in** — wash-sale tracking, §475(f) MTM elections, lot-level cost basis, harvestable-loss surfacing. Form 8949 export. Tax Center merges manual portfolios + live broker positions in one view.
 5. **Full journal + 14-guide education library + 8 calculators** — auto-stubs an entry on every fill, daily pre/post-market prompts, AI weekly review. Education + glossary + spaced-repetition review wired into the chat for contextual citations.
 
-## Screenshots
-
 <!--
-PLACEHOLDER: drop a 3-up screenshot grid here. Suggested shots:
-  1. Engine running on the Trader page (mode picker visible, positions filling)
-  2. Tax Center with harvestable-loss surface + Form 8949 export
-  3. Hash-chained audit log with the verify button
-Save them as docs/assets/screenshot-{trader,tax,audit}.png at 1600×1000.
-See the "Recording the README assets" appendix below.
--->
+SCREENSHOTS — hidden until the assets are recorded.
+
+Once you've saved the three screenshots to docs/assets/screenshot-{trader,tax,audit}.png
+(1600×1000, see the "Recording the README assets" appendix at the bottom),
+remove this comment wrapper to render the screenshot grid:
+
+## Screenshots
 
 | | | |
 |---|---|---|
 | ![Trader page — engine + manual modes](docs/assets/screenshot-trader.png) | ![Tax Center — wash-sale + harvestable losses](docs/assets/screenshot-tax.png) | ![Audit log — hash-chained, verifiable](docs/assets/screenshot-audit.png) |
 | **Trader** — engine + manual order ticket | **Tax Center** — wash-sale + harvesting | **Audit log** — tamper-evident |
+-->
+
 
 ## Two ways to use it
 
