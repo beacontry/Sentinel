@@ -4,6 +4,7 @@ import { users } from "@/lib/db/schema";
 import { loginSchema } from "@/lib/validators";
 import { verifyPassword, createToken, setSessionCookie } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
+import { getRateLimitIp } from "@/lib/rate-limit-ip";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
 import { eq } from "drizzle-orm";
@@ -12,7 +13,7 @@ const logger = createRouteLogger("auth/login");
 
 export async function POST(request: Request) {
   try {
-    const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+    const ip = getRateLimitIp(request);
     const { allowed } = rateLimit(`login:${ip}`, 5, 10);
     if (!allowed) {
       return NextResponse.json(

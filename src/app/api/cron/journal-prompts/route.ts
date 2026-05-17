@@ -33,6 +33,7 @@ import { db } from "@/lib/db";
 import { users, tradeJournal } from "@/lib/db/schema";
 import { gt, eq, and } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
+import { safeCompare } from "@/lib/crypto";
 
 const log = createRouteLogger("cron-journal-prompts");
 
@@ -66,7 +67,7 @@ function isWeekend(d: Date): boolean {
 export async function GET(request: NextRequest) {
   const secret = request.headers.get("x-cron-secret");
   const expected = process.env.CRON_SECRET;
-  if (!expected || secret !== expected) {
+  if (!expected || !secret || !safeCompare(secret, expected)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

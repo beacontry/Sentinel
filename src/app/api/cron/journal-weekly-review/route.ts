@@ -27,6 +27,7 @@ import { db } from "@/lib/db";
 import { users, tradeJournal, traderTrades } from "@/lib/db/schema";
 import { gt, eq, and, desc } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
+import { safeCompare } from "@/lib/crypto";
 import { groqChat } from "@/lib/claude";
 import { getLlmApiKey } from "@/lib/system-config";
 
@@ -95,7 +96,7 @@ function buildPrompt(trades: TradeSummary[], entries: EntrySummary[]): string {
 export async function GET(request: NextRequest) {
   const secret = request.headers.get("x-cron-secret");
   const expected = process.env.CRON_SECRET;
-  if (!expected || secret !== expected) {
+  if (!expected || !secret || !safeCompare(secret, expected)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

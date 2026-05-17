@@ -4,6 +4,7 @@ import { policyItems } from "@/lib/db/schema";
 import { fetchAllPolicyFeeds, classifySectors, classifyStatus } from "@/lib/policy-rss";
 import { sql } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
+import { safeCompare } from "@/lib/crypto";
 
 const log = createRouteLogger("cron-policy-update");
 
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
   const secret = request.headers.get("x-cron-secret");
   const expected = process.env.CRON_SECRET;
 
-  if (!expected || secret !== expected) {
+  if (!expected || !secret || !safeCompare(secret, expected)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

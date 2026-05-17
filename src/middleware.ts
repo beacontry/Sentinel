@@ -95,7 +95,11 @@ export async function middleware(request: NextRequest) {
     }
 
     try {
-      await jwtVerify(token, secret);
+      // Pin algorithm to HS256 — jose rejects alg=none by default, but
+      // pinning explicitly defends against any future alg-confusion
+      // attack (e.g. a downstream signer being tricked into emitting
+      // an RS256-keyed token with a public-key-as-secret).
+      await jwtVerify(token, secret, { algorithms: ["HS256"] });
     } catch {
       const loginUrl = new URL("/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);

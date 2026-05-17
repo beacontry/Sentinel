@@ -28,6 +28,7 @@ import { users, invites } from "@/lib/db/schema";
 import { registerSchema } from "@/lib/validators";
 import { hashPassword, createToken, setSessionCookie } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
+import { getRateLimitIp } from "@/lib/rate-limit-ip";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
 import { eq, and, gt } from "drizzle-orm";
@@ -36,7 +37,7 @@ const logger = createRouteLogger("auth/register");
 
 export async function POST(request: Request) {
   try {
-    const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+    const ip = getRateLimitIp(request);
     const { allowed } = rateLimit(`register:${ip}`, 5, 60);
     if (!allowed) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });

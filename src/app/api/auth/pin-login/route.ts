@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { verifyPassword, createToken, setSessionCookie } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limiter";
+import { getRateLimitIp } from "@/lib/rate-limit-ip";
 import { createRouteLogger } from "@/lib/logger";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -15,7 +16,7 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+  const ip = getRateLimitIp(request);
 
   // Strict rate limiting on PIN — 5 attempts per 5 minutes
   const { allowed } = rateLimit(`pin:${ip}`, 5, 300);
