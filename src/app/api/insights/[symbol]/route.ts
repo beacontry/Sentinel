@@ -46,7 +46,7 @@ export async function GET(
     const stack = err instanceof Error ? err.stack?.split("\n").slice(0, 3).join(" ") : "";
     log.error({ err: message, stack }, "Insight fetch error");
     return NextResponse.json(
-      { error: "Failed to generate insight", detail: message },
+      { error: "Failed to generate insight" },
       { status: 500 }
     );
   }

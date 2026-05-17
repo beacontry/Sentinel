@@ -3,6 +3,9 @@ import { getSession } from "@/lib/auth";
 import { computeATRStrategy } from "@/lib/strategy-atr";
 import { resolveStrategy } from "@/lib/strategy-resolver";
 import { checkTier } from "@/lib/tiers-server";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("strategy-params");
 
 export async function GET(
   request: NextRequest,
@@ -39,6 +42,7 @@ export async function GET(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    log.error({ err: message, symbol: upperSymbol, mode }, "Strategy params failed");
+    return NextResponse.json({ error: "Failed to resolve strategy" }, { status: 500 });
   }
 }

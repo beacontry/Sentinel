@@ -4,6 +4,9 @@ import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { alertHistory, alertRules } from "@/lib/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
 import { checkTier } from "@/lib/tiers-server";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("alerts-history");
 
 export async function GET() {
   const session = await getSession();
@@ -42,7 +45,8 @@ export async function GET() {
       );
     }
     const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    log.error({ err: message }, "Alert history list failed");
+    return NextResponse.json({ error: "Failed to list alert history" }, { status: 500 });
   }
 }
 
@@ -72,6 +76,7 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ success: true, deleted: result.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    log.error({ err: message }, "Alert history bulk-dismiss failed");
+    return NextResponse.json({ error: "Failed to clear alert history" }, { status: 500 });
   }
 }

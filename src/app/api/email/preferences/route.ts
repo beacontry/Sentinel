@@ -4,6 +4,9 @@ import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("email-preferences");
 
 const updateSchema = z.object({
   emailNotifications: z.boolean().optional(),
@@ -40,7 +43,8 @@ export async function GET() {
       );
     }
     const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    log.error({ err: message }, "Email preferences fetch failed");
+    return NextResponse.json({ error: "Failed to load email preferences" }, { status: 500 });
   }
 }
 
