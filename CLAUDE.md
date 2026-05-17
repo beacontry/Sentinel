@@ -6,7 +6,7 @@
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)
-- Drizzle ORM + PostgreSQL (37 migrations as of `0036_stripe.sql`)
+- Drizzle ORM + PostgreSQL (40 migrations as of `0039_users_billing_status.sql`)
 - Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
@@ -411,7 +411,7 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 - Error display: `text-sm text-bearish`
 - Empty state: EmptyState component or inline centered block with muted icon
 
-## Dashboard Pages (64 total)
+## Dashboard Pages (65 total)
 Located at `src/app/dashboard/*/page.tsx`:
 
 **Core:** alerts, analysis, calculator, chat, screener, settings, trader
@@ -496,8 +496,11 @@ For migrations 0013–0015 see § Education. Newer files (chronological, all ide
 - `0034_waitlist` — public-marketing email capture
 - `0035_user_tier` — `tier`, `tier_expires_at` on `users`
 - `0036_stripe` — `stripe_customer_id`, `stripe_subscription_id` on `users` + `stripe_events_processed` for idempotency
+- `0037_app_settings` — KV store for non-secret feature flags (`REGISTRATION_OPEN`, `NOTIFY_ADMINS_ON_REGISTER`). Sibling of `system_config` (which holds AES-256-GCM-encrypted API keys); separate table because plaintext booleans don't need encryption + admin policy can diverge
+- `0038_api_usage_log` — daily-aggregate counters for external API consumption (Groq tokens + Finnhub request counts), per `(date, provider)` with UPSERT-on-write. Powers the API Usage card on `/dashboard/admin/system-config`
+- `0039_users_billing_status` — `billing_status` text column on `users` (`past_due` / null) set by the Stripe webhook on `invoice.payment_failed` and cleared on `invoice.payment_succeeded`. Drives the dashboard-wide past-due banner
 
-> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0036 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
+> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0039 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 
 ## Education Section
 

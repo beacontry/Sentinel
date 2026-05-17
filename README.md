@@ -180,7 +180,7 @@ src/
 │   ├── indicators/             # 10+ technical indicators
 │   ├── strategy-presets.ts     # 9 preset strategies
 │   ├── sp500.ts                # S&P 500 universe (auto-updates from Wikipedia)
-│   ├── db/                     # Drizzle schema (37 migrations) + connection
+│   ├── db/                     # Drizzle schema (40 migrations) + connection
 │   └── ...
 ├── hooks/
 │   ├── usePolling.ts           # Shared polling with Page Visibility pause
@@ -484,7 +484,9 @@ VAPID_PRIVATE_KEY=
 VAPID_SUBJECT=mailto:admin@example.com
 ```
 
-> **Invite emails:** Beacontry's registration is invite-only. Admins create invites at `/dashboard/admin` → an email with a signup link is sent via Resend. The `EMAIL_FROM` domain must be Resend-verified — prod uses `beacontry.com` (verified directly in Resend, DKIM-signed). Self-hosted instances override `EMAIL_FROM` to use their own verified domain.
+> **Registration:** public signup is **toggle-controlled** (default open). The `REGISTRATION_OPEN` flag in `app_settings` defaults to `"true"`; admins can pause public signups from `/dashboard/admin/system-config` → App Settings without a redeploy. While paused, invite-token signups still work so admins can let specific people in during an incident. The legacy `/dashboard/admin` → invites surface still creates pre-addressed invite emails via Resend; that path coexists with public signup.
+>
+> **Email infrastructure:** The `EMAIL_FROM` domain must be Resend-verified — prod uses `beacontry.com` (verified directly in Resend, DKIM-signed). Self-hosted instances override `EMAIL_FROM` to use their own verified domain.
 
 ### Install & Run
 
