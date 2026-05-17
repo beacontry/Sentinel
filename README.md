@@ -521,7 +521,7 @@ sudo -u sn-deploy -i bash -c '
 - **Smooth trailing stops** — exponential decay from base toward 2% floor. Locks in progressively more gain without sudden threshold jumps.
 - **Incremental data caching** — first run downloads full 5Y, subsequent runs only fetch new days. Optimizer runs start in <1s after first run.
 - **Dynamic everything** — strategy presets read from latest optimizer run in DB. Risk limits read from user profile. S&P 500 list auto-updates from Wikipedia. No hardcoded values that require deploys.
-- **Safety-first** — paper mode only, broker-side stops on engine shutdown, auto-restart with position sync on deploy, SPY health filter, daily loss halt, STRONG_BUY overflow cap. Multiple layers of protection.
+- **Safety-first** — defaults to paper trading; live trading is gated behind `ALLOW_LIVE_TRADING=1` env + a per-user `live_trading_enabled` DB flag (both required). On top of that: broker-side stops on engine shutdown, auto-restart with position sync on deploy, SPY health filter, daily loss halt, account-switch detector, consecutive-loss halt, order rate limit, daily notional cap, MTM-aware wash-sale gate, PDT protection, STRONG_BUY overflow cap. Multiple layers of protection. (Full safeguard list in `docs/ENGINE_RULESET.md` § 17–20.)
 - **Risk overrides, not risk settings** — all risk profile fields are optional. Empty = engine decides using code defaults. Only user-set values impose limits, so the engine works sensibly out of the box.
 - **Broker data always live** — dashboard account balance and positions always fetched from Alpaca regardless of engine state. Positions prefer live broker data over stale DB records.
 - **Yahoo Finance primary** — free, no API key, handles 5Y daily data in single requests. Finnhub as fallback.
