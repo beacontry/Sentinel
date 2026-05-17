@@ -10,6 +10,11 @@ const log = createRouteLogger("admin/audit");
 
 const PAGE_SIZE = 100;
 
+// Single source of truth for the CSV header. Both the empty-result and
+// populated paths must emit the same column set so downstream importers
+// don't break on zero-row exports.
+const CSV_HEADER = "id,createdAt,actorUserId,actorEmail,actorRole,action,resourceType,resourceId,ip,userAgent,metadata,prevHash,hash";
+
 /**
  * GET /api/admin/audit
  *
@@ -78,7 +83,7 @@ export async function GET(request: NextRequest) {
       // No matching users → return empty results immediately (skip the AL query)
       if (actorIdsFromEmail.length === 0) {
         if (isCsv) {
-          return new NextResponse("id,createdAt,actorEmail,action,resourceType,resourceId,ip,metadata\n", {
+          return new NextResponse(CSV_HEADER + "\n", {
             headers: csvHeaders(),
           });
         }
@@ -161,8 +166,7 @@ function csvHeaders(): HeadersInit {
  * downstream pipelines can JSON.parse it.
  */
 function rowsToCsv(rows: Array<typeof auditLog.$inferSelect>): string {
-  const header = "id,createdAt,actorUserId,actorEmail,actorRole,action,resourceType,resourceId,ip,userAgent,metadata,prevHash,hash";
-  const lines = [header];
+  const lines = [CSV_HEADER];
   for (const r of rows) {
     lines.push(
       [

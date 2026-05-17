@@ -28,6 +28,7 @@ import { users, tradeJournal, traderTrades } from "@/lib/db/schema";
 import { gt, eq, and, desc } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
 import { safeCompare } from "@/lib/crypto";
+import { getEasternToday } from "@/lib/market-day";
 import { groqChat } from "@/lib/claude";
 import { getLlmApiKey } from "@/lib/system-config";
 
@@ -108,7 +109,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // ET-keyed; weekly review fires Sundays at 6 PM ET (22 UTC) so the
+  // boundary risk is low, but consistency matters across cron routes.
+  const today = getEasternToday();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   try {

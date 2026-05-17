@@ -38,7 +38,7 @@ import {
   userTaxStatus,
   users,
 } from "./db/schema";
-import { eq, and, desc, gt, inArray, lt, isNotNull } from "drizzle-orm";
+import { eq, and, desc, gt, inArray, lt, isNotNull, sql } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
 import { writeAudit, AuditAction } from "./audit";
 import { detectMarketRegime } from "./market-regime";
@@ -1041,36 +1041,56 @@ async function loadTaxStatus(userId: string): Promise<{ mtmElected: boolean }> {
  */
 async function refreshWashSaleBlockedSymbols(userId: string): Promise<Set<string>> {
   const cutoff = new Date(Date.now() - WASH_SALE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  try {
-    const rows = await db
-      .selectDistinct({ symbol: traderTrades.symbol })
-      .from(traderTrades)
-      .where(
-        and(
-          eq(traderTrades.userId, userId),
-          inArray(traderTrades.action, ["SELL", "manual_close"]),
-          gt(traderTrades.createdAt, cutoff),
-          lt(traderTrades.pnl, 0)
-        )
-      );
-    return new Set(rows.map((r) => r.symbol));
-  } catch (err) {
-    log.warn(
-      { err: err instanceof Error ? err.message : "unknown", userId },
-      "Failed to refresh wash-sale blocked symbols — keeping previous set"
+  // Throw on DB error — the caller decides whether to keep the previous
+  // set or treat as a hard fail. Previously this swallowed the error and
+  // returned an empty Set, which the caller stored as the new "blocked
+  // symbols" → wash-sale protection silently disabled for the entire
+  // WASH_SALE_REFRESH_MS window. The empty-on-error path was the bug.
+  const rows = await db
+    .selectDistinct({ symbol: traderTrades.symbol })
+    .from(traderTrades)
+    .where(
+      and(
+        eq(traderTrades.userId, userId),
+        inArray(traderTrades.action, ["SELL", "manual_close"]),
+        // Prefer fillTime (when the trade actually closed) over createdAt
+        // (when the row was inserted). For a SELL queued late one day and
+        // filled the next, the wash-sale window anchors on the fill.
+        // Falls back to createdAt for rows missing fillTime (legacy data).
+        gt(
+          sql`COALESCE(${traderTrades.fillTime}, ${traderTrades.createdAt})`,
+          cutoff
+        ),
+        lt(traderTrades.pnl, 0)
+      )
     );
-    // Defensive: empty set on first-time failure rather than throwing
-    return new Set();
-  }
+  return new Set(rows.map((r) => r.symbol));
 }
 
-/** Refresh `engine.washSaleBlockedSymbols` if the cache is stale or empty. No-op when MTM elected. */
+/**
+ * Refresh `engine.washSaleBlockedSymbols` if the cache is stale or empty.
+ * No-op when MTM elected.
+ *
+ * On DB error, KEEP the previous set and do NOT bump
+ * washSaleLastRefreshAt — that way the next scan retries the refresh
+ * rather than waiting WASH_SALE_REFRESH_MS while running unprotected.
+ */
 async function maybeRefreshWashSaleSet(engine: EngineState): Promise<void> {
   if (!engine.washSaleProtectionEnabled || !engine.userId) return;
   const age = Date.now() - engine.washSaleLastRefreshAt;
   if (engine.washSaleLastRefreshAt > 0 && age < WASH_SALE_REFRESH_MS) return;
-  engine.washSaleBlockedSymbols = await refreshWashSaleBlockedSymbols(engine.userId);
-  engine.washSaleLastRefreshAt = Date.now();
+  try {
+    const next = await refreshWashSaleBlockedSymbols(engine.userId);
+    engine.washSaleBlockedSymbols = next;
+    engine.washSaleLastRefreshAt = Date.now();
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown", userId: engine.userId },
+      "Wash-sale refresh failed — keeping previous set and retrying next scan"
+    );
+    // INTENTIONAL: do NOT bump washSaleLastRefreshAt, do NOT clear
+    // washSaleBlockedSymbols. Next scan retries.
+  }
 }
 
 /** Pure PDT-vulnerability check from a broker account snapshot. */

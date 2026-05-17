@@ -248,15 +248,28 @@ export async function DELETE(request: Request) {
       );
     }
 
-    // Check user exists
+    // Check user exists + grab email for the system-user guard
     const existing = await db
-      .select({ id: users.id })
+      .select({ id: users.id, email: users.email })
       .from(users)
       .where(eq(users.id, id))
       .limit(1);
 
     if (existing.length === 0) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // System users are referenced by article.authorId and other tables.
+    // Deleting them would either orphan content (with ON DELETE SET NULL)
+    // or crash future crons trying to find them. Block.
+    if (existing[0].email === "desk@beacontry.com") {
+      return NextResponse.json(
+        {
+          error:
+            "Cannot delete the Beacontry Desk system user — it owns daily-digest articles and would break future cron runs.",
+        },
+        { status: 400 }
+      );
     }
 
     await db.delete(users).where(eq(users.id, id));

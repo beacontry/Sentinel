@@ -34,6 +34,7 @@ import { users, tradeJournal } from "@/lib/db/schema";
 import { gt, eq, and } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
 import { safeCompare } from "@/lib/crypto";
+import { getEasternToday } from "@/lib/market-day";
 
 const log = createRouteLogger("cron-journal-prompts");
 
@@ -89,7 +90,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: "skipped", reason: "weekend" });
   }
 
-  const today = now.toISOString().slice(0, 10);
+  // ET-keyed so a retry / catchup run before 4 AM ET doesn't write a
+  // "tomorrow"-keyed stub the real cron then collides with.
+  const today = getEasternToday(now);
   const title = type === "pre-market" ? `Pre-market plan — ${today}` : `Post-market reflection — ${today}`;
   const body = type === "pre-market" ? PRE_MARKET_BODY : POST_MARKET_BODY;
 
