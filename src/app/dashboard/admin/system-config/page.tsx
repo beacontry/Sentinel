@@ -25,6 +25,7 @@ import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/mod
 import { PageIntro } from "@/components/layout/page-intro";
 import { ArrowLeft, Check, X, ShieldAlert } from "lucide-react";
 import { AppSettingsCard } from "@/components/admin/app-settings-card";
+import { ApiUsageCard } from "@/components/admin/api-usage-card";
 
 interface ConfigEntry {
   key: string;
@@ -305,6 +306,9 @@ export default function SystemConfigPage() {
 
       {/* App settings (non-secret feature flags) — sibling card to the API keys above */}
       <AppSettingsCard />
+
+      {/* External API usage — server-wide daily aggregate */}
+      <ApiUsageCard />
 
       {/* Replace modal */}
       <Modal open={editKey !== null} onClose={closeReplace}>
