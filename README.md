@@ -1,18 +1,61 @@
 # 🔦 Beacontry
 
-> Open-source trading intelligence platform. Scanning, analysis, automated
-> execution, and portfolio management in one workspace — fully transparent,
-> fully inspectable, fully yours.
+> **Open-source trading intelligence with a public audit trail.** Hybrid
+> signal engine + manual order ticket + tax tooling + journaled trades,
+> all on your own brokerage account. Every signal shows its math.
 
-**Live**: [beacontry.com](https://beacontry.com)
+[**Try the hosted version → beacontry.com**](https://beacontry.com) · [Pricing](https://beacontry.com/pricing) · [Docs](https://beacontry.com/docs/engine-ruleset.html) · [Source license: FSL-1.1-ALv2](./LICENSE)
 
-**Public surface** (no signup required):
+<!--
+PLACEHOLDER: animated GIF of the trader dashboard (engine running,
+signals flowing, trade firing). Record at 1280×720 / 30s loop / <2MB.
+See "Recording the README assets" appendix at the bottom for the
+exact steps. Save to: docs/assets/dashboard-demo.gif then
+uncomment the line below.
+-->
+<!-- ![Beacontry dashboard demo](docs/assets/dashboard-demo.gif) -->
+
+## What it does (5-bullet pitch)
+
+1. **Hybrid signal pipeline** — technical + sentiment + options flow + analyst consensus + AI scoring + Reddit chatter, all feeding one confidence-scored decision per symbol. Inspect every layer.
+2. **Two ways to trade** — let the **automated engine** scan + place orders on a schedule, OR use the **manual order ticket** (market / limit / stop / bracket, share-count or dollar-based) for trade-by-trade discretion. Both modes hit your own Alpaca, Tradier, or IBKR account.
+3. **Hash-chained audit log** — every privileged action (orders, halts, mode switches, config changes) recorded with `prev_hash → hash` linkage. Tamper-evident, one-click verifiable at `/dashboard/admin/audit`.
+4. **Tax tooling built in** — wash-sale tracking, §475(f) MTM elections, lot-level cost basis, harvestable-loss surfacing. Form 8949 export. Tax Center merges manual portfolios + live broker positions in one view.
+5. **Full journal + 14-guide education library + 8 calculators** — auto-stubs an entry on every fill, daily pre/post-market prompts, AI weekly review. Education + glossary + spaced-repetition review wired into the chat for contextual citations.
+
+## Screenshots
+
+<!--
+PLACEHOLDER: drop a 3-up screenshot grid here. Suggested shots:
+  1. Engine running on the Trader page (mode picker visible, positions filling)
+  2. Tax Center with harvestable-loss surface + Form 8949 export
+  3. Hash-chained audit log with the verify button
+Save them as docs/assets/screenshot-{trader,tax,audit}.png at 1600×1000.
+See the "Recording the README assets" appendix below.
+-->
+
+| | | |
+|---|---|---|
+| ![Trader page — engine + manual modes](docs/assets/screenshot-trader.png) | ![Tax Center — wash-sale + harvestable losses](docs/assets/screenshot-tax.png) | ![Audit log — hash-chained, verifiable](docs/assets/screenshot-audit.png) |
+| **Trader** — engine + manual order ticket | **Tax Center** — wash-sale + harvesting | **Audit log** — tamper-evident |
+
+## Two ways to use it
+
+### Option 1 — Hosted SaaS at [beacontry.com](https://beacontry.com)
+
+Sign up, connect your broker, start trading. **Free** tier covers research + education + screener + glossary. **Trader** ($20/mo) unlocks the engine, manual order ticket, journal, alerts, tax center. **Premium** ($40/mo) adds AI commentary, hybrid sentiment layers, and the GA optimizer. See the [pricing page](https://beacontry.com/pricing) for the full feature matrix.
+
+### Option 2 — Self-host (free, source-available)
+
+Clone the repo, bring your own Postgres + broker keys, deploy wherever. The full hosted product runs locally; you get every feature with no payment processor in the loop. License (FSL-1.1-ALv2) allows personal, internal, and research use; only commercial competing-service hosting is restricted (and that restriction expires 2 years after each commit). See [Setup](#setup) below for the 10-minute install.
+
+## Public surface (no signup required)
+
 - [/learn](https://beacontry.com/learn) — 14 long-form trading & personal-finance guides
 - [/tools](https://beacontry.com/tools) — 8 free calculators (FIRE, Roth vs Traditional, tax-loss harvesting, …)
 - [/glossary](https://beacontry.com/glossary) — 95 terms across 6 categories
 - [/congress](https://beacontry.com/congress) — federal Periodic Transaction Reports, live
 - [/articles](https://beacontry.com/articles) — daily Beacontry Desk market digest
-- [/pricing](https://beacontry.com/pricing) — Free · Trader $20 · Premium $40 · Self-Hosted (source-available)
 
 **Docs**: [Features reference](https://beacontry.com/docs/sentinel-features.html) · [Engine ruleset](https://beacontry.com/docs/engine-ruleset.html) · [Usage slides](https://beacontry.com/docs/usage-slides.html) · [Tier breakdown](https://beacontry.com/docs/tiers.html)
 
@@ -23,9 +66,10 @@
 Beacontry scans the entire S&P 500, generates confidence-scored signals
 from a hybrid pipeline (technical + sentiment + options flow + analyst +
 AI scoring + Reddit chatter), optimizes strategies using genetic
-algorithms, and executes trades through your broker. Everything from
-screener to execution runs in one application — and every decision is
-inspectable.
+algorithms, and either **executes automatically through your broker** OR
+**hands the decision to you via the manual order ticket**. Everything
+from screener to execution runs in one application — and every decision
+is inspectable.
 
 > **Internal naming note:** "Sentinel" remains the internal name for the
 > trading-engine code module — type names, DB tables (`trader_*`), env
@@ -482,3 +526,44 @@ sudo -u sn-deploy -i bash -c '
 - **Broker data always live** — dashboard account balance and positions always fetched from Alpaca regardless of engine state. Positions prefer live broker data over stale DB records.
 - **Yahoo Finance primary** — free, no API key, handles 5Y daily data in single requests. Finnhub as fallback.
 - **Portfolio-level optimization** — optimizer simulates holding multiple stocks simultaneously (not individual backtests) to match real trading conditions.
+
+## Recording the README assets
+
+The top-of-README has placeholder anchors for one animated GIF and three screenshots. These need to be recorded against a running instance (local dev or staging). Estimated 30-60 minutes for all four.
+
+### Animated GIF (`docs/assets/dashboard-demo.gif`)
+
+Target: 1280×720, ~25-30s loop, <2 MB after compression. Capture flow:
+
+1. `npm run dev` → log in as a seed user with the engine running on paper.
+2. Use any screen recorder. On macOS: QuickTime → File → New Screen Recording, then convert via `ffmpeg -i in.mov -vf "fps=15,scale=1280:-1:flags=lanczos" -loop 0 dashboard-demo.gif`. On Windows: ShareX or LICEcap. On Linux: peek.
+3. Sequence to record (~25s):
+   - Land on `/dashboard/trader` — engine status banner visible (1s)
+   - Mode picker click → switch to `adaptive` (2s)
+   - Scroll to Recent Trades → click AI ✨ on one row (3s)
+   - Navigate to `/dashboard/analysis?symbol=NVDA` — chart + indicators populate (4s)
+   - Hover the signal markers → tooltip shows the math (3s)
+   - Navigate to `/dashboard/tax-center` → harvestable losses surface (4s)
+   - End on `/dashboard/admin/audit` → hash-chained rows visible, click Verify, green check (4s)
+4. Compress with `gifsicle -O3 --colors 128 in.gif > out.gif` to hit <2MB.
+5. Save to `docs/assets/dashboard-demo.gif` and uncomment the `![...]` line near the top.
+
+### Screenshots (`docs/assets/screenshot-{trader,tax,audit}.png`)
+
+Target: 1600×1000, PNG with 24-bit color, <500 KB each after `pngcrush`/`oxipng`.
+
+- **screenshot-trader.png** — `/dashboard/trader` page with engine running. Capture both the mode picker (top-left) AND a visible position row. Crop so the LIVE banner is included if running live; otherwise just the paper-mode label.
+- **screenshot-tax.png** — `/dashboard/tax-center` with at least one harvestable-loss row visible. Best with realistic numbers (use a backfilled paper account).
+- **screenshot-audit.png** — `/dashboard/admin/audit` showing 4-5 chained rows, with the Verify button + green-check confirmation visible in the same shot.
+
+For all three: take with a clean browser window (no devtools, no notification popups). Save with no transparency. Run through `oxipng -o 4 *.png` for ~30% size reduction without quality loss.
+
+### Where they show up
+
+- The GIF renders inline below the tagline in the README header.
+- The three screenshots render as a 3-cell table row.
+- Both surfaces show on github.com/beacontry/Sentinel — first impression for every HN visitor.
+
+### CI note
+
+Don't commit images larger than 2 MB without LFS. Set up `git lfs track 'docs/assets/*.gif'` if the GIF grows beyond that during iteration. PNGs at 1600×1000 should stay well under.

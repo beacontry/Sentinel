@@ -85,10 +85,10 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: "/dashboard/trader",
     label: "Trader",
-    description: "Execution agent, strategies, backtesting, alerts, and risk tools.",
+    description: "Execution agent, manual order ticket, strategies, backtesting, alerts, and risk tools.",
     icon: Bot,
-    matchPaths: ["/dashboard/strategies", "/dashboard/backtest", "/dashboard/optimizer", "/dashboard/alerts", "/dashboard/calculator", "/dashboard/replay", "/dashboard/strategy-builder", "/dashboard/watchlists", "/dashboard/risk-simulator"],
-    keywords: ["agent", "execution", "strategies", "backtest", "optimizer", "alerts", "calculator", "replay", "strategy builder", "watchlists", "risk simulator", "mode compare"],
+    matchPaths: ["/dashboard/trade", "/dashboard/strategies", "/dashboard/backtest", "/dashboard/optimizer", "/dashboard/alerts", "/dashboard/calculator", "/dashboard/replay", "/dashboard/strategy-builder", "/dashboard/watchlists", "/dashboard/risk-simulator"],
+    keywords: ["agent", "execution", "manual", "order ticket", "trade", "strategies", "backtest", "optimizer", "alerts", "calculator", "replay", "strategy builder", "watchlists", "risk simulator", "mode compare"],
   },
   {
     href: "/dashboard/journal",
@@ -196,6 +196,7 @@ export const SUB_NAV: Record<string, SubNavTab[]> = {
   ],
   trader: [
     { href: "/dashboard/trader", label: "Live Trader" },
+    { href: "/dashboard/trade", label: "Trade Ticket" },
     { href: "/dashboard/strategies", label: "Strategies" },
     { href: "/dashboard/strategy-builder", label: "Builder" },
     { href: "/dashboard/backtest", label: "Backtest" },

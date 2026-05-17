@@ -77,17 +77,17 @@ export default function LandingPage() {
   ];
 
   const heroPoints = [
+    "Automated or manual",
     "Self-optimizing strategies",
-    "Automated execution",
-    "Adaptive risk management",
-    "Full trade journal",
+    "Hash-chained audit log",
+    "Tax + journal built in",
   ];
 
   const heroChecklist = [
-    { title: "Screener-driven signals.", desc: "The engine doesn't guess. It acts on qualifying setups pushed from a continuous market scan — volume spikes, RS leaders, technical breakouts." },
-    { title: "Fully automated execution.", desc: "Signals pass through confidence gating and risk checks, then execute through your connected broker. No manual order entry." },
-    { title: "Adaptive risk protection.", desc: "Trailing stops adjust in real time as trades develop. Stops are synced to the broker so positions are protected even if the engine goes offline." },
-    { title: "Every trade journaled.", desc: "Entry context, exit reason, P&L, and strategy parameters are logged automatically. Review performance by symbol, mode, or time period." },
+    { title: "Two ways to trade.", desc: "Let the automated engine scan + place orders on a schedule, or use the manual order ticket (market / limit / stop / bracket) for trade-by-trade discretion. Same broker, same audit trail, your call." },
+    { title: "Screener-driven signals.", desc: "Continuous market scan surfaces volume spikes, RS leaders, breakouts. Signals flow into either the engine OR a one-click trade ticket — every layer is inspectable." },
+    { title: "Adaptive risk protection.", desc: "Trailing stops adjust in real time as trades develop. Broker-side stops protect positions even if the engine goes offline. Manual orders get the same bracket-order support." },
+    { title: "Every trade journaled.", desc: "Entry context, exit reason, P&L logged automatically — for engine fills AND manual fills. Tax Center merges everything for wash-sale + §475(f) MTM tracking." },
   ];
 
   const stats = [
@@ -122,8 +122,89 @@ export default function LandingPage() {
   ];
 
 
+  // schema.org SoftwareApplication markup — surfaced in Google rich
+  // results and used by AI crawlers (Perplexity, Claude.ai, Bing chat)
+  // to ground answers about Beacontry. JSON-LD; not executable JS, so
+  // safe under the current CSP.
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "Beacontry",
+    applicationCategory: "FinanceApplication",
+    applicationSubCategory: "Trading intelligence platform",
+    operatingSystem: "Web (Chromium, Firefox, Safari) / Self-hosted Docker",
+    description:
+      "Open-source trading intelligence platform with hybrid signal engine, manual order ticket, tax tooling (wash-sale + §475(f) MTM), and journaled trades on your own Alpaca / IBKR / Tradier brokerage account. Hash-chained audit log. Self-hostable under FSL-1.1-ALv2.",
+    url: "https://beacontry.com",
+    image: "https://beacontry.com/og-card.png",
+    softwareVersion: "v3.1",
+    offers: [
+      {
+        "@type": "Offer",
+        name: "Free",
+        price: "0",
+        priceCurrency: "USD",
+        description:
+          "Research, education, screener, glossary, calculators, public Congress trades.",
+      },
+      {
+        "@type": "Offer",
+        name: "Trader",
+        price: "20",
+        priceCurrency: "USD",
+        priceSpecification: {
+          "@type": "UnitPriceSpecification",
+          price: "20",
+          priceCurrency: "USD",
+          billingDuration: "P1M",
+          billingIncrement: 1,
+        },
+        description:
+          "Engine, manual order ticket, broker integration, journal, alerts, tax center.",
+      },
+      {
+        "@type": "Offer",
+        name: "Premium",
+        price: "40",
+        priceCurrency: "USD",
+        priceSpecification: {
+          "@type": "UnitPriceSpecification",
+          price: "40",
+          priceCurrency: "USD",
+          billingDuration: "P1M",
+          billingIncrement: 1,
+        },
+        description:
+          "Everything in Trader + AI commentary + hybrid sentiment + GA optimizer.",
+      },
+    ],
+    author: {
+      "@type": "Organization",
+      name: "Guard Cyber Solutions LLC",
+      url: "https://beacontry.com",
+    },
+    license: "https://github.com/beacontry/Sentinel/blob/main/LICENSE",
+    codeRepository: "https://github.com/beacontry/Sentinel",
+    featureList: [
+      "Hybrid signal pipeline (technical + sentiment + options flow + analyst + AI scoring + Reddit chatter)",
+      "Manual order ticket (market / limit / stop / bracket, share-count or dollar-based)",
+      "Automated trading engine with 7 modes (4 base + 2 tactical + 1 adaptive)",
+      "Hash-chained audit log",
+      "Wash-sale tracking + §475(f) MTM elections",
+      "Trade journal with auto-stubs + AI weekly review",
+      "Genetic-algorithm strategy optimizer",
+      "Multi-broker support (Alpaca, IBKR, Tradier)",
+      "14 long-form education guides + 8 calculators + 95 glossary terms",
+    ],
+  };
+
   return (
     <div className="min-h-screen bg-ld-deep font-[family-name:var(--font-display)] text-ld-text">
+      {/* schema.org SoftwareApplication structured data for SEO + AI crawlers */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* ── Navbar — exact Dark Moon structure ── */}
       <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-all duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-[0_10px_30px_rgba(0,0,0,0.24)]" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
         <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
@@ -184,7 +265,7 @@ export default function LandingPage() {
           <div className="animate-fade-in-up text-center lg:text-left">
             <div className="mx-auto mb-5 inline-flex items-center justify-center gap-2 rounded-full border border-ld-accent/22 bg-ld-accent/10 px-4 py-1.5 lg:mx-0">
               <span className="animate-pulse-dot h-2 w-2 rounded-full bg-ld-accent" />
-              <span className="font-mono text-xs uppercase tracking-wider text-ld-accent">Automated Trading Intelligence</span>
+              <span className="font-mono text-xs uppercase tracking-wider text-ld-accent">Trading Intelligence · Automated or Manual</span>
             </div>
 
             <h1 className="mx-auto max-w-[52rem] text-[clamp(2.4rem,6vw,4.8rem)] font-extrabold leading-[1.04] tracking-tighter lg:mx-0">
@@ -194,8 +275,8 @@ export default function LandingPage() {
 
             <p className="mx-auto mt-5 max-w-[720px] text-[clamp(1rem,2vw,1.16rem)] leading-relaxed text-ld-text-secondary lg:mx-0">
               Beacontry monitors the market, generates confidence-scored trading signals,
-              executes through your broker, and protects every position with adaptive
-              risk management — fully automated.
+              and routes them either through the automated engine or to a manual order
+              ticket — your choice, your broker, every decision inspectable.
             </p>
 
             <div className="mt-8 flex flex-wrap justify-center gap-4 lg:justify-start">
@@ -220,8 +301,9 @@ export default function LandingPage() {
           <aside className="animate-fade-in-up stagger-1 top-accent-line rounded-2xl border border-ld-border bg-ld-card p-8 shadow-[0_22px_60px_rgba(0,0,0,0.32)] transition-all duration-300 hover:-translate-y-1 hover:border-ld-accent/28 hover:shadow-[0_28px_80px_rgba(0,0,0,0.38)]">
             <h3 className="text-lg font-bold">What Beacontry does</h3>
             <p className="mt-3 text-[0.95rem] text-ld-text-secondary">
-              A fully automated trading desk — from market scanning to order execution to
-              risk management — with every trade logged for review.
+              A trading workspace — automated engine for hands-off operation, manual
+              ticket for trade-by-trade discretion, both backed by audit-grade
+              record-keeping and tax tooling.
             </p>
 
             <ul className="mt-5 grid gap-3">

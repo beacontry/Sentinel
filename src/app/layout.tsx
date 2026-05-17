@@ -5,13 +5,67 @@ import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Beacontry",
-  description: "Trading intelligence platform — signals, analysis, and automated execution",
+  metadataBase: new URL("https://beacontry.com"),
+  title: {
+    default: "Beacontry — Open-source trading intelligence with a public audit trail",
+    template: "%s · Beacontry",
+  },
+  description:
+    "Hybrid signal engine, manual order ticket, tax tooling, and journaled trades on your own brokerage. Every signal shows its math. Source-available under FSL-1.1-ALv2.",
+  keywords: [
+    "open source trading platform",
+    "algorithmic trading",
+    "Alpaca",
+    "IBKR",
+    "Tradier",
+    "trading bot",
+    "stock screener",
+    "trade journal",
+    "wash sale tracker",
+    "MTM 475(f)",
+    "audit log trading",
+    "self-hosted trading platform",
+  ],
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "Beacontry",
+  },
+  openGraph: {
+    type: "website",
+    url: "https://beacontry.com",
+    siteName: "Beacontry",
+    title: "Beacontry — Open-source trading intelligence with a public audit trail",
+    description:
+      "Hybrid signal engine, manual order ticket, tax tooling, and journaled trades on your own brokerage. Every signal shows its math.",
+    images: [
+      {
+        url: "/og-card.png",
+        width: 1200,
+        height: 630,
+        alt: "Beacontry — trading intelligence platform",
+      },
+    ],
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Beacontry — Open-source trading intelligence",
+    description:
+      "Hybrid signal engine + manual order ticket + tax tooling on your own brokerage. Every signal shows its math.",
+    images: ["/og-card.png"],
+  },
+  alternates: { canonical: "https://beacontry.com" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
   },
 };
 
