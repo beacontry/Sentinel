@@ -5,6 +5,9 @@ import { alertRules } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { checkTier } from "@/lib/tiers-server";
+import { createRouteLogger } from "@/lib/logger";
+
+const log = createRouteLogger("alerts");
 
 const createAlertSchema = z.object({
   symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
@@ -51,7 +54,8 @@ export async function GET() {
       );
     }
     const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    log.error({ err: message }, "Alerts list failed");
+    return NextResponse.json({ error: "Failed to list alerts" }, { status: 500 });
   }
 }
 
