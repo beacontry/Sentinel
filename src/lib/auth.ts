@@ -4,7 +4,16 @@ import { cookies } from "next/headers";
 import { AUTH_CONFIG } from "./config";
 import { requireCsrf } from "./csrf";
 
-const secret = new TextEncoder().encode(AUTH_CONFIG.jwtSecret);
+// Lazy + cached. AUTH_CONFIG.jwtSecret is a getter that throws if
+// JWT_SECRET is missing — resolving at module load would break
+// `next build`'s page-data collection step, which imports every route
+// without runtime env. We resolve at first request instead.
+let _secret: Uint8Array | null = null;
+function getSecret(): Uint8Array {
+  if (_secret) return _secret;
+  _secret = new TextEncoder().encode(AUTH_CONFIG.jwtSecret);
+  return _secret;
+}
 
 export type UserRole = "admin" | "user";
 
@@ -31,7 +40,7 @@ export async function createToken(payload: JWTPayload): Promise<string> {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${AUTH_CONFIG.maxAge}s`)
-    .sign(secret);
+    .sign(getSecret());
 }
 
 export async function verifyToken(token: string): Promise<JWTPayload | null> {
@@ -40,7 +49,7 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
     // this, jose would accept any algorithm the token header claims —
     // jose 5+ rejects `alg: none` by default, but explicit pinning is
     // cheap and forecloses any future alg-confusion attack.
-    const { payload } = await jwtVerify(token, secret, { algorithms: ["HS256"] });
+    const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
     return payload as unknown as JWTPayload;
   } catch {
     return null;
