@@ -370,7 +370,7 @@ Multi-prong audit triggered by the user asking for "beginner-friendly" QoL fixes
 - `src/app/dashboard/alerts/page.tsx` — empty-state CTAs
 - `src/app/dashboard/performance/page.tsx` — explanatory empty state
 - `src/app/dashboard/feed/page.tsx` — actionable empty state
-- `public/docs/sentinel-features.html` — note new help-text affordances
+- `public/docs/beacontry-features.html` — note new help-text affordances
 
 No database migrations. No deploy steps beyond the standard image rebuild.
 
