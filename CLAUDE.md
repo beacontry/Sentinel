@@ -3,12 +3,13 @@
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)
-- Drizzle ORM + PostgreSQL
-- Anthropic SDK for AI chat analysis
+- Drizzle ORM + PostgreSQL (37 migrations as of `0036_stripe.sql`)
+- Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
-- Vitest for testing (267 tests across indicators, analyzer, validators, signal translator, rate-limiter, db-timeout, crypto, audit, engine-safeguards incl. wash-sale + PDT, guide-search, spaced-repetition)
+- Vitest for testing (467 tests across 27 suites: indicators, analyzer, accuracy, validators, signal-translator, rate-limiter, db-timeout, crypto, audit, engine-safeguards incl. wash-sale + PDT, guide-search, spaced-repetition, market-hours, market-regime, position-intent, reconcile-broker-exit, market-close-guard, reconcile-pending-trades, tax-report, congress-house-parser, congress-senate-parser, reddit, tiers, billing-prices, system-config, breakeven-promote, dynamic-trail)
 - Alpaca Markets API for paper/live trading
+- Stripe for billing (Free / Trader $20 / Premium $40 / Self-Hosted) — webhook handler at `/api/webhooks/stripe`, sandbox + portal at `/api/billing/{checkout,portal}`
 
 ## Architecture: Multi-Tenant Trading Engine
 
@@ -36,7 +37,7 @@ Positions come from the broker API, not the database:
 
 ### Signal Pipeline (Unified)
 All components use the same signal function — `analyzeBars()` from `src/lib/indicators/analyzer.ts`:
-- **Engine** calls `analyzeHybrid()` ��� `analyzeBars(symbol, bars, signalParams?)` — passes optimizer-tuned signal params in "optimized" mode
+- **Engine** calls `analyzeHybrid()` → `analyzeBars(symbol, bars, signalParams?)` — passes optimizer-tuned signal params in "optimized" mode
 - **Optimizer** uses `analyzeSignalOnly()` — lightweight variant with same logic, accepts tunable `SignalParams`
 - **Screener** calls `analyzeHybrid()` with `enableSentiment/OptionsFlow/Analyst/AiScoring: false` — pure technicals via `analyzeBars()` (shared resource, not per-user). Hybrid layers are re-applied by the engine when it processes the screener-pushed signal, so trade-decision quality is unchanged.
 - **Multi-Timeframe** API calls `analyzeBars()` at both 5m and 1d resolutions, computes confluence
@@ -395,20 +396,20 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 - Error display: `text-sm text-bearish`
 - Empty state: EmptyState component or inline centered block with muted icon
 
-## Dashboard Pages (62 total)
+## Dashboard Pages (63 total)
 Located at `src/app/dashboard/*/page.tsx`:
 
 **Core:** alerts, analysis, calculator, chat, screener, settings, trader
 **Analysis & Market:** breadth, correlation, heatmap, multi-timeframe, relative-strength, risk-correlation, sector-rotation, unusual-activity
-**Trading Tools:** backtest, replay, risk-simulator, strategies, strategy-builder, watchlists, **trade/[symbol]** (manual order ticket)
-**Journal & Analytics:** drawdown, journal, performance, pnl-calendar, reports
-**Research:** articles, education, education/guides, education/guides/[slug], education/review, filings, insights, news, sentiment, **congress**
+**Trading Tools:** backtest, backtest/compare, backtest/mode-compare, optimizer, replay, risk-simulator, strategies, strategy-builder, watchlists, **trade/[symbol]** (manual order ticket)
+**Journal & Analytics:** drawdown, journal, performance, pnl-calendar, reports, portfolio, paper-trading
+**Research:** articles, articles/[slug], education, education/guides, education/guides/[slug], education/review, filings, insights, news, sentiment, **congress**
 **Macro:** calendar, currency, earnings, policy
-**Community:** feed, forum, posts, leaderboard, **messages**, **messages/[id]**
-**Help:** **support**, **support/[id]**
-**Public (no auth):** `/terms`, `/risk`, `/w/[token]` (shared watchlist), `/dashboard/messages`
+**Community:** feed, forum, forum/[threadId], posts, posts/[postId], leaderboard, **messages**, **messages/[id]**
+**Billing/Help:** **billing**, **support**, **support/[id]**
+**Public (no auth):** `/terms`, `/risk`, `/privacy`, `/contact`, `/pricing`, `/learn`, `/tools`, `/glossary`, `/congress`, `/articles`, `/w/[token]` (shared watchlist)
 
-**Admin:** admin, **admin/audit**, **admin/system-config**, paper-trading, portfolio, tax, tax-center
+**Admin:** admin, **admin/audit**, **admin/system-config**, tax, tax-center
 
 ### New API Routes
 - `/api/multi-timeframe` — dual-timeframe (5m + 1d) analysis with confluence scoring
@@ -443,6 +444,45 @@ Located at `src/app/dashboard/*/page.tsx`:
 - `/api/support/tickets/[id]` — GET thread, POST reply, PATCH status/priority
 - `/api/dm/threads` — GET list, POST start new
 - `/api/dm/threads/[id]` — GET thread + auto-mark-read, POST reply
+
+### 2026-05-13 to 2026-05-16 — Billing, tier enforcement, marketing
+- `/api/billing/checkout` — Stripe Checkout session (tier + cadence)
+- `/api/billing/portal` — Stripe Customer Portal session for self-service cancel/upgrade
+- `/api/webhooks/stripe` — signature-verified, idempotent via `stripe_events_processed`. Source of tier grants
+- `/api/me/tier` — current user's tier + expiry (read by sidebar/paywall banners)
+- `/api/admin/users` + `/api/admin/users/[id]/tier` — admin tier management (manual upgrades, free trials)
+- `/api/waitlist` — public marketing signup (rate-limited 5/60s, honeypot)
+- `/api/reddit/[symbol]` + `/api/admin/reddit-subreddits` — per-symbol Reddit chatter feed used by hybrid sentiment layer
+- `/api/cron/journal-prompts` — daily pre/post-market prompt write-in
+- `/api/cron/journal-weekly-review` — Sunday digest summary via Groq
+- `/api/admin/system-config` + `/test` — encrypted server-wide API key rotation without SSH (see § AI Providers)
+- `/api/trader/command` — engine control plane (start/stop/halt/switch/flatten-all)
+- `/api/trader/summarize-trade` — Groq-powered AI plain-English trade summary (Recent Trades **AI ✨** button)
+- `/api/broker/orders`, `/api/broker/test` — manual order ticket + broker connectivity test
+- `/api/chat` — AI chat with guide-search RAG injection
+- `/api/filings/chat` — per-filing Groq Q&A
+
+## Migrations roll-up (0016–0036)
+For migrations 0013–0015 see § Education. Newer files (chronological, all idempotent except the legacy pre-0011 set which is documented as a one-shot bootstrap):
+- `0016_audit_log` — hash-chained audit table + advisory-lock helper
+- `0017_live_trading_safeguards` + `0018_safeguards_acknowledged` + `0019_user_live_trading_enabled` — `ALLOW_LIVE_TRADING` gate + per-user opt-in
+- `0020_trader_trades_placeholder_fill` + `0021_trader_trades_ai_summary` — fill-time fixups + Groq summary cache
+- `0022_leaderboard` — public leaderboard with opt-in preferences
+- `0023_multi_watchlist` + `0025_watchlist_share_token` — multiple named lists with revocable share tokens
+- `0024_digest_email_opt_in` — daily-digest opt-in flag on `users`
+- `0026_terms_acceptance` — ToS click-through audit
+- `0027_support_tickets` — customer support tickets + replies
+- `0028_direct_messages` — DM threads + messages with read-tracking
+- `0029_engine_intelligence` — engine alerts table for transient surface signals
+- `0030_system_config` — encrypted key/value store for AES-256-GCM-encrypted API keys
+- `0031_congressional_trades` — local House Clerk + Senate efdsearch ingest target
+- `0032_journal_v2` — auto-stubs, prompts, weekly reviews, behavioral pattern tagging
+- `0033_reddit_subreddits` — admin-managed subreddit watchlist for sentiment
+- `0034_waitlist` — public-marketing email capture
+- `0035_user_tier` — `tier`, `tier_expires_at` on `users`
+- `0036_stripe` — `stripe_customer_id`, `stripe_subscription_id` on `users` + `stripe_events_processed` for idempotency
+
+> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0036 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 
 ## Education Section
 
@@ -511,7 +551,11 @@ Pages are organized under sidebar nav items via `SUB_NAV` in `nav-config.ts`:
 
 ## Changelog
 
-Dated retrospectives of major rollouts (2026-05-12 through 2026-05-14) — covering multi-watchlist, manual trading, broker switching, support/DMs/ToS, journal v2, Reddit feed, tier enforcement + Stripe billing, plus the 6-phase marathon and beginner-friendliness audits — live in `docs/changelog.md`. Read it when investigating "when did X land" or "what changed in batch Y"; day-to-day work uses `git log`.
+Dated retrospectives of major rollouts (2026-05-12 through 2026-05-16) — covering multi-watchlist, manual trading, broker switching, support/DMs/ToS, journal v2, Reddit feed, tier enforcement + Stripe billing, public free-tier signup, brand rebrand to Beacontry, the 6-phase marathon, beginner-friendliness audit, and the 2026-05-16 6-batch security/a11y/theming hardening pass (incl. CSP nonce strategy + sanitize-html removal) — live in `docs/changelog.md`. Read it when investigating "when did X land" or "what changed in batch Y"; day-to-day work uses `git log`.
+
+### CSP — current state (post-hotfix)
+
+CSP is set per-request in `src/middleware.ts` (not `next.config.ts` `headers()`). The middleware generates a per-request nonce attached as `x-nonce` for Next.js's dynamic-route auto-stamping. **However**, `script-src` retains `'unsafe-inline'` because Next.js does NOT auto-stamp nonces on statically-rendered pages (landing, /pricing, /login, /register, /terms — anything flagged `○` in the build output). CSP Level 3 ignores `'unsafe-inline'` when a nonce or hash is present, so the two cannot coexist — and removing `'unsafe-inline'` broke prod twice (commits `c394e9d`, `14743d3`). The nonce is still generated for forward compatibility (a future build-time hash-injection step would let us drop `'unsafe-inline'` cleanly). `'unsafe-eval'` is dev-only for HMR. See the comment block in `src/middleware.ts` for the full reasoning.
 
 ---
 
