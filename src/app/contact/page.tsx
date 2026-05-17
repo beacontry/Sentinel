@@ -16,6 +16,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Radar, Mail, MessageSquare, ExternalLink } from "lucide-react";
+import { LEGAL_ENTITY } from "@/lib/legal-entity";
 
 export const metadata: Metadata = {
   title: "Contact — Beacontry",
@@ -175,6 +176,25 @@ export default function ContactPage() {
               <span className="text-text-muted"> — FSL-1.1-ALv2</span>
             </li>
           </ul>
+        </section>
+
+        {/* Legal entity identification — required for B2C transparency,
+            useful for B2B due diligence, mandatory under most state
+            consumer-protection laws once you accept payment. */}
+        <section className="rounded-xl border border-border bg-bg-surface p-5">
+          <h2 className="text-sm font-semibold text-text-primary mb-2">
+            Legal entity
+          </h2>
+          <p className="text-[0.88rem] text-text-secondary leading-relaxed font-mono">
+            {LEGAL_ENTITY.name}
+            <br />
+            (d/b/a {LEGAL_ENTITY.tradeName})
+            <br />
+            {LEGAL_ENTITY.address.street}
+            <br />
+            {LEGAL_ENTITY.address.city}, {LEGAL_ENTITY.address.state}{" "}
+            {LEGAL_ENTITY.address.zip}
+          </p>
         </section>
       </main>
     </div>

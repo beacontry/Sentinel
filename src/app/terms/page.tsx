@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { Radar } from "lucide-react";
 import { TERMS_VERSION } from "@/lib/terms-version";
+import { LEGAL_ENTITY, formatAddressOneLine } from "@/lib/legal-entity";
 
 export const metadata = {
   title: "Terms of Service — Beacontry",
@@ -46,6 +47,14 @@ export default function TermsPage() {
             Beacontry does not custody assets, hold funds, or execute trades on its own
             books — every order is placed through the brokerage API you configure
             (currently Alpaca, Tradier, or Interactive Brokers).
+          </p>
+          <p>
+            &quot;Beacontry&quot; is a registered trade name of{" "}
+            <strong className="text-text-primary">{LEGAL_ENTITY.name}</strong>, a{" "}
+            {LEGAL_ENTITY.formationState} limited liability company with its principal
+            office at {formatAddressOneLine()}. In these Terms, &quot;Beacontry,&quot;
+            &quot;we,&quot; &quot;us,&quot; and &quot;our&quot; refer to{" "}
+            {LEGAL_ENTITY.name}.
           </p>
         </section>
 
@@ -202,10 +211,57 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base font-semibold text-text-primary">12. Changes</h2>
+          <h2 className="text-base font-semibold text-text-primary">12. Governing Law &amp; Venue</h2>
+          <p>
+            These Terms are governed by the laws of the State of{" "}
+            {LEGAL_ENTITY.governingLaw.state}, without regard to its
+            conflict-of-laws principles. Any dispute arising out of or relating to
+            these Terms, the Service, or your use of Beacontry will be brought
+            exclusively in the state or federal courts located in{" "}
+            {LEGAL_ENTITY.governingLaw.venueCounty},{" "}
+            {LEGAL_ENTITY.governingLaw.state}, and you and {LEGAL_ENTITY.name}{" "}
+            consent to personal jurisdiction in those courts.
+          </p>
+          <p>
+            Nothing in this section limits either party&apos;s right to seek
+            injunctive relief in any court of competent jurisdiction to protect
+            its intellectual property or confidential information.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-text-primary">13. Changes</h2>
           <p>
             These terms may change. Material changes will prompt you to re-accept
             on next sign-in. The version stamp at the top reflects the current text.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-text-primary">14. About Us</h2>
+          <p>
+            Beacontry is operated by{" "}
+            <strong className="text-text-primary">{LEGAL_ENTITY.name}</strong>,
+            a {LEGAL_ENTITY.formationState} limited liability company.
+          </p>
+          <p className="font-mono text-sm leading-relaxed">
+            {LEGAL_ENTITY.name}
+            <br />
+            {LEGAL_ENTITY.address.street}
+            <br />
+            {LEGAL_ENTITY.address.city}, {LEGAL_ENTITY.address.state}{" "}
+            {LEGAL_ENTITY.address.zip}
+            <br />
+            {LEGAL_ENTITY.address.country}
+          </p>
+          <p>
+            General inquiries:{" "}
+            <a
+              href={`mailto:${LEGAL_ENTITY.contactEmail}`}
+              className="text-accent hover:text-accent-hover underline"
+            >
+              {LEGAL_ENTITY.contactEmail}
+            </a>
           </p>
         </section>
 
