@@ -179,20 +179,7 @@ RESEND_API_KEY=re_...   # Sending-only API key from Resend → API Keys
 
 **Verified domain** — `beacontry.com` is verified in Resend (DKIM-signed). The in-code `EMAIL_FROM` default (`Beacontry <hello@beacontry.com>`) aligns with that DKIM so DMARC passes without per-app DNS work. The legacy GuardCyber apex (`guardcybersolutionsllc.com`) remains verified for other GuardCyber-stack apps; Beacontry no longer uses it as of 2026-05-14.
 
-**Rotating the key:**
-1. Resend → API Keys → revoke old key → create new "sentinel-prod" key (Sending access only)
-2. Update `RESEND_API_KEY=` in `/opt/apps/sentinel/.env`
-3. **`podman stop && rm && run`** — `podman restart` does NOT re-read the env-file, only `run` does
-4. Recreate command (verbatim, from `podman inspect`):
-   ```bash
-   podman run -d --name sentinel-app --network=host \
-     --env-file /opt/apps/sentinel/.env \
-     -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 \
-     -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache \
-     -v /opt/apps/sentinel/cache:/data/cache:Z \
-     --restart always -m 2g \
-     ghcr.io/beacontry/sentinel:latest
-   ```
+**Rotating the key:** Revoke old key in Resend → create new "sentinel-prod" key (Sending access only) → update `RESEND_API_KEY=` in `/opt/apps/sentinel/.env` → **`podman stop && rm && run`** (`podman restart` does NOT re-read the env-file, only `run` does). Full recreate command lives in `podman inspect` history / deploy runbook.
 
 **Inbound mail** (bounces, replies to `noreply@`, anyone emailing the domain): Cloudflare Email Routing forwards everything to the admin inbox via a catch-all rule. See GuardCyber `README.md` § Email Infrastructure for the shared setup.
 
@@ -279,33 +266,12 @@ Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.sourc
 
 ## Congressional trades (official source)
 
-`/dashboard/congress` and `/api/congress` read from the local `congressional_trades` table (migration `0031`), which is populated by the daily refresh cron from the official House Clerk bulk PTR archive at `disclosures-clerk.house.gov/public_disc/financial-pdfs/{YEAR}FD.ZIP`. Replaces the previous Finnhub `/stock/congressional-trading` integration that was moved to a paid tier in May 2026.
+`/dashboard/congress` and `/api/congress` read from the local `congressional_trades` table (migration `0031`), populated by the daily refresh cron from the official House Clerk bulk PTR archive (`disclosures-clerk.house.gov`) and Senate efdsearch. Replaces the previous Finnhub integration that went paid in May 2026.
 
-**Ingestion pipeline** (`src/lib/congress-house-ingester.ts`):
-1. Fetch bulk ZIP (~80 KB)
-2. Parse XML index (`fast-xml-parser`) → filter `FilingType="P"` (Periodic Transaction Report)
-3. For each PTR, fetch PDF + extract text (`pdf-parse` v2 class API)
-4. Strip NUL bytes from extracted text (PDF emits them around form-field markers)
-5. Regex-extract transaction rows: `(OWNER)? ASSET (TICKER) [TYPE] {P|S|E} MM/DD/YYYY MM/DD/YYYY $X - $Y`
-6. Filter out Treasury CUSIPs (`isLikelyStockTicker`)
-7. Sanitize asset descriptions (`sanitizeAssetDescription` — strips form preamble + inter-row footer leakage)
-8. Upsert with `ON CONFLICT DO NOTHING` against the unique constraint `(chamber, filer_name, transaction_date, ticker, transaction_type, amount_from)`
-
-**Concurrency:** 5 PDFs in parallel with 250 ms pacing between batches. ~500 PTRs/year × ~3s avg ≈ 5 min per year.
-
-**Cron:** `GET /api/cron/refresh-congress` (auth via `x-cron-secret` header against `CRON_SECRET` env). Pulls current year + (in Jan-Feb) prior year to cover late filings across the year boundary. Schedule daily at 6 AM ET via external scheduler (Cloudflare cron / GitHub Action / droplet crontab).
-
-**Backfill:** `npx tsx scripts/backfill-congress.ts --years 2026,2025,2024`. Idempotent — re-running just skips duplicates.
-
-**Senate ingester** (`src/lib/congress-senate-ingester.ts`) — Phase 2 shipped 2026-05-13. Lives behind `efdsearch.senate.gov` which requires:
-1. GET `/search/home/` to get a `csrftoken` cookie + `csrfmiddlewaretoken` hidden field
-2. POST `/search/home/` with `prohibition_agreement=1` + the token to establish the session
-3. POST `/search/report/data/` with DataTables-style params + `report_type=11` (PTR) + date range → JSON listing of filings with UUIDs
-4. GET `/search/view/ptr/{uuid}/` → HTML page with the transactions table
-
-Parser uses `node-html-parser` against `<h2 class="filedReport">` (filer), `<h1>` (report date), `<tbody> <tr>` (transactions). Skips paper-filed PDFs (`/view/paper/` links — would need OCR) and rows where the Ticker column is `--` (municipal bonds, mutual funds without symbol). The site is fronted by Akamai which is aggressive about non-browser-shaped traffic; the ingester uses a realistic UA + standard browser headers and sequential per-PTR fetches with 500 ms pacing.
-
-The cron and backfill script handle House + Senate independently — one failing doesn't tank the other. After both phases the unified UI at `/dashboard/congress` shows full Congressional coverage.
+- **House ingester** (`src/lib/congress-house-ingester.ts`): bulk ZIP → XML index → per-PTR PDF text extract (`pdf-parse`, strip NUL bytes) → regex transaction rows → filter Treasury CUSIPs → upsert with `ON CONFLICT DO NOTHING` on `(chamber, filer_name, transaction_date, ticker, transaction_type, amount_from)`. 5-PDF parallelism, 250 ms inter-batch pacing.
+- **Senate ingester** (`src/lib/congress-senate-ingester.ts`): efdsearch.senate.gov requires a CSRF-token dance (GET `/search/home/`, POST with `prohibition_agreement=1`, then DataTables POST to `/search/report/data/` with `report_type=11`, then per-PTR GET `/search/view/ptr/{uuid}/`). Akamai-fronted — realistic UA, sequential 500 ms pacing. Skips paper PDFs (would need OCR) and `--` ticker rows. Parser uses `node-html-parser`.
+- **Cron:** `GET /api/cron/refresh-congress` (`x-cron-secret` header vs `CRON_SECRET`). Pulls current year + (in Jan-Feb) prior year. Schedule daily 6 AM ET.
+- **Backfill:** `npx tsx scripts/backfill-congress.ts --years 2026,2025,2024`. Idempotent. House + Senate failures are independent.
 
 ## AI Providers & System Configuration
 
@@ -411,94 +377,14 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 - Error display: `text-sm text-bearish`
 - Empty state: EmptyState component or inline centered block with muted icon
 
-## Dashboard Pages (65 total)
-Located at `src/app/dashboard/*/page.tsx`:
+## Dashboard Pages
+65 pages at `src/app/dashboard/*/page.tsx`. Public (no auth) pages: `/terms`, `/risk`, `/privacy`, `/contact`, `/pricing`, `/learn`, `/tools`, `/glossary`, `/congress`, `/articles`, `/w/[token]` (shared watchlist). See § Sub-Navigation Groups below for how they're organized in the sidebar.
 
-**Core:** alerts, analysis, calculator, chat, screener, settings, trader
-**Analysis & Market:** breadth, correlation, heatmap, multi-timeframe, relative-strength, risk-correlation, sector-rotation, unusual-activity
-**Trading Tools:** backtest, backtest/compare, backtest/mode-compare, optimizer, replay, risk-simulator, strategies, strategy-builder, watchlists, **trade** (index — symbol search + recently-viewed + watchlist quick-trade + open orders), **trade/[symbol]** (manual order ticket)
-**Journal & Analytics:** drawdown, journal, performance, pnl-calendar, reports, portfolio, paper-trading
-**Research:** articles, articles/[slug], education, education/guides, education/guides/[slug], education/review, filings, insights, news, sentiment, **congress**
-**Macro:** calendar, currency, earnings, policy
-**Community:** feed, forum, forum/[threadId], posts, posts/[postId], leaderboard, **messages**, **messages/[id]**
-**Billing/Help:** **billing**, **support**, **support/[id]**
-**Public (no auth):** `/terms`, `/risk`, `/privacy`, `/contact`, `/pricing`, `/learn`, `/tools`, `/glossary`, `/congress`, `/articles`, `/w/[token]` (shared watchlist)
+### API Routes
+Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed` — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
 
-**Admin:** admin, **admin/audit**, **admin/system-config**, tax, tax-center
-
-### New API Routes
-- `/api/multi-timeframe` — dual-timeframe (5m + 1d) analysis with confluence scoring
-- `/api/breadth` — market breadth: advance/decline, % above SMA 50/200, avg RSI, sector breakdown
-- `/api/sector-rotation` — rolling 1w/1m/3m sector performance with rotation phase classification (leading/weakening/lagging/improving)
-- `/api/unusual-activity` — volume spike detection (2x+ 20-day avg) across tracked symbols
-- `/api/education/progress` — per-user guide view + bookmark + quiz state (returns empty for anonymous)
-- `/api/education/guides/[slug]/view` — POST upserts a view, bumps view_count
-- `/api/education/guides/[slug]/bookmark` — POST/DELETE toggles bookmark
-- `/api/education/guides/[slug]/quiz` — POST records quiz attempt; sets quiz_passed_at on first ≥80%
-- `/api/education/review` — GET due-cards queue, POST a review with quality 0–5 (SM-2)
-- `/api/tax-status` — GET/PUT user's self-attested Trader Tax Status + §475(f) MTM declaration
-- `/api/portfolio/summary` — net-worth aggregation across paper portfolios + live broker positions
-
-### 2026-05-12 — New API Routes (multi-watchlist + QoL + community)
-- `/api/watchlists` (plural) — GET list, POST create. Multi-list CRUD on top of legacy `/api/watchlist` (which remains as the "act on default list" surface)
-- `/api/watchlists/[id]` — GET fetch, PATCH rename/setDefault, DELETE (refuses last-list deletion, auto-promotes oldest survivor on default-delete)
-- `/api/watchlists/[id]/items` — POST/DELETE symbols on a specific list
-- `/api/watchlists/[id]/share` — POST generate/rotate token, DELETE revoke
-- `/api/public/watchlist/[token]` — public read endpoint (no auth) backing `/w/[token]`
-- `/api/dashboard/layout` — single default layout (Phase 20)
-- `/api/dashboard/layouts` — multi-layout CRUD with rename/setDefault/delete
-- `/api/dashboard/layouts/[id]` — GET fetch, PATCH update, DELETE
-- `/api/broker/connections/[id]/activate` — atomic broker switcher, refuses while engine runs
-- `/api/congress` — Congressional Periodic Transaction Reports (filings), optional `?symbol=`
-- `/api/transcripts/[symbol]` — earnings-call metadata listing (paid-tier text deferred)
-- `/api/performance/attribution` — realized $ P&L by symbol from `trader_trades`
-- `/api/alerts/history` (DELETE) — bulk-clear caller's alert history
-- `/api/me/digest-email` — GET/PATCH opt-in for daily digest email
-- `/api/me/terms` — GET state, POST accept the current TERMS_VERSION
-- `/api/support/tickets` — GET list, POST open new ticket
-- `/api/support/tickets/[id]` — GET thread, POST reply, PATCH status/priority
-- `/api/dm/threads` — GET list, POST start new
-- `/api/dm/threads/[id]` — GET thread + auto-mark-read, POST reply
-
-### 2026-05-13 to 2026-05-16 — Billing, tier enforcement, marketing
-- `/api/billing/checkout` — Stripe Checkout session (tier + cadence)
-- `/api/billing/portal` — Stripe Customer Portal session for self-service cancel/upgrade
-- `/api/webhooks/stripe` — signature-verified, idempotent via `stripe_events_processed`. Source of tier grants
-- `/api/me/tier` — current user's tier + expiry (read by sidebar/paywall banners)
-- `/api/admin/users` + `/api/admin/users/[id]/tier` — admin tier management (manual upgrades, free trials)
-- `/api/waitlist` — public marketing signup (rate-limited 5/60s, honeypot)
-- `/api/reddit/[symbol]` + `/api/admin/reddit-subreddits` — per-symbol Reddit chatter feed used by hybrid sentiment layer
-- `/api/cron/journal-prompts` — daily pre/post-market prompt write-in
-- `/api/cron/journal-weekly-review` — Sunday digest summary via Groq
-- `/api/admin/system-config` + `/test` — encrypted server-wide API key rotation without SSH (see § AI Providers)
-- `/api/trader/command` — engine control plane (start/stop/halt/switch/flatten-all)
-- `/api/trader/summarize-trade` — Groq-powered AI plain-English trade summary (Recent Trades **AI ✨** button)
-- `/api/broker/orders`, `/api/broker/test` — manual order ticket + broker connectivity test
-- `/api/chat` — AI chat with guide-search RAG injection
-- `/api/filings/chat` — per-filing Groq Q&A
-
-## Migrations roll-up (0016–0036)
-For migrations 0013–0015 see § Education. Newer files (chronological, all idempotent except the legacy pre-0011 set which is documented as a one-shot bootstrap):
-- `0016_audit_log` — hash-chained audit table + advisory-lock helper
-- `0017_live_trading_safeguards` + `0018_safeguards_acknowledged` + `0019_user_live_trading_enabled` — `ALLOW_LIVE_TRADING` gate + per-user opt-in
-- `0020_trader_trades_placeholder_fill` + `0021_trader_trades_ai_summary` — fill-time fixups + Groq summary cache
-- `0022_leaderboard` — public leaderboard with opt-in preferences
-- `0023_multi_watchlist` + `0025_watchlist_share_token` — multiple named lists with revocable share tokens
-- `0024_digest_email_opt_in` — daily-digest opt-in flag on `users`
-- `0026_terms_acceptance` — ToS click-through audit
-- `0027_support_tickets` — customer support tickets + replies
-- `0028_direct_messages` — DM threads + messages with read-tracking
-- `0029_engine_intelligence` — engine alerts table for transient surface signals
-- `0030_system_config` — encrypted key/value store for AES-256-GCM-encrypted API keys
-- `0031_congressional_trades` — local House Clerk + Senate efdsearch ingest target
-- `0032_journal_v2` — auto-stubs, prompts, weekly reviews, behavioral pattern tagging
-- `0033_reddit_subreddits` — admin-managed subreddit watchlist for sentiment
-- `0034_waitlist` — public-marketing email capture
-- `0035_user_tier` — `tier`, `tier_expires_at` on `users`
-- `0036_stripe` — `stripe_customer_id`, `stripe_subscription_id` on `users` + `stripe_events_processed` for idempotency
-- `0037_app_settings` — KV store for non-secret feature flags (`REGISTRATION_OPEN`, `NOTIFY_ADMINS_ON_REGISTER`). Sibling of `system_config` (which holds AES-256-GCM-encrypted API keys); separate table because plaintext booleans don't need encryption + admin policy can diverge
-- `0038_api_usage_log` — daily-aggregate counters for external API consumption (Groq tokens + Finnhub request counts), per `(date, provider)` with UPSERT-on-write. Powers the API Usage card on `/dashboard/admin/system-config`
-- `0039_users_billing_status` — `billing_status` text column on `users` (`past_due` / null) set by the Stripe webhook on `invoice.payment_failed` and cleared on `invoice.payment_succeeded`. Drives the dashboard-wide past-due banner
+## Migrations
+Browse `drizzle/*.sql` for the full list (40 migrations as of `0039_users_billing_status.sql`). All idempotent (`IF NOT EXISTS`).
 
 > **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0039 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 
@@ -528,29 +414,8 @@ Adding a calculator: drop the component, then add to all three places.
 - **Dashboard widgets** — `NetWorthWidget` (aggregates portfolios + broker cache), `ContinueReadingWidget` (next education action via `useEducationProgress()`). Both registered in `src/lib/widget-registry.ts`.
 - **Guide bodies** — `<GlossaryAwareText>` auto-wraps known terms in tooltip definitions inside paragraph/list/callout text. Multi-word terms match first; per-paragraph dedup.
 
-### Database (3 tables, all in `src/lib/db/schema/education.ts`)
-- `glossary_terms` + `education_progress` — legacy schema, kept for FK stability but unused by the v1+ routes
-- `education_guide_views` — `(user_id, slug)` unique. View count, bookmark state, quiz state (`quiz_score`, `quiz_total`, `quiz_passed_at`, `quiz_attempts`). Slug is text — no FK to a guides table since guides live in TS.
-- `glossary_review_state` — SM-2 per `(user_id, term_id)`. `ease_factor` stored as integer ×100.
-- `user_tax_status` — one row per user. Self-attested TTS + MTM election year + free-form notes. Pure record-keeping; Sentinel does not file or validate.
-
-### Migrations
-- `0013_education_guide_views.sql` — guide view tracking
-- `0014_education_guide_quiz.sql` — adds 4 quiz columns to `education_guide_views`
-- `0015_education_review_and_tax_status.sql` — adds spaced-rep + tax-status tables
-
-All idempotent (`IF NOT EXISTS`). Apply on prod as `postgres`:
-```bash
-scp drizzle/0015_*.sql deploy@<host>:/tmp/
-ssh deploy@<host> "sudo -u postgres psql sentinel_db -v ON_ERROR_STOP=1 -f /tmp/0015_*.sql"
-```
-
-### Disclaimers
-`<EducationalDisclaimer />` (full + compact variants) is on every guide top + footer, every calculator, the hub page, and the guides index. Tagged with `data-print-disclaimer` so it renders prominently in printed/PDF output. Tax Status modal also carries a strong "self-attestation only" warning.
-
-### Tests
-- `tests/unit/guide-search.test.ts` (13 tests) — RAG indexer
-- `tests/unit/spaced-repetition.test.ts` (11 tests) — SM-2 algorithm
+### Database & Disclaimers
+Schema in `src/lib/db/schema/education.ts` — `education_guide_views` (view count + bookmark + quiz state, slug is text since guides live in TS), `glossary_review_state` (SM-2 per `(user_id, term_id)`, `ease_factor` as integer ×100), `user_tax_status` (self-attested TTS + MTM election year). `glossary_terms` + `education_progress` are legacy/unused but kept for FK stability. `<EducationalDisclaimer />` (full + compact) renders on every guide, calculator, hub page, and the Tax Status modal — tagged `data-print-disclaimer` for PDF output.
 
 ### Backtest Page
 - **Strategy presets** are filtered to the 6 engine-runnable base modes (`conservative`, `moderate`, `aggressive`, `optimized`, `tactical`, `tactical-smart`) plus `adaptive` (7th, regime-driven), `custom`, and `auto`. The live-trader mode picker is filtered further to `USER_FACING_MODES` (optimized / tactical / tactical-smart / adaptive); the others remain in the backtest preset list for offline research.
