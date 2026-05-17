@@ -1,5 +1,6 @@
 import { CLAUDE_CONFIG } from "./config";
 import { getLlmApiKey } from "./system-config";
+import { recordApiUsage } from "./api-usage";
 import type { MarketContext, ChatContext } from "@/types";
 
 interface DigestResult {
@@ -77,10 +78,15 @@ export async function groqChat(messages: GroqMessage[], maxTokens: number): Prom
 
   if (!res.ok) {
     const err = await res.text().catch(() => "Unknown error");
+    // Track the failed call (counts as a request + error, 0 tokens billed).
+    recordApiUsage("groq", { error: true });
     throw new Error(`Groq API error ${res.status}: ${err}`);
   }
 
-  return res.json();
+  const json = (await res.json()) as GroqResponse;
+  // Fire-and-forget usage tracking — never blocks the caller.
+  recordApiUsage("groq", { tokensUsed: json.usage?.total_tokens ?? 0 });
+  return json;
 }
 
 class LLMClient {
