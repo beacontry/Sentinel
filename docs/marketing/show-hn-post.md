@@ -154,7 +154,7 @@ Author engagement materially affects upvote velocity. Stay at the computer for t
 
 - [ ] WY DBA filed at wyobiz.wyo.gov
 - [ ] Stripe Tax enabled
-- [ ] /terms and /privacy name the LLC (already done in commit fa2cd7d)
+- [ ] /terms and /privacy name the LLC (already done in commit 1740306)
 - [ ] README assets recorded — GIF + 3 screenshots
 - [ ] /paper-trading-log live with at least 2 weeks of real signals
 - [ ] You're at your computer for the next 4 hours

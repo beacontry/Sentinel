@@ -1,6 +1,6 @@
 # Rotate-secrets runbook
 
-Triggered by the 2026-05-17 public-source vuln assessment. Use this runbook to rotate `JWT_SECRET` and `CRON_SECRET` on the production droplet after the security-fix commits (`4389cf2`, `a9680f4`, `de9bde5`) land in prod.
+Triggered by the 2026-05-17 public-source vuln assessment. Use this runbook to rotate `JWT_SECRET` and `CRON_SECRET` on the production droplet after the security-fix commits (`2d5964d`, `cf2ea28`, `fb58a23`) land in prod.
 
 The wrapper script is at `scripts/rotate-secrets.sh` in the repo.
 
