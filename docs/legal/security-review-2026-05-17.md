@@ -80,14 +80,18 @@ These came up CLEAN in the assessment. Useful to know if a HN commenter asks abo
 
 ---
 
-## Recommended one-time actions for the operator (NOT done in this commit)
+## Recommended one-time actions for the operator
 
-These are user-action items:
+Tooling shipped this commit. Operator must still execute the rotation
+on the droplet itself — these are destructive prod ops Claude doesn't
+do directly.
 
-1. **Generate a fresh `JWT_SECRET`** for prod immediately (since the old value may have been used alongside the literal fallback). Use `openssl rand -base64 48`. Set in `/opt/apps/sentinel/.env` and restart the container — see Sentinel-prod env-update runbook in the brand-decision memory.
-2. **Rotate `CRON_SECRET`** for prod immediately (since the timing oracle existed in 6 routes for some unknown duration). Use `openssl rand -base64 32`. Update env + restart, then update each cron job's `X-Cron-Secret` header in its scheduler.
-3. **Audit Cloudflare** to confirm: (a) `cf-connecting-ip` IS being set on all incoming requests; (b) `x-forwarded-for` from clients is being stripped or normalized (Cloudflare does this by default for the trusted header).
-4. **Verify `JWT_SECRET` was set in prod's env-file before this deploy.** If the prod container has been running with `NODE_ENV=production` and a real JWT_SECRET, no historical compromise. If at any point `NODE_ENV` was misconfigured, treat every existing session token as compromised (force log-out, rotate cookie name temporarily to invalidate cached tokens).
+1. **Rotate `JWT_SECRET`** — TOOLING SHIPPED. Run `scripts/rotate-secrets.sh rotate` on the droplet (`ssh deploy@192.241.132.219`, then `cd /opt/apps/sentinel && ./scripts/rotate-secrets.sh rotate`). Generates a fresh 48-byte base64 secret, backs up the env file, restarts the container, polls health. Forces re-login on all users (intentional). See `docs/runbooks/rotate-secrets.md`. STATUS: tooling ✓ shipped, operator must run.
+2. **Rotate `CRON_SECRET`** — TOOLING SHIPPED. Same script as #1; rotates both keys in the same run. Operator must also update each cron job's `x-cron-secret` header in the scheduler after rotation (script prints the new secret once for paste). STATUS: tooling ✓ shipped, operator must run.
+3. **Audit Cloudflare** — DONE. `scripts/rotate-secrets.sh check-cf` smoke-tests the proxy on the live site. Confirmed 2026-05-17: `cf-ray` header present + `cf-cache-status: DYNAMIC` → Cloudflare is in front of beacontry.com, `cf-connecting-ip` will be populated on inbound requests, `src/lib/rate-limit-ip.ts` has a trusted IP source. STATUS: ✓ verified.
+4. **Verify `JWT_SECRET` history** — TOOLING SHIPPED. `scripts/rotate-secrets.sh check-env` (run on the droplet) shows the running container's `NODE_ENV` + presence of secret keys (values redacted) + 14-day `NODE_ENV` history via journald. If `NODE_ENV` was ever NOT `production` during the JWT-fallback window, bump `AUTH_CONFIG.cookieName` in `src/lib/config.ts` for one deploy to force-invalidate stale cookies. STATUS: tooling ✓ shipped, operator must run.
+5. **Rotate `STRIPE_SECRET_KEY` and update via `/dashboard/admin/system-config`** — DONE. Operator rotated 2026-05-17 after pasting the old key into chat (treated as compromised on that basis). Tooling: the admin UI's encrypted system_config flow + `scripts/configure-stripe-webhook.mjs` to refresh the webhook event subscription. STATUS: ✓ rotated.
+6. **Subscribe Stripe webhook to all 7 events the handler covers** — DONE. `scripts/configure-stripe-webhook.mjs` connects to Stripe, diffs current vs desired `enabled_events`, applies. Previously the prod endpoint listened to only 1 event (`charge.refunded`); now listens to all 7 the handler switches on (checkout.session.completed, customer.subscription.{created,updated,deleted}, invoice.payment_{succeeded,failed}, charge.refunded). STATUS: ✓ applied.
 
 ---
 

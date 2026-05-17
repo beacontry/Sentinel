@@ -4,6 +4,106 @@ Dated retrospectives extracted from CLAUDE.md. Day-to-day "when did X land" ques
 
 ---
 
+## 2026-05-17 — Marathon: public-source security, billing wired, admin gaps closed, correctness sweep
+
+After opening the repo to public visibility under FSL-1.1-ALv2, an end-to-end pass: vuln assessment specifically through the public-code lens, finish wiring Stripe billing lifecycle, fill the admin operational gaps that would surface the moment customers arrive, then a correctness sweep before pushing.
+
+### Security — public-source threat model
+Triggered by the repo going public. Full report at `docs/legal/security-review-2026-05-17.md`. Three P0s fixed in commit `4389cf2`:
+- **JWT secret hardcoded fallback** (`src/lib/config.ts`) — literal default removed. Throws at first request if env unset. Lazy-resolved so `next build` still works without runtime env (commit `a9680f4` follow-up).
+- **Rate-limiter bypass via spoofed `X-Forwarded-For`** — new `src/lib/rate-limit-ip.ts` reads only `cf-connecting-ip` (Cloudflare-trusted). All 4 auth-rate-limit routes migrated.
+- **Cron-secret timing oracle** — all 6 cron routes use `safeCompare` from `src/lib/crypto.ts` (`crypto.timingSafeEqual`).
+- **JWT alg pin** (P2 hardening) — `{ algorithms: ["HS256"] }` on both `jwtVerify` call sites.
+
+Operator-action scripts shipped:
+- **`scripts/rotate-secrets.sh`** with `rotate` / `check-cf` / `check-env` subcommands. `rotate` does atomic backup → sed → `podman stop+rm+run` → health-check, with `--dry-run` preview. Documented at `docs/runbooks/rotate-secrets.md`.
+- **`.mailmap`** to consolidate historical Co-Authored-By Claude commits under the canonical author in GitHub's contributors graph.
+
+### Billing pipeline wired end-to-end
+Stripe was in sandbox until today. Live mode active, webhook fully subscribed.
+- **`charge.refunded` webhook handler** added. Audit-log entry only (no auto-cancel).
+- **`invoice.payment_failed`** now marks `users.billing_status = 'past_due'` (migration `0039_users_billing_status`) + writes `BILLING_PAYMENT_FAILED` audit row. Tier stays intact (Stripe retries for ~3 weeks of dunning); only `customer.subscription.deleted` downgrades.
+- **`invoice.payment_succeeded`** clears `billing_status` back to null + writes `BILLING_PAYMENT_RECOVERED` audit row.
+- **Dashboard past-due banner** at `src/components/layout/billing-status-banner.tsx`. Mounted in `/dashboard/layout.tsx` above `<PinSetupBanner />`. Yellow warning with "Update payment method →" CTA. 6h-TTL localStorage dismissal.
+- **`/api/me/tier`** now also returns `billing_status` so the banner can branch without an extra request.
+- **`scripts/configure-stripe-webhook.mjs`** — auto-sync the prod webhook's `enabled_events` list with the handler's switch cases. Interactive prompt for the secret (hidden input, no shell history), `--dry-run` preview, idempotent. Used to add 6 missing event subscriptions to the live `we_1TY8J4BxM3XU9XmVtXzH8Qw3` endpoint (was only listening to `charge.refunded`).
+
+3 new `AuditAction` constants: `BILLING_REFUNDED`, `BILLING_PAYMENT_FAILED`, `BILLING_PAYMENT_RECOVERED`.
+
+### Admin operational gaps closed
+Five gap-fixes from the post-launch readiness audit:
+1. **`app_settings` KV table** (migration `0037`) + helper at `src/lib/app-settings.ts`. Non-secret feature flags (sibling of `system_config` which holds encrypted API keys). Two known keys today: `REGISTRATION_OPEN` (default true) gates public free-tier signup, `NOTIFY_ADMINS_ON_REGISTER` (default true) sends an email to every admin on new account creation. Admin UI card at `/dashboard/admin/system-config`.
+2. **Audit page filters + CSV export** — `/api/admin/audit` now supports `from` / `to` date range, `actorEmail` ILIKE search (joined via users), `format=csv` for RFC-4180 export (5000-row cap, 10s timeout). UI gained 4-cell responsive filter grid + Export CSV button.
+3. **`api_usage_log` table** (migration `0038`) + helper at `src/lib/api-usage.ts`. Daily aggregate of external API calls (Groq tokens, Finnhub request counts). Recorded fire-and-forget by `groqChat()` and Finnhub `request()` (lazy import to avoid circular). Admin UI card with Today / Last 7 days / 30-day breakdown.
+4. **Stripe refund webhook + past-due banner** (covered in § Billing above).
+5. **ToS § 12 Limitation of Liability** (cap at greater of last-12-months fees or $100) and **§ 13 Indemnification** (user holds Guard Cyber Solutions LLC harmless against third-party claims arising from their trading). `TERMS_VERSION` bumped to `2026-05-17b` so existing users re-accept.
+
+### Marketing + legal readiness
+- **Legal-entity identification** in customer-facing pages: `/terms`, `/privacy`, `/contact` now name "Guard Cyber Solutions LLC d/b/a Beacontry" + Wyoming Sheridan address. Wyoming governing law + Sheridan County venue added to ToS § 14. Centralized in `src/lib/legal-entity.ts`.
+- **Source visibility decision doc** at `docs/legal/source-visibility-decision.{md,docx}` — pre-customer-state analysis of public-FSL vs private. Recommendation: stay public + FSL. Companion to existing `licensing-and-acquisition.md` (strategic license rationale).
+- **Marketing playbook** at `docs/marketing-playbook.docx` — pre-launch through first-100-customer execution guide with BLUF, target customer, positioning, channels, content engine, 90-day milestones.
+- **Show HN draft** at `docs/marketing/show-hn-post.md` + **launch essay** at `docs/marketing/launch-essay.md`. Both publish-ready; gated on the WY DBA filing + Stripe Tax + README assets (GIF + 3 screenshots) being recorded.
+- **SEO**: root layout (`src/app/layout.tsx`) gained Open Graph + Twitter Card + 12 keywords + `metadataBase`. Landing page (`src/app/page.tsx`) gained schema.org `SoftwareApplication` JSON-LD with per-tier `Offer` blocks. Sitemap + robots.txt already in place.
+- **Landing-page positioning fix**: hero copy used to say "fully automated" / "no manual order entry" which directly contradicted the manual-trade workflow. Replaced with "Automated or manual" framing across the eyebrow chip, headline tagline, and 4-bullet hero checklist.
+
+### Manual-trade discoverability — new `/dashboard/trade` index
+A UX-audit finding surfaced that `/dashboard/trade/[symbol]` was reachable only through clicking a symbol on Analysis (3 clicks deep, no sidebar entry). Built `/dashboard/trade` (index) at `src/app/dashboard/trade/page.tsx`:
+- Symbol-search form → routes to `/dashboard/trade/[X]`
+- Recently-viewed chips (from existing `useRecentlyViewed` hook)
+- Default-watchlist quick-trade chips
+- Open-orders table (calls `/api/broker/orders`)
+- Engine-running warning banner pinned at top (defense-in-depth: API still returns 409 if engine running; per-symbol UI still disables submit; this banner surfaces the gate one step earlier)
+
+Sidebar nav (`src/components/layout/nav-config.ts`) gained "Trade Ticket" tab in `SUB_NAV.trader` between "Live Trader" and "Strategies", plus `/dashboard/trade` added to the matchPaths.
+
+### Cron schedule installed on prod
+Prior to today, only `policy-update` was scheduled. Added 6 more lines to the droplet crontab (CRON_SECRET pulled from `/opt/apps/sentinel/.env`):
+- `0 13 * * 1-5` — `market-digest` (9 AM ET weekdays, populates `/dashboard/articles`)
+- `0 11 * * *` — `refresh-congress` (7 AM ET daily, House + Senate PTRs)
+- `0 */4 * * *` — `check-accuracy` (signal accuracy verification)
+- `30 12 * * 1-5` — `journal-prompts?type=pre-market`
+- `30 20 * * 1-5` — `journal-prompts?type=post-market`
+- `0 22 * * 0` — `journal-weekly-review` (Sunday 6 PM ET)
+
+Manually fired `market-digest` immediately to populate today's article (2188 tokens). Articles table went from 0 → 1.
+
+### Beacontry Desk system user
+The first daily-digest article showed "Avalon" as the author (because the cron used the first admin user as `authorId`). Fixed: created a dedicated `desk@beacontry.com` system user via `src/lib/system-users.ts:getOrCreateBeacontryDeskUser()`. Random 32-byte bcrypt-12 password (nobody can log in as this account). All future digests own through that user; today's existing article repointed via one-off SQL. Admin DELETE-user endpoint now refuses to delete this account.
+
+### UX audit fixes
+- **Dead Alerts bell** on `/dashboard` home was missing an `onClick` → wrapped in `<Link href="/dashboard/alerts">`.
+- **5 missing SubNav strips** added: `/dashboard/trade`, `/dashboard/optimizer`, `/dashboard/leaderboard`, `/dashboard/messages` (plus the new `/dashboard/trade` index).
+- **Mode Compare** hardcoded "back to Backtest" link → `<SmartBackButton fallbackHref="/dashboard/backtest" />`. Calls `router.back()` if there's same-origin history.
+- **Alerts page form schema mismatch** — UI sent `{name, ruleType, threshold}` but API expects `{indicatorField, operator, value}`. Form was silently 400-ing. Fixed field names; added 6 one-click alert templates (RSI oversold, RSI overbought, strong signal, 5% drop, SMA cross, EMA cross) in the empty state.
+
+### Correctness sweep
+After everything was wired, ran a logical-correctness audit. Two P0s + 4 P1s/P2s fixed (commit `723dead`):
+- **Stripe webhook silently swallowed handler errors** — used to record dedup BEFORE handler, return 200 on failure. Fixed: roll back dedup row + return 500 so Stripe retries.
+- **Wash-sale protection silently disabled on DB error** — `refreshWashSaleBlockedSymbols` used to return an empty Set on error, caller stored it as the blocked set + bumped refresh timestamp. Fixed: throw on error; caller keeps previous set, doesn't bump. Also switched the query to anchor on `fillTime` (with `createdAt` fallback) per the project's stated tax/wash-sale convention.
+- **Audit CSV header mismatch** between empty and populated paths — extracted single `CSV_HEADER` const.
+- **`getRateLimitIp` dev fallback** — `NODE_ENV != production` falls back to `x-forwarded-for` / `x-real-ip` so local curl + vitest work with realistic per-IP buckets.
+- **Cron UTC vs ET date keying** — new `src/lib/market-day.ts:getEasternToday()` formats today in America/New_York via `Intl.DateTimeFormat`. Applied in 3 cron routes (market-digest, journal-prompts, journal-weekly-review).
+- **Admin DELETE on Desk user** — blocked with explicit 400 error.
+
+### Files added (15)
+- `drizzle/0037_app_settings.sql`, `0038_api_usage_log.sql`, `0039_users_billing_status.sql`
+- `src/lib/db/schema/app-settings.ts`, `api-usage.ts`
+- `src/lib/app-settings.ts`, `api-usage.ts`, `legal-entity.ts`, `market-day.ts`, `rate-limit-ip.ts`, `system-users.ts`
+- `src/app/api/admin/{app-settings,api-usage}/route.ts`
+- `src/app/dashboard/trade/page.tsx`
+- `src/components/admin/{app-settings-card,api-usage-card}.tsx`
+- `src/components/layout/billing-status-banner.tsx`
+- `scripts/{rotate-secrets.sh,configure-stripe-webhook.mjs,build-source-visibility-docx.mjs,build-marketing-playbook-docx.mjs}`
+- `docs/legal/{security-review-2026-05-17.md,source-visibility-decision.md,source-visibility-decision.docx}`
+- `docs/marketing/{show-hn-post.md,launch-essay.md}`, `docs/marketing-playbook.docx`
+- `docs/runbooks/rotate-secrets.md`
+- `.mailmap`
+
+### Migrations applied on prod (today)
+`0037 + 0038 + 0039` via `ssh deploy@192.241.132.219 'sudo -u postgres psql sentinel_db -v ON_ERROR_STOP=1 -f /tmp/...'`. All idempotent (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`). Verified each schema landed correctly.
+
+---
+
 ## 2026-05-12 — Multi-watchlist + Dashboard layouts (Phase 20 + A/B)
 
 ### Multi-watchlist (DB-backed, replaces localStorage workspaces)
