@@ -485,7 +485,7 @@
     </div>
     <div class="card">
       <div class="card-title">Execute <span class="badge">Trade</span></div>
-      <p>Self-optimizing trading engine — 8 modes. Manual order ticket (market/limit/stop/bracket/fractional). Three brokers: Alpaca, Tradier, IBKR. Paper + live. Backtest, compare, optimize, replay, stress-test.</p>
+      <p>Self-optimizing trading engine — 7 modes. Manual order ticket (market/limit/stop/bracket/fractional). Three brokers: Alpaca, Tradier, IBKR. Paper + live. Backtest, compare, optimize, replay, stress-test.</p>
     </div>
     <div class="card">
       <div class="card-title">Journal <span class="badge">Reflect</span></div>
@@ -509,17 +509,16 @@
 <!-- ============================ SLIDE 3: ENGINE MODES ============================ -->
 <section class="slide">
   <div class="eyebrow">Concepts · 2 of 7</div>
-  <h2>Eight engine modes</h2>
-  <p class="lede">Different risk postures, different scan cadences. Pick one, or pick adaptive and let the regime classifier choose.</p>
+  <h2>Seven engine modes</h2>
+  <p class="lede">Different risk postures and entry behaviors. The Trader picker exposes <strong>optimized / tactical / tactical-smart / adaptive</strong>; the four base signal modes are reachable via adaptive's regime classifier. (Intraday mode was retired in v3.1.)</p>
   <div class="grid cols-4">
     <div class="card"><div class="card-title">Conservative</div><p>Lower confidence threshold, wider stops, fewer concurrent positions.</p></div>
-    <div class="card"><div class="card-title">Moderate</div><p>Balanced. The default if you're not sure where to start.</p></div>
+    <div class="card"><div class="card-title">Moderate</div><p>Balanced. Default base mode for moderate-regime resolutions.</p></div>
     <div class="card"><div class="card-title">Optimized</div><p>Uses GA-tuned parameters from the optimizer. Updated when you accept a new tune.</p></div>
     <div class="card"><div class="card-title">Aggressive</div><p>Tighter stops, higher position size, looser confidence gate. Risk-on environments only.</p></div>
-    <div class="card"><div class="card-title">Intraday</div><p>5-min bars, 1-min scans. <span class="pill warning">PDT-sensitive</span> under $25k.</p></div>
     <div class="card"><div class="card-title">Tactical</div><p>SPY trend filter — enters when above SMA, exits when below. Bull-only.</p></div>
     <div class="card"><div class="card-title">Tactical Smart</div><p>Tactical + screener-scored entries. Always-on rebalance to top signals.</p></div>
-    <div class="card"><div class="card-title">Adaptive</div><p>Reads VIX + SPY + breadth, picks the right base mode for the regime.</p></div>
+    <div class="card"><div class="card-title">Adaptive</div><p>Reads VIX + SPY (+ breadth, backtest-only), picks the right base mode for the regime each scan.</p></div>
   </div>
 </section>
 
@@ -711,7 +710,7 @@
     </div>
     <div class="card">
       <div class="card-title">Compare</div>
-      <p>Pick up to 5 saved strategies. Side-by-side stats columns + equity-curve overlay normalized to start = 100. Mode-compare runs all 8 modes against one symbol.</p>
+      <p>Pick up to 5 saved strategies. Side-by-side stats columns + equity-curve overlay normalized to start = 100. Mode-compare runs the user-selectable comparable modes (optimized, tactical, adaptive) + SPY buy-and-hold against one symbol — tactical-smart's basket-swap logic doesn't translate to a daily-bar backtest, and the base signal modes are reachable only via adaptive.</p>
     </div>
     <div class="card">
       <div class="card-title">Optimizer</div>
