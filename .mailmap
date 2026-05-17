@@ -13,7 +13,15 @@
 
 # Claude Code commits (historical, before 2026-05-17) — Co-Authored-By
 # trailers from past sessions get attributed to the canonical author
-# rather than appearing as a separate contributor on GitHub.
+# rather than appearing as a separate contributor.
+#
+# Note: GitHub's Contributors graph specifically does NOT honor .mailmap
+# for Co-Authored-By trailers — only for the primary author field. So
+# this mapping fixes `git shortlog --use-mailmap` and the GitHub profile
+# page, but does NOT remove "Claude" from the repo's Contributors
+# sidebar widget. To remove Claude from that widget, history must be
+# rewritten (git filter-branch --msg-filter ...) + force-pushed.
 Julio Soriano <ixiondt@proton.me> Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Julio Soriano <ixiondt@proton.me> Claude Opus 4.6 (1M context) <noreply@anthropic.com>
 Julio Soriano <ixiondt@proton.me> Claude <noreply@anthropic.com>
 Julio Soriano <ixiondt@proton.me> Claude Code <noreply@anthropic.com>

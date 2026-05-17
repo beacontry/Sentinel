@@ -6,6 +6,60 @@ The wrapper script is at `scripts/rotate-secrets.sh` in the repo.
 
 ---
 
+## Rotation policy — when (and when NOT) to rotate
+
+**Rotation is event-driven, not scheduled.** Don't put it on a cron.
+
+### When to rotate (DO)
+
+| Trigger | Cadence |
+|---|---|
+| **Suspected compromise** — key leaked in chat / commit / Slack, ex-employee with access, prod breach | Immediately |
+| **P0 security finding** in the JWT or CRON path | Within 24 hours |
+| **Hygiene** — calendar reminder (your phone, NOT cron) | Quarterly or annually, only when an operator is on hand to babysit |
+| **Image / namespace transfer** that brought new operators into the audit chain | After the transfer settles |
+
+### When NOT to rotate (DON'T)
+
+| Anti-pattern | Why it's wrong |
+|---|---|
+| **Monthly cron-driven rotation** | 12 forced user log-outs per year for zero benefit absent a leak. Modern guidance (NIST SP 800-63B 2017, OWASP) explicitly deprecates periodic secret rotation without compromise evidence. |
+| **Automating rotation in CI** | Cron-driven prod-mutating jobs fail silently. You find out from angry user emails, not from telemetry. The 2026-05-17 rotation hit a rootless-Podman bug — same bug at 3 AM Saturday with no human present = outage. |
+| **Rotating proactively "just to be safe"** | The token TTL (7 days, `AUTH_CONFIG.maxAge`) already bounds any stolen-token window. Stolen-SECRET attacks require server-side compromise — at that point rotating JWT is the least of your problems. |
+| **Rotating after every deploy** | Same reasoning. Deploys aren't security events. |
+
+### What handles the steady-state risk (already in place)
+
+| Layer | Effect |
+|---|---|
+| `AUTH_CONFIG.maxAge = 7 days` | Any stolen session token expires within a week regardless of secret rotation |
+| `src/lib/rate-limit-ip.ts` reads `cf-connecting-ip` only | Per-IP rate-limit bypass via spoofed XFF is closed |
+| `safeCompare` on cron-secret comparisons | Timing-oracle byte-by-byte recovery is closed (was the historical attack vector) |
+| Audit log on every `system_config` write | Any out-of-band secret access leaves a hash-chained trail |
+| Cloudflare WAF + per-IP rate limit at the edge | Bots and credential-stuffing get filtered before hitting the app |
+
+If you're tempted to schedule rotation, instead add another layer above — e.g., an "anomalous login-volume" alert on the auth route, or a `users.last_session_invalidated_at` column for selective forced-logouts. Those address the actual risk (compromised session) rather than the surface-level "secret might be old" framing.
+
+### Industry comparables
+
+These platforms do NOT auto-rotate their app-layer secrets:
+
+- **Stripe** — API keys + webhook secrets. Rotate on event, via Dashboard.
+- **AWS IAM** — access keys. Rotation is documented as the operator's responsibility, not a service feature.
+- **GitHub** — personal access tokens. User-managed, with expiry dates the user chooses.
+- **Cloudflare** — API tokens. User-managed.
+- **HashiCorp Vault** — automates rotation for *database* credentials (which clients can re-fetch transparently) but does NOT automate JWT-signing-key rotation for the same UX reasons.
+
+The exception is "downstream service tokens with no human in the loop" (e.g., a service-to-service JWT minted with a short TTL and rotated by a daemon). That's a different threat model. For user-facing JWT signing where rotation invalidates every active session, event-driven is the right pattern.
+
+### Practical recommendation
+
+1. **Add a quarterly calendar reminder** to yourself (phone, calendar app, sticky note — anything except cron) to run `./scripts/rotate-secrets.sh rotate` as a hygiene rotation. Skip it if you're in the middle of a launch; don't skip it three quarters in a row.
+2. **Treat any leak as a P0** — drop everything, run the rotation in the next 15 minutes. The script supports `--yes` for non-interactive use after you've previewed with `--dry-run` once.
+3. **Don't optimize for "what if the cron breaks"** — by the time you'd need cron-driven rotation, you have a real incident-response process that's better than a cron anyway.
+
+---
+
 ## From your laptop, right now (no SSH needed)
 
 Quick verification that Cloudflare is still proxying inbound requests — the new `src/lib/rate-limit-ip.ts` depends on `cf-connecting-ip` being populated:
