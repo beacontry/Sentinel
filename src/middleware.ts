@@ -3,7 +3,16 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { AUTH_CONFIG } from "@/lib/config";
 
-const secret = new TextEncoder().encode(AUTH_CONFIG.jwtSecret);
+// Lazy + cached. AUTH_CONFIG.jwtSecret is a getter that throws if
+// JWT_SECRET is missing — resolving at module load would break
+// `next build`'s page-data collection step (no runtime env). Resolve
+// at first request instead.
+let _secret: Uint8Array | null = null;
+function getSecret(): Uint8Array {
+  if (_secret) return _secret;
+  _secret = new TextEncoder().encode(AUTH_CONFIG.jwtSecret);
+  return _secret;
+}
 
 const protectedPaths = ["/dashboard"];
 
@@ -99,7 +108,7 @@ export async function middleware(request: NextRequest) {
       // pinning explicitly defends against any future alg-confusion
       // attack (e.g. a downstream signer being tricked into emitting
       // an RS256-keyed token with a public-key-as-secret).
-      await jwtVerify(token, secret, { algorithms: ["HS256"] });
+      await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
     } catch {
       const loginUrl = new URL("/login", request.url);
       loginUrl.searchParams.set("redirect", pathname);
