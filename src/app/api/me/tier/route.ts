@@ -27,6 +27,7 @@ export async function GET() {
         label: labelFor("free"),
         authenticated: false,
         hasStripeCustomer: false,
+        billingStatus: null,
         role: null,
       },
       { headers: { "Cache-Control": "private, no-store" } }
@@ -34,22 +35,22 @@ export async function GET() {
   }
   const tier = await getUserTier(session.userId);
 
-  // Look up stripe_customer_id presence (boolean only — never expose
-  // the actual customer ID to the client; it's a non-secret but
-  // there's no reason to leak it).
+  // Look up stripe_customer_id presence + billing_status in one query.
   let hasStripeCustomer = false;
+  let billingStatus: string | null = null;
   try {
     const [row] = await db
-      .select({ stripeCustomerId: users.stripeCustomerId })
+      .select({
+        stripeCustomerId: users.stripeCustomerId,
+        billingStatus: users.billingStatus,
+      })
       .from(users)
       .where(eq(users.id, session.userId))
       .limit(1);
     hasStripeCustomer = !!row?.stripeCustomerId;
+    billingStatus = row?.billingStatus ?? null;
   } catch {
-    // Fail-safe: if the lookup blows up, treat as no-customer so the
-    // UI doesn't show a Manage button that would 404. The Stripe
-    // portal route is the authoritative gate either way.
-    hasStripeCustomer = false;
+    // Fail-safe — UI handles defaults
   }
 
   return NextResponse.json(
@@ -58,6 +59,9 @@ export async function GET() {
       label: labelFor(tier),
       authenticated: true,
       hasStripeCustomer,
+      // 'past_due' = invoice.payment_failed; 'refunded' = full refund;
+      // null = active or never-billed. UI surfaces a banner on 'past_due'.
+      billingStatus,
       // Role is part of the session JWT — no extra DB hit needed. Used
       // by client-side nav filtering to hide admin items from non-admins.
       role: session.role ?? "user",
