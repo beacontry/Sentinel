@@ -95,6 +95,13 @@ export async function POST(request: NextRequest) {
   // Idempotency check — INSERT-OR-CONFLICT-DO-NOTHING on event ID.
   // If insert returns 0 rows, the event was already processed; ack
   // and return.
+  //
+  // CRITICAL ordering: we insert the dedup row BEFORE handling so two
+  // concurrent deliveries of the same event don't double-process. But
+  // if the handler throws, we DELETE the dedup row again so Stripe
+  // retries — otherwise a transient handler failure (network blip,
+  // DB hiccup) silently swallows a tier-grant event with no way to
+  // recover.
   const inserted = await db
     .insert(stripeEventsProcessed)
     .values({
@@ -110,8 +117,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, deduped: true });
   }
 
-  // Process the event. Wrap in try/catch so handler bugs don't 5xx
-  // (which would make Stripe retry indefinitely on a bug).
+  // Process the event. Wrap in try/catch — but on failure, REMOVE the
+  // dedup row + return 500 so Stripe retries. Returning 200 would
+  // permanently swallow the event because the dedup table now thinks
+  // it was handled.
   try {
     const result = await handleEvent(event);
 
@@ -131,10 +140,23 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message, eventId: event.id, type: event.type }, "Webhook handler error");
-    // Return 200 anyway — the event IS recorded as processed (in our
-    // idempotency table), and Stripe retrying would just hit the
-    // dedup. Better to investigate via logs than spin retry storms.
-    return NextResponse.json({ received: true, error: "handler_failed" });
+    // Roll back the idempotency row so Stripe's automatic retry policy
+    // can deliver the event again on its standard ~3-day schedule.
+    // Best-effort — if the delete itself fails (DB unavailable), the
+    // bigger problem will surface elsewhere; logging the original
+    // handler error is more important.
+    try {
+      await db.delete(stripeEventsProcessed).where(eq(stripeEventsProcessed.eventId, event.id));
+    } catch (rollbackErr) {
+      log.error(
+        { err: rollbackErr instanceof Error ? rollbackErr.message : "unknown", eventId: event.id },
+        "Failed to roll back idempotency row after handler error — event permanently swallowed"
+      );
+    }
+    return NextResponse.json(
+      { error: { code: "HANDLER_FAILED", message: "Webhook handler error; please retry", retryable: true } },
+      { status: 500 }
+    );
   }
 }
 

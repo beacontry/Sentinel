@@ -8,6 +8,7 @@ import { createRouteLogger } from "@/lib/logger";
 import { safeCompare } from "@/lib/crypto";
 import { sendAlertEmail } from "@/lib/email";
 import { getOrCreateBeacontryDeskUser } from "@/lib/system-users";
+import { getEasternToday } from "@/lib/market-day";
 
 const log = createRouteLogger("cron-market-digest");
 
@@ -24,7 +25,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "LLM not configured — set GROQ_API_KEY in admin → System Config" }, { status: 503 });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // ET-keyed (not UTC) so a manual retry before 4 AM ET doesn't write
+  // a "tomorrow" row that the real 9 AM ET cron then collides with.
+  const today = getEasternToday();
 
   try {
     // Check if already generated today
