@@ -10,13 +10,22 @@
 // the new server-side handler is silent — Stripe never sends those
 // events.
 //
-// Run:
-//   STRIPE_SECRET_KEY=sk_live_... node scripts/configure-stripe-webhook.mjs
-//   STRIPE_SECRET_KEY=sk_live_... node scripts/configure-stripe-webhook.mjs --yes      # non-interactive
-//   STRIPE_SECRET_KEY=sk_live_... node scripts/configure-stripe-webhook.mjs --dry-run  # preview
+// Run (interactive — recommended for ad-hoc use):
+//   node scripts/configure-stripe-webhook.mjs
+//   → script prompts you to paste the key. Input is hidden (not
+//     echoed to terminal). Nothing lands in shell history or
+//     `ps aux` output.
 //
-// The script never prints the secret. It only reads it from env. It
-// will exit immediately if STRIPE_SECRET_KEY is unset.
+// Run (env — for CI / non-interactive use):
+//   STRIPE_SECRET_KEY=sk_live_... node scripts/configure-stripe-webhook.mjs --yes
+//
+// Flags:
+//   --dry-run   Show the diff, make no changes
+//   --yes       Skip the "apply?" confirmation prompt
+//
+// The script never prints the secret. The interactive prompt masks
+// input. The env-var path leaves it in your shell history unless you
+// use `read -s` or a secrets manager.
 
 import Stripe from "stripe";
 import readline from "node:readline/promises";
@@ -51,19 +60,78 @@ function ok(msg) { console.log(`${COLORS.green}[ OK ]${COLORS.reset} ${msg}`); }
 function warn(msg) { console.log(`${COLORS.yellow}[WARN]${COLORS.reset} ${msg}`); }
 function fail(msg) { console.error(`${COLORS.red}[FAIL]${COLORS.reset} ${msg}`); }
 
-// ─── Pre-flight ──────────────────────────────────────────────────────
-const secret = process.env.STRIPE_SECRET_KEY;
+// ─── Read secret — env first, then interactive prompt ───────────────
+/**
+ * Prompt for the key with input hidden (no echo). Standard "read -s"
+ * pattern in JS. Falls back gracefully if stdin isn't a TTY.
+ */
+async function promptForSecret() {
+  if (!process.stdin.isTTY) {
+    return null; // non-TTY (CI, piped input) — env-var path is required
+  }
+
+  process.stdout.write(
+    "\nNo STRIPE_SECRET_KEY in env. Paste it now (input hidden, press Enter when done):\n> "
+  );
+
+  return new Promise((resolve) => {
+    const stdin = process.stdin;
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding("utf8");
+
+    let buffer = "";
+    const onData = (chunk) => {
+      // Handle Ctrl-C cleanly
+      if (chunk === "") {
+        stdin.setRawMode(false);
+        stdin.pause();
+        process.stdout.write("\n");
+        process.exit(130);
+      }
+      // Enter / Return — end of input
+      if (chunk === "\r" || chunk === "\n") {
+        stdin.setRawMode(false);
+        stdin.removeListener("data", onData);
+        stdin.pause();
+        process.stdout.write("\n");
+        resolve(buffer);
+        return;
+      }
+      // Backspace — let the user correct typos
+      if (chunk === "" || chunk === "\b") {
+        if (buffer.length > 0) buffer = buffer.slice(0, -1);
+        return;
+      }
+      // Anything else — append to buffer, do NOT echo to terminal
+      buffer += chunk;
+    };
+    stdin.on("data", onData);
+  });
+}
+
+let secret = process.env.STRIPE_SECRET_KEY;
 if (!secret) {
-  fail("STRIPE_SECRET_KEY is not set.");
+  secret = await promptForSecret();
+}
+
+if (!secret) {
+  fail("No STRIPE_SECRET_KEY provided.");
   console.error("");
-  console.error("Run this script with the key in the environment, e.g.:");
-  console.error(`  STRIPE_SECRET_KEY=sk_live_... node ${process.argv[1]}`);
+  console.error("Two ways to run:");
+  console.error("  1. Interactive (recommended): run the script without env var,");
+  console.error("     paste the key when prompted. Input is hidden.");
+  console.error("       node scripts/configure-stripe-webhook.mjs");
+  console.error("  2. Env var (for CI):");
+  console.error(`       STRIPE_SECRET_KEY=sk_live_... node ${process.argv[1]}`);
   console.error("");
   console.error("If the key has been leaked, rotate FIRST (Stripe Dashboard");
   console.error("→ Developers → API keys → Roll key), then run this script");
   console.error("with the new key.");
   process.exit(1);
 }
+
+secret = secret.trim();
 
 if (!secret.startsWith("sk_")) {
   fail("STRIPE_SECRET_KEY doesn't look right — expected to start with 'sk_'.");
