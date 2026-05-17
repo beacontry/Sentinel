@@ -380,6 +380,55 @@ toward true intraday scalping where L2 matters per-trade.
 XL — full RN / Swift / Kotlin build + App Store ops. PWA push (already
 shipped) covers ~80% of use cases. Reconsider only at significant volume.
 
+### Personal daily digest (per-user, watchlist-driven)
+
+**What it is.** Today's daily digest (`/api/cron/market-digest`) is a
+universal market overview — same content for every user. Its "Notable
+signals" section is sourced from `signals` table top 10 by confidence in
+the last 24h across the entire screener universe (S&P 500 + external
+pushes), NOT each user's watchlist.
+
+User noticed 2026-05-17: "is it based on stocks on my watchlist or
+market overall?" Answer was: market overall, by design.
+
+**Personal-digest concept.** Send each opted-in user a digest scoped to
+THEIR watchlist symbols. Acceptance criteria:
+
+- New route `/api/cron/personal-digest` (admin-secret like other crons)
+- Loops users with `digest_email_opt_in = true`
+- For each user: pull watchlist symbols via the shared resolver, fetch
+  latest signal per symbol (or fresh `analyzeBars()` if stale), build
+  per-user prompt
+- One Groq call per user, ~$0.003/call → meaningful cost: 1,000 users
+  × $0.003 × 30 days = ~$90/mo just for digests
+- Email via Resend (already wired); maybe also save as an opt-in
+  Article visible only to that user (would need an `audience_user_id`
+  column on `articles`)
+- Schedule: 9 AM ET weekdays, after the universal digest fires
+
+**Cost / scale notes.**
+- Linear in user count. At 50 paying users this is $5/mo of Groq; at
+  1000 it's $90/mo. Stays cheap until thousands.
+- Risk: if Groq's pricing changes or a user has a huge watchlist (50+
+  symbols), the prompt token cost balloons. Cap at ~20 symbols / user.
+- Trade-off vs market-wide digest: more personal but loses the "shared
+  context" angle that lets community discussion reference the same
+  story.
+
+**When to ship.**
+- Trigger: ~50+ paying users AND repeated requests for "tell me about
+  *my* stocks." Premature before that — market-wide digest does 80% of
+  the value at 1% of the cost.
+- Pair with: per-user `digest_frequency` preference (daily / weekdays
+  only / weekly), `digest_topic_preferences` (signals, news, earnings).
+- Decision blocker: do we want a "Pro" sub-tier above Premium that
+  unlocks personal digest as a perk, or is it included in Premium?
+  Probably Premium-tier perk to anchor the $40/mo value.
+
+**Not blocked on.** Personal digest doesn't require new external spend
+(Groq + Resend already in place). Just engineering time + cost
+modeling. Estimate: ~6 hours of work for the v1.
+
 ---
 
 ## Competitive gap analysis (parking lot)
