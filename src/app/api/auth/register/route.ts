@@ -31,9 +31,47 @@ import { rateLimit } from "@/lib/rate-limiter";
 import { getRateLimitIp } from "@/lib/rate-limit-ip";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
+import { getAppSettingBool } from "@/lib/app-settings";
+import { sendAlertEmail } from "@/lib/email";
 import { eq, and, gt } from "drizzle-orm";
 
 const logger = createRouteLogger("auth/register");
+
+/**
+ * Best-effort admin notification on a new account. Fires for both public
+ * and invite-token paths. Gate via NOTIFY_ADMINS_ON_REGISTER app setting
+ * so an admin can mute it during a Show HN spike. Never blocks the
+ * signup response if email fails — caller awaits with .catch.
+ */
+async function notifyAdminsOfNewUser(
+  newUser: { email: string; name: string },
+  path: "public" | "invite"
+): Promise<void> {
+  try {
+    const notifyEnabled = await getAppSettingBool("NOTIFY_ADMINS_ON_REGISTER");
+    if (!notifyEnabled) return;
+
+    const admins = await db
+      .select({ email: users.email, notificationEmail: users.notificationEmail })
+      .from(users)
+      .where(eq(users.role, "admin"));
+
+    for (const admin of admins) {
+      const addr = admin.notificationEmail ?? admin.email;
+      await sendAlertEmail(
+        addr,
+        `New Beacontry signup: ${newUser.email}`,
+        `A new user just registered via ${path === "invite" ? "an invite" : "public signup"}.\n\n` +
+          `  Email: ${newUser.email}\n` +
+          `  Name:  ${newUser.name}\n\n` +
+          `Review at /dashboard/admin (Audit Log tab for full details).\n\n` +
+          `Mute these notifications at /dashboard/admin/system-config → App Settings → NOTIFY_ADMINS_ON_REGISTER.`
+      ).catch(() => {});
+    }
+  } catch {
+    // Never block signup on a notification failure
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -147,10 +185,29 @@ export async function POST(request: Request) {
         request,
       });
 
+      // Best-effort notify admins (gated by NOTIFY_ADMINS_ON_REGISTER).
+      // Awaited but ignores errors so signup never fails on email problems.
+      await notifyAdminsOfNewUser(user, "invite");
+
       return await issueSession(user, request);
     }
 
     // ---- Path 2: anonymous public free-tier signup ------------------------
+    // Gate: public signup can be temporarily paused by an admin without
+    // a redeploy. Invite-token path above stays open so admins can still
+    // hand out access in case of an incident.
+    const registrationOpen = await getAppSettingBool("REGISTRATION_OPEN");
+    if (!registrationOpen) {
+      logger.warn({ ip }, "Public registration is currently disabled");
+      return NextResponse.json(
+        {
+          error:
+            "Public signups are temporarily paused. Email hello@beacontry.com for an invite.",
+        },
+        { status: 503 }
+      );
+    }
+
     const parsed = registerSchema.safeParse(body);
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {};
@@ -204,6 +261,9 @@ export async function POST(request: Request) {
     });
 
     logger.info({ email, ip }, "User registered via public signup");
+
+    // Best-effort notify admins (gated by NOTIFY_ADMINS_ON_REGISTER).
+    await notifyAdminsOfNewUser(user, "public");
 
     return await issueSession(user, request);
   } catch (err) {

@@ -24,6 +24,7 @@ import { useToast } from "@/components/ui/toast";
 import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/modal";
 import { PageIntro } from "@/components/layout/page-intro";
 import { ArrowLeft, Check, X, ShieldAlert } from "lucide-react";
+import { AppSettingsCard } from "@/components/admin/app-settings-card";
 
 interface ConfigEntry {
   key: string;
@@ -301,6 +302,9 @@ export default function SystemConfigPage() {
           })}
         </div>
       )}
+
+      {/* App settings (non-secret feature flags) — sibling card to the API keys above */}
+      <AppSettingsCard />
 
       {/* Replace modal */}
       <Modal open={editKey !== null} onClose={closeReplace}>
