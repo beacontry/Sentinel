@@ -16,6 +16,8 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SubNav } from "@/components/layout/sub-nav";
+import { SUB_NAV } from "@/components/layout/nav-config";
 import { Trophy, Lock, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
@@ -71,6 +73,7 @@ export default function LeaderboardPage() {
         title="Leaderboard"
         description="Opt-in P&L ranking. Only users who've enabled leaderboard appear. Email addresses are never shown."
       />
+      <SubNav tabs={SUB_NAV.community} />
 
       {/* Your status banner */}
       {optIn === false && (

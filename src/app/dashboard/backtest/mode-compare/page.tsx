@@ -14,7 +14,6 @@
 // /api/backtest/mode-compare.
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,7 +22,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageIntro } from "@/components/layout/page-intro";
-import { ArrowLeft, BarChart3, Play } from "lucide-react";
+import { SmartBackButton } from "@/components/ui/smart-back-button";
+import { BarChart3, Play } from "lucide-react";
 
 interface BacktestResult {
   symbol: string;
@@ -186,13 +186,12 @@ function ModeComparePage() {
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <div>
-        <Link
-          href="/dashboard/backtest"
-          className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-accent transition-colors mb-3"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Back to Backtest
-        </Link>
+        <SmartBackButton
+          fallbackHref="/dashboard/backtest"
+          label="Back"
+          iconSize={14}
+          className="mb-3 text-xs"
+        />
         <PageIntro
           eyebrow="Compare"
           title="Mode Compare"
