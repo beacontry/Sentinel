@@ -242,6 +242,18 @@ Gate ordering inside `canPlaceBuyOrder()`: wash-sale → PDT → notional → ra
 
 > **Going-live procedure, paper-vs-live differences, and 3-option rollback procedures** (env-only → code revert → migration drop) live in `docs/runbooks/live-trading.md`. Read it before flipping `ALLOW_LIVE_TRADING=1` or when planning a rollback.
 
+### Manual trading (first-class path alongside the engine)
+
+Manual orders go through `/dashboard/trade` (index — symbol search + recently-viewed + watchlist quick-trade + open-orders table) → `/dashboard/trade/[symbol]` (the actual ticket). Tier-gated at `trader`. Engine-gated at THREE layers:
+
+1. **API** — `/api/broker/orders` POST calls `peekEngineStatus(userId).running` and returns 409 `ENGINE_RUNNING` if the engine is active. Hard server-side block.
+2. **`/dashboard/trade/[symbol]` UI** — `validate()` returns "Stop the engine before placing manual orders." and disables submit.
+3. **`/dashboard/trade` index UI** — yellow warning banner pinned at the top of the page when the engine is running, with a link to stop it on `/dashboard/trader`.
+
+The block exists because concurrent manual + engine orders create position-map drift: the engine's in-memory `Map<symbol, TrackedPosition>` lags the broker by up to one scan interval, during which it may place a protective stop sized for a position that's now double the assumed size. Easier to require human exclusivity than to reconcile.
+
+Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.source = "manual_ui"`) as engine fills, the same journal auto-stub, and merge into the same Tax Center (`/api/tax/report` reads `trader_trades.action IN ('BUY', 'SELL', 'manual_close')`).
+
 ## Adaptive engine mode (8th mode, regime-driven)
 
 `EngineMode` includes `"adaptive"` (`src/lib/trading-engine.ts`). When a user selects adaptive, the engine reads market regime at each scan boundary (VIX + SPY trend) and sets `engine.effectiveMode` to one of `conservative` / `moderate` / `optimized` / `aggressive`. The user-selected mode (`engine.mode`) stays `"adaptive"`; everywhere strategy decisions are made, code goes through `getActiveMode(engine)` which returns the effective mode.
@@ -396,12 +408,12 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 - Error display: `text-sm text-bearish`
 - Empty state: EmptyState component or inline centered block with muted icon
 
-## Dashboard Pages (63 total)
+## Dashboard Pages (64 total)
 Located at `src/app/dashboard/*/page.tsx`:
 
 **Core:** alerts, analysis, calculator, chat, screener, settings, trader
 **Analysis & Market:** breadth, correlation, heatmap, multi-timeframe, relative-strength, risk-correlation, sector-rotation, unusual-activity
-**Trading Tools:** backtest, backtest/compare, backtest/mode-compare, optimizer, replay, risk-simulator, strategies, strategy-builder, watchlists, **trade/[symbol]** (manual order ticket)
+**Trading Tools:** backtest, backtest/compare, backtest/mode-compare, optimizer, replay, risk-simulator, strategies, strategy-builder, watchlists, **trade** (index — symbol search + recently-viewed + watchlist quick-trade + open orders), **trade/[symbol]** (manual order ticket)
 **Journal & Analytics:** drawdown, journal, performance, pnl-calendar, reports, portfolio, paper-trading
 **Research:** articles, articles/[slug], education, education/guides, education/guides/[slug], education/review, filings, insights, news, sentiment, **congress**
 **Macro:** calendar, currency, earnings, policy
