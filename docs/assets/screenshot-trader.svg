@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" width="1600" height="1000" role="img" aria-label="Trader page screenshot placeholder">
+  <rect width="1600" height="1000" fill="#0d1511"/>
+  <rect x="0" y="0" width="1600" height="60" fill="#13201a"/>
+  <circle cx="32" cy="30" r="14" fill="#10b981"/>
+  <text x="60" y="38" font-family="-apple-system, system-ui, sans-serif" font-size="20" font-weight="600" fill="#e8efe9">Beacontry — Trader</text>
+  <text x="1568" y="38" font-family="JetBrains Mono, monospace" font-size="14" fill="#9ca3a0" text-anchor="end">live · paper</text>
+
+  <text x="800" y="380" font-family="-apple-system, system-ui, sans-serif" font-size="34" font-weight="700" fill="#10b981" text-anchor="middle">Trader page</text>
+  <text x="800" y="420" font-family="-apple-system, system-ui, sans-serif" font-size="20" fill="#9ca3a0" text-anchor="middle">engine + manual order ticket</text>
+  <text x="800" y="495" font-family="-apple-system, system-ui, sans-serif" font-size="14" fill="#6b726d" text-anchor="middle">[screenshot pending — see README § Recording the README assets]</text>
+  <text x="800" y="525" font-family="JetBrains Mono, monospace" font-size="13" fill="#6b726d" text-anchor="middle">docs/assets/screenshot-trader.png · 1600×1000</text>
+
+  <rect x="0" y="940" width="1600" height="60" fill="#13201a"/>
+  <text x="32" y="978" font-family="JetBrains Mono, monospace" font-size="13" fill="#9ca3a0">Beacontry · placeholder</text>
+</svg>
