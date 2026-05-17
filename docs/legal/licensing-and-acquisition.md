@@ -330,6 +330,15 @@ competitors of the new buyer.
 
 ## 5. Action items to preserve optionality
 
+> **Companion doc:** the concrete pre-launch checklist (file the WY DBA,
+> turn on Stripe Tax, identify the LLC in /terms + /privacy, etc.) lives
+> in `business-readiness.docx`. This section gives the strategic *why*;
+> business-readiness gives the operational *what to do this week*.
+>
+> **Companion doc:** for the public-vs-private repo decision specifically,
+> see `source-visibility-decision.md` — that's an isolated analysis of
+> just that one trade-off with pre-customer-state framing.
+
 In order of urgency:
 
 | When | Action | Cost | Why |

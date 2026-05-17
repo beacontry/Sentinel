@@ -283,6 +283,13 @@ const sec5 = [
 // ─── 6. IP, Brand, and the FSL License ───────────────────────────────────
 const sec6 = [
   H1("6. IP, Branding, and the FSL License"),
+  PR([
+    new TextRun({ text: "Companion docs: ", font: FONT, italics: true, color: "555555" }),
+    new TextRun({ text: "docs/legal/licensing-and-acquisition.md", font: FONT, italics: true, color: "555555" }),
+    new TextRun({ text: " covers the strategic reasoning for FSL vs MIT vs closed (license trade-offs, acquisition mechanics, what FSL legally requires you to publish). ", font: FONT, italics: true, color: "555555" }),
+    new TextRun({ text: "docs/legal/source-visibility-decision.md", font: FONT, italics: true, color: "555555" }),
+    new TextRun({ text: " is the standalone public-vs-private analysis with pre-customer-state framing. This section is the operational checklist only.", font: FONT, italics: true, color: "555555" }),
+  ]),
   statusTable([
     { item: "Source license (FSL-1.1-ALv2)", status: "DONE", statusFill: STATUS_OK,
       detail: "FSL-1.1-ALv2 in /LICENSE, README explains the trade-off, repo is public on github.com/beacontry/Sentinel. This is the modern source-available SaaS default (same as Sentry, HashiCorp BUSL, CockroachDB). See docs/legal/licensing-and-acquisition.md for the full reasoning." },
