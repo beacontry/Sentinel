@@ -8,6 +8,7 @@ import { CommandPalette } from "@/components/ui/command-palette";
 import { CsrfInit } from "@/components/csrf-init";
 import { SessionGuard } from "@/components/session-guard";
 import { PinSetupBanner } from "@/components/pin-setup-banner";
+import { BillingStatusBanner } from "@/components/layout/billing-status-banner";
 import { SafeguardsOnboardingModal } from "@/components/safeguards-onboarding-modal";
 import { DisplayPrefsProvider } from "@/components/display-prefs-provider";
 import { KeyboardShortcuts } from "@/components/layout/keyboard-shortcuts";
@@ -24,6 +25,7 @@ export default function DashboardLayout({
         <DisplayPrefsProvider>
           <AiProvider>
             <AppShell>
+              <BillingStatusBanner />
               <PinSetupBanner />
               {children}
             </AppShell>

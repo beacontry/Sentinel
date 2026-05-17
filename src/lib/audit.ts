@@ -282,6 +282,16 @@ export const AuditAction = {
   // Phase 1, Stripe webhook in Phase 2. Always audit so we have a
   // hash-chained trail of every tier transition.
   USER_TIER_CHANGED: "user.tier_changed",
+  // Stripe refund issued (via Stripe Dashboard → Customer → Refund).
+  // Webhook charge.refunded fires → we log it so the audit trail has
+  // every billing-affecting event in one place.
+  BILLING_REFUNDED: "billing.refunded",
+  // Stripe payment failed on renewal — we mark the user past_due so the
+  // dashboard can surface a banner. Different from subscription.deleted,
+  // which fires only after Stripe gives up retrying.
+  BILLING_PAYMENT_FAILED: "billing.payment_failed",
+  // Past-due banner cleared on successful renewal payment.
+  BILLING_PAYMENT_RECOVERED: "billing.payment_recovered",
 } as const;
 
 export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];

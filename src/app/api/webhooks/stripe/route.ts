@@ -162,6 +162,9 @@ async function handleEvent(event: Stripe.Event): Promise<HandlerResult> {
     case "invoice.payment_failed":
       return handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
 
+    case "charge.refunded":
+      return handleChargeRefunded(event.data.object as Stripe.Charge);
+
     default:
       // Unhandled event type — Stripe might send these because the
       // dashboard subscription drifted, or because we added an event
@@ -284,7 +287,8 @@ async function handleSubscriptionDeleted(
   return { userId: user.id, actionTaken: "downgraded_to_free" };
 }
 
-/** Extend tier_expires_at on successful renewal. */
+/** Extend tier_expires_at on successful renewal. Also clears any
+ * past_due billing_status flag from a previous failed attempt. */
 async function handleInvoicePaymentSucceeded(
   invoice: Stripe.Invoice
 ): Promise<HandlerResult> {
@@ -294,6 +298,30 @@ async function handleInvoicePaymentSucceeded(
   const user = await findUserByStripeCustomer(invoice.customer);
   if (!user) {
     return { actionTaken: "no_user_link" };
+  }
+
+  // Recovery: if the user was previously past_due, clear the flag and
+  // log an audit row so we know the customer worked through dunning.
+  const [fullUser] = await db
+    .select({ billingStatus: users.billingStatus })
+    .from(users)
+    .where(eq(users.id, user.id))
+    .limit(1);
+  if (fullUser?.billingStatus === "past_due") {
+    await db
+      .update(users)
+      .set({ billingStatus: null })
+      .where(eq(users.id, user.id));
+    await writeAudit({
+      actor: { userId: user.id, email: user.email },
+      action: AuditAction.BILLING_PAYMENT_RECOVERED,
+      resourceType: "user",
+      resourceId: user.id,
+      metadata: {
+        invoiceId: invoice.id,
+        previousStatus: "past_due",
+      },
+    });
   }
 
   // Re-resolve from the subscription so we get the canonical
@@ -308,9 +336,10 @@ async function handleInvoicePaymentSucceeded(
   return applyTierFromSubscription(user, subscription, "invoice_payment_succeeded");
 }
 
-/** Card declined on renewal — log and (for now) leave tier intact.
- * Stripe handles dunning automatically; if it fails after retries
- * it'll fire customer.subscription.deleted which we handle above. */
+/** Card declined on renewal — mark user past_due so the dashboard
+ * surfaces a banner. Tier stays intact (Stripe keeps trying for ~3
+ * weeks of dunning). If retries ultimately fail, customer.subscription.
+ * deleted fires and downgrades to free. */
 async function handleInvoicePaymentFailed(
   invoice: Stripe.Invoice
 ): Promise<HandlerResult> {
@@ -322,15 +351,78 @@ async function handleInvoicePaymentFailed(
     return { actionTaken: "no_user_link" };
   }
 
-  // Future: send the user a "card declined" email here. For v1 we
-  // rely on Stripe's built-in customer email notifications (enabled
-  // in Stripe Dashboard → Settings → Customer emails).
+  await db
+    .update(users)
+    .set({ billingStatus: "past_due" })
+    .where(eq(users.id, user.id));
+
+  await writeAudit({
+    actor: { userId: user.id, email: user.email },
+    action: AuditAction.BILLING_PAYMENT_FAILED,
+    resourceType: "user",
+    resourceId: user.id,
+    metadata: {
+      invoiceId: invoice.id,
+      amountDue: invoice.amount_due,
+      currency: invoice.currency,
+      attemptCount: invoice.attempt_count,
+    },
+  });
+
+  // Stripe's built-in customer-email notifications (Stripe Dashboard
+  // → Settings → Customer emails → Failed payment) handle the user
+  // outreach. We also surface a /dashboard banner via billingStatus.
   log.warn(
     { userId: user.id, invoiceId: invoice.id },
-    "Invoice payment failed — Stripe will retry"
+    "Invoice payment failed — user marked past_due, Stripe will retry"
   );
 
-  return { userId: user.id, actionTaken: "payment_failed_logged" };
+  return { userId: user.id, actionTaken: "marked_past_due" };
+}
+
+/** charge.refunded — fires when a refund is issued (either via the
+ * Customer Portal, the Stripe Dashboard, or the API). We log an audit
+ * row so the billing trail is complete; we do NOT auto-downgrade the
+ * tier because refunding ≠ cancelling. If the refund accompanied a
+ * cancellation, customer.subscription.deleted will downgrade
+ * separately. */
+async function handleChargeRefunded(
+  charge: Stripe.Charge
+): Promise<HandlerResult> {
+  if (!charge.customer || typeof charge.customer !== "string") {
+    return { actionTaken: "ignored_no_customer" };
+  }
+  const user = await findUserByStripeCustomer(charge.customer);
+  if (!user) {
+    return { actionTaken: "no_user_link" };
+  }
+
+  await writeAudit({
+    actor: { userId: user.id, email: user.email },
+    action: AuditAction.BILLING_REFUNDED,
+    resourceType: "charge",
+    resourceId: charge.id,
+    metadata: {
+      chargeId: charge.id,
+      amountRefunded: charge.amount_refunded,
+      amountTotal: charge.amount,
+      currency: charge.currency,
+      fullyRefunded: charge.amount_refunded === charge.amount,
+      reason: charge.refunds?.data?.[0]?.reason ?? null,
+    },
+  });
+
+  log.info(
+    {
+      userId: user.id,
+      chargeId: charge.id,
+      amountRefunded: charge.amount_refunded,
+      fullyRefunded: charge.amount_refunded === charge.amount,
+    },
+    "Charge refunded"
+  );
+
+  return { userId: user.id, actionTaken: "refund_logged" };
 }
 
 /**

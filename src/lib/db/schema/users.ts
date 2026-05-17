@@ -47,6 +47,10 @@ export const users = pgTable("users", {
   // state; we mirror only the customer ID + tier + tier_expires_at.
   // NULL = never started a checkout flow (free-only users).
   stripeCustomerId: text("stripe_customer_id"),
+  // 2026-05-17 — lifecycle hint for the past-due banner. NULL = active.
+  // Set by /api/webhooks/stripe on invoice.payment_failed and cleared
+  // on the next successful invoice.payment_succeeded.
+  billingStatus: text("billing_status"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
