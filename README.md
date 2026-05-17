@@ -23,20 +23,19 @@ uncomment the line below.
 4. **Tax tooling built in** — wash-sale tracking, §475(f) MTM elections, lot-level cost basis, harvestable-loss surfacing. Form 8949 export. Tax Center merges manual portfolios + live broker positions in one view.
 5. **Full journal + 14-guide education library + 8 calculators** — auto-stubs an entry on every fill, daily pre/post-market prompts, AI weekly review. Education + glossary + spaced-repetition review wired into the chat for contextual citations.
 
-<!--
-SCREENSHOTS — hidden until the assets are recorded.
-
-Once you've saved the three screenshots to docs/assets/screenshot-{trader,tax,audit}.png
-(1600×1000, see the "Recording the README assets" appendix at the bottom),
-remove this comment wrapper to render the screenshot grid:
-
 ## Screenshots
+
+> Branded SVG placeholders below. Replace each with a real PNG screenshot
+> at the same path — `docs/assets/screenshot-{trader,tax,audit}.png` —
+> and update the file extension in the table. See the
+> [Recording the README assets](#recording-the-readme-assets) appendix
+> for the Playwright capture script.
 
 | | | |
 |---|---|---|
-| ![Trader page — engine + manual modes](docs/assets/screenshot-trader.png) | ![Tax Center — wash-sale + harvestable losses](docs/assets/screenshot-tax.png) | ![Audit log — hash-chained, verifiable](docs/assets/screenshot-audit.png) |
+| ![Trader page — engine + manual modes](docs/assets/screenshot-trader.svg) | ![Tax Center — wash-sale + harvestable losses](docs/assets/screenshot-tax.svg) | ![Audit log — hash-chained, verifiable](docs/assets/screenshot-audit.svg) |
 | **Trader** — engine + manual order ticket | **Tax Center** — wash-sale + harvesting | **Audit log** — tamper-evident |
--->
+
 
 
 ## Two ways to use it
