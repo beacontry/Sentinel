@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SubNav } from "@/components/layout/sub-nav";
 import { SUB_NAV } from "@/components/layout/nav-config";
-import { Shield, ShieldCheck, ShieldAlert, RefreshCw, Filter } from "lucide-react";
+import { Shield, ShieldCheck, ShieldAlert, RefreshCw, Filter, Download } from "lucide-react";
 
 interface AuditRow {
   id: number;
@@ -82,17 +82,36 @@ export default function AuditLogPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionFilter, setActionFilter] = useState(ALL_ACTIONS);
+  const [actorEmail, setActorEmail] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [totalMatching, setTotalMatching] = useState(0);
 
+  // Build the filter querystring once; loadRows + handleExport share it so
+  // the CSV always matches the on-screen view.
+  const buildFilterParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (actionFilter && actionFilter !== ALL_ACTIONS) params.set("action", actionFilter);
+    if (actorEmail.trim().length >= 2) params.set("actorEmail", actorEmail.trim());
+    if (fromDate) params.set("from", new Date(fromDate).toISOString());
+    if (toDate) {
+      // Include the entire day for "to" — append 23:59:59
+      const d = new Date(toDate);
+      d.setHours(23, 59, 59, 999);
+      params.set("to", d.toISOString());
+    }
+    return params;
+  }, [actionFilter, actorEmail, fromDate, toDate]);
+
   const loadRows = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ limit: "100" });
-      if (actionFilter && actionFilter !== ALL_ACTIONS) params.set("action", actionFilter);
+      const params = buildFilterParams();
+      params.set("limit", "100");
       const res = await fetch(`/api/admin/audit?${params}`);
       if (res.status === 403) {
         setError("Admin access required");
@@ -110,7 +129,15 @@ export default function AuditLogPage() {
     } finally {
       setLoading(false);
     }
-  }, [actionFilter]);
+  }, [buildFilterParams]);
+
+  const handleExport = useCallback(() => {
+    const params = buildFilterParams();
+    params.set("format", "csv");
+    // Native browser download — bypass fetch so the file lands in
+    // Downloads instead of memory.
+    window.location.href = `/api/admin/audit?${params}`;
+  }, [buildFilterParams]);
 
   useEffect(() => {
     loadRows();
@@ -188,19 +215,50 @@ export default function AuditLogPage() {
       </Card>
 
       {/* Filters */}
-      <Card className="p-4">
-        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-          <div className="flex-1">
-            <Select
-              label="Filter by action"
-              options={ACTION_FILTER_OPTIONS}
-              value={actionFilter}
-              onChange={(v) => setActionFilter(v)}
-            />
+      <Card className="p-4 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <Select
+            label="Action"
+            options={ACTION_FILTER_OPTIONS}
+            value={actionFilter}
+            onChange={(v) => setActionFilter(v)}
+          />
+          <Input
+            label="Actor email contains"
+            placeholder="e.g. @beacontry.com"
+            value={actorEmail}
+            onChange={(e) => setActorEmail(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <Input
+            label="From"
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
+          <Input
+            label="To"
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex gap-2">
+            <Button onClick={loadRows} variant="secondary" className="min-h-[44px]">
+              <Filter className="w-4 h-4" /> Apply
+            </Button>
+            <Button
+              onClick={handleExport}
+              variant="ghost"
+              className="min-h-[44px]"
+              disabled={loading || rows.length === 0}
+              title="Download all matching rows as CSV (caps at 5000)"
+            >
+              <Download className="w-4 h-4" /> Export CSV
+            </Button>
           </div>
-          <Button onClick={loadRows} variant="secondary" className="min-h-[44px]">
-            <Filter className="w-4 h-4" /> Apply
-          </Button>
           <div className="text-xs text-text-muted">
             Showing {rows.length} of {totalMatching} matching rows
           </div>
