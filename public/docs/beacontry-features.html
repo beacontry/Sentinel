@@ -370,10 +370,10 @@
       <li><code>moderate</code> — default starting mode, balanced filters</li>
       <li><code>optimized</code> — uses GA-tuned signal params (EMA fast/slow, RSI thresholds) from the optimizer</li>
       <li><code>aggressive</code> — looser filters, more positions, momentum-tilted</li>
-      <li><code>intraday</code> — 5m bars, flattens at 3:00 PM ET. Engine refuses to start in this mode at &lt;$25k equity (PDT)</li>
       <li><code>tactical</code> — market-wide on/off (SPY-driven). Full in / full out, no per-symbol gates</li>
       <li><code>tactical-smart</code> — scored basket with active swapping. Re-ranks weekly</li>
-      <li><code>adaptive</code> — reads market regime (VIX + SPY/SMA50) at every scan and runs as conservative / moderate / optimized / aggressive / tactical underneath. Status banner shows the effective mode. Never auto-selects <code>intraday</code> or <code>tactical-smart</code>.</li>
+      <li><code>adaptive</code> — reads market regime (VIX + SPY/SMA50) at every scan and runs as conservative / moderate / optimized / aggressive underneath. Status banner shows the effective mode. Never auto-selects <code>tactical</code> or <code>tactical-smart</code>.</li>
+      <li>Intraday mode was removed in v3.1 — the engine no longer offers a 5-min-bar mode.</li>
     </ul>
 
     <h3>Risk profile (single source of truth)</h3>
@@ -649,7 +649,7 @@
       <h4>Buttons &amp; controls</h4>
       <ul>
         <li><strong>Start / Stop</strong> — toggles the engine. Refuses to start on a live connection unless <code>ALLOW_LIVE_TRADING=1</code> is set in env AND the user has live trading enabled.</li>
-        <li><strong>Mode selector</strong> — pick conservative / moderate / optimized / aggressive / intraday / tactical / tactical-smart.</li>
+        <li><strong>Mode selector</strong> — pick optimized / tactical / tactical-smart / adaptive. (The four base signal modes — conservative / moderate / optimized / aggressive — are reachable only via adaptive's regime classifier.)</li>
         <li><strong>Halt</strong> — manual halt. Closes all positions at market, refuses new orders for the day.</li>
         <li><strong>Flatten all</strong> — sells all positions immediately at market.</li>
         <li><strong>AI ✨</strong> (each trade row) — generates a Groq-powered 1-2 sentence plain-English summary of the trade (entry reason → hold period → exit). Cached on the row after first click. Label flips to ↻ once cached. Costs ~$0.0001 per click.</li>
@@ -707,7 +707,7 @@
       </ul>
       <h4>Gotchas</h4>
       <ul>
-        <li><code>intraday</code> and <code>tactical-smart</code> are excluded — they don't make sense in a daily-bar backtest comparison.</li>
+        <li><code>tactical-smart</code>'s active basket-swap logic doesn't translate to a daily-bar backtest comparison, so the comparison runs <code>optimized</code> + <code>tactical</code> + <code>adaptive</code>. (Intraday mode was removed in v3.1.)</li>
         <li>Adaptive requires SPY + ^VIX bars for the date range. If the provider can't supply them, the adaptive row shows an error and the other 5 modes still render.</li>
         <li>Results cached 5 minutes per (symbol, days) tuple — daily bars don't change intraday so re-running with same params returns cached.</li>
       </ul>
@@ -1214,7 +1214,7 @@
 
     <div class="concept">
       <div class="concept-title">PDT (Pattern Day Trader)</div>
-      <p>FINRA rule: if equity &lt; $25k AND ≥4 day-trades in 5 business days, the broker locks the account. Beacontry auto-detects equity threshold, refuses to start intraday mode below $25k, blocks new BUYs at 3+ daytrades (one shy of the limit). SELLs are always allowed — exits override PDT.</p>
+      <p>FINRA rule: if equity &lt; $25k AND ≥4 day-trades in 5 business days, the broker locks the account. Beacontry auto-detects the equity threshold and blocks new BUYs at 3+ daytrades (one shy of the limit). SELLs are always allowed — exits override PDT.</p>
     </div>
 
     <div class="concept">

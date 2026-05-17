@@ -373,7 +373,7 @@ Reference list of all gates a main-scan BUY traverses:
 - Current engine mode saved to `traderStatus.mode` on every heartbeat
 - Format: `paper:optimized`, `paper:tactical`, etc.
 - Auto-restart reads last mode from DB
-- Valid modes for auto-restart: conservative, moderate, optimized, aggressive, tactical, tactical-smart
+- Valid modes for auto-restart: conservative, moderate, optimized, aggressive, tactical, tactical-smart, adaptive
 
 ### Position Reconciliation
 - On each scan cycle, the engine compares its in-memory position map against actual broker positions
