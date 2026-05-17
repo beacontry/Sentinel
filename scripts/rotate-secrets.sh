@@ -44,6 +44,13 @@ HEALTH_URL="http://localhost:3010/api/health"
 CACHE_VOLUME_HOST="/opt/apps/sentinel/cache"
 CACHE_VOLUME_CONTAINER="/data/cache"
 APP_DOMAIN="beacontry.com"   # only used by check-cf
+# The container runs ROOTLESS under sn-deploy (linger-enabled). The
+# image is in sn-deploy's local Podman storage, and sn-deploy is the
+# only user with GHCR auth credentials. So all podman ops must be
+# invoked via `sudo -u sn-deploy -i podman ...`, NOT plain `podman`
+# (which would target root's empty Podman namespace).
+APP_USER="sn-deploy"
+PODMAN="sudo -u $APP_USER -i podman"
 
 # ─── Colors ────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -179,11 +186,11 @@ cmd_rotate() {
   fi
   ok "Env file updated"
 
-  info "Restarting container (stop + rm + run; podman restart doesn't reload --env-file)"
-  podman stop "$CONTAINER_NAME" 2>/dev/null || warn "Container was not running"
-  podman rm "$CONTAINER_NAME" 2>/dev/null || warn "Container did not exist"
+  info "Restarting container as $APP_USER (rootless Podman; restart doesn't reload --env-file)"
+  $PODMAN stop "$CONTAINER_NAME" 2>/dev/null || warn "Container was not running"
+  $PODMAN rm "$CONTAINER_NAME" 2>/dev/null || warn "Container did not exist"
 
-  podman run -d --name "$CONTAINER_NAME" --network=host \
+  $PODMAN run -d --name "$CONTAINER_NAME" --network=host \
     --env-file "$ENV_FILE" \
     -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 \
     -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR="$CACHE_VOLUME_CONTAINER" \
@@ -205,8 +212,8 @@ cmd_rotate() {
 
   if [[ "$status" != "200" ]]; then
     warn "Health check did not pass within 30s (last status: $status)"
-    warn "Inspect logs:  podman logs $CONTAINER_NAME --tail 50"
-    warn "Rollback:      sudo cp $backup_file $ENV_FILE && podman stop $CONTAINER_NAME && podman rm $CONTAINER_NAME && <re-run with old env>"
+    warn "Inspect logs:  sudo -u $APP_USER -i podman logs $CONTAINER_NAME --tail 50"
+    warn "Rollback:      sudo cp $backup_file $ENV_FILE && $PODMAN stop $CONTAINER_NAME && $PODMAN rm $CONTAINER_NAME && <re-run with old env>"
     die "Rotation completed but container is not healthy."
   fi
 
@@ -254,7 +261,7 @@ cmd_check_env() {
   command -v podman >/dev/null || die "podman not found (this command runs on the droplet)"
 
   printf '\n%s═══ Container current env ═══%s\n' "$C_BOLD" "$C_RESET"
-  podman inspect "$CONTAINER_NAME" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+  $PODMAN inspect "$CONTAINER_NAME" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
     | grep -E '^(NODE_ENV|JWT_SECRET|CRON_SECRET|ENCRYPTION_KEY|ALLOW_LIVE_TRADING)=' \
     | sed -E 's/^(NODE_ENV=.*)$/\1/; s/^(JWT_SECRET|CRON_SECRET|ENCRYPTION_KEY)=.{0,8}.*$/\1=<set, redacted>/; s/^(ALLOW_LIVE_TRADING=.*)$/\1/' \
     || warn "Container $CONTAINER_NAME not running — cannot inspect"
