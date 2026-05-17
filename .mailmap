@@ -1,0 +1,19 @@
+# .mailmap — git-display author consolidation.
+#
+# Maps secondary author identities to the canonical one. Affects:
+#   - `git log --use-mailmap` (default in modern git)
+#   - `git shortlog`
+#   - GitHub's Contributors graph
+#
+# Does NOT alter commit objects — historical authorship metadata is
+# preserved in git history. This file is a display-time transformation
+# only, so it's non-destructive (unlike `git filter-repo`).
+#
+# Format: <canonical-name> <canonical-email> <commit-name> <commit-email>
+
+# Claude Code commits (historical, before 2026-05-17) — Co-Authored-By
+# trailers from past sessions get attributed to the canonical author
+# rather than appearing as a separate contributor on GitHub.
+Julio Soriano <ixiondt@proton.me> Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Julio Soriano <ixiondt@proton.me> Claude <noreply@anthropic.com>
+Julio Soriano <ixiondt@proton.me> Claude Code <noreply@anthropic.com>
