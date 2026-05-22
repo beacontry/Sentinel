@@ -2729,6 +2729,12 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   let currentPositions: BrokerPosition[];
   try {
     currentPositions = await client.getPositions();
+    // Broker reachable — keep brokerConnected fresh so the watchdog doesn't
+    // false-alarm. runScan does this inline; the tactical paths historically
+    // didn't, leaving brokerConnected stuck at its `false` init forever.
+    engine.brokerConnected = true;
+    engine.lastBrokerContact = new Date();
+    engine.consecutiveBrokerFailures = 0;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unknown";
     log.error({ err: msg, userId: engine.userId }, "Tactical scan aborted — getPositions failed");
@@ -2859,6 +2865,11 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   engine.scanCount++;
   engine.scanStartedAt = null;
   await updateHeartbeat(SCAN_UNIVERSE, engine.userId);
+
+  // Ratchet/place protective broker stops — same per-scan reconciliation runScan
+  // does. Without this, tactical stops only ever get set once by placeDisasterStops
+  // at engine start and never move (and mid-run positions get none).
+  await syncBrokerStops(engine.userId);
 }
 
 // ─── Tactical Smart: SPY trend + screener-weighted entries ──────────────────
@@ -2947,6 +2958,12 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   let currentPositions: BrokerPosition[];
   try {
     currentPositions = await client.getPositions();
+    // Broker reachable — keep brokerConnected fresh so the watchdog doesn't
+    // false-alarm ("Broker unreachable (0 consecutive failures)"). This path
+    // never set it, so it stayed at its `false` init for the whole session.
+    engine.brokerConnected = true;
+    engine.lastBrokerContact = new Date();
+    engine.consecutiveBrokerFailures = 0;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unknown";
     log.error({ err: msg, userId: engine.userId }, "Tactical-smart scan aborted — getPositions failed");
@@ -3354,6 +3371,12 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   engine.scanCount++;
   engine.scanStartedAt = null;
   await updateHeartbeat([...positionMap.keys()], engine.userId);
+
+  // Ratchet/place protective broker stops — same per-scan reconciliation runScan
+  // does. This call was missing from the tactical-smart path, so stops only ever
+  // got set once by placeDisasterStops at engine start: they never ratcheted up,
+  // and positions opened mid-run got no broker stop at all.
+  await syncBrokerStops(engine.userId);
 
   // Phase 14 — emit total scan duration. If totalMs >> 60s, the scan is at
   // risk of crossing market-close boundary on a 15-min cadence. Log warn so
@@ -4867,6 +4890,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
 
   const maxAttempts = 3;
   let lastErr: unknown = null;
+  let lastPositionCount = -1; // -1 = never observed (e.g., broker resolve failed)
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -4874,6 +4898,7 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
       if (!resolved) return; // no broker connection — not transient, nothing to retry
 
       const positions = await resolved.client.getPositions();
+      lastPositionCount = positions.length;
       if (positions.length === 0) return;
 
       let lastMode: EngineMode = "optimized";
@@ -4907,10 +4932,26 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
     }
   }
 
+  const errMsg = lastErr instanceof Error ? lastErr.message : "unknown";
   log.error(
-    { userId, attempts: maxAttempts, err: lastErr instanceof Error ? lastErr.message : "unknown" },
+    { userId, attempts: maxAttempts, err: errMsg, positionCount: lastPositionCount },
     "Auto-start failed after all retries — engine will not resume until manually started"
   );
+  // Hash-chained audit so a post-deploy autostart failure leaves a durable
+  // trace (pino logs rotate; the audit table doesn't). Surfaced in the
+  // admin audit viewer. positionCount === -1 means the broker resolve itself
+  // failed on every attempt and we never observed positions.
+  void writeAudit({
+    actor: { userId, email: null, role: null },
+    action: AuditAction.ENGINE_AUTOSTART_FAILED,
+    resourceType: "engine",
+    resourceId: userId,
+    metadata: {
+      attempts: maxAttempts,
+      error: errMsg,
+      orphanedPositionCount: lastPositionCount,
+    },
+  });
 }
 
 /**

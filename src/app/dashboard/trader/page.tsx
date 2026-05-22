@@ -434,6 +434,37 @@ export default function TraderPage() {
           { label: "Signals", value: signals.length },
         ]}
       />
+      {/* Engine offline but open positions exist — surfaces the silent
+          autostart-failed state (e.g., after a container rebuild where
+          autoStartIfNeeded burned all 3 retries on a broker hiccup).
+          Positions sit with no scans, no syncBrokerStops, no dynamic
+          trail updates until the user manually starts the engine. */}
+      {engine && engine.running === false && positions.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <div className="font-semibold text-warning">
+                Engine offline with {positions.length} open position{positions.length === 1 ? "" : "s"}
+              </div>
+              <div className="text-text-secondary mt-0.5">
+                Trailing stops are not being updated while the engine is stopped. Start the engine to resume dynamic stop management.
+              </div>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => handleEngine("start")}
+            loading={cmdLoading === "start"}
+          >
+            Start engine
+          </Button>
+        </div>
+      )}
+
       {/* LIVE banner — only when engine is actually running against a live broker */}
       {engine?.running && engine?.environment === "live" && (
         <div

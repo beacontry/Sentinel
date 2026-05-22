@@ -265,6 +265,11 @@ export const AuditAction = {
   ENGINE_PDT_VULNERABLE: "engine.pdt_vulnerable",
   ENGINE_ADMIN_OVERRIDE: "engine.admin_override",
   ENGINE_POSITION_DISAPPEARED: "engine.position_disappeared",
+  // Container-boot autoStartIfNeeded exhausted all retries — engine will
+  // not resume until the user manually restarts. Positions are orphaned
+  // (no scans, no syncBrokerStops) until that happens. Audit so the next
+  // incident leaves a hash-chained trace instead of being pino-only.
+  ENGINE_AUTOSTART_FAILED: "engine.autostart_failed",
   // Orders
   ORDER_PLACED: "order.placed",
   ORDER_REJECTED: "order.rejected",

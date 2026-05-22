@@ -5,7 +5,7 @@
  * PWA push subscription system.
  *
  * Conditions checked:
- *  - stall: engine should be running but lastScanAt is > 5 min old during market hours
+ *  - stall: engine should be running but lastScanAt is older than STALL_THRESHOLD_MS during market hours
  *  - broker_disconnect: brokerConnected=false (3+ consecutive failures already inside engine)
  *  - daily_loss_warn: realized daily loss is within 80% of the halt limit
  *  - exit_order_failed: a recent error mentions a failed sell/exit order
@@ -23,7 +23,11 @@ import { createRouteLogger } from "./logger";
 
 const log = createRouteLogger("engine-watchdog");
 
-const STALL_THRESHOLD_MS = 5 * 60 * 1000;
+// Must be > the engine's scan cadence (SWING_SCAN_MS = 15 min in trading-engine.ts),
+// or this fires every cycle. The overlap-guard can legitimately skip ONE tick when a
+// scan runs long (~30 min gap that self-recovers), so set the threshold just past 2×
+// the cadence: only two consecutive missed scans (a genuine stall) trips the alert.
+const STALL_THRESHOLD_MS = 32 * 60 * 1000;
 const DEDUP_WINDOW_MS = 15 * 60 * 1000;
 const DAILY_LOSS_WARN_FRAC = 0.8;
 
