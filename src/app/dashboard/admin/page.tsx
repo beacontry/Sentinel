@@ -19,6 +19,7 @@ import { SUB_NAV } from "@/components/layout/nav-config";
 import Link from "next/link";
 import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw, AlertTriangle, BarChart3, Key, ArrowRight, MessagesSquare } from "lucide-react";
 import { RedditSubredditsCard } from "@/components/admin/reddit-subreddits-card";
+import { UserPerformanceCard } from "@/components/admin/user-performance-card";
 
 interface User {
   id: string;
@@ -601,6 +602,11 @@ export default function AdminPage() {
           </div>
         )}
       </Card>
+
+      {/* ── Per-user performance ── */}
+      <div className="pt-4">
+        <UserPerformanceCard />
+      </div>
 
       {/* ── Phase 16: Slippage Report ── */}
       <div className="pt-4">
