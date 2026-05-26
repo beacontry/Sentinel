@@ -49,6 +49,22 @@ export async function register() {
       } catch (err) {
         console.error("Engine watchdog start failed:", err);
       }
+
+      // Standalone broker-stop sync scheduler. Decoupled from scan
+      // completion so a hung scan can't freeze broker-side stops for
+      // the whole session. Fires immediately at boot so a fresh
+      // container picks up where the previous one left off, then
+      // settles into a 5-min cadence. See stop-sync-scheduler.ts
+      // for the incident this addresses.
+      try {
+        const { startStopSyncScheduler, runStopSyncCycle } = await import("./lib/stop-sync-scheduler");
+        startStopSyncScheduler();
+        void runStopSyncCycle().catch((err) => {
+          console.error("Initial stop-sync cycle failed:", err);
+        });
+      } catch (err) {
+        console.error("Stop-sync scheduler start failed:", err);
+      }
     }, 5000);
 
     // Graceful shutdown: when podman/Docker sends SIGTERM, stop every running
