@@ -91,6 +91,10 @@ interface TraderData {
     unrealizedPnl: number;
     stopPrice: number | null;
   }>;
+  /** Symbols whose protective broker stop is currently missing (broker
+   *  rejected the place call — typically PDT). Surfaced as a banner because
+   *  the position is only protected by the 1-min exit poll. */
+  unprotectedSymbols?: string[];
   openOrders: Array<{
     id: string;
     symbol: string;
@@ -462,6 +466,35 @@ export default function TraderPage() {
           >
             Start engine
           </Button>
+        </div>
+      )}
+
+      {/* Unprotected-position banner — broker rejected the protective stop
+          (typically Alpaca PDT 40310100 on a same-day buy when daytradeCount
+          is at threshold). The position is held WITHOUT a broker-side stop;
+          the in-process 1-min poll is its only protection. If the container
+          dies for more than a minute, the position is fully exposed. */}
+      {data?.unprotectedSymbols && data.unprotectedSymbols.length > 0 && (
+        <div
+          role="alert"
+          className="rounded-xl border border-bearish/40 bg-bearish/10 px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-bearish shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <div className="font-semibold text-bearish">
+                {data.unprotectedSymbols.length} position{data.unprotectedSymbols.length === 1 ? "" : "s"} without a broker-side stop
+              </div>
+              <div className="text-text-secondary mt-0.5">
+                Broker rejected the protective stop (pattern-day-trader rule).
+                These are guarded only by the in-process 1-min exit poll —
+                consider exiting manually:{" "}
+                <span className="font-mono text-text-primary">
+                  {data.unprotectedSymbols.join(", ")}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
