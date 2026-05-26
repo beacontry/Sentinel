@@ -2735,7 +2735,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
     // Broker reachable — keep brokerConnected fresh so the watchdog doesn't
     // false-alarm. runScan does this inline; the tactical paths historically
     // didn't, leaving brokerConnected stuck at its `false` init forever.
-    engine.brokerConnected = true;
+    setBrokerConnected(engine, true, "runTacticalScan_getPositions");
     engine.lastBrokerContact = new Date();
     engine.consecutiveBrokerFailures = 0;
   } catch (err) {
@@ -2968,7 +2968,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
     // Broker reachable — keep brokerConnected fresh so the watchdog doesn't
     // false-alarm ("Broker unreachable (0 consecutive failures)"). This path
     // never set it, so it stayed at its `false` init for the whole session.
-    engine.brokerConnected = true;
+    setBrokerConnected(engine, true, "runTacticalSmartScan_getPositions");
     engine.lastBrokerContact = new Date();
     engine.consecutiveBrokerFailures = 0;
   } catch (err) {
@@ -3578,7 +3578,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   let brokerPositions: Awaited<ReturnType<BrokerClient["getPositions"]>> = [];
   try {
     brokerPositions = await client.getPositions();
-    engine.brokerConnected = true;
+    setBrokerConnected(engine, true, "runScan_getPositions");
     engine.lastBrokerContact = new Date();
     engine.consecutiveBrokerFailures = 0;
     setBrokerPositionCache(engine.userId!, brokerPositions);
@@ -3589,7 +3589,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
       "Failed to fetch broker positions"
     );
     if (engine.consecutiveBrokerFailures >= BROKER_FAILURE_HALT_THRESHOLD) {
-      engine.brokerConnected = false;
+      setBrokerConnected(engine, false, "runScan_consecutive_failures_threshold");
       tripSafeguardHalt(engine, "broker_unreachable", {
         consecutiveFailures: engine.consecutiveBrokerFailures,
         lastContact: engine.lastBrokerContact?.toISOString() ?? null,
@@ -4260,6 +4260,15 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     const msg = err instanceof Error ? err.message : "unknown";
     return { ok: false, error: `Broker connection test failed: ${msg}` };
   }
+  // Reachability proof captured — set brokerConnected immediately so the
+  // watchdog doesn't false-alarm in the window between startEngine and the
+  // first scan body reaching its own setter. Previously this assignment
+  // only lived inside the scan loops, so a fresh engine with running=true
+  // but no completed scan would trigger "Broker unreachable (0 consecutive
+  // failures)" every 15 min until the first scan completed.
+  setBrokerConnected(engine, true, "startEngine_getAccount");
+  engine.lastBrokerContact = new Date();
+  engine.consecutiveBrokerFailures = 0;
 
   // Intraday mode startup PDT-refusal removed alongside the intraday
   // mode itself. PDT state is still evaluated per-scan by
@@ -4512,6 +4521,31 @@ export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?
  * These act as a safety net when the engine isn't running.
  */
 const DISASTER_STOP_PCT = 0.18; // 18% below entry — only fires if server is down for hours
+
+/**
+ * Centralized brokerConnected mutation with diagnostic logging. Every
+ * transition logs userId + from/to + source so future "watchdog keeps
+ * firing broker_disconnect even though scans succeed" incidents leave
+ * a forensic trail in journald (the 2026-05-26 mystery — the running
+ * tactical-smart engine's broker_disconnect alert fired 96 times in
+ * 24h, yet "Tactical Smart scan" log lines indicated the scan body
+ * was reaching the brokerConnected=true assignment every cycle).
+ *
+ * Idempotent — no log line when value already matches, so the helper
+ * is safe to call defensively at every reachability proof point.
+ */
+function setBrokerConnected(
+  engine: EngineState,
+  value: boolean,
+  source: string
+): void {
+  if (engine.brokerConnected === value) return;
+  log.info(
+    { userId: engine.userId, from: engine.brokerConnected, to: value, source },
+    "engine.brokerConnected transition"
+  );
+  engine.brokerConnected = value;
+}
 
 /**
  * Wall-clock budget for the heavy per-symbol analysis loops inside
