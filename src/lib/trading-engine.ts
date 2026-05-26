@@ -2007,7 +2007,10 @@ async function cancelPendingOrdersForSymbol(
 ): Promise<void> {
   if (!client.cancelOrder) return;
   try {
-    const orders = await client.getOrders(100);
+    // status="open" — otherwise Alpaca defaults to "all" and returns the 100
+    // most-recent orders dominated by filled/cancelled, hiding still-open ones
+    // we actually need to cancel on a churn-heavy account.
+    const orders = await client.getOrders(100, "open");
     const pending = orders.filter(
       (o) =>
         o.symbol === symbol &&
@@ -2754,7 +2757,11 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   // before the BUY/ENTRY branch can fire blind.
   let openOrdersFetchOk = true;
   try {
-    const openOrders = await client.getOrders(100);
+    // status="open" is mandatory: without it Alpaca defaults to "all" and the
+    // 100 most-recent orders on a churn-heavy account are dominated by
+    // filled/cancelled rows, hiding the open buys we need to dedup against.
+    // That blind spot caused the WDC 3-pending incident on 2026-05-26.
+    const openOrders = await client.getOrders(100, "open");
     for (const o of openOrders) {
       if (!["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)) continue;
       if (o.side === "buy") pendingBuySymbols.add(o.symbol);
@@ -2994,7 +3001,11 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   // we can't see the broker's pending-order list.
   let openOrdersFetchOk = true;
   try {
-    const openOrders = await client.getOrders(100);
+    // status="open" is mandatory: without it Alpaca defaults to "all" and the
+    // 100 most-recent orders on a churn-heavy account are dominated by
+    // filled/cancelled rows, hiding the open buys we need to dedup against.
+    // That blind spot caused the WDC 3-pending incident on 2026-05-26.
+    const openOrders = await client.getOrders(100, "open");
     for (const o of openOrders) {
       if (!["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)) continue;
       if (o.side === "buy") {
@@ -3045,16 +3056,24 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
     log.info("TACTICAL SMART ENTRY — picking stocks via signals");
     const riskLimits = await loadRiskLimits(engine.userId);
 
-    // Score all stocks in universe + any screener external signals
-    const extSymbols = engine.externalSignals
-      .filter(s => (s.signal === "BUY" || s.signal === "STRONG_BUY") && !SCAN_UNIVERSE.includes(s.symbol))
-      .map(s => s.symbol);
+    // Score all stocks in universe + top-confidence screener externals
+    // (capped — see TACTICAL_MAX_EXTERNAL_SYMBOLS). The full screener
+    // feed can exceed 500 symbols on busy days; iterating all of them
+    // at Finnhub rate limits hung scans indefinitely (2026-05-26).
+    const extSymbols = selectExternalSymbolsForTactical(engine.externalSignals, SCAN_UNIVERSE);
     const allSymbols = [...SCAN_UNIVERSE, ...new Set(extSymbols)];
 
     // #5: Score using momentum + signals + screener + #6: inverse volatility
     const scored: { symbol: string; score: number; price: number; invVol: number }[] = [];
 
+    let symbolsAbortedForBudget = 0;
     for (const symbol of allSymbols) {
+      // Wall-clock budget guard — once exceeded, break out so the scan
+      // can still finish syncBrokerStops + heartbeat at the tail.
+      if (Date.now() - scanStartedAt > TACTICAL_SCAN_SYMBOL_BUDGET_MS) {
+        symbolsAbortedForBudget = allSymbols.length - allSymbols.indexOf(symbol);
+        break;
+      }
       try {
         const bars = await Promise.race([
           provider.fetchBars(symbol, 90, "1d"),
@@ -3091,6 +3110,18 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 
         await new Promise(r => setTimeout(r, 0));
       } catch { /* skip */ }
+    }
+
+    if (symbolsAbortedForBudget > 0) {
+      log.warn(
+        {
+          budgetMs: TACTICAL_SCAN_SYMBOL_BUDGET_MS,
+          aborted: symbolsAbortedForBudget,
+          evaluated: allSymbols.length - symbolsAbortedForBudget,
+          scored: scored.length,
+        },
+        "Tactical Smart buy-in loop aborted on budget — proceeding with partial candidates"
+      );
     }
 
     scored.sort((a, b) => b.score - a.score);
@@ -3155,16 +3186,23 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
       ...pendingBuySymbols,
     ]);
 
-    // Score all stocks (same logic as entry)
-    const extSymbols = engine.externalSignals
-      .filter(s => (s.signal === "BUY" || s.signal === "STRONG_BUY") && !SCAN_UNIVERSE.includes(s.symbol))
-      .map(s => s.symbol);
+    // Score all stocks (same logic as entry) — capped screener feed
+    // applies here too. See selectExternalSymbolsForTactical for context.
+    const extSymbols = selectExternalSymbolsForTactical(engine.externalSignals, SCAN_UNIVERSE);
     const allSymbols = [...SCAN_UNIVERSE, ...new Set(extSymbols)];
 
     const candidates: { symbol: string; signal: string; score: number; price: number; invVol: number }[] = [];
     const weakHeld: { symbol: string; signal: string; pnlPct: number }[] = [];
 
+    let activeMgmtAborted = 0;
     for (const symbol of allSymbols) {
+      // Wall-clock budget guard — same rationale as the buy-in loop above.
+      // Active management is the loop that actually hung in the 2026-05-26
+      // incident (most scans hit this branch because positions are held).
+      if (Date.now() - scanStartedAt > TACTICAL_SCAN_SYMBOL_BUDGET_MS) {
+        activeMgmtAborted = allSymbols.length - allSymbols.indexOf(symbol);
+        break;
+      }
       try {
         const bars = await Promise.race([
           provider.fetchBars(symbol, 90, "1d"),
@@ -3193,6 +3231,19 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 
         await new Promise(r => setTimeout(r, 0));
       } catch { /* skip */ }
+    }
+
+    if (activeMgmtAborted > 0) {
+      log.warn(
+        {
+          budgetMs: TACTICAL_SCAN_SYMBOL_BUDGET_MS,
+          aborted: activeMgmtAborted,
+          evaluated: allSymbols.length - activeMgmtAborted,
+          candidates: candidates.length,
+          weakHeld: weakHeld.length,
+        },
+        "Tactical Smart active-management loop aborted on budget — proceeding with partial candidates"
+      );
     }
 
     candidates.sort((a, b) => b.score - a.score);
@@ -3612,7 +3663,11 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   const pendingOrdersBySymbol = new Map<string, { id: string; side: string; type: string }[]>();
   let openOrdersFetchOk = true;
   try {
-    const openOrders = await client.getOrders(100);
+    // status="open" is mandatory: without it Alpaca defaults to "all" and the
+    // 100 most-recent orders on a churn-heavy account are dominated by
+    // filled/cancelled rows, hiding the open buys we need to dedup against.
+    // That blind spot caused the WDC 3-pending incident on 2026-05-26.
+    const openOrders = await client.getOrders(100, "open");
     const pendingOrders = openOrders.filter((o) =>
       ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)
     );
@@ -4493,6 +4548,53 @@ function setBrokerConnected(
 }
 
 /**
+ * Wall-clock budget for the heavy per-symbol analysis loops inside
+ * runTacticalSmartScan. Once exceeded, the loops break early and the
+ * scan proceeds to its tail (syncBrokerStops + heartbeat). 8 min sits
+ * comfortably under the 10-min "previous scan likely crashed" override
+ * and the 15-min SWING_SCAN_MS cadence — a scan that hits the budget
+ * still finishes its protective work before the next tick fires.
+ *
+ * Motivated by the 2026-05-26 incident: ~500 screener-fed symbols × 1s
+ * (Finnhub-rate-limited) per analyzeHybrid = scans hung indefinitely,
+ * never reached syncBrokerStops, broker stops frozen for the session.
+ */
+const TACTICAL_SCAN_SYMBOL_BUDGET_MS = 8 * 60 * 1000;
+
+/**
+ * Hard cap on externally-fed symbols evaluated per tactical-smart scan.
+ * SCAN_UNIVERSE (~30 hardcoded symbols) is always evaluated; the screener
+ * feed adds the top-N highest-confidence BUY/STRONG_BUY symbols beyond
+ * that. 50 was chosen so the worst-case loop ((30 + 50) × ~1s) fits
+ * inside the budget with margin. The cap is intentionally on the
+ * external-signal *count*, not on confidence threshold — we still want
+ * the very best non-universe candidates regardless of universe size.
+ */
+const TACTICAL_MAX_EXTERNAL_SYMBOLS = 50;
+
+/**
+ * Filter + cap external signals to the top-N highest-confidence
+ * BUY/STRONG_BUY symbols not already in SCAN_UNIVERSE. Centralizes the
+ * inline logic that appeared twice in runTacticalSmartScan (initial
+ * buy-in path + active-management path) so both apply the same cap.
+ */
+function selectExternalSymbolsForTactical(
+  externalSignals: readonly ExternalSignal[],
+  universe: readonly string[],
+  maxCount: number = TACTICAL_MAX_EXTERNAL_SYMBOLS
+): string[] {
+  const universeSet = new Set(universe);
+  // Filter to actionable signals not already in the hardcoded universe,
+  // then sort by confidence desc, then take top N. Confidence comes
+  // straight from the screener / hybrid pipeline.
+  return externalSignals
+    .filter((s) => (s.signal === "BUY" || s.signal === "STRONG_BUY") && !universeSet.has(s.symbol))
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, maxCount)
+    .map((s) => s.symbol);
+}
+
+/**
  * Sync broker stop orders to match the engine's dynamic trailing stops.
  * For each position, computes the current dynamic trail and updates the
  * Alpaca stop order to that level. This ensures broker-side protection
@@ -4649,7 +4751,10 @@ async function cancelAllAndWait(client: BrokerClient, maxMs = 5000): Promise<voi
   const PENDING = new Set(["new", "accepted", "pending_new", "partially_filled", "held", "pending_cancel"]);
   while (Date.now() < deadline) {
     try {
-      const orders = await client.getOrders(100);
+      // status="open" — same Alpaca default-status trap as the per-scan guards.
+      // Without it, a still-pending cancel can be hidden behind filled noise
+      // and we'd return early thinking the broker is clean.
+      const orders = await client.getOrders(100, "open");
       if (!orders.some((o) => PENDING.has(o.status))) return;
     } catch {
       // Transient broker error — keep polling until deadline
@@ -5165,4 +5270,50 @@ export function getTrackedPositionData(userId: string): Map<string, {
     });
   }
   return result;
+}
+
+/**
+ * Public entry-point for the standalone stop-sync scheduler. Calls
+ * syncBrokerStops for a user IF the engine is healthy enough for the
+ * sync to be meaningful:
+ *   - engine instance exists + is running + not halted
+ *   - position map is non-empty (nothing to sync)
+ *   - no scan in flight (avoid racing the in-scan sync at the scan tail)
+ *
+ * Motivated by the "tactical-smart scans hang every cycle" incident on
+ * 2026-05-26: syncBrokerStops was coupled to scan completion. When the
+ * scan body never returned (hangs in the per-symbol Finnhub-paced
+ * analyzer loop), broker stops never updated for the entire session
+ * even though the 1-min runExitCheck poll was happily promoting
+ * pos.stopLoss in memory. The dedicated 5-min stop-sync scheduler
+ * breaks that coupling — see src/lib/stop-sync-scheduler.ts.
+ *
+ * No-op on missing/stopped/halted/empty engines. Errors inside
+ * syncBrokerStops are already logged + swallowed there.
+ *
+ * Returns {ran: true} when the broker call was actually attempted;
+ * {ran: false, reason} when skipped (for scheduler-side log diagnostics).
+ */
+export async function syncBrokerStopsForUser(
+  userId: string
+): Promise<{ ran: boolean; reason?: string }> {
+  const engine = g.__tradingEngines?.get(userId);
+  if (!engine) return { ran: false, reason: "no_engine" };
+  if (!engine.running) return { ran: false, reason: "engine_stopped" };
+  if (engine.halted) return { ran: false, reason: "engine_halted" };
+  const positionMap = g2.__enginePositionMaps?.get(userId);
+  if (!positionMap || positionMap.size === 0) {
+    return { ran: false, reason: "no_positions" };
+  }
+  if (engine.scanStartedAt) {
+    // Scan in-flight — its own syncBrokerStops at the scan tail will handle
+    // this cycle. Don't race with it. NOTE: if a scan has been hung for
+    // hours (the incident this whole PR addresses), scanStartedAt stays
+    // set until the 10-min override clears it. The scheduler will skip
+    // for that long, then fire on the next 5-min tick after the override.
+    // That's acceptable — better than racing.
+    return { ran: false, reason: "scan_in_flight" };
+  }
+  await syncBrokerStops(userId);
+  return { ran: true };
 }
