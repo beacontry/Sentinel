@@ -105,6 +105,14 @@ const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
 // Fixed position sizing for backtesting (user risk profiles control live sizing)
 const BACKTEST_POSITION_PCT = 0.10;
 const BACKTEST_MAX_POSITIONS = 10;
+/**
+ * STRONG_BUY hard cap mirroring live runScan (Math.floor(maxPositions × 1.5)).
+ * Lets the GA-tuned strategy enter strong signals beyond the normal cap when
+ * conviction is high. Without parity, the backtester underestimates how
+ * many positions the live engine actually opens during strong-signal windows.
+ * PR 17 (2026-05-26) audit-driven addition.
+ */
+const BACKTEST_HARD_CAP_STRONG_BUY = Math.floor(BACKTEST_MAX_POSITIONS * 1.5);
 
 const WINDOW_SIZE = 90;
 const STEP_SIZE = 15;
@@ -494,9 +502,23 @@ function portfolioBacktest(
     }
 
     // ── Check entries (step boundaries only) ──
-    if (isStepBoundary && positions.length < BACKTEST_MAX_POSITIONS) {
+    //
+    // Note on swap-sell parity: the runScan path in trading-engine.ts has a
+    // post-loop "swap-sell redeploy" that buys cap-blocked candidates after
+    // exits free slots within the same scan. The backtester does NOT need
+    // that mechanism because exits run at the TOP of each bar (the for loop
+    // at line ~402) and entries run at the BOTTOM (here). positions.length
+    // already reflects any exits-this-bar by the time we evaluate slots.
+    // Functionally equivalent to swap-sell, structurally simpler.
+    //
+    // STRONG_BUY hardCap overshoot (PR 17 parity): when the next candidate
+    // is STRONG_BUY and positions.length < BACKTEST_HARD_CAP_STRONG_BUY,
+    // allow it through. Mirrors runScan's hardCap = 1.5x maxPositions for
+    // strong signals — without this, the GA underestimates how many
+    // STRONG_BUY positions the live engine can carry in strong-signal windows.
+    if (isStepBoundary && positions.length < BACKTEST_HARD_CAP_STRONG_BUY) {
       const heldSymbols = new Set(positions.map((p) => p.symbol));
-      const candidates: { symbol: string; signal: SignalType; price: number; atr: number }[] = [];
+      const candidates: { symbol: string; signal: SignalType; price: number; atr: number; confidence: number }[] = [];
 
       for (const symbol of data.symbols) {
         if (heldSymbols.has(symbol)) continue;
@@ -511,17 +533,28 @@ function portfolioBacktest(
           if (rs60 < params.rsThreshold) continue;
         }
 
-        const { signal: sig, atr } = analyzeSignalOnly(symbol, w, signalParams);
+        const { signal: sig, atr, confidence } = analyzeSignalOnly(symbol, w, signalParams);
         if ((sig === "BUY" || sig === "STRONG_BUY") && atr !== null) {
-          candidates.push({ symbol, signal: sig, price: bar.close, atr });
+          candidates.push({ symbol, signal: sig, price: bar.close, atr, confidence });
         }
       }
 
-      // Rank: STRONG_BUY first
-      candidates.sort((a, b) => (a.signal === "STRONG_BUY" ? 0 : 1) - (b.signal === "STRONG_BUY" ? 0 : 1));
+      // Rank: STRONG_BUY first, then by confidence desc within signal type
+      // (PR 17 parity — runScan's swap-sell ranks deferred candidates by
+      // confidence; the backtester now applies the same ordering up front).
+      candidates.sort((a, b) => {
+        const sigOrder = (a.signal === "STRONG_BUY" ? 0 : 1) - (b.signal === "STRONG_BUY" ? 0 : 1);
+        if (sigOrder !== 0) return sigOrder;
+        return b.confidence - a.confidence;
+      });
 
-      const slots = BACKTEST_MAX_POSITIONS - positions.length;
-      for (const cand of candidates.slice(0, slots)) {
+      // Slot allocation: STRONG_BUYs get the hardCap (1.5x); BUYs only get
+      // the regular cap. Iterate candidates and let each one's signal type
+      // determine the cap that applies to it.
+      for (const cand of candidates) {
+        const capForThisCandidate =
+          cand.signal === "STRONG_BUY" ? BACKTEST_HARD_CAP_STRONG_BUY : BACKTEST_MAX_POSITIONS;
+        if (positions.length >= capForThisCandidate) continue;
         // Size: fixed backtest position sizing
         let portfolioValue = cash;
         for (const pos of positions) {

@@ -4869,8 +4869,18 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   // is well past any realistic legitimate scan duration (95th percentile
   // ~30s, worst observed ~90s) but short enough that a wedged engine
   // self-recovers within the next two intraday ticks.
+  // Track active scan promises so we can audit orphaning behavior.
+  // Audit P1 #6 (2026-05-26): when the 10-min override fires, the previous
+  // scan promise is abandoned but still resolving in the background. When
+  // it eventually finishes, its .finally() flips scanInFlight=false — but
+  // a newer scan may already be in flight, racing on engine state (cooldowns,
+  // dailyLoss, broker order placement). Properly fixing this requires
+  // promise references + AbortController, which is hairy work deferred to
+  // a focused PR. For now we LOG the orphaning event with the abandoned
+  // scan's age so the next incident leaves a forensic trail in journald.
   let scanInFlight = false;
   let scanInFlightSince = 0;
+  let activeScanGeneration = 0;
   const STALE_SCAN_MS = 10 * 60 * 1000;
   const runScanGuarded = (origin: string): Promise<void> | undefined => {
     if (scanInFlight) {
@@ -4879,16 +4889,36 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
         log.warn({ userId, origin, ageMs }, "Skipping scan tick — previous scan still in flight");
         return undefined;
       }
-      log.error({ userId, origin, ageMs }, "Previous scan flagged in-flight for >10min — overriding flag (likely crashed)");
+      log.error(
+        {
+          userId, origin, ageMs,
+          orphanedGeneration: activeScanGeneration,
+          note: "Override fires; previous scan promise will resolve into a zombie generation. If you see " +
+                "duplicate orders or cooldown.set races in the next 15 min, this orphan is the cause. " +
+                "Audit P1 #6 deferred to focused concurrency PR.",
+        },
+        "Previous scan flagged in-flight for >10min — overriding flag (likely crashed). Orphaned promise still pending."
+      );
     }
     scanInFlight = true;
     scanInFlightSince = Date.now();
+    const myGeneration = ++activeScanGeneration;
     return scanFn()
       .catch((err) => {
-        log.error({ err: err instanceof Error ? err.message : "unknown", origin }, `${origin} scan failed`);
+        log.error({ err: err instanceof Error ? err.message : "unknown", origin, generation: myGeneration }, `${origin} scan failed`);
         pushError(engine, `${origin} scan failed: ${err instanceof Error ? err.message : "unknown"}`);
       })
       .finally(() => {
+        // If this scan's generation is no longer the active one, an override
+        // fired and a newer scan took over. Don't clear the flag — the newer
+        // scan's .finally() owns it. Log so the orphan event is visible.
+        if (myGeneration !== activeScanGeneration) {
+          log.warn(
+            { userId, origin, generation: myGeneration, activeGeneration: activeScanGeneration },
+            "Orphan scan resolved AFTER override-fired newer scan started. Not clearing inFlight flag — newer scan owns it."
+          );
+          return;
+        }
         scanInFlight = false;
         scanInFlightSince = 0;
       });
@@ -5665,6 +5695,33 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
       const positionMap = getPositionMap(userId);
       await syncPositionMapFromBroker(positions, positionMap, userId, resolved.client);
       log.info({ synced: positionMap.size }, "Synced broker positions into engine");
+
+      // Audit P2 #8 (2026-05-26): on container restart, the engine's in-
+      // memory suppression state (exitRejectionCount, exitSuppressedUntil,
+      // unprotectedSymbols) is lost. Auto-start sees N held positions but
+      // doesn't know which ones were PDT-rejected on the prior session.
+      // The engine will re-attempt failed exits and re-build unprotected
+      // state — burning EXIT_REJECTION_THRESHOLD retries on each PDT-blocked
+      // symbol and re-firing the audit + push the user already got.
+      // Record an audit row so the trail captures the rebuild event; users
+      // grepping later see "auto-start happened while these positions were
+      // held — any PDT alerts in the next 5 min are likely re-fires from
+      // pre-restart state, not new conditions."
+      if (positionMap.size > 0) {
+        void writeAudit({
+          actor: { userId, email: null, role: null },
+          action: AuditAction.ENGINE_STARTED,
+          resourceType: "engine",
+          resourceId: userId,
+          metadata: {
+            origin: "autoStartIfNeeded",
+            mode: lastMode,
+            heldPositionCount: positionMap.size,
+            heldSymbols: Array.from(positionMap.keys()),
+            note: "Engine restart after deploy/restart — in-memory PDT suppression + unprotected-symbol state reset. Any duplicate alerts in next 5 min are state rebuild, not new conditions.",
+          },
+        });
+      }
 
       await startEngine(userId, lastMode);
       return;
