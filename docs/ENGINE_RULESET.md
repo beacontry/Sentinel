@@ -172,6 +172,30 @@ The ladder is one-way: `pos.stopLoss` only moves up. If a position skips interme
 
 **Idempotent.** Once promoted to a tier, `pos.stopLoss` stays at or above that tier's target for the rest of the position's life. The trail can ratchet it higher; nothing lowers it.
 
+### In-Memory `pos.stopLoss` vs Broker-Side Stop Order
+
+The engine maintains **two stop values** per position. Understanding the relationship is critical to reading the trader page correctly:
+
+| What | Where | When it updates |
+|---|---|---|
+| **In-memory `pos.stopLoss`** | Engine's per-user position map (RAM) | Every scan + every 1-min `runExitCheck`. Ratchets up via breakeven-promote, trail, and (for graduating modes) the +30% graduation floor. |
+| **Broker stop order** | Alpaca's resting GTC sell-stop on the symbol | Updated by `syncBrokerStops()` when in-memory value moves >$0.10 above broker's current stop. |
+
+The dashboard's Stop column shows `max(broker, in-memory)` so users always see the higher (better-protected) value. The Open Orders card shows the broker-side stop directly.
+
+**Sync drift was an incident class.** Pre-PR-#4, `syncBrokerStops()` ran only at the tail of each scan (`runScan` / `runTacticalScan` / `runTacticalSmartScan`). If the scan body hung — the 2026-05-26 tactical-smart incident where the Finnhub-paced active-management loop never returned — broker stops froze at engine-start values for the entire session even though in-memory `pos.stopLoss` was correctly ratcheting via the 1-min poll. UI showed protected; broker had no protection.
+
+#### Dedicated stop-sync scheduler (PR #4, 2026-05-26)
+
+A standalone `stop-sync-scheduler.ts` now runs every 5 minutes **independent of scan health**, iterates every running engine, and pushes any in-memory ratchets to the broker. Mirrors the shape of `engine-watchdog.ts`.
+
+- **Cadence**: 5 min — tight enough that a fresh breakeven promotion reaches the broker within 5 min; loose enough to avoid 12× the `replaceOrder` calls per hour vs the previous per-scan cadence
+- **Per-user gates** in `syncBrokerStopsForUser()`: engine exists + `running` + `!halted` + has positions + *no scan in flight*. The last gate prevents racing the in-scan sync at the scan tail when scans *are* healthy
+- **Mode-agnostic** — runs for tactical / tactical-smart / optimized / conservative / moderate / aggressive / adaptive identically. The in-scan `syncBrokerStops()` calls at scan tails remain as redundant backup
+- **Bootstrap** — fires one immediate cycle at container start so a fresh deploy picks up where the previous container left off
+
+Net effect: regardless of mode or scan health, in-memory `pos.stopLoss` reaches the broker within 5 min of being set.
+
 ### Take-Profit Graduation (`MODE_GRADUATION_DEFAULT`)
 
 For modes where graduation is enabled (**tactical-smart** and **optimized** — set in `MODE_GRADUATION_DEFAULT`), the `pos.takeProfit` threshold is no longer a hard exit. It's a graduation point:
@@ -206,7 +230,7 @@ Exit logic varies dramatically between mode families. Signal-based modes (like O
 | **Exit scope** | Individual position + post-exit redeploy | Portfolio-wide + individual swaps | Portfolio-wide only |
 | **Primary exit** | First of 5 conditions fires | SPY < 20-SMA for 3 days | SPY < 20-SMA for 3 days |
 | **Stop loss** | ~8.5% initial → 4-tier ladder (+2/+5/+10/+15%) locks in 0.1 / 2.5 / 5 / 7.5% | 12% initial → +2% tier only (breakeven_only) | None (SPY-driven exits) |
-| **Take profit** | ATR × mult or % (GA-tuned, **graduates instead of exits**) | 50% (graduates to +30% floor) | None (SPY-driven exits) |
+| **Take profit** | ATR × mult or % (GA-tuned, **graduates instead of exits** in both 15-min scan and 1-min poll) | 50% (graduates to +30% floor in both 15-min scan and 1-min poll) | None (SPY-driven exits) |
 | **Trailing stop** | ~12.6% base, tightens with profit | 11.7% base, tightens with profit | None (SPY-driven exits) |
 | **Hold period** | ~33 days (GA-tuned) | 999 days (effectively never) | None (SPY-driven exits) |
 | **Sell signal** | SELL/STRONG_SELL → exit position | SELL/STRONG_SELL → swap for stronger stock | Not used |

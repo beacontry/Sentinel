@@ -37,6 +37,7 @@ export const TOP_150 = [
   "DE", "UNP", "UPS", "FDX", "LMT", "NOC", "GD", "HON", "WAB", "IR",
 ];
 import { STRATEGY_PRESETS } from "./strategy-presets";
+import { shouldGraduateExit, promoteToGraduationFloor } from "./trading-engine";
 import { db } from "./db";
 import {
   optimizationRuns,
@@ -257,7 +258,7 @@ async function fetchAllBars(
 
 // ── Signal evaluation (uses same analyzer as live engine) ───────────
 
-import { analyzeSignalOnly, type SignalParams } from "./indicators/analyzer";
+import { analyzeBars, analyzeSignalOnly, type SignalParams } from "./indicators/analyzer";
 import type { SignalType } from "@/types";
 export type { SignalType };
 
@@ -342,6 +343,14 @@ interface Position {
   shares: number;
   peakPrice: number;
   takeProfitPrice: number; // entry + ATR × multiplier (computed at entry)
+  /**
+   * Mutable fixed-stop floor. Initialized to entry × (1 - stopLossPct);
+   * promoted upward by take-profit graduation to entry × 1.30 when the
+   * graduation gate fires. Mirrors the live engine's TrackedPosition.stopLoss.
+   * Without this field, every stop check recomputed from stopLossPct would
+   * silently undo the graduation lock.
+   */
+  stopLoss: number;
 }
 
 interface PortfolioResult {
@@ -407,15 +416,53 @@ function portfolioBacktest(
       if (bar.high > pos.peakPrice) pos.peakPrice = bar.high;
       let exitPrice: number | null = null;
 
-      // Stops with profit-based tightening
+      // Stops with profit-based tightening. pos.stopLoss is the mutable
+      // fixed-stop floor (mirrors the live engine's TrackedPosition.stopLoss).
+      // Initialized to entry × (1 - stopLossPct), promoted upward by take-
+      // profit graduation to entry × 1.30 when graduation gate fires below.
       const profitPct = (pos.peakPrice - pos.entryPrice) / pos.entryPrice;
       const dynTrail = profitPct > 0 ? 0.02 + (params.trailingStopPct - 0.02) * Math.exp(-3 * profitPct) : params.trailingStopPct;
-      const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
       const trailStop = pos.peakPrice * (1 - dynTrail);
-      if (bar.low <= Math.max(fixedStop, trailStop)) exitPrice = Math.max(fixedStop, trailStop);
 
-      // Take profit (ATR-adaptive: computed at entry time)
-      if (!exitPrice && bar.high >= pos.takeProfitPrice) {
+      // Take-profit graduation (PR 14 parity, 2026-05-26). The GA tunes
+      // takeProfitAtrMult; the optimizer historically treated that as a
+      // hard exit. Live engine treats it as a graduation point (locks
+      // +30% floor, holds until 2-of-3 weakness signals fire). For GA
+      // fitness to be predictive of live performance, the backtester
+      // must model the same gate. Mirror modes are tactical-smart +
+      // optimized; portfolioBacktest is for the GA which only tunes
+      // optimized, so always treat as enabled here.
+      const graduationEnabled = true;
+      if (graduationEnabled && bar.high >= pos.takeProfitPrice) {
+        promoteToGraduationFloor(pos);
+        const win = windows.get(pos.symbol);
+        if (win && win.length >= 20) {
+          // analyzeBars produces the indicators object shouldGraduateExit
+          // reads (rsi_14 in particular). Costlier than analyzeSignalOnly
+          // but only invoked when above takeProfit — rare per position.
+          const analysis = analyzeBars(pos.symbol, win);
+          const ind = analysis.indicators as unknown as Record<string, number | null | undefined>;
+          const graduation = shouldGraduateExit(pos, win, ind, bar.close);
+          if (graduation) {
+            exitPrice = bar.close;
+          }
+          // Otherwise: hold past takeProfit. The +30% floor (now in
+          // pos.stopLoss) catches a reversal via the stop check below.
+        }
+      }
+
+      // Effective stop check uses the (possibly graduation-promoted)
+      // pos.stopLoss instead of recomputing entry × (1 - stopLossPct)
+      // every bar — recomputing would silently undo the graduation lock.
+      if (!exitPrice && bar.low <= Math.max(pos.stopLoss, trailStop)) {
+        exitPrice = Math.max(pos.stopLoss, trailStop);
+      }
+
+      // Hard take-profit (only when graduation gate didn't already act).
+      // Now that graduationEnabled=true above always intercepts the
+      // takeProfit crossing, this branch is dormant for optimized. Kept
+      // for parity in case graduationEnabled becomes mode-conditional later.
+      if (!exitPrice && !graduationEnabled && bar.high >= pos.takeProfitPrice) {
         exitPrice = pos.takeProfitPrice;
       }
 
@@ -493,6 +540,7 @@ function portfolioBacktest(
           shares,
           peakPrice: cand.price,
           takeProfitPrice: cand.price + cand.atr * params.takeProfitAtrMult,
+          stopLoss: cand.price * (1 - params.stopLossPct),
         });
       }
     }
@@ -743,31 +791,36 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     }));
 
-    // Multi-objective blended fitness (PR 14, 2026-05-26).
+    // Multi-objective blended fitness (PR 14, 2026-05-26; audit-revised PR 16).
     //
     // Before: pure excessReturn (0.6 train + 0.4 test). Rewarded any
-    // return regardless of risk profile. Param sets that scored 100%
-    // total return on a single lucky run beat steadier 40% sets.
-    // Outcome: GA-tuned strategies on the live engine showed bigger
-    // drawdowns than tactical-smart for similar total returns.
+    // return regardless of risk profile.
     //
-    // After: scale excessReturn by two risk multipliers, both clamped
-    // to [0, 1] so a great return with poor risk profile gets discounted
-    // but a great return with great risk profile is unchanged.
-    //   - Sharpe multiplier: min(sharpe / 1.0, 1.0)
-    //     A Sharpe of 1.0+ means returns are worth the volatility.
-    //     Below 1.0, the multiplier penalizes proportionally.
-    //   - Drawdown multiplier: max(0, 1 - maxDrawdown / 0.20)
-    //     A 20% max drawdown gets zero multiplier; anything below 20%
-    //     gets a proportional credit. Pegs the GA away from
-    //     blow-up-risk strategies.
+    // After: scale excessReturn by two risk multipliers but ONLY when the
+    // return is positive. Multipliers applied to negative returns invert
+    // the GA's preference (a -50% strategy × 0.5 sharpeMult = -25 beats
+    // -50 × 0.0 = 0, so the GA would prefer the higher-drawdown loser).
+    // Audit P1 #4 (2026-05-26). For positive returns, both multipliers
+    // are floored at 0.05 so the GA has gradient even in the "bad
+    // drawdown" regime (audit P1 #5 — flat 0 at maxDrawdown >= 0.20
+    // had no signal to climb away from).
+    //   - Sharpe multiplier: clamped to [0.05, 1.0]
+    //   - Drawdown multiplier: clamped to [0.05, 1.0], soft penalty across
+    //     a 30% drawdown window so a 20%-drawdown strategy isn't tied
+    //     with a 50%-drawdown one
     //
     // Weighting between train (0.6) and test (0.4) is unchanged — that's
     // overfitting protection, orthogonal to risk-aware scoring.
     function riskAdjust(r: PortfolioResult): number {
+      // Negative returns: skip multipliers (otherwise GA prefers worse risk).
+      // The base excessReturn already orders losers correctly.
+      if (r.excessReturn <= 0) return r.excessReturn;
       const sharpeMult = Math.min(Math.max(r.sharpeRatio, 0) / 1.0, 1.0);
-      const drawdownMult = Math.max(0, 1 - r.maxDrawdown / 0.20);
-      return r.excessReturn * sharpeMult * drawdownMult;
+      const drawdownMult = Math.max(0, 1 - r.maxDrawdown / 0.30);
+      // Soft floor so the GA still has a gradient at extreme risk profiles.
+      const softSharpe = Math.max(0.05, sharpeMult);
+      const softDrawdown = Math.max(0.05, drawdownMult);
+      return r.excessReturn * softSharpe * softDrawdown;
     }
     function blendedFitness(params: OptimizableParams): number {
       const train = portfolioBacktest(portfolioData, params, "train");

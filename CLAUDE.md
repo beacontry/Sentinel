@@ -68,6 +68,34 @@ The 2026-05-26 prod observation that tactical-smart was outperforming optimized 
 | `MODE_GRADUATION_DEFAULT` (take-profit graduation) | `enabled` | `enabled` | `disabled` |
 | `MODE_SWAP_SELL_DEFAULT` (post-exit redeploy) | `enabled` | `disabled` (uses own pair-wise) | `disabled` |
 
+**Graduation gates BOTH scan paths (PR 16, 2026-05-26 audit fix).** When
+graduation is enabled, the hard take-profit exit is gated in BOTH
+`runScan` (15-min) and `runExitCheck` (1-min). Pre-audit, `runExitCheck`
+still fired the hard exit at `pos.takeProfit`, so the 1-min poll would
+exit before the next 15-min scan got a chance to graduate. The gate check
+in both paths is `getGraduationMode(getActiveMode(engine)) === "disabled"`.
+
+**Backtester parity (PR 16).** Both `runBacktest` (`src/lib/backtester.ts`)
+and `portfolioBacktest` (`src/lib/optimizer.ts`) now simulate graduation
+for modes where it's enabled. Without this parity, GA-tuned
+`takeProfitAtrMult` values were chosen under hard-exit fitness while the
+live engine treats them as graduation points. Swap-sell parity is NOT
+yet mirrored in the backtester — single-symbol `runBacktest` doesn't have
+the multi-symbol candidate pool the runtime swap-sell needs; deferred to
+focused PR. Multi-objective GA fitness `excessReturn × sharpeMult ×
+drawdownMult` applies multipliers only to positive returns (negative
+returns skip — otherwise the GA preferred worse-risk-profile losers).
+Multipliers floored at 0.05 so the GA has gradient even at extreme
+drawdowns.
+
+**Stop-sync scheduler hung-scan recovery (PR 16 audit fix).** The
+scheduler's `scan_in_flight` gate previously skipped forever when
+`engine.scanStartedAt` was overwritten by `runScanGuarded`'s 10-min
+override (the previous hung scan's flag was never null'd). Now the
+scheduler checks scan age vs `STALE_SCAN_OVERRIDE_MS` (10 min) and runs
+sync anyway when exceeded. Logs warn-level so the operator sees these
+fires in journald.
+
 ### Screener (Shared)
 The screener scans market data and is shared across users (not user-specific). It pushes actionable signals (BUY/STRONG_BUY, confidence ≥ 0.6) to the engine via `pushExternalSignal()`. Signals are in-memory, expire after 30 minutes. Optimization runs are admin-only but results (strategy params) are shared globally.
 

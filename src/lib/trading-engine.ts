@@ -2109,8 +2109,20 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
         exitReason = currentPrice <= fixedStop ? "stop_loss" : "trailing_stop";
       }
 
-      // Take profit (uses stored price — ATR-based in optimized mode, fixed % in others)
-      if (!exitReason && currentPrice >= pos.takeProfit) {
+      // Take profit (uses stored price — ATR-based in optimized mode, fixed % in others).
+      // GATE: when graduation is enabled for the active mode, the +50%-class
+      // take-profit threshold is a graduation point, not a hard exit. Firing
+      // the hard exit here would clip every runner before runScan's next
+      // 15-min tick gets a chance to graduate them. Audit P0 #1 (2026-05-26).
+      // The graduation logic itself runs in runScan; here we just refuse to
+      // pre-empt it. pos.stopLoss is already locked at entry × 1.30 (the
+      // graduation floor) by that time, so a real reversal still exits via
+      // the stop-loss branch above.
+      if (
+        !exitReason &&
+        currentPrice >= pos.takeProfit &&
+        getGraduationMode(getActiveMode(engine)) === "disabled"
+      ) {
         exitReason = "take_profit";
       }
 
@@ -4490,10 +4502,29 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     const riskLimits = await loadRiskLimits(engine.userId);
     deferredCandidates.sort((a, b) => b.confidence - a.confidence);
     const hardCap = Math.floor(riskLimits.maxPositions * 1.5);
+    // Mirror the in-loop entry path's exposure cap for parity (audit P1 #3).
+    const swapEffectiveMaxExposure =
+      riskLimits.maxExposure < 0
+        ? equity * Math.abs(riskLimits.maxExposure)
+        : riskLimits.maxExposure > 0
+          ? riskLimits.maxExposure
+          : equity * 1.5;
+    const swapCooldownNow = Date.now();
+    const COOLDOWN_MS = 150 * 60 * 1000; // mirrors in-loop entry gate
     let redeployed = 0;
     for (const cand of deferredCandidates) {
       if (positionMap.size >= hardCap) break;
       if (pendingBuySymbols.has(cand.symbol)) continue;
+      // Cooldown gate — symbol bought in the last 150 min shouldn't be
+      // re-bought via swap-sell either. Audit P1 #3 (2026-05-26).
+      const lastBuyAt = engine.cooldowns.get(cand.symbol);
+      if (lastBuyAt && swapCooldownNow - lastBuyAt < COOLDOWN_MS) {
+        log.debug(
+          { symbol: cand.symbol, ageMs: swapCooldownNow - lastBuyAt },
+          "Swap-sell candidate skipped — cooldown active"
+        );
+        continue;
+      }
       try {
         const strategy = await resolveStrategy(engine.userId, cand.symbol);
         const positionValue = equity * riskLimits.positionPct;
@@ -4504,14 +4535,29 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         if (qty <= 0) continue;
         const orderCost = qty * cand.currentPrice;
         if (orderCost > account.buyingPower) continue;
+        // Exposure cap — sum of current open exposure + this BUY must not
+        // exceed effectiveMaxExposure. Same calc the in-loop entry path
+        // does (audit P1 #3 — was silently bypassed in swap-sell).
+        const currentExposure = Array.from(positionMap.values())
+          .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
+        if (currentExposure + orderCost > swapEffectiveMaxExposure) {
+          log.info(
+            { symbol: cand.symbol, currentExposure: currentExposure.toFixed(2), maxExposure: swapEffectiveMaxExposure.toFixed(2) },
+            "Swap-sell candidate skipped — max exposure reached"
+          );
+          break;
+        }
         const filterResult = await passesSmartFilters(cand.symbol, cand.bars);
         if (!filterResult.allowed) {
           log.info({ symbol: cand.symbol, reason: filterResult.reason }, "Swap-sell candidate blocked by smart filter");
           continue;
         }
+        // canPlaceBuyOrder with scanSectorCtx so sector-concentration cap
+        // is honored. The in-loop entry path passes this; pre-audit the
+        // swap-sell path silently bypassed it.
         const gate = await canPlaceBuyOrder(
           engine, cand.symbol, orderCost, riskLimits,
-          engine.boot?.equity ?? equity, account
+          engine.boot?.equity ?? equity, account, scanSectorCtx ?? undefined
         );
         if (!gate.ok) {
           log.warn(
@@ -4531,6 +4577,10 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         });
         recordOrderPlacement(engine, "buy", orderCost);
         pendingBuySymbols.add(cand.symbol);
+        // Set cooldown so a swap-sell BUY here can't be re-bought via the
+        // next scan's in-loop entry path (or another swap-sell). Mirrors
+        // line 4418's cooldown set after a normal BUY.
+        engine.cooldowns.set(cand.symbol, Date.now());
         await logTrade(
           cand.symbol,
           `swap_sell_redeploy:${cand.signal}`,
@@ -5876,7 +5926,27 @@ export async function syncBrokerStopsForUser(
     return { ran: false, reason: "no_positions" };
   }
   if (engine.scanStartedAt) {
-    return { ran: false, reason: "scan_in_flight" };
+    // Skip when a scan is genuinely in-flight to avoid racing the in-scan
+    // syncBrokerStops at the scan tail. BUT — the runScanGuarded override
+    // launches new scans after 10 min and overwrites engine.scanStartedAt
+    // with the new attempt's start time; the old hung promise is never
+    // cleaned up and scanStartedAt is never null'd. On a chronically
+    // hanging tactical-smart scan (the exact incident PR 4 is meant to
+    // mitigate), this gate would skip forever. Audit P0 #2 (2026-05-26).
+    // If scanStartedAt is older than 10 min, treat the scan as
+    // abandoned and run the sync anyway — broker stops can't wait
+    // indefinitely on a wedged scan.
+    const scanAgeMs = Date.now() - engine.scanStartedAt.getTime();
+    const STALE_SCAN_OVERRIDE_MS = 10 * 60 * 1000;
+    if (scanAgeMs < STALE_SCAN_OVERRIDE_MS) {
+      return { ran: false, reason: "scan_in_flight" };
+    }
+    // Fall through: scan is "in flight" past the override threshold; run
+    // sync anyway. Log so we have a forensic trace of these cases.
+    log.warn(
+      { userId, scanAgeMs },
+      "Stop-sync running past stale-scan override — scan flag has been set for >10 min"
+    );
   }
   await syncBrokerStops(userId);
   return { ran: true };

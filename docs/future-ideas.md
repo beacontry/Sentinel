@@ -322,6 +322,41 @@ it — single-tenant Sentinel is fine on the global key.
 (Bracket orders + WebSocket feed are listed under Engine above —
 they're more engine-shape than broker-shape changes.)
 
+### Engine hardening — items deferred from PR 16 audit (2026-05-26)
+
+**1. Hung-scan watchdog orphan promises.** When the 10-min override fires
+in `runScanGuarded`, the previous `scanFn()` promise is abandoned but
+still resolving in the background. When it eventually finishes, its
+`.finally()` flips the `scanInFlight` flag — by which time a new scan
+may already be in-flight, so the next tick can see `scanInFlight=false`
+and launch a third concurrent scan. All three race on shared engine
+state (`cooldowns`, `dailyLoss`, broker order placement). Fix requires
+tracking scan promise references and aborting/awaiting before override.
+Hairy concurrency work; defer to focused PR. Audit P1 #6.
+
+**2. Engine reboot loses suppression + unprotected-symbols state.**
+`exitRejectionCount`, `exitSuppressedUntil`, `unprotectedSymbols` are
+in-memory `Map`/`Set` on the engine object. A deploy mid-session resets
+all of them. After reboot, the engine re-attempts a PDT-rejected exit
+and re-spams Alpaca for 5 more retries before re-suppressing — and
+re-fires the audit + push notification the user already received.
+Options: (a) persist these to a small table keyed by `(user_id,
+symbol)`, restore at engine boot, or (b) document this as known behavior
+and tell users to either flatten manually before deploys or accept
+duplicate alerts. The CLAUDE.md "deploy the engine at rest" memory
+already advises against mid-session deploys; option (b) might be
+sufficient. Audit P2 #8.
+
+**3. Swap-sell integration test.** PR 14 added a 90-line post-loop
+swap-sell block in `runScan` with the in-loop deferral path. Only the
+per-mode default map (`getSwapSellMode("optimized") === "enabled"`) is
+unit-tested. PR 16's audit-driven fixes (cooldown, sector cap, exposure
+cap gates) need an integration test that mocks the broker + position
+map and asserts: (a) a STRONG_BUY deferred during a cap-blocked scan
+is redeployed after an exit fires; (b) deferred candidates respect
+cooldowns; (c) deferred candidates respect exposure cap; (d) deferred
+candidates respect sector-concentration cap. Audit P2 #7.
+
 ### Fractional shares (opt-in per user)
 Alpaca supports fractional shares (market orders + day/ioc TIF only,
 notional $ amount or fractional qty). Sentinel's broker layer at
