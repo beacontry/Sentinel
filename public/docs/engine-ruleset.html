@@ -735,29 +735,36 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td><strong>Exit scope</strong></td><td>Individual position</td><td>Portfolio-wide + individual swaps</td><td>Portfolio-wide only</td></tr>
+          <tr><td><strong>Exit scope</strong></td><td>Individual position + post-exit redeploy</td><td>Portfolio-wide + individual swaps</td><td>Portfolio-wide only</td></tr>
           <tr><td><strong>Primary exit</strong></td><td>First of 5 conditions fires</td><td>SPY &lt; 20-SMA &times;3d</td><td>SPY &lt; 20-SMA &times;3d</td></tr>
           <tr><td><strong>Stop loss</strong></td><td class="mono">~8.5% initial<br><span style="color:var(--text-muted);font-size:0.82rem">&rarr; 4-tier ladder (full)</span></td><td class="mono">12% initial<br><span style="color:var(--text-muted);font-size:0.82rem">&rarr; +2% tier only (breakeven_only)</span></td><td style="color:var(--text-muted)">None (SPY-driven, disabled)</td></tr>
-          <tr><td><strong>Take profit</strong></td><td class="mono">ATR &times; mult <span style="color:var(--text-muted)">(GA-tuned)</span></td><td class="mono">50% <span style="color:var(--text-muted)">(rarely fires first)</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
+          <tr><td><strong>Take profit</strong></td><td class="mono">ATR &times; mult <span style="color:var(--text-muted)">(GA-tuned, graduates)</span></td><td class="mono">50% <span style="color:var(--text-muted)">(graduates to +30% floor)</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
           <tr><td><strong>Trailing stop</strong></td><td class="mono">~12.6% <span style="color:var(--text-muted)">(dynamic)</span></td><td class="mono">11.7% <span style="color:var(--text-muted)">(dynamic)</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
           <tr><td><strong>Hold period</strong></td><td class="mono">~33 days <span style="color:var(--text-muted)">(GA-tuned)</span></td><td class="mono">999 days <span style="color:var(--text-muted)">(effectively never)</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
           <tr><td><strong>Sell signal</strong></td><td>SELL &rarr; exit position</td><td>SELL &rarr; swap for stronger stock</td><td style="color:var(--text-muted)">Not used</td></tr>
+          <tr><td><strong>Universe</strong></td><td class="mono">SCAN_UNIVERSE + top-50 screener externals (by confidence)</td><td class="mono">SCAN_UNIVERSE + top-50 screener externals</td><td class="mono">SCAN_UNIVERSE only</td></tr>
           <tr><td><strong>Market regime</strong></td><td>SPY &lt; SMA(20) blocks buys only</td><td>SPY &lt; SMA(20) &times;3d &rarr; liquidate ALL</td><td>SPY &lt; SMA(20) &times;3d &rarr; liquidate ALL</td></tr>
-          <tr><td><strong>Active mgmt</strong></td><td style="color:var(--text-muted)">No &mdash; exit or hold</td><td style="color:var(--bullish)">Yes &mdash; swap weak, add strong</td><td style="color:var(--text-muted)">No &mdash; full in/full out</td></tr>
-          <tr><td><strong>Signal params</strong></td><td class="mono" style="color:var(--accent)">GA-tuned</td><td style="color:var(--text-muted)">Defaults (9/21, 30/70)</td><td style="color:var(--text-muted)">N/A</td></tr>
+          <tr><td><strong>Active mgmt</strong></td><td style="color:var(--bullish)">Yes &mdash; swap-sell redeploys freed capital</td><td style="color:var(--bullish)">Yes &mdash; swap weak, add strong</td><td style="color:var(--text-muted)">No &mdash; full in/full out</td></tr>
+          <tr><td><strong>Signal params</strong></td><td class="mono" style="color:var(--accent)">GA-tuned (per-symbol)</td><td style="color:var(--text-muted)">Defaults (9/21, 30/70)</td><td style="color:var(--text-muted)">N/A</td></tr>
+          <tr><td><strong>Position sizing</strong></td><td class="mono">Fixed positionPct &times; equity</td><td class="mono">Inverse-volatility weighted</td><td class="mono">Equal weight</td></tr>
+          <tr><td><strong>GA fitness</strong></td><td class="mono" style="color:var(--accent)">excessReturn &times; sharpeMult &times; drawdownMult</td><td style="color:var(--text-muted)">N/A (no GA)</td><td style="color:var(--text-muted)">N/A</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h3>Optimized GA &mdash; Individual Exits</h3>
+    <h3>Optimized GA &mdash; Individual Exits + Post-Exit Redeploy</h3>
     <p>Each position is managed independently. On every scan (~15 min), the engine checks all 5 exit conditions in priority order. First trigger wins. SPY health filter only blocks <strong>new entries</strong> &mdash; it does NOT force exits of held positions.</p>
     <ol>
       <li><strong>Stop loss</strong> &mdash; price &le; <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code>. Initialized at entry &times; (1 &minus; stopLossPct) &mdash; GA-tuned, typically ~8.5%. Ratcheted up to entry &times; 1.001 once unrealized profit crosses +2% (see Dynamic Trailing Stop &sect; Breakeven-Promote).</li>
-      <li><strong>Take profit</strong> &mdash; price &ge; entry + ATR(14) &times; multiplier (adaptive) or fixed % fallback</li>
+      <li><strong>Take profit</strong> &mdash; price &ge; entry + ATR(14) &times; multiplier (adaptive) or fixed % fallback. <strong>Graduates instead of exits</strong>: first crossing locks <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> to entry &times; 1.30 (the +30% floor). Subsequent scans hold until weakness signals fire (2-of-3: volume contraction, plateau, RSI rollover). See &sect; Take-Profit Graduation.</li>
       <li><strong>Trailing stop</strong> &mdash; price &le; peak &times; (1 &minus; dynamicTrailPct). Tightens exponentially as profit grows</li>
       <li><strong>Hold period</strong> &mdash; position held &ge; holdPeriod trading days. GA-tuned, typically ~33 days</li>
       <li><strong>SELL/STRONG_SELL signal</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">analyzeBars()</code> with GA-tuned signal params scores bearish</li>
     </ol>
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span><strong>Post-exit redeploy (swap-sell).</strong> When a scan exit fires, the freed slot doesn't sit idle until the next 15-min tick. Inside the same scan, any STRONG_BUY candidates that hit the position cap before the exit happened are deferred; after the per-symbol loop ends, the top deferred candidates (by analyzer confidence) get bought to redeploy that capital. Closes a stair-step of ~5-15% per cycle that was lost waiting for the next scan. See <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">MODE_SWAP_SELL_DEFAULT</code> &mdash; opt-in per mode (optimized enabled; tactical-smart uses its own pair-wise swap-sell elsewhere).</span>
+    </div>
 
     <h3>Tactical Smart &mdash; Market Regime + Swaps</h3>
     <p>Two layers of exit logic:</p>
@@ -780,7 +787,7 @@
 
     <div class="callout info">
       <span class="callout-icon">&#8505;</span>
-      <span><strong>Key distinction:</strong> In Optimized GA, a SELL signal <em>exits</em> the position. In Tactical Smart, a SELL signal <em>swaps</em> it for a stronger stock. In Tactical, sell signals are not used at all.</span>
+      <span><strong>Key distinction:</strong> In Optimized GA, a SELL signal <em>exits</em> the position; the freed slot is then redeployed into the highest-confidence deferred STRONG_BUY <em>same scan</em> (swap-sell). In Tactical Smart, a SELL signal <em>swaps</em> the position directly for a stronger stock as a pair-wise operation. In Tactical, sell signals are not used at all. Optimized and Tactical Smart converged in PR 14's Option 2 rollout &mdash; the remaining differences are per-symbol GA tuning, fixed vs inverse-vol position sizing, and finite vs 999-day hold periods.</span>
     </div>
   </section>
 
@@ -920,6 +927,26 @@
     </div>
 
     <p style="color:var(--text-muted);margin-top:14px;font-size:0.92rem"><strong>Idempotent.</strong> Once promoted to a tier, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> stays at or above that tier's target. The trail can ratchet it higher; nothing lowers it.</p>
+
+    <h3 style="margin-top:24px">Take-Profit Graduation</h3>
+    <p>For modes where graduation is enabled (<strong>tactical-smart</strong> and <strong>optimized</strong> &mdash; see <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">MODE_GRADUATION_DEFAULT</code>), the <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.takeProfit</code> threshold is no longer a hard exit &mdash; it's a graduation point.</p>
+
+    <ol>
+      <li><strong>First crossing</strong> &rarr; lock <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> to entry &times; 1.30 (the +30% graduation floor). Never lowers an existing higher stop &mdash; if the dynamic trail already ratcheted past +30%, no-op.</li>
+      <li><strong>Subsequent scans</strong> &rarr; <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">shouldGraduateExit()</code> evaluates 3 weakness signals:
+        <ul style="margin-top:6px">
+          <li><strong>Volume contraction</strong>: 5-day avg volume &lt; 20-day avg &times; 0.85</li>
+          <li><strong>Plateau</strong>: within 2% of the 10-bar peak (still under it &mdash; not extending new highs)</li>
+          <li><strong>RSI rollover</strong>: <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">rsi_14 &lt; 60</code> (was overbought, no longer)</li>
+        </ul>
+      </li>
+      <li><strong>2-of-3 fires</strong> &rarr; exit with reason <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">Graduated exit at +X%: N/3 weakness signals</code>. Otherwise hold; regular stop_loss + trailing + SELL signal still apply via the exit chain.</li>
+    </ol>
+
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span><strong>Why graduation is enabled for optimized too (PR 14):</strong> the GA-tuned takeProfit was found on a finite training window. In trending out-of-sample markets, GA exits proved too tight &mdash; the position got clipped at +50% (or whatever the GA found) while the underlying ran to +100%+. Graduation converts that "best historical exit" into "minimum guaranteed +30% with unlimited upside, gated by real-time weakness." The same logic that won for tactical-smart on DELL/MU/SNDK winners now applies to optimized's per-symbol picks.</span>
+    </div>
   </section>
 
   <!-- ===== 6 · PRE-BUY FILTERS ===== -->

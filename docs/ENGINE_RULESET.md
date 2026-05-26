@@ -172,6 +172,27 @@ The ladder is one-way: `pos.stopLoss` only moves up. If a position skips interme
 
 **Idempotent.** Once promoted to a tier, `pos.stopLoss` stays at or above that tier's target for the rest of the position's life. The trail can ratchet it higher; nothing lowers it.
 
+### Take-Profit Graduation (`MODE_GRADUATION_DEFAULT`)
+
+For modes where graduation is enabled (**tactical-smart** and **optimized** — set in `MODE_GRADUATION_DEFAULT`), the `pos.takeProfit` threshold is no longer a hard exit. It's a graduation point:
+
+1. **First crossing** → lock `pos.stopLoss` to entry × 1.30 (the +30% graduation floor). Idempotent — never lowers an existing higher stop, so a trail that already passed +30% stays where it is.
+2. **Subsequent scans** → `shouldGraduateExit()` evaluates 3 weakness signals:
+   - Volume contraction: 5-day avg < 20-day avg × 0.85
+   - Plateau: currentPrice within 2% of 10-bar peak (and not extending — distFromPeak ≥ 0)
+   - RSI rollover: `rsi_14 < 60` (was overbought, no longer)
+3. **2-of-3 fires** → exit with reason like `Graduated exit at +X%: N/3 weakness signals`. Otherwise hold; normal stop_loss + trailing + SELL signal still apply via the exit chain (which is wrapped in `if (!shouldExit)` so graduation's reason isn't overwritten).
+
+| Engine mode | Graduation | Why |
+|---|---|---|
+| tactical-smart | `enabled` | Original mode (PR 8). Designed around the runner-friendly philosophy |
+| optimized | `enabled` | Enabled in PR 14. GA-tuned takeProfit was too tight on out-of-sample momentum runs; graduation lets winners ride past the training-window-fit exit |
+| conservative / moderate / aggressive | `disabled` | Want the predictable hard cap, not unbounded upside |
+| tactical | `disabled` | SPY-driven; no per-symbol management |
+| adaptive | `disabled` | Resolves to effective base mode at runtime |
+
+**Why graduation wins on runners:** a position that crosses +50% in a momentum environment historically came from either (a) a stock that's still trending or (b) a stock about to mean-revert. The +30% floor protects against (b) — worst case, you lock in +30%. The weakness signals catch (b) early. Case (a) — the stock keeps running — gets to ride. Pre-graduation, all (a) cases got clipped at the GA-found exit point.
+
 ---
 
 ## Exit Behavior by Mode
@@ -182,28 +203,41 @@ Exit logic varies dramatically between mode families. Signal-based modes (like O
 
 | Aspect | Optimized GA | Tactical Smart | Tactical |
 |--------|---|---|---|
-| **Exit scope** | Individual position | Portfolio-wide + individual swaps | Portfolio-wide only |
+| **Exit scope** | Individual position + post-exit redeploy | Portfolio-wide + individual swaps | Portfolio-wide only |
 | **Primary exit** | First of 5 conditions fires | SPY < 20-SMA for 3 days | SPY < 20-SMA for 3 days |
 | **Stop loss** | ~8.5% initial → 4-tier ladder (+2/+5/+10/+15%) locks in 0.1 / 2.5 / 5 / 7.5% | 12% initial → +2% tier only (breakeven_only) | None (SPY-driven exits) |
-| **Take profit** | ATR × mult or ~37% (GA-tuned) | 50% (set at entry, rarely fires first) | None (SPY-driven exits) |
+| **Take profit** | ATR × mult or % (GA-tuned, **graduates instead of exits**) | 50% (graduates to +30% floor) | None (SPY-driven exits) |
 | **Trailing stop** | ~12.6% base, tightens with profit | 11.7% base, tightens with profit | None (SPY-driven exits) |
 | **Hold period** | ~33 days (GA-tuned) | 999 days (effectively never) | None (SPY-driven exits) |
 | **Sell signal** | SELL/STRONG_SELL → exit position | SELL/STRONG_SELL → swap for stronger stock | Not used |
+| **Universe** | SCAN_UNIVERSE + top-50 screener externals (by confidence) | SCAN_UNIVERSE + top-50 screener externals | SCAN_UNIVERSE only |
 | **Market regime** | SPY < SMA(20) blocks new buys only | SPY < SMA(20) ×3d → liquidate ALL | SPY < SMA(20) ×3d → liquidate ALL |
-| **Active management** | No — exit or hold | Yes — swap weak, add strong | No — full in or full out |
-| **Signal params** | GA-tuned (EMA/RSI) | Default (EMA 9/21, RSI 30/70) | Not applicable |
+| **Active management** | Yes — swap-sell redeploys freed capital | Yes — swap weak, add strong (pair-wise) | No — full in or full out |
+| **Signal params** | GA-tuned (EMA/RSI per-symbol) | Default (EMA 9/21, RSI 30/70) | Not applicable |
+| **Position sizing** | Fixed positionPct × equity | Inverse-volatility weighted | Equal weight |
+| **GA fitness** | excessReturn × sharpeMult × drawdownMult | N/A (no GA) | N/A |
 
-### Optimized GA — Individual Position Exits
+### Optimized GA — Individual Exits + Post-Exit Redeploy
 
 Each position is managed independently. On every scan (~15 min), the engine checks 5 exit conditions in priority order. First trigger wins:
 
 1. **Stop loss** — price ≤ entry × (1 − stopLossPct). GA-tuned, typically ~8.5%
-2. **Take profit** — price ≥ entry + ATR(14) × multiplier (adaptive) or entry × (1 + takeProfitPct) (fallback)
+2. **Take profit** — price ≥ entry + ATR(14) × multiplier (adaptive) or entry × (1 + takeProfitPct) (fallback). **Graduates instead of exits**: first crossing locks `pos.stopLoss` to entry × 1.30 (the +30% floor). Subsequent scans hold until weakness signals fire (2-of-3: volume contraction, plateau, RSI rollover). See § Take-Profit Graduation.
 3. **Trailing stop** — price ≤ peak × (1 − dynamicTrailPct). Tightens exponentially as profit grows (see Dynamic Trailing Stop)
 4. **Hold period** — position held ≥ holdPeriod trading days. GA-tuned, typically ~33 days
 5. **SELL/STRONG_SELL signal** — `analyzeBars()` with GA-tuned signal params scores bearish
 
 SPY health filter only blocks new entries (SPY < SMA(20)), does NOT force exits of held positions.
+
+**Post-exit redeploy (swap-sell, PR 14).** When an in-loop exit fires, the freed slot doesn't sit idle until the next 15-min tick. Any STRONG_BUY candidates that hit the position cap before the exit happened are deferred during the scan; after the per-symbol loop ends, the top deferred candidates (by analyzer confidence) get bought to redeploy that capital. Closes a stair-step of ~5-15% per cycle that was previously lost waiting for the next scan. Gated by `MODE_SWAP_SELL_DEFAULT` — opt-in per mode. Optimized enabled; tactical-smart uses its own pair-wise swap-sell elsewhere.
+
+**Universe (PR 14).** Now consumes the screener feed alongside SCAN_UNIVERSE — same `selectExternalSymbolsForTactical` helper as tactical-smart (top-50 by confidence, BUY/STRONG_BUY only, dedup'd against the hardcoded universe). Previously took every external signal regardless of direction or confidence, no cap.
+
+**Multi-objective GA fitness (PR 14).** `blendedFitness` now scales `excessReturn` by two risk multipliers:
+- `sharpeMult = min(sharpe / 1.0, 1.0)` — penalizes Sharpe < 1.0 proportionally
+- `drawdownMult = max(0, 1 − maxDrawdown / 0.20)` — zeroes at 20% drawdown
+
+Pushes the GA away from blow-up-risk parameter sets that score high on raw return alone. Re-run the optimizer after deploy to retune existing strategies with the new fitness.
 
 ### Tactical Smart — Market Regime + Active Swapping
 

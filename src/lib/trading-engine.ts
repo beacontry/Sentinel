@@ -1451,10 +1451,49 @@ const GRADUATION_RSI_ROLLOVER_BELOW = 60;
  *  blow-off (higher bar = rides the top down). */
 const GRADUATION_MIN_WEAKNESS_SIGNALS = 2;
 
+// ─── Swap-sell mode ─────────────────────────────────────────────────────────
+//
+// When a SELL exit fires mid-scan, the position cap drops by 1. Without
+// swap-sell, that freed slot stays empty until the NEXT scan tick re-runs
+// candidate evaluation — capital sits idle for up to 15 min during which
+// fresh STRONG_BUYs that scored well in the same scan but hit the cap got
+// silently skipped.
+//
+// Swap-sell defers cap-blocked STRONG_BUY candidates to a post-loop phase.
+// If any exits freed slots, the top deferred candidates (by analyzer
+// confidence) get bought immediately, same scan.
+//
+// Tactical-smart has its own swap-sell in runTacticalSmartScan (pair-wise:
+// sells weak holds + buys candidates in one go). This is the runScan
+// equivalent — simpler shape because the exit chain already handles the
+// SELL half; we just bolt on a "redeploy freed slots" step afterward.
+
+export type SwapSellMode = "enabled" | "disabled";
+
+const MODE_SWAP_SELL_DEFAULT: Record<EngineMode, SwapSellMode> = {
+  conservative: "disabled", // wants stable position count, no churn
+  moderate: "disabled",
+  optimized: "enabled",      // benefits from redeploying freed capital into top GA-tuned candidates
+  aggressive: "disabled",
+  tactical: "disabled",      // SPY-driven, no per-symbol picking
+  "tactical-smart": "disabled", // has its own pair-wise swap-sell in runTacticalSmartScan
+  adaptive: "disabled",      // resolves to base mode at runtime
+};
+
+export function getSwapSellMode(activeMode: EngineMode): SwapSellMode {
+  return MODE_SWAP_SELL_DEFAULT[activeMode];
+}
+
 const MODE_GRADUATION_DEFAULT: Record<EngineMode, GraduationMode> = {
   conservative: "disabled", // wants the hard cap, predictable exits
   moderate: "disabled",
-  optimized: "disabled",     // GA-tuned takeProfitPct is the exit decision
+  // Optimized: the GA-tuned takeProfitPct/AtrMult is now treated as the
+  // GRADUATION point, not the hard exit. Same rationale as tactical-smart
+  // got in PR 8 — training-window-found exits are often too tight for
+  // out-of-sample momentum runs. Per-symbol params still apply for stop +
+  // trail + hold, so optimized's "precision" character is preserved while
+  // the +50%-class clip on real runners is fixed.
+  optimized: "enabled",
   aggressive: "disabled",
   tactical: "disabled",      // SPY-driven; no per-symbol management
   "tactical-smart": "enabled", // designed for runners
@@ -3731,10 +3770,15 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     // If SPY check fails, allow trading
   }
 
-  // 4. Scan universe (top 50 + any symbols from external signals)
-  const externalSymbols = engine.externalSignals
-    .filter((s) => !SCAN_UNIVERSE.includes(s.symbol))
-    .map((s) => s.symbol);
+  // 4. Scan universe — SCAN_UNIVERSE + top-confidence screener-fed externals.
+  // Previously this took every external signal regardless of direction or
+  // confidence (HOLDs and SELLs included, no cap). Now uses the same
+  // confidence-sort + 50-cap as tactical-smart (selectExternalSymbolsForTactical
+  // — name is historical; the helper is mode-agnostic). The 50-cap matches
+  // SCAN_UNIVERSE-sized iteration budgets and prevents Finnhub-rate-limited
+  // analyzeHybrid loops from chewing through hundreds of low-conviction
+  // symbols every scan.
+  const externalSymbols = selectExternalSymbolsForTactical(engine.externalSignals, SCAN_UNIVERSE);
   const symbols = [...SCAN_UNIVERSE, ...new Set(externalSymbols)];
 
   // Load optimized signal params for "optimized" mode (tuned EMA/RSI from GA).
@@ -3884,6 +3928,16 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
   let realizedPnlThisScan = 0;
   let tradesThisScan = 0;
+  // Swap-sell bookkeeping. When the in-loop entry path hits the position
+  // cap for a STRONG_BUY, we defer the candidate here instead of dropping
+  // it silently. After the loop, if any exits freed slots, we BUY the top
+  // deferred candidates (by analyzer confidence) to redeploy that capital
+  // same scan. See MODE_SWAP_SELL_DEFAULT — opt-in per mode.
+  const swapMode = getSwapSellMode(getActiveMode(engine));
+  const deferredCandidates: Array<{
+    symbol: string; confidence: number; currentPrice: number; signal: SignalType; bars: Bar[]; indicators: Record<string, unknown>;
+  }> = [];
+  let exitsThisScan = 0;
 
   // Build sector-exposure context once before the loop (was previously
   // rebuilt per-symbol — Phase 4 audit caught the regression).
@@ -4138,6 +4192,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             positionMap.delete(symbol);
             // Successful exit — clear any prior PDT rejection streak.
             clearExitRejection(engine, symbol);
+            // Track for swap-sell post-loop redeploy (see MODE_SWAP_SELL_DEFAULT).
+            exitsThisScan++;
 
             log.info(
               { symbol, pnl: pnl.toFixed(2), reason: exitReason },
@@ -4193,7 +4249,27 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         continue;
       }
       if (isStrongSignal && positionMap.size >= positionCap) {
-        log.info({ symbol, positions: positionMap.size, cap: positionCap, maxPositions: riskLimits.maxPositions }, "STRONG_BUY skipped — position cap reached");
+        // Swap-sell: instead of silently dropping, defer the candidate.
+        // After the loop, if exits freed slots, the highest-confidence
+        // deferred candidates get bought to redeploy that capital this
+        // same scan. Skipped (logged + dropped) when swap-sell is
+        // disabled for the active mode.
+        if (swapMode === "enabled" && !pendingBuySymbols.has(symbol)) {
+          deferredCandidates.push({
+            symbol,
+            confidence,
+            currentPrice,
+            signal,
+            bars,
+            indicators: analysis.indicators as unknown as Record<string, unknown>,
+          });
+          log.debug(
+            { symbol, confidence: confidence.toFixed(3) },
+            "STRONG_BUY deferred for post-loop swap-sell evaluation"
+          );
+        } else {
+          log.info({ symbol, positions: positionMap.size, cap: positionCap, maxPositions: riskLimits.maxPositions }, "STRONG_BUY skipped — position cap reached");
+        }
         continue;
       }
 
@@ -4396,6 +4472,105 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
       const msg = err instanceof Error ? err.message : "unknown";
       log.error({ err: msg, symbol }, "Error processing symbol");
       pushError(engine, `Error scanning ${symbol}: ${msg}`);
+    }
+  }
+
+  // 5b. Swap-sell post-loop redeploy.
+  //
+  // If any exits fired during the loop AND we have deferred STRONG_BUY
+  // candidates that hit the position cap before the exits happened, BUY
+  // the top-confidence candidates up to the slots freed. Otherwise the
+  // freed capital sits until the next scan tick (up to 15 min wait).
+  //
+  // Re-check position cap inline because mid-loop exits already adjusted
+  // positionMap.size. Gates per candidate: not in pendingBuySymbols (race
+  // with another buy), passes canPlaceBuyOrder (PDT/notional/rate-limit),
+  // passes smart filters (earnings blackout etc.), still has cash.
+  if (swapMode === "enabled" && exitsThisScan > 0 && deferredCandidates.length > 0) {
+    const riskLimits = await loadRiskLimits(engine.userId);
+    deferredCandidates.sort((a, b) => b.confidence - a.confidence);
+    const hardCap = Math.floor(riskLimits.maxPositions * 1.5);
+    let redeployed = 0;
+    for (const cand of deferredCandidates) {
+      if (positionMap.size >= hardCap) break;
+      if (pendingBuySymbols.has(cand.symbol)) continue;
+      try {
+        const strategy = await resolveStrategy(engine.userId, cand.symbol);
+        const positionValue = equity * riskLimits.positionPct;
+        const qty = Math.min(
+          Math.floor(positionValue / cand.currentPrice),
+          riskLimits.maxPositionSize
+        );
+        if (qty <= 0) continue;
+        const orderCost = qty * cand.currentPrice;
+        if (orderCost > account.buyingPower) continue;
+        const filterResult = await passesSmartFilters(cand.symbol, cand.bars);
+        if (!filterResult.allowed) {
+          log.info({ symbol: cand.symbol, reason: filterResult.reason }, "Swap-sell candidate blocked by smart filter");
+          continue;
+        }
+        const gate = await canPlaceBuyOrder(
+          engine, cand.symbol, orderCost, riskLimits,
+          engine.boot?.equity ?? equity, account
+        );
+        if (!gate.ok) {
+          log.warn(
+            { symbol: cand.symbol, qty, notional: orderCost, reason: gate.reason, ...gate.details },
+            "Swap-sell BUY blocked"
+          );
+          continue;
+        }
+        const limitPrice = (cand.currentPrice * 1.001).toFixed(2);
+        const order = await placeEngineOrder(client, {
+          symbol: cand.symbol,
+          side: "buy",
+          qty: String(qty),
+          type: "limit",
+          timeInForce: "day",
+          limitPrice,
+        });
+        recordOrderPlacement(engine, "buy", orderCost);
+        pendingBuySymbols.add(cand.symbol);
+        await logTrade(
+          cand.symbol,
+          `swap_sell_redeploy:${cand.signal}`,
+          "BUY",
+          qty,
+          cand.currentPrice,
+          "PENDING",
+          null,
+          `Swap-sell redeploy (confidence ${cand.confidence.toFixed(3)})`,
+          order.id,
+          null,
+          engine.userId
+        );
+        positionMap.set(cand.symbol, {
+          symbol: cand.symbol,
+          qty,
+          entryPrice: cand.currentPrice,
+          peakPrice: cand.currentPrice,
+          stopLoss: cand.currentPrice * (1 - strategy.stopLossPct),
+          takeProfit: cand.currentPrice * (1 + strategy.takeProfitPct),
+          trailingStopPct: strategy.trailingStopPct,
+          entryDate: new Date(),
+          holdPeriod: strategy.holdPeriod,
+        });
+        redeployed++;
+        tradesThisScan++;
+        if (redeployed >= exitsThisScan) break;
+      } catch (err) {
+        log.error(
+          { symbol: cand.symbol, err: err instanceof Error ? err.message : "unknown" },
+          "Swap-sell redeploy failed"
+        );
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (redeployed > 0) {
+      log.info(
+        { exits: exitsThisScan, deferred: deferredCandidates.length, redeployed },
+        "Swap-sell redeploy complete"
+      );
     }
   }
 
