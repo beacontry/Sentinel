@@ -2,6 +2,7 @@
 // Provides a unified interface for interacting with different brokerage APIs.
 // Each broker client normalizes responses to common types.
 
+import { randomUUID } from "crypto";
 import { createRouteLogger } from "./logger";
 
 const log = createRouteLogger("brokers");
@@ -86,6 +87,19 @@ export interface PlaceOrderParams {
    * Alpaca rejects the order at the broker layer rather than letting it create a phantom position.
    */
   positionIntent?: "buy_to_open" | "buy_to_close" | "sell_to_open" | "sell_to_close";
+  /**
+   * Idempotency key. When set, the broker rejects a second order with the
+   * same key as a duplicate instead of accepting both. Protects against
+   * network-hiccup-driven retries creating duplicate fills (the request
+   * left the engine, hit a TCP timeout before the response, harness or
+   * higher-level retry sent the same intent again, broker would otherwise
+   * happily accept both).
+   *
+   * If callers don't provide one, the Alpaca client auto-generates a v4
+   * UUID per call. So every order placement has idempotency by default
+   * without the caller having to think about it.
+   */
+  clientOrderId?: string;
 }
 
 export interface BrokerClient {
@@ -159,7 +173,7 @@ function toString(value: unknown): string {
 
 // ─── Alpaca Client ───────────────────────────────────────────────────────────
 
-class AlpacaClient implements BrokerClient {
+export class AlpacaClient implements BrokerClient {
   private baseUrl: string;
   private headers: Record<string, string>;
 
@@ -306,11 +320,20 @@ class AlpacaClient implements BrokerClient {
   }
 
   async placeOrder(params: PlaceOrderParams): Promise<BrokerOrder> {
+    // Idempotency: every order gets a client_order_id. Caller-provided when
+    // set (useful for deterministic retry-the-same-intent flows), else a
+    // fresh v4 UUID. Alpaca enforces uniqueness per account — a second
+    // POST with the same id is rejected as a duplicate instead of becoming
+    // a second fill. Defends against network-hiccup retries (request left
+    // the engine, response lost, retry happens with the same intent).
+    const clientOrderId = params.clientOrderId ?? randomUUID();
+
     const payload: Record<string, unknown> = {
       symbol: params.symbol,
       side: params.side,
       type: params.type,
       time_in_force: params.timeInForce,
+      client_order_id: clientOrderId,
     };
     // Fractional-share path: notional (dollars) vs qty (shares). Mutually
     // exclusive per Alpaca's contract. notional only works with market +
@@ -352,7 +375,13 @@ class AlpacaClient implements BrokerClient {
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
-      log.error({ broker: "alpaca", status: res.status, err: errorText }, "Order placement failed");
+      // Include clientOrderId in the error log so a duplicate-on-retry
+      // shows up grep-able. Alpaca returns 422 with message containing
+      // "client_order_id must be unique" when the key collides.
+      log.error(
+        { broker: "alpaca", status: res.status, clientOrderId, err: errorText },
+        "Order placement failed"
+      );
 
       let userError = "Failed to place order";
       try {
