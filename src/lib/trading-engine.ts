@@ -45,6 +45,7 @@ import { detectMarketRegime } from "./market-regime";
 import { createAutoJournalStub } from "./journal-auto-stub";
 import { getUserTier } from "./tiers-server";
 import { userHasTier } from "./tiers";
+import { sendPushToUser } from "./push";
 
 const log = createRouteLogger("trading-engine");
 
@@ -186,6 +187,20 @@ export interface EngineState {
     updatedAt: Date;
   } | null;
   /**
+   * Per-symbol count of consecutive PDT-rejected exit attempts. Bumped each
+   * time an exit (runScan or runExitCheck) tries a market sell and Alpaca
+   * comes back with 40310100. Cleared on (a) a successful exit, (b) the
+   * position vanishing from broker, or (c) the suppression window expiring.
+   */
+  exitRejectionCount: Map<string, number>;
+  /**
+   * Per-symbol suppression deadline (unix-ms). When set in the future,
+   * exit-trigger paths skip the symbol — no broker call, no log spam, no
+   * audit row per skip. Prevents the "Exit order failed every 60s for an
+   * hour" cascade observed on APP 2026-05-26.
+   */
+  exitSuppressedUntil: Map<string, number>;
+  /**
    * Symbols whose broker-side protective stop is missing because the broker
    * rejected the place/replace call (typically Alpaca PDT 40310100 — a
    * same-day position whose stop counts as a potential day trade). These
@@ -233,6 +248,8 @@ function createDefaultEngine(): EngineState {
     consecutiveBrokerFailures: 0,
     pendingExits: new Set(),
     cooldowns: new Map(),
+    exitRejectionCount: new Map(),
+    exitSuppressedUntil: new Map(),
     unprotectedSymbols: new Set(),
     environment: null,
     boot: null,
@@ -1937,6 +1954,16 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
       }
 
       if (exitReason) {
+        // Skip retry loop on PDT-blocked symbols — the engine has already
+        // tried EXIT_REJECTION_THRESHOLD times in a row, written a critical
+        // audit + push, and is now in a 30-min cooldown. Spamming Alpaca
+        // accomplishes nothing and risks the rate limit.
+        if (isExitSuppressed(engine, symbol)) {
+          // log.debug — we DO want one tracer per skip for forensics, but
+          // not at info-level. Watchdog-loud alerts are already in place.
+          log.debug({ symbol, exitReason }, "Exit attempt skipped — symbol is in PDT suppression window");
+          continue;
+        }
         log.info({ symbol, exitReason, currentPrice, entryPrice: pos.entryPrice }, "Exit triggered by 1-min check");
         engine.pendingExits.add(symbol);
         try {
@@ -1959,6 +1986,8 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
           await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "PENDING", pnl, exitReason, exitOrder.id, null, engine.userId);
           positionMap.delete(symbol);
           engine.positionCount = positionMap.size;
+          // Successful exit — clear any prior rejection streak on this symbol.
+          clearExitRejection(engine, symbol);
 
           // Record in daily PnL — main scan only runs every 15 min, so without this
           // a stop_loss / trailing_stop hit before the next scan would never appear
@@ -1966,6 +1995,12 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
           await upsertDailyPnl(getETDateString(), pnl, null, 1, engine.halted, undefined, engine.userId);
         } catch (err) {
           log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit order failed");
+          recordExitRejection(engine, symbol, isPdtRejection(err), {
+            reason: exitReason,
+            currentPrice,
+            entryPrice: pos.entryPrice,
+            qty: pos.qty,
+          });
         } finally {
           engine.pendingExits.delete(symbol);
         }
@@ -2298,13 +2333,19 @@ async function syncPositionMapFromBroker(
         void reconcileBrokerSideExit(client, symbol, pos, userId);
       }
       positionMap.delete(symbol);
-      // Clean up unprotected-symbols set: the position is gone, so the
-      // "no broker stop" condition no longer applies. Without this, the
-      // UI banner would keep showing a stale unprotected position after
-      // it's already been closed. Peek instead of getEngine() so we don't
-      // accidentally instantiate a fresh engine for a userId that hasn't
-      // booted one yet (some test/admin paths call this helper standalone).
-      g.__tradingEngines?.get(userId)?.unprotectedSymbols.delete(symbol);
+      // Position is gone — drop any PDT-suppression state AND unprotected-
+      // symbols state. If the user manually flattened (the recovery path
+      // we tell them to use when suppression fires), the symbol shouldn't
+      // carry forward as suppressed if it gets re-bought tomorrow. And the
+      // UI banner shouldn't keep showing a stale unprotected position after
+      // it's already been closed. Peek-don't-create so we don't accidentally
+      // instantiate a fresh engine for a userId that hasn't booted one yet.
+      const engineForCleanup = g.__tradingEngines?.get(userId);
+      if (engineForCleanup) {
+        engineForCleanup.exitRejectionCount.delete(symbol);
+        engineForCleanup.exitSuppressedUntil.delete(symbol);
+        engineForCleanup.unprotectedSymbols.delete(symbol);
+      }
     }
   }
 
@@ -3860,6 +3901,14 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
         }
 
         if (shouldExit) {
+          // Skip retry loop on PDT-blocked symbols — see EXIT_REJECTION_THRESHOLD
+          // for the cooldown logic. Without this gate, a stop_loss on a
+          // same-day-bought position re-fires the rejected sell every scan
+          // cycle (every 15 min) for the entire session.
+          if (isExitSuppressed(engine, symbol)) {
+            log.debug({ symbol, exitReason }, "Exit attempt skipped — symbol is in PDT suppression window");
+            continue;
+          }
           log.info({ symbol, reason: exitReason }, "Exiting position");
           engine.pendingExits.add(symbol);
 
@@ -3921,6 +3970,8 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
 
             positionMap.delete(symbol);
+            // Successful exit — clear any prior PDT rejection streak.
+            clearExitRejection(engine, symbol);
 
             log.info(
               { symbol, pnl: pnl.toFixed(2), reason: exitReason },
@@ -3930,6 +3981,12 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
             const msg = err instanceof Error ? err.message : "unknown";
             log.error({ err: msg, symbol }, "Failed to place sell order");
             pushError(engine, `Sell order failed for ${symbol}: ${msg}`);
+            recordExitRejection(engine, symbol, isPdtRejection(err), {
+              reason: exitReason,
+              currentPrice,
+              entryPrice: heldPosition.entryPrice,
+              qty: heldPosition.qty,
+            });
 
             await logTrade(
               symbol,
@@ -4547,13 +4604,110 @@ const DISASTER_STOP_PCT = 0.18; // 18% below entry — only fires if server is d
  * rejects same-day BUY → same-day SELL legs (including a freshly-placed
  * stop order that *could* same-day-trigger on a same-day buy) when the
  * account is below $25k equity AND has already hit 3 day trades in the
- * trailing 5 business days. Used by syncBrokerStops to surface the
- * "position has no broker stop" condition on the trader UI.
+ * trailing 5 business days. Two callers:
+ *   - syncBrokerStops uses it to surface "position has no broker stop"
+ *     in the trader UI banner (unprotectedSymbols)
+ *   - runExitCheck + runScan use it to suppress same-symbol exit retry
+ *     loops via recordExitRejection + ENGINE_EXIT_SUPPRESSED
  */
 function isPdtRejection(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const m = err.message;
   return m.includes("40310100") || /pattern day trading/i.test(m);
+}
+
+
+/** After N consecutive PDT-rejected exit attempts on the same symbol, the
+ *  engine stops retrying and writes a CRITICAL audit. 5 is roughly 5 minutes
+ *  of 1-min-poll noise — long enough to confirm the broker won't accept,
+ *  short enough that a stuck position doesn't bleed for an hour silently. */
+const EXIT_REJECTION_THRESHOLD = 5;
+/** Cooldown after suppression triggers. The engine won't retry the exit
+ *  for this long; on expiration the count resets and one more retry cycle
+ *  is allowed. 30 min — half the swing-scan cadence × 2 — gives the user
+ *  time to manually exit via the broker UI while not silently sitting
+ *  forever if PDT clears (e.g., next-day reset). */
+const EXIT_SUPPRESSION_MS = 30 * 60 * 1000;
+
+function isExitSuppressed(engine: EngineState, symbol: string): boolean {
+  const until = engine.exitSuppressedUntil.get(symbol);
+  if (until == null) return false;
+  if (Date.now() >= until) {
+    // Window expired — clear both counters so the next attempt has a
+    // fresh shot. If PDT is still in effect, the cycle re-starts and the
+    // user gets another audit row.
+    engine.exitSuppressedUntil.delete(symbol);
+    engine.exitRejectionCount.delete(symbol);
+    return false;
+  }
+  return true;
+}
+
+function recordExitRejection(
+  engine: EngineState,
+  symbol: string,
+  isPdt: boolean,
+  context: { reason: string; currentPrice: number; entryPrice: number; qty: number }
+): void {
+  if (!isPdt) {
+    // Non-PDT exit failures (network, 5xx, etc.) shouldn't trigger
+    // suppression — they're transient and a retry next minute is correct.
+    return;
+  }
+  const next = (engine.exitRejectionCount.get(symbol) ?? 0) + 1;
+  engine.exitRejectionCount.set(symbol, next);
+  if (next < EXIT_REJECTION_THRESHOLD) return;
+
+  // Threshold tripped — suppress retries + write critical audit.
+  const until = Date.now() + EXIT_SUPPRESSION_MS;
+  engine.exitSuppressedUntil.set(symbol, until);
+  log.error(
+    {
+      symbol,
+      attempts: next,
+      reason: context.reason,
+      currentPrice: context.currentPrice,
+      entryPrice: context.entryPrice,
+      qty: context.qty,
+      suppressedUntil: new Date(until).toISOString(),
+    },
+    "Exit suppressed — too many PDT rejections in a row, manual exit required"
+  );
+  void writeAudit({
+    actor: { userId: engine.userId, email: null, role: null },
+    action: AuditAction.ENGINE_EXIT_SUPPRESSED,
+    resourceType: "position",
+    resourceId: symbol,
+    metadata: {
+      symbol,
+      attempts: next,
+      reason: context.reason,
+      currentPrice: context.currentPrice,
+      entryPrice: context.entryPrice,
+      qty: context.qty,
+      suppressedUntilMs: until,
+      rejectionReason: "pdt_protection",
+    },
+  });
+  // Push notification so the user knows immediately — this is the kind of
+  // condition that warrants the user opening the broker app and acting.
+  if (engine.userId) {
+    void sendPushToUser(engine.userId, {
+      title: "Beacontry: exit blocked",
+      body: `${symbol} stop_loss triggered but broker keeps rejecting (PDT). Manual exit required — engine stopped retrying for 30 min.`,
+      url: "/dashboard/trader",
+    }).catch((err) => {
+      log.warn(
+        { symbol, err: err instanceof Error ? err.message : "unknown" },
+        "Exit-suppressed push notification failed"
+      );
+    });
+  }
+}
+
+function clearExitRejection(engine: EngineState, symbol: string): void {
+  engine.exitRejectionCount.delete(symbol);
+  engine.exitSuppressedUntil.delete(symbol);
 }
 
 /**

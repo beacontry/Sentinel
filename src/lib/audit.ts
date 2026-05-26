@@ -270,6 +270,12 @@ export const AuditAction = {
   // (no scans, no syncBrokerStops) until that happens. Audit so the next
   // incident leaves a hash-chained trace instead of being pino-only.
   ENGINE_AUTOSTART_FAILED: "engine.autostart_failed",
+  // Engine tripped an auto-suppression for a symbol after N consecutive
+  // PDT-rejected exit attempts. Position is still held but the engine
+  // stops re-trying the sell (it was just generating broker noise + log
+  // spam). User must manually flatten via the broker UI. Audit + push
+  // notification so the condition reaches the user.
+  ENGINE_EXIT_SUPPRESSED: "engine.exit_suppressed",
   // Orders
   ORDER_PLACED: "order.placed",
   ORDER_REJECTED: "order.rejected",
