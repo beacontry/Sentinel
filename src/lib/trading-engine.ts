@@ -5132,3 +5132,49 @@ export function getTrackedPositionData(userId: string): Map<string, {
   }
   return result;
 }
+
+/**
+ * Public entry-point for the standalone stop-sync scheduler. Calls
+ * syncBrokerStops for a user IF the engine is healthy enough for the
+ * sync to be meaningful:
+ *   - engine instance exists + is running + not halted
+ *   - position map is non-empty (nothing to sync)
+ *   - no scan in flight (avoid racing the in-scan sync at the scan tail)
+ *
+ * Motivated by the "tactical-smart scans hang every cycle" incident on
+ * 2026-05-26: syncBrokerStops was coupled to scan completion. When the
+ * scan body never returned (hangs in the per-symbol Finnhub-paced
+ * analyzer loop), broker stops never updated for the entire session
+ * even though the 1-min runExitCheck poll was happily promoting
+ * pos.stopLoss in memory. The dedicated 5-min stop-sync scheduler
+ * breaks that coupling — see src/lib/stop-sync-scheduler.ts.
+ *
+ * No-op on missing/stopped/halted/empty engines. Errors inside
+ * syncBrokerStops are already logged + swallowed there.
+ *
+ * Returns {ran: true} when the broker call was actually attempted;
+ * {ran: false, reason} when skipped (for scheduler-side log diagnostics).
+ */
+export async function syncBrokerStopsForUser(
+  userId: string
+): Promise<{ ran: boolean; reason?: string }> {
+  const engine = g.__tradingEngines?.get(userId);
+  if (!engine) return { ran: false, reason: "no_engine" };
+  if (!engine.running) return { ran: false, reason: "engine_stopped" };
+  if (engine.halted) return { ran: false, reason: "engine_halted" };
+  const positionMap = g2.__enginePositionMaps?.get(userId);
+  if (!positionMap || positionMap.size === 0) {
+    return { ran: false, reason: "no_positions" };
+  }
+  if (engine.scanStartedAt) {
+    // Scan in-flight — its own syncBrokerStops at the scan tail will handle
+    // this cycle. Don't race with it. NOTE: if a scan has been hung for
+    // hours (the incident this whole PR addresses), scanStartedAt stays
+    // set until the 10-min override clears it. The scheduler will skip
+    // for that long, then fire on the next 5-min tick after the override.
+    // That's acceptable — better than racing.
+    return { ran: false, reason: "scan_in_flight" };
+  }
+  await syncBrokerStops(userId);
+  return { ran: true };
+}
