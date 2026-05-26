@@ -2,7 +2,7 @@
   "name": "Beacontry",
   "short_name": "Beacontry",
   "description": "Trading intelligence platform — signals, analysis, and automated execution",
-  "start_url": "/dashboard/trader",
+  "start_url": "/login?source=pwa",
   "display": "standalone",
   "background_color": "#0d1511",
   "theme_color": "#0d1511",
