@@ -322,6 +322,45 @@ it — single-tenant Sentinel is fine on the global key.
 (Bracket orders + WebSocket feed are listed under Engine above —
 they're more engine-shape than broker-shape changes.)
 
+### Fractional shares (opt-in per user)
+Alpaca supports fractional shares (market orders + day/ioc TIF only,
+notional $ amount or fractional qty). Sentinel's broker layer at
+`src/lib/brokers.ts:318-322` already handles the notional/qty
+mutually-exclusive payload — the broker plumbing is there, the engine
+just doesn't use it. Every BUY computes
+`Math.floor(positionValue / currentPrice)` so positions round to whole
+shares.
+
+On a $30k account with 11 positions, rounding can skew a target 10%
+allocation by ~4% (e.g., SNDK at $1610 = 1.92 shares rounded to 2 →
+position becomes 5.4% instead of intended 5.2%). The penalty grows on
+smaller accounts trading high-priced names.
+
+Why we DIDN'T enable it across the board:
+- Stops + limits require whole shares — a fractional buy means no
+  broker-side stop order, position depends on the in-memory 1-min poll
+- Bracket orders are rejected on fractional — entry can't atomically
+  attach protective stop + take-profit
+- Fractional fills make every downstream P&L calc a floating-point
+  edge case
+
+When it WOULD help, as an opt-in:
+- Small accounts ($5-15k) trading high-priced names
+- Equal-weight rebalancing flows where allocation precision matters
+- Dollar-cost-averaging into expensive growth names
+
+Implementation sketch:
+1. `user_risk_profiles.allow_fractional` BOOL default false
+2. Position sizing: `allowFractional ? (positionValue / currentPrice).toFixed(6) : Math.floor(...)`
+3. Order placement: when fractional, force `type: "market"`,
+   `timeInForce: "day"`, drop stops/brackets
+4. `syncBrokerStops`: skip symbols where qty has decimal part
+5. Trader page banner: warn that fractional positions are protected
+   only by the 1-min poll (no broker-side stop)
+
+About half a day of work. Tradeoff is real and per-user — not a global
+on/off.
+
 ### Generic outgoing webhooks (beyond Discord)
 Let a user wire any URL to fire on events (trade fills, signals, alerts)
 with HMAC-signed payloads. Schema partly exists for Discord. Pair with the

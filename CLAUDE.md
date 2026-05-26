@@ -46,6 +46,28 @@ All components use the same signal function — `analyzeBars()` from `src/lib/in
 - **Multi-Timeframe** API calls `analyzeBars()` at both 5m and 1d resolutions, computes confluence
 - `SignalParams` (emaFast, emaSlow, rsiOversold, rsiOverbought) flow through `HybridPipelineOptions.signalParams`
 
+### Optimized mode (post-PR-14 — Option 2: lean into the difference)
+
+The 2026-05-26 prod observation that tactical-smart was outperforming optimized triggered this. Three structural gaps were closed; one was preserved.
+
+**Closed gaps (Optimized now matches tactical-smart on these axes):**
+- **Universe** — `runScan` consumes the screener feed via `selectExternalSymbolsForTactical(engine.externalSignals, SCAN_UNIVERSE)`. Top-50 by analyzer confidence, BUY/STRONG_BUY only, dedup'd against SCAN_UNIVERSE. Was previously unfiltered (HOLDs and SELLs got through) with no cap.
+- **Take-profit graduation** — `MODE_GRADUATION_DEFAULT.optimized = "enabled"`. The GA-tuned takeProfit (`pos.takeProfit` set from `takeProfitAtrMult` or `takeProfitPct`) is now treated as a graduation point: first crossing locks `pos.stopLoss` to entry × 1.30, subsequent scans hold until 2-of-3 weakness signals fire (volume contraction, plateau, RSI rollover). Same logic as tactical-smart got in PR 8.
+- **Active rotation** — `MODE_SWAP_SELL_DEFAULT.optimized = "enabled"`. When a scan exit fires, freed capital doesn't wait for the next 15-min tick. Any STRONG_BUY candidates that hit the position cap before the exit happened are deferred during the scan loop; post-loop, top deferred candidates (by analyzer confidence) get bought to redeploy the freed slot. Tactical-smart's swap-sell stays in `runTacticalSmartScan` (pair-wise weak→strong); optimized's runs in `runScan` post-loop (any-exit→top-deferred).
+
+**Preserved distinctions (what makes optimized still distinct):**
+- **Per-symbol GA-tuned params** — each symbol carries its own `stopLossPct`, `takeProfitAtrMult`, `trailingStopPct`, `holdPeriod`, RSI bounds, EMAs from the GA. Tactical-smart uses uniform defaults (`entry × 0.88` stop, `entry × 1.50` take, 11.7% trail, 999 hold).
+- **Fixed position sizing** — `equity × positionPct` per position. Tactical-smart uses inverse-volatility weighting (lower vol → bigger position).
+- **Finite hold period** — GA-tuned, typically ~33 days. Tactical-smart's `999` effectively never times out.
+- **Multi-objective GA fitness** — `blendedFitness` now scales `excessReturn` by `sharpeMult = min(sharpe/1.0, 1.0)` and `drawdownMult = max(0, 1 - maxDrawdown/0.20)`. Pushes the GA away from blow-up-risk param sets that score high on raw return alone. Re-run optimizer to retune existing strategies.
+
+**Per-mode opt-in maps:**
+| Map | Optimized | Tactical-smart | Others |
+|---|---|---|---|
+| `MODE_LADDER_DEFAULT` (breakeven promote) | `full` | `breakeven_only` | `full`/`disabled` per mode |
+| `MODE_GRADUATION_DEFAULT` (take-profit graduation) | `enabled` | `enabled` | `disabled` |
+| `MODE_SWAP_SELL_DEFAULT` (post-exit redeploy) | `enabled` | `disabled` (uses own pair-wise) | `disabled` |
+
 ### Screener (Shared)
 The screener scans market data and is shared across users (not user-specific). It pushes actionable signals (BUY/STRONG_BUY, confidence ≥ 0.6) to the engine via `pushExternalSignal()`. Signals are in-memory, expire after 30 minutes. Optimization runs are admin-only but results (strategy params) are shared globally.
 

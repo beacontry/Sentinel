@@ -45,9 +45,15 @@ function makeBars(count: number, opts: Partial<{
 }
 
 describe("getGraduationMode", () => {
-  it("is enabled only for tactical-smart by default", () => {
+  it("is enabled for tactical-smart and optimized by default", () => {
+    // tactical-smart: original mode for graduation (PR 8) — designed
+    // around the runner-friendly philosophy
     expect(getGraduationMode("tactical-smart")).toBe("enabled");
-    expect(getGraduationMode("optimized")).toBe("disabled");
+    // optimized: enabled in PR 14 as part of Option 2 (lean-into-difference)
+    // — the GA-tuned takeProfitPct becomes the graduation point so live
+    // runners aren't clipped by training-window-fit exit levels
+    expect(getGraduationMode("optimized")).toBe("enabled");
+    // All other modes keep the hard take-profit cap
     expect(getGraduationMode("conservative")).toBe("disabled");
     expect(getGraduationMode("moderate")).toBe("disabled");
     expect(getGraduationMode("aggressive")).toBe("disabled");

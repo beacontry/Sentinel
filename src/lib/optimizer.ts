@@ -743,11 +743,36 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     }));
 
-    // Blended fitness: train + test to penalize overfitting
+    // Multi-objective blended fitness (PR 14, 2026-05-26).
+    //
+    // Before: pure excessReturn (0.6 train + 0.4 test). Rewarded any
+    // return regardless of risk profile. Param sets that scored 100%
+    // total return on a single lucky run beat steadier 40% sets.
+    // Outcome: GA-tuned strategies on the live engine showed bigger
+    // drawdowns than tactical-smart for similar total returns.
+    //
+    // After: scale excessReturn by two risk multipliers, both clamped
+    // to [0, 1] so a great return with poor risk profile gets discounted
+    // but a great return with great risk profile is unchanged.
+    //   - Sharpe multiplier: min(sharpe / 1.0, 1.0)
+    //     A Sharpe of 1.0+ means returns are worth the volatility.
+    //     Below 1.0, the multiplier penalizes proportionally.
+    //   - Drawdown multiplier: max(0, 1 - maxDrawdown / 0.20)
+    //     A 20% max drawdown gets zero multiplier; anything below 20%
+    //     gets a proportional credit. Pegs the GA away from
+    //     blow-up-risk strategies.
+    //
+    // Weighting between train (0.6) and test (0.4) is unchanged — that's
+    // overfitting protection, orthogonal to risk-aware scoring.
+    function riskAdjust(r: PortfolioResult): number {
+      const sharpeMult = Math.min(Math.max(r.sharpeRatio, 0) / 1.0, 1.0);
+      const drawdownMult = Math.max(0, 1 - r.maxDrawdown / 0.20);
+      return r.excessReturn * sharpeMult * drawdownMult;
+    }
     function blendedFitness(params: OptimizableParams): number {
       const train = portfolioBacktest(portfolioData, params, "train");
       const test = portfolioBacktest(portfolioData, params, "test");
-      return 0.6 * train.excessReturn + 0.4 * test.excessReturn;
+      return 0.6 * riskAdjust(train) + 0.4 * riskAdjust(test);
     }
 
     let population: Individual[] = [];
