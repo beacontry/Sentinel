@@ -2007,7 +2007,10 @@ async function cancelPendingOrdersForSymbol(
 ): Promise<void> {
   if (!client.cancelOrder) return;
   try {
-    const orders = await client.getOrders(100);
+    // status="open" — otherwise Alpaca defaults to "all" and returns the 100
+    // most-recent orders dominated by filled/cancelled, hiding still-open ones
+    // we actually need to cancel on a churn-heavy account.
+    const orders = await client.getOrders(100, "open");
     const pending = orders.filter(
       (o) =>
         o.symbol === symbol &&
@@ -2754,7 +2757,11 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   // before the BUY/ENTRY branch can fire blind.
   let openOrdersFetchOk = true;
   try {
-    const openOrders = await client.getOrders(100);
+    // status="open" is mandatory: without it Alpaca defaults to "all" and the
+    // 100 most-recent orders on a churn-heavy account are dominated by
+    // filled/cancelled rows, hiding the open buys we need to dedup against.
+    // That blind spot caused the WDC 3-pending incident on 2026-05-26.
+    const openOrders = await client.getOrders(100, "open");
     for (const o of openOrders) {
       if (!["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)) continue;
       if (o.side === "buy") pendingBuySymbols.add(o.symbol);
@@ -2994,7 +3001,11 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   // we can't see the broker's pending-order list.
   let openOrdersFetchOk = true;
   try {
-    const openOrders = await client.getOrders(100);
+    // status="open" is mandatory: without it Alpaca defaults to "all" and the
+    // 100 most-recent orders on a churn-heavy account are dominated by
+    // filled/cancelled rows, hiding the open buys we need to dedup against.
+    // That blind spot caused the WDC 3-pending incident on 2026-05-26.
+    const openOrders = await client.getOrders(100, "open");
     for (const o of openOrders) {
       if (!["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)) continue;
       if (o.side === "buy") {
@@ -3612,7 +3623,11 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   const pendingOrdersBySymbol = new Map<string, { id: string; side: string; type: string }[]>();
   let openOrdersFetchOk = true;
   try {
-    const openOrders = await client.getOrders(100);
+    // status="open" is mandatory: without it Alpaca defaults to "all" and the
+    // 100 most-recent orders on a churn-heavy account are dominated by
+    // filled/cancelled rows, hiding the open buys we need to dedup against.
+    // That blind spot caused the WDC 3-pending incident on 2026-05-26.
+    const openOrders = await client.getOrders(100, "open");
     const pendingOrders = openOrders.filter((o) =>
       ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)
     );
@@ -4615,7 +4630,10 @@ async function cancelAllAndWait(client: BrokerClient, maxMs = 5000): Promise<voi
   const PENDING = new Set(["new", "accepted", "pending_new", "partially_filled", "held", "pending_cancel"]);
   while (Date.now() < deadline) {
     try {
-      const orders = await client.getOrders(100);
+      // status="open" — same Alpaca default-status trap as the per-scan guards.
+      // Without it, a still-pending cancel can be hidden behind filled noise
+      // and we'd return early thinking the broker is clean.
+      const orders = await client.getOrders(100, "open");
       if (!orders.some((o) => PENDING.has(o.status))) return;
     } catch {
       // Transient broker error — keep polling until deadline
