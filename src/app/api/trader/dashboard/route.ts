@@ -5,7 +5,7 @@ import { traderStatus, traderTrades, traderDailyPnl, traderSignals, brokerConnec
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
-import { getBrokerPositionCache, getTrackedPositionData } from "@/lib/trading-engine";
+import { getBrokerPositionCache, getTrackedPositionData, getUnprotectedSymbols } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 import { rateLimit } from "@/lib/rate-limiter";
 import { checkTier } from "@/lib/tiers-server";
@@ -399,6 +399,12 @@ export async function GET() {
       positions: finalPositions,
       positionsStale,
       positionsAgeSeconds,
+      // Symbols whose protective broker stop is missing because the broker
+      // rejected the place call (typically Alpaca PDT — same-day stops on
+      // same-day buys count as potential day trades when daytradeCount >=
+      // threshold). These positions are protected only by the 1-min
+      // in-process exit poll; surfaced as a banner on the trader page.
+      unprotectedSymbols: getUnprotectedSymbols(session.userId),
       openOrders: brokerOpenOrders,
       trades: trades.map((t) => ({
         ...t,

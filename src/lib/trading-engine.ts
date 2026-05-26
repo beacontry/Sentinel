@@ -185,6 +185,18 @@ export interface EngineState {
     reasons: string[];
     updatedAt: Date;
   } | null;
+  /**
+   * Symbols whose broker-side protective stop is missing because the broker
+   * rejected the place/replace call (typically Alpaca PDT 40310100 — a
+   * same-day position whose stop counts as a potential day trade). These
+   * positions are protected ONLY by the engine's 1-min runExitCheck poll;
+   * if the server is unreachable for even a few minutes there is no broker
+   * fallback. Surfaced on the trader page so the user can manually exit.
+   * Cleaned up when (a) syncBrokerStops successfully places/replaces a stop
+   * for the symbol on a later scan, or (b) the position vanishes from the
+   * broker (in syncPositionMapFromBroker).
+   */
+  unprotectedSymbols: Set<string>;
   /** User's effective tier at engine start. Captured once so mid-session
    *  tier changes don't reshape the running pipeline (we'd lose AI score
    *  history mid-trade if it flipped). Read by `buildHybridOpts()` to
@@ -221,6 +233,7 @@ function createDefaultEngine(): EngineState {
     consecutiveBrokerFailures: 0,
     pendingExits: new Set(),
     cooldowns: new Map(),
+    unprotectedSymbols: new Set(),
     environment: null,
     boot: null,
     dailyNotional: 0,
@@ -2285,6 +2298,13 @@ async function syncPositionMapFromBroker(
         void reconcileBrokerSideExit(client, symbol, pos, userId);
       }
       positionMap.delete(symbol);
+      // Clean up unprotected-symbols set: the position is gone, so the
+      // "no broker stop" condition no longer applies. Without this, the
+      // UI banner would keep showing a stale unprotected position after
+      // it's already been closed. Peek instead of getEngine() so we don't
+      // accidentally instantiate a fresh engine for a userId that hasn't
+      // booted one yet (some test/admin paths call this helper standalone).
+      g.__tradingEngines?.get(userId)?.unprotectedSymbols.delete(symbol);
     }
   }
 
@@ -4523,13 +4543,24 @@ export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?
 const DISASTER_STOP_PCT = 0.18; // 18% below entry — only fires if server is down for hours
 
 /**
+ * Detect Alpaca's PDT rejection (code 40310100) in an error message. Broker
+ * rejects same-day BUY → same-day SELL legs (including a freshly-placed
+ * stop order that *could* same-day-trigger on a same-day buy) when the
+ * account is below $25k equity AND has already hit 3 day trades in the
+ * trailing 5 business days. Used by syncBrokerStops to surface the
+ * "position has no broker stop" condition on the trader UI.
+ */
+function isPdtRejection(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const m = err.message;
+  return m.includes("40310100") || /pattern day trading/i.test(m);
+}
+
+/**
  * Centralized brokerConnected mutation with diagnostic logging. Every
  * transition logs userId + from/to + source so future "watchdog keeps
  * firing broker_disconnect even though scans succeed" incidents leave
- * a forensic trail in journald (the 2026-05-26 mystery — the running
- * tactical-smart engine's broker_disconnect alert fired 96 times in
- * 24h, yet "Tactical Smart scan" log lines indicated the scan body
- * was reaching the brokerConnected=true assignment every cycle).
+ * a forensic trail in journald.
  *
  * Idempotent — no log line when value already matches, so the helper
  * is safe to call defensively at every reachability proof point.
@@ -4672,15 +4703,40 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
           // stop, not the original disaster-stop value
           pos.stopLoss = targetStop;
           updated++;
+          engine.unprotectedSymbols.delete(symbol);
           log.info(
             { symbol, stopPrice: targetStop.toFixed(2), peakPrice: pos.peakPrice.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
             "Initial broker stop placed for new position"
           );
         } catch (err) {
-          log.warn(
-            { symbol, err: err instanceof Error ? err.message : "unknown" },
-            "Failed to place initial broker stop"
-          );
+          const wasUnprotected = engine.unprotectedSymbols.has(symbol);
+          if (isPdtRejection(err)) {
+            // Position has no broker stop — Alpaca's PDT logic rejects the
+            // stop order. Mark unprotected so the UI surfaces this. The
+            // 1-min runExitCheck is the position's only protection now.
+            engine.unprotectedSymbols.add(symbol);
+            if (!wasUnprotected) {
+              log.warn(
+                { symbol, peakPrice: pos.peakPrice.toFixed(2) },
+                "Broker rejected initial stop (PDT) — position is now broker-unprotected"
+              );
+              void writeAudit({
+                actor: { userId: engine.userId, email: null, role: null },
+                action: AuditAction.ORDER_REJECTED,
+                resourceType: "order",
+                resourceId: symbol,
+                metadata: {
+                  symbol, side: "sell", type: "stop", reason: "pdt_protection",
+                  source: "engine_initial_stop", peakPrice: pos.peakPrice,
+                },
+              });
+            }
+          } else {
+            log.warn(
+              { symbol, err: err instanceof Error ? err.message : "unknown" },
+              "Failed to place initial broker stop"
+            );
+          }
         }
         continue;
       }
@@ -4717,12 +4773,18 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
         // Sync in-memory after a successful broker update
         pos.stopLoss = targetStop;
         updated++;
+        // Successful replace means broker has a stop → no longer unprotected.
+        // (Unprotected is the "no stop at all" condition, not the "stop is
+        // stale" condition; a stale-but-present stop is still protection.)
+        engine.unprotectedSymbols.delete(symbol);
         log.info(
           { symbol, oldStop: existing.stopPrice.toFixed(2), newStop: targetStop.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
           "Broker stop updated to match dynamic trail"
         );
       } catch (err) {
-        // Replace can fail if order was already triggered — not critical
+        // Replace can fail if order was already triggered — not critical.
+        // We don't flip the symbol to "unprotected" here because the OLD
+        // stop is still in place at the broker; it just didn't ratchet up.
         log.warn(
           { symbol, err: err instanceof Error ? err.message : "unknown" },
           "Failed to update broker stop"
@@ -5273,6 +5335,19 @@ export function getTrackedPositionData(userId: string): Map<string, {
 }
 
 /**
+ * Symbols whose broker-side protective stop is currently missing because
+ * the broker rejected the place call (typically Alpaca PDT). These
+ * positions are protected only by the 1-min in-process exit poll; the
+ * trader UI surfaces this so the user can decide to manually exit.
+ * Returns [] when the user has no engine instance yet.
+ */
+export function getUnprotectedSymbols(userId: string): string[] {
+  const engine = g.__tradingEngines?.get(userId);
+  if (!engine) return [];
+  return Array.from(engine.unprotectedSymbols);
+}
+
+/**
  * Public entry-point for the standalone stop-sync scheduler. Calls
  * syncBrokerStops for a user IF the engine is healthy enough for the
  * sync to be meaningful:
@@ -5306,12 +5381,6 @@ export async function syncBrokerStopsForUser(
     return { ran: false, reason: "no_positions" };
   }
   if (engine.scanStartedAt) {
-    // Scan in-flight — its own syncBrokerStops at the scan tail will handle
-    // this cycle. Don't race with it. NOTE: if a scan has been hung for
-    // hours (the incident this whole PR addresses), scanStartedAt stays
-    // set until the 10-min override clears it. The scheduler will skip
-    // for that long, then fire on the next 5-min tick after the override.
-    // That's acceptable — better than racing.
     return { ran: false, reason: "scan_in_flight" };
   }
   await syncBrokerStops(userId);
