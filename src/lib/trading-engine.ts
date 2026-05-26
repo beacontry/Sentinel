@@ -1408,6 +1408,128 @@ export function getBreakevenLadderMode(activeMode: EngineMode): BreakevenLadderM
   return MODE_LADDER_DEFAULT[activeMode];
 }
 
+// ─── Take-profit graduation ─────────────────────────────────────────────────
+//
+// At entry × (1 + takeProfitPct) (typically +50% for tactical-smart) the
+// default behavior is "exit at market." That caps individual winners hard
+// and is the right default for most modes. For tactical-smart specifically,
+// the strategy intent is to ride momentum into stair-step gains — capping at
+// +50% throws away runners.
+//
+// Graduation reframes the take-profit threshold from "exit point" to
+// "graduation point":
+//   1. When price first crosses takeProfit, lock pos.stopLoss to a hard
+//      floor (entry × (1 + GRADUATION_FLOOR_PCT)). Never lowers an
+//      existing higher stop — if the dynamic trail has already passed
+//      that floor, no-op.
+//   2. Once graduated, exit only when WEAKNESS signals fire (2-of-3:
+//      volume contraction, price plateau near peak, RSI rollover from
+//      overbought). Otherwise hold; let the trail / SELL signal / locked
+//      floor handle exit.
+//
+// Designed for tactical-smart's runner-friendly philosophy. NOT for
+// optimizer-tuned modes where takeProfitPct is a GA-tuned exit decision.
+
+export type GraduationMode = "enabled" | "disabled";
+
+/** When graduation fires, lock pos.stopLoss to entry × (1 + this). +30% sits
+ *  below the +50% trigger (so it's a meaningful step-back floor) but above
+ *  the typical -12% disaster stop so the position is well-protected. */
+const GRADUATION_FLOOR_PCT = 0.30;
+
+/** Volume-contraction weakness signal: 5-day avg volume < 20-day avg × this. */
+const GRADUATION_VOLUME_RATIO_THRESHOLD = 0.85;
+
+/** Plateau weakness signal: currentPrice within this fraction of the 10-bar peak. */
+const GRADUATION_PLATEAU_DIST_FROM_PEAK = 0.02;
+
+/** RSI rollover weakness signal: rsi_14 below this triggers the signal. */
+const GRADUATION_RSI_ROLLOVER_BELOW = 60;
+
+/** N-of-3 weakness signals required to exit. 2 of 3 balances false-positive
+ *  whipsaw (lower bar = exits on normal pullback) against false-negative
+ *  blow-off (higher bar = rides the top down). */
+const GRADUATION_MIN_WEAKNESS_SIGNALS = 2;
+
+const MODE_GRADUATION_DEFAULT: Record<EngineMode, GraduationMode> = {
+  conservative: "disabled", // wants the hard cap, predictable exits
+  moderate: "disabled",
+  optimized: "disabled",     // GA-tuned takeProfitPct is the exit decision
+  aggressive: "disabled",
+  tactical: "disabled",      // SPY-driven; no per-symbol management
+  "tactical-smart": "enabled", // designed for runners
+  adaptive: "disabled",      // resolves to base mode at runtime; type-completeness
+};
+
+export function getGraduationMode(activeMode: EngineMode): GraduationMode {
+  return MODE_GRADUATION_DEFAULT[activeMode];
+}
+
+/**
+ * Detect whether a graduated position (held past takeProfit) shows enough
+ * weakness to warrant exiting now vs. continuing to ride. Returns null if
+ * no exit is warranted yet — caller keeps the position open.
+ *
+ * Pure function: takes only the data it needs, no engine state mutation,
+ * no broker calls. Easy to test in isolation.
+ */
+export function shouldGraduateExit(
+  pos: { entryPrice: number },
+  bars: readonly Bar[],
+  indicators: Record<string, number | null | undefined>,
+  currentPrice: number
+): { exit: true; reason: string; weakCount: number } | null {
+  // Need enough bars to evaluate the 20-day volume baseline. With fewer,
+  // skip the volume signal but still let plateau + RSI decide.
+  if (bars.length < 20) return null;
+
+  const recentVol = bars.slice(-5);
+  const longVol = bars.slice(-20);
+  const v5 = recentVol.reduce((s, b) => s + b.volume, 0) / recentVol.length;
+  const v20 = longVol.reduce((s, b) => s + b.volume, 0) / longVol.length;
+  const volumeDeclining = v5 < v20 * GRADUATION_VOLUME_RATIO_THRESHOLD;
+
+  // Plateau near 10-bar peak — small distance below the peak. distFromPeak
+  // negative means current > peak (still making highs → not a plateau).
+  const peak10 = Math.max(...bars.slice(-10).map((b) => b.high));
+  const distFromPeak = (peak10 - currentPrice) / peak10;
+  const plateaued = distFromPeak >= 0 && distFromPeak < GRADUATION_PLATEAU_DIST_FROM_PEAK;
+
+  // RSI rollover — was overbought (post-runup), now neutral. We only have
+  // current RSI; "rollover" inferred from value below threshold while
+  // we know the position is up significantly (caller guarantees post-takeProfit).
+  const rsi = indicators.rsi_14;
+  const rsiRollover =
+    typeof rsi === "number" && rsi > 0 && rsi < GRADUATION_RSI_ROLLOVER_BELOW;
+
+  const weakCount = [volumeDeclining, plateaued, rsiRollover].filter(Boolean).length;
+  if (weakCount < GRADUATION_MIN_WEAKNESS_SIGNALS) return null;
+
+  const gainPct = ((currentPrice / pos.entryPrice - 1) * 100).toFixed(0);
+  return {
+    exit: true,
+    weakCount,
+    reason: `Graduated exit at +${gainPct}%: ${weakCount}/3 weakness signals (vol=${
+      volumeDeclining ? "down" : "ok"
+    }, plateau=${plateaued ? "yes" : "no"}, rsi_rollover=${
+      rsiRollover ? "yes" : "no"
+    })`,
+  };
+}
+
+/**
+ * Promote pos.stopLoss to the graduation floor (entry × 1.30 by default).
+ * Idempotent: never lowers an existing higher stop. Returns true when a
+ * promotion happened, false on no-op. The caller logs the promotion event
+ * so we have a clear trail of when each position transitioned to graduated.
+ */
+export function promoteToGraduationFloor(pos: { entryPrice: number; stopLoss: number }): boolean {
+  const lockStop = pos.entryPrice * (1 + GRADUATION_FLOOR_PCT);
+  if (pos.stopLoss >= lockStop) return false;
+  pos.stopLoss = lockStop;
+  return true;
+}
+
 /**
  * Ratchet pos.stopLoss up the tiered ladder based on unrealized profit
  * at currentPrice. Walks BREAKEVEN_TIERS from lowest-trigger to highest
@@ -3871,33 +3993,77 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           );
         }
 
-        // Stop loss
-        if (currentPrice <= heldPosition.stopLoss) {
-          shouldExit = true;
-          exitReason = `Stop loss hit at $${currentPrice.toFixed(2)} (stop: $${heldPosition.stopLoss.toFixed(2)})`;
+        // Take-profit graduation. Runs BEFORE the take-profit hard-exit
+        // check below. When enabled (tactical-smart by default), reframes
+        // the take_profit threshold from "exit" to "graduation":
+        //   - On first crossing: lock pos.stopLoss to +30% floor
+        //   - Subsequent scans: skip the hard take_profit exit, evaluate
+        //     weakness signals via shouldGraduateExit; exit only if 2 of
+        //     3 fire (volume contracting, price plateau, RSI rollover)
+        //   - Otherwise fall through to trailing-stop / SELL signal /
+        //     locked-floor stop_loss checks below — those still apply
+        // When disabled (every other mode), takeProfitGraduated stays
+        // false and the original hard exit fires below.
+        let takeProfitGraduated = false;
+        const gradMode = getGraduationMode(getActiveMode(engine));
+        if (gradMode === "enabled" && currentPrice >= heldPosition.takeProfit) {
+          takeProfitGraduated = true;
+          if (promoteToGraduationFloor(heldPosition)) {
+            log.info(
+              {
+                symbol,
+                newStopLoss: heldPosition.stopLoss.toFixed(2),
+                entry: heldPosition.entryPrice.toFixed(2),
+                currentPrice: currentPrice.toFixed(2),
+                takeProfit: heldPosition.takeProfit.toFixed(2),
+              },
+              "Take-profit graduation: locked floor at entry × 1.30"
+            );
+          }
+          const indicators = analysis.indicators as unknown as Record<string, number | null | undefined>;
+          const graduation = shouldGraduateExit(heldPosition, bars, indicators, currentPrice);
+          if (graduation) {
+            shouldExit = true;
+            exitReason = graduation.reason;
+          }
         }
-        // Take profit
-        else if (currentPrice >= heldPosition.takeProfit) {
-          shouldExit = true;
-          exitReason = `Take profit hit at $${currentPrice.toFixed(2)} (target: $${heldPosition.takeProfit.toFixed(2)})`;
-        }
-        // Trailing stop
-        else if (currentPrice <= trailingStopPrice) {
-          shouldExit = true;
-          exitReason = `Trailing stop hit at $${currentPrice.toFixed(2)} (peak: $${heldPosition.peakPrice.toFixed(2)}, trail: $${trailingStopPrice.toFixed(2)})`;
-        }
-        // Hold period expired
-        else if (tradingDays >= strategy.holdPeriod) {
-          shouldExit = true;
-          exitReason = `Hold period expired (${tradingDays} trading days >= ${strategy.holdPeriod})`;
-        }
-        // Sell signal
-        else if (
-          signal === SignalType.SELL ||
-          signal === SignalType.STRONG_SELL
-        ) {
-          shouldExit = true;
-          exitReason = `Sell signal received: ${signal} (confidence: ${(confidence * 100).toFixed(0)}%)`;
+
+        // Regular exit chain. Wrapped in `if (!shouldExit)` so graduation
+        // can short-circuit the rest of the chain when it has already set
+        // shouldExit/exitReason — without this guard, e.g. a graduated
+        // position could ALSO trip the trailing-stop or sell-signal branch
+        // and overwrite the more-informative graduation reason.
+        if (!shouldExit) {
+          // Stop loss (also catches the +30% graduation floor when locked)
+          if (currentPrice <= heldPosition.stopLoss) {
+            shouldExit = true;
+            exitReason = `Stop loss hit at $${currentPrice.toFixed(2)} (stop: $${heldPosition.stopLoss.toFixed(2)})`;
+          }
+          // Take profit — only when NOT graduated. Graduation takes over
+          // the +50% trigger entirely; without this guard a graduated
+          // position would also fire the hard exit, defeating the feature.
+          else if (!takeProfitGraduated && currentPrice >= heldPosition.takeProfit) {
+            shouldExit = true;
+            exitReason = `Take profit hit at $${currentPrice.toFixed(2)} (target: $${heldPosition.takeProfit.toFixed(2)})`;
+          }
+          // Trailing stop
+          else if (currentPrice <= trailingStopPrice) {
+            shouldExit = true;
+            exitReason = `Trailing stop hit at $${currentPrice.toFixed(2)} (peak: $${heldPosition.peakPrice.toFixed(2)}, trail: $${trailingStopPrice.toFixed(2)})`;
+          }
+          // Hold period expired
+          else if (tradingDays >= strategy.holdPeriod) {
+            shouldExit = true;
+            exitReason = `Hold period expired (${tradingDays} trading days >= ${strategy.holdPeriod})`;
+          }
+          // Sell signal
+          else if (
+            signal === SignalType.SELL ||
+            signal === SignalType.STRONG_SELL
+          ) {
+            shouldExit = true;
+            exitReason = `Sell signal received: ${signal} (confidence: ${(confidence * 100).toFixed(0)}%)`;
+          }
         }
 
         if (shouldExit) {
