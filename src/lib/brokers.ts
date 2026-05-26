@@ -12,12 +12,31 @@ const log = createRouteLogger("brokers");
 export interface BrokerAccount {
   id: string;
   accountNumber: string;
+  /** Total account value = longMarketValue + cash. The user's actual
+   *  ownership. Negative cash (margin loan) is netted out here. */
   equity: number;
   buyingPower: number;
+  /** Cash balance. Negative when borrowing on margin. */
   cash: number;
   currency: string;
   status?: string;
+  /**
+   * @deprecated Alpaca's `portfolio_value` is an alias for equity, NOT the
+   * gross long-market-value the name implies. Kept for backward
+   * compatibility with any caller that still reads it, but new code should
+   * use `longMarketValue` for the gross long value or `equity` for net
+   * ownership.
+   */
   portfolioValue?: number;
+  /**
+   * Gross value of all long positions (qty × current price, summed).
+   * This is what most brokerage UIs call "Portfolio Value." On a margin
+   * account this is HIGHER than equity by the absolute value of the
+   * negative cash balance (the margin loan).
+   *
+   * Example: equity $30,880, cash -$12,047, longMarketValue $42,927.
+   */
+  longMarketValue?: number;
   lastEquity?: number;
   daytradeCount?: number;
   daytradeBuyingPower?: number;
@@ -229,6 +248,7 @@ export class AlpacaClient implements BrokerClient {
       currency: toString(data.currency) || "USD",
       status: toString(data.status),
       portfolioValue: toNumber(data.portfolio_value),
+      longMarketValue: toNumber(data.long_market_value),
       lastEquity: toNumber(data.last_equity),
       daytradeCount: toNumber(data.daytrade_count),
       daytradeBuyingPower: toNumber(data.daytrading_buying_power),
