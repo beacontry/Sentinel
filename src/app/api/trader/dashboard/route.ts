@@ -45,8 +45,11 @@ export async function GET() {
       ? Date.now() - status.lastHeartbeat.getTime() < 5 * 60 * 1000
       : false;
 
-    // Always fetch broker account data when a connection exists
-    let brokerAccount: { equity: number; cash: number; buyingPower: number; portfolioValue: number } | null = null;
+    // Always fetch broker account data when a connection exists.
+    // Note: longMarketValue is the gross $ of held positions (qty × current
+    // price). Distinct from equity, which nets out the margin loan. On a
+    // margin account: equity < longMarketValue when cash is negative.
+    let brokerAccount: { equity: number; cash: number; buyingPower: number; portfolioValue: number; longMarketValue: number } | null = null;
     let brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number; unrealizedPnl: number; unrealizedIntradayPnl: number; marketValue: number }[] = [];
     let brokerOpenOrders: Array<{
       id: string; symbol: string; side: string; type: string; qty: number;
@@ -65,7 +68,20 @@ export async function GET() {
         const [acct, pos, orders] = await Promise.allSettled([client.getAccount(), client.getPositions(), client.getOrders(50)]);
         if (acct.status === "fulfilled") {
           const a = acct.value;
-          brokerAccount = { equity: a.equity, cash: a.cash, buyingPower: a.buyingPower, portfolioValue: a.portfolioValue ?? a.equity };
+          // longMarketValue is the gross long $ value; fall back to
+          // equity - cash when the broker doesn't expose it (IBKR, Tradier
+          // currently return undefined). equity - cash works because
+          // equity = longMarketValue + cash by definition; subtracting
+          // negative cash on a margin account recovers the gross long.
+          const longMarketValue =
+            a.longMarketValue ?? Math.max(0, a.equity - a.cash);
+          brokerAccount = {
+            equity: a.equity,
+            cash: a.cash,
+            buyingPower: a.buyingPower,
+            portfolioValue: a.portfolioValue ?? a.equity,
+            longMarketValue,
+          };
           brokerConnected = true;
         }
         if (pos.status === "fulfilled") {
@@ -296,6 +312,7 @@ export async function GET() {
         cash: brokerAccount.cash,
         buyingPower: brokerAccount.buyingPower,
         portfolioValue: brokerAccount.portfolioValue,
+        longMarketValue: brokerAccount.longMarketValue,
       } : null,
       todayPnl: (() => {
         // v3 — three UI-lie fixes that surfaced in the May 16 audit:

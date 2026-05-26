@@ -69,6 +69,9 @@ interface TraderData {
     cash: number;
     buyingPower: number;
     portfolioValue: number;
+    /** Gross long market value (positions × current price). Greater than
+     *  equity when there's a margin loan; equal to equity in a cash account. */
+    longMarketValue: number;
   } | null;
   todayPnl: {
     realizedPnl: number;
@@ -754,11 +757,18 @@ export default function TraderPage() {
           <Card>
             <div className="flex items-center gap-2 mb-1">
               <BarChart3 className="w-4 h-4 text-accent" />
-              <span className="text-xs text-text-muted">Portfolio Value</span>
+              <span className="text-xs text-text-muted">Long Market Value</span>
             </div>
             <p className="text-xl font-display font-bold text-text-primary">
-              ${data.brokerAccount.portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ${data.brokerAccount.longMarketValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
+            {/* When margin is in use (negative cash), show the gap so the
+                user sees the loan size at a glance: LMV - equity = margin loan. */}
+            {data.brokerAccount.cash < 0 && (
+              <p className="text-[11px] text-text-muted mt-1 font-mono">
+                ${Math.abs(data.brokerAccount.cash).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on margin
+              </p>
+            )}
           </Card>
           <Card>
             <div className="flex items-center gap-2 mb-1">
