@@ -201,6 +201,81 @@ export default function StrategiesPage() {
         ]}
       />
 
+      {/* Live-engine behavior callout — post-PR-14 graduation + swap-sell.
+          The preset values shown below are the SEEDS; the live engine layers
+          additional behavior on top depending on the mode the engine is
+          running. Without this callout users see "takeProfit: 36.9%" on the
+          optimized preset and reasonably assume hard exit at +36.9%. */}
+      <Card>
+        <CardHeader className="p-0 pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-accent" />
+            How preset values get used by the live engine
+          </CardTitle>
+        </CardHeader>
+        <div className="space-y-3 text-sm">
+          <p className="text-text-secondary">
+            Strategy presets are the <strong className="text-text-primary">seed values</strong>
+            — `stopLossPct`, `takeProfitPct`, `trailingStopPct`, `holdPeriod` — fed
+            to <code className="px-1 py-0.5 bg-bg-elevated rounded font-mono text-xs">resolveStrategy(userId, symbol)</code>.
+            Per-symbol overrides in <code className="px-1 py-0.5 bg-bg-elevated rounded font-mono text-xs">symbol_strategies</code> win
+            when set. The live engine then layers mode-specific behaviors:
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="border border-border rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="bullish">optimized</Badge>
+                <Badge variant="bullish">tactical-smart</Badge>
+              </div>
+              <div className="text-xs text-text-secondary leading-relaxed">
+                <strong className="text-text-primary">Take-profit graduates</strong> instead of hard-exiting:
+                at `takeProfit`, `pos.stopLoss` locks to entry × 1.30 and the position holds
+                until 2-of-3 weakness signals fire (volume contraction, plateau, RSI rollover).
+                The preset&apos;s `takeProfitPct` becomes the <em>graduation point</em>, not the exit.
+              </div>
+            </div>
+            <div className="border border-border rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="default">optimized</Badge>
+              </div>
+              <div className="text-xs text-text-secondary leading-relaxed">
+                <strong className="text-text-primary">Swap-sell post-exit redeploy:</strong>
+                when a held position exits mid-scan, any STRONG_BUY candidate that hit the
+                position cap earlier in the same scan is bought to redeploy freed capital
+                same-scan (instead of waiting up to 15 min for the next tick).
+              </div>
+            </div>
+            <div className="border border-border rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="default">all modes except tactical</Badge>
+              </div>
+              <div className="text-xs text-text-secondary leading-relaxed">
+                <strong className="text-text-primary">Breakeven-promote ladder</strong>
+                ratchets `pos.stopLoss` up as profit grows. Full ladder (4 tiers at +2/+5/+10/+15%)
+                for conservative/moderate/aggressive/optimized; `breakeven_only` (+2% tier only)
+                for tactical-smart; disabled for tactical.
+              </div>
+            </div>
+            <div className="border border-border rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="default">all modes</Badge>
+              </div>
+              <div className="text-xs text-text-secondary leading-relaxed">
+                <strong className="text-text-primary">Stop-sync scheduler</strong> runs every
+                5 min independent of scan health. Any in-memory `pos.stopLoss` ratchet
+                (from breakeven-promote, trail, or graduation floor) reaches the broker
+                within 5 min.
+              </div>
+            </div>
+          </div>
+          <p className="text-xs text-text-muted pt-1 border-t border-border/50">
+            Backtester and optimizer GA now simulate graduation behavior (PR 16) — backtest
+            numbers reflect live engine reality for these modes.
+            See <a href="/docs/engine-ruleset.html" className="text-accent hover:underline">engine ruleset</a> for the full mechanism.
+          </p>
+        </div>
+      </Card>
+
       {/* Add/Edit Form */}
       {showAdd && (
         <Card>

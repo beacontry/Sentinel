@@ -570,28 +570,37 @@
       <div class="section-num">01</div>
       <h2>Engine Modes</h2>
     </div>
-    <p>Seven operating modes across three families. <strong>Signal-based</strong> modes scan individual stocks for technical entry signals (Conservative, Moderate, Optimized, Aggressive). <strong>Tactical</strong> modes use market-level timing (SPY trend) to go fully in or fully out (Tactical, Tactical Smart). <strong>Adaptive</strong> reads market regime (VIX + SPY trend) at every scan boundary and resolves to one of the signal-based modes &mdash; see § 23 for details. The picker in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/dashboard/trader</code> exposes only <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">optimized</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">tactical</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">tactical-smart</code>, and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">adaptive</code> &mdash; the four base signal modes are reachable only via adaptive. Intraday mode was removed in v3.1.</p>
+    <p>Seven operating modes across three families. <strong>Signal-based</strong> modes scan individual stocks for technical entry signals (Conservative, Moderate, Optimized, Aggressive). <strong>Tactical</strong> modes use market-level timing (SPY trend) to go fully in or fully out (Tactical, Tactical Smart). <strong>Adaptive</strong> reads market regime (VIX + SPY trend) at every scan boundary and resolves to one of the signal-based modes &mdash; see § 23 for details. The picker in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/dashboard/trader</code> exposes only <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">optimized</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">tactical</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">tactical-smart</code>, and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">adaptive</code> &mdash; the four base signal modes (Conservative, Moderate, Aggressive) are reachable only as adaptive resolution targets, not as direct picks. Intraday mode was removed in v3.1.</p>
 
-    <h3>Signal-Based Modes</h3>
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span><strong>Reading the rest of this doc:</strong> the four signal-based modes still appear in the per-mode opt-out tables (ladder, graduation, swap-sell, etc.) because adaptive users <em>do</em> end up running them when regime classification fires. Each row marked with <strong style="color:var(--text-muted)">(adaptive-only)</strong> is internal &mdash; not pickable from the trader page, but reachable via adaptive's regime resolution. Optimized + tactical + tactical-smart + adaptive are the 4 user-pickable modes.</span>
+    </div>
+
+    <h3>Signal-Based Modes <span style="color:var(--text-muted);font-size:0.86rem;font-weight:500">(Conservative / Moderate / Aggressive are adaptive-only; Optimized is user-pickable)</span></h3>
     <div class="mode-grid">
       <div class="mode-card">
         <span class="mode-tag tag-signal">Signal</span>
+        <span class="mode-tag" style="background:var(--bg-elevated);color:var(--text-muted);margin-left:6px">adaptive-only</span>
         <div class="mode-name">Conservative</div>
         <div class="mode-params">
           <span class="mode-param-label">Stop Loss</span><span class="mode-param-val">1.5%</span>
           <span class="mode-param-label">Take Profit</span><span class="mode-param-val">2%</span>
           <span class="mode-param-label">Trailing</span><span class="mode-param-val">1%</span>
           <span class="mode-param-label">Hold Period</span><span class="mode-param-val">30 bars</span>
+          <span class="mode-param-label">Reached when</span><span class="mode-param-val">risk_off regime (VIX&gt;28 or SPY&lt;SMA50)</span>
         </div>
       </div>
       <div class="mode-card">
         <span class="mode-tag tag-signal">Signal</span>
+        <span class="mode-tag" style="background:var(--bg-elevated);color:var(--text-muted);margin-left:6px">adaptive-only</span>
         <div class="mode-name">Moderate</div>
         <div class="mode-params">
           <span class="mode-param-label">Stop Loss</span><span class="mode-param-val">2%</span>
           <span class="mode-param-label">Take Profit</span><span class="mode-param-val">3%</span>
           <span class="mode-param-label">Trailing</span><span class="mode-param-val">1.5%</span>
           <span class="mode-param-label">Hold Period</span><span class="mode-param-val">20 bars</span>
+          <span class="mode-param-label">Reached when</span><span class="mode-param-val">neutral regime (18&lt;VIX&le;28 + SPY&ge;SMA50)</span>
         </div>
       </div>
       <div class="mode-card featured">
@@ -607,12 +616,14 @@
       </div>
       <div class="mode-card">
         <span class="mode-tag tag-signal">Signal</span>
+        <span class="mode-tag" style="background:var(--bg-elevated);color:var(--text-muted);margin-left:6px">adaptive-only</span>
         <div class="mode-name">Aggressive</div>
         <div class="mode-params">
           <span class="mode-param-label">Stop Loss</span><span class="mode-param-val">3%</span>
           <span class="mode-param-label">Take Profit</span><span class="mode-param-val">5%</span>
           <span class="mode-param-label">Trailing</span><span class="mode-param-val">2.5%</span>
           <span class="mode-param-label">Hold Period</span><span class="mode-param-val">15 bars</span>
+          <span class="mode-param-label">Reached when</span><span class="mode-param-val">strong risk_on (VIX&le;14 + SPY&gt;SMA200 + breadth&gt;75; live only)</span>
         </div>
       </div>
       <div class="mode-card">
@@ -856,6 +867,11 @@
     <h3>Breakeven-Promote (Tiered Fixed-Stop Ratchet)</h3>
     <p>Independent of the trailing stop. As unrealized profit grows, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> ratchets up through <strong>four tiers</strong> &mdash; each tier locks in a portion of the gain. The dynamic trail keeps doing its thing on top; the effective stop on any scan is <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">max(pos.stopLoss, trailingStop)</code>.</p>
 
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span><strong>Why it exists:</strong> the trail formula alone doesn't protect against loss until ~+15% profit (below that, trail width &gt; gain &rArr; trail-only stop sits below entry, locking in a loss if it fires). Breakeven-promote fills that gap. At +2%, the position has a hard breakeven floor regardless of where the trail is. Without this layer, a position that ran +5% and reversed gave back the gain <em>plus</em> ~6.6% (one of the giveback rows in the trail table above) before the trail-only stop caught it. With it, the floor caps the giveback at breakeven once initial conviction is shown.</span>
+    </div>
+
     <p style="color:var(--text-muted);margin-top:8px;font-size:0.94rem">The ladder is one-way: <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> only moves up. A position that skips intermediate tiers (gap up overnight, fast intraday run) promotes directly to the highest qualifying tier.</p>
 
     <h4 style="margin-top:18px;color:var(--text-primary);font-size:1.02rem;font-weight:600">Tier ladder (under default <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">full</code> mode)</h4>
@@ -927,6 +943,44 @@
     </div>
 
     <p style="color:var(--text-muted);margin-top:14px;font-size:0.92rem"><strong>Idempotent.</strong> Once promoted to a tier, <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> stays at or above that tier's target. The trail can ratchet it higher; nothing lowers it.</p>
+
+    <h3 style="margin-top:24px">In-Memory <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> vs Broker-Side Stop Order</h3>
+    <p>The engine maintains <strong>two stop values</strong> per position. Understanding the relationship is critical to reading the trader page correctly.</p>
+
+    <div class="table-wrap" style="margin:14px 0">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>What</th>
+            <th>Where</th>
+            <th>When it updates</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>In-memory <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.stopLoss</code></strong></td><td>Engine's per-user position map (RAM)</td><td>Every scan + every 1-min runExitCheck. Ratchets up via breakeven-promote, trail, and (for graduating modes) the +30% graduation floor.</td></tr>
+          <tr><td><strong>Broker stop order</strong></td><td>Alpaca's resting GTC sell-stop on the symbol</td><td>Updated by <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">syncBrokerStops()</code> when in-memory value moves &gt; \$0.10 above the broker's current stop.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>The dashboard's Stop column shows <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">max(broker, in-memory)</code> so users always see the higher (better-protected) value. The Open Orders card shows the broker-side stop directly.</p>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <span><strong>Sync drift was an incident class.</strong> Pre-PR-#4, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">syncBrokerStops()</code> ran only at the tail of each scan (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runScan</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runTacticalScan</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runTacticalSmartScan</code>). If the scan body hung &mdash; the 2026-05-26 tactical-smart incident where the Finnhub-paced active-management loop never returned &mdash; broker stops froze at engine-start values for the entire session even though in-memory <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> was correctly ratcheting via the 1-min poll. UI showed protected; broker had no protection.</span>
+    </div>
+
+    <h4 style="margin-top:18px;color:var(--text-primary);font-size:1.02rem;font-weight:600">Dedicated stop-sync scheduler (PR #4, 2026-05-26)</h4>
+    <p>A standalone <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">stop-sync-scheduler.ts</code> now runs every 5 minutes <strong>independent of scan health</strong>, iterates every running engine, and pushes any in-memory ratchets to the broker. Mirrors the shape of <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">engine-watchdog.ts</code> (start/stop lifecycle, globalThis-tracked setInterval, wired into instrumentation.ts at boot).</p>
+
+    <ul style="margin-top:8px">
+      <li><strong>Cadence:</strong> 5 min &mdash; tight enough that a fresh breakeven promotion reaches the broker within at most 5 min, loose enough to avoid 12&times; the <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">replaceOrder</code> calls per hour vs the previous per-scan cadence</li>
+      <li><strong>Per-user gates</strong> in <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">syncBrokerStopsForUser()</code>: engine exists + <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">running</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">!halted</code> + has positions + <em>no scan in flight</em>. The last gate prevents racing the in-scan sync at the scan tail when scans <em>are</em> healthy</li>
+      <li><strong>Mode-agnostic</strong> &mdash; runs for tactical / tactical-smart / optimized / conservative / moderate / aggressive / adaptive identically. The in-scan <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">syncBrokerStops()</code> calls at scan tails remain as redundant backup; they fire when scans complete cleanly. The scheduler is the always-on safety net</li>
+      <li><strong>Bootstrap</strong> &mdash; fires one immediate cycle at container start (in addition to the 5-min interval) so a fresh deploy picks up where the previous container left off without waiting 5 min</li>
+    </ul>
+
+    <p style="color:var(--text-muted);margin-top:12px;font-size:0.92rem">Net effect: regardless of mode or scan health, in-memory <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.stopLoss</code> reaches the broker within 5 min of being set. A breakeven-promote that fires at <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">+2%</code> on the 1-min poll becomes a live broker GTC stop within the next 5-min scheduler tick.</p>
 
     <h3 style="margin-top:24px">Take-Profit Graduation</h3>
     <p>For modes where graduation is enabled (<strong>tactical-smart</strong> and <strong>optimized</strong> &mdash; see <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">MODE_GRADUATION_DEFAULT</code>), the <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">pos.takeProfit</code> threshold is no longer a hard exit &mdash; it's a graduation point.</p>

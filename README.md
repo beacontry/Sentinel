@@ -323,6 +323,10 @@ Mode Comparison loads all 11 optimizer parameters from the latest completed run.
 
 **Save as Optimized** button on any completed run makes it the active preset. The engine picks up new params within 5 minutes. Compare Modes auto-refreshes when saving.
 
+**Backtester parity (PR 16, 2026-05-26).** Both `runBacktest` (single-symbol backtest used by `/dashboard/backtest`) and `portfolioBacktest` (multi-symbol used by the optimizer GA) now simulate take-profit graduation for modes where `MODE_GRADUATION_DEFAULT` is enabled (optimized + tactical-smart). At `pos.takeProfit`, the position's `stopLoss` locks to entry × 1.30 (the +30% floor) and the backtester continues holding until 2-of-3 weakness signals fire (volume contraction, price plateau, RSI rollover) — same as live `runScan` and `runExitCheck`. Without this parity, the GA's `takeProfitAtrMult` was being tuned under hard-exit assumptions while the live engine treated it as a graduation point; backtest numbers undershot live performance.
+
+Multi-objective GA fitness: `excessReturn × sharpeMult × drawdownMult` with risk multipliers only applied to positive returns (negative returns skip multipliers — otherwise the GA preferred worse-risk-profile losers). Both multipliers floored at 0.05 so the GA has gradient even in the bad-drawdown regime. Re-run optimizer to retune existing strategies for risk-aware params.
+
 ## S&P 500 Universe
 
 The stock universe auto-updates daily from Wikipedia's S&P 500 constituents table (`src/lib/sp500.ts`). Falls back to a hardcoded list if the fetch fails. No deploy needed when S&P 500 rebalances quarterly.

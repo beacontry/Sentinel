@@ -2,7 +2,12 @@ import type { Bar } from "@/types";
 import { analyzeBars } from "./indicators/analyzer";
 import { detectMarketRegime, type AdaptiveTarget } from "./market-regime";
 import { STRATEGY_PRESETS } from "./strategy-presets";
-import type { EngineMode } from "./trading-engine";
+import {
+  type EngineMode,
+  getGraduationMode,
+  shouldGraduateExit,
+  promoteToGraduationFloor,
+} from "./trading-engine";
 
 export interface BacktestTrade {
   entryDate: string;
@@ -157,6 +162,14 @@ export function runBacktest(
     signal: string;
     shares: number;
     peakPrice: number;
+    /**
+     * Mutable fixed-stop floor. Initialized to entry × (1 - stopLossPct),
+     * promoted upward by take-profit graduation (entry × 1.30) when enabled
+     * for the active mode. Mirrors `TrackedPosition.stopLoss` in the live
+     * engine — having the field here lets the backtester model graduation
+     * behavior with parity (PR 16, 2026-05-26).
+     */
+    stopLoss: number;
   } | null = null;
 
   for (let i = windowSize; i < bars.length; i++) {
@@ -216,19 +229,60 @@ export function runBacktest(
         ? 0.02 + (activeCfg.trailingStopPct - 0.02) * Math.exp(-3 * profitPct)
         : activeCfg.trailingStopPct;
 
-      const fixedStop = position.entryPrice * (1 - activeCfg.stopLossPct);
+      // position.stopLoss can be promoted above the entry-time fixed floor
+      // by take-profit graduation (see below). Always uses the higher of
+      // (a) the position's current stop and (b) the dynamic trail.
       const trailingStop = position.peakPrice * (1 - dynTrailPct);
-      const effectiveStop = Math.max(fixedStop, trailingStop);
+      const effectiveStop = Math.max(position.stopLoss, trailingStop);
 
-      // 1. Stop hit (check low against effective stop)
-      if (bar.low <= effectiveStop) {
-        exitPrice = parseFloat(effectiveStop.toFixed(2));
-        exitReason = trailingStop >= fixedStop ? "trailing_stop" : "stop_loss";
+      // Resolve which mode's MODE_GRADUATION_DEFAULT applies. For adaptive,
+      // use the currently-active base mode (the same getActiveMode pattern
+      // the live engine uses). For non-adaptive, just use `mode`.
+      const modeForGraduation: EngineMode | null =
+        mode === "adaptive"
+          ? (lastEffectiveMode ?? "moderate") // fallback before first regime swap
+          : (mode ?? null);
+      const graduationEnabled =
+        modeForGraduation != null && getGraduationMode(modeForGraduation) === "enabled";
+
+      // Take-profit graduation gate. Runs BEFORE the stop/trail checks
+      // because graduation can promote position.stopLoss higher, which
+      // then feeds into the stop check below. When graduation is disabled,
+      // hard take-profit fires as before.
+      const tpLevel = position.entryPrice * (1 + activeCfg.takeProfitPct);
+      if (graduationEnabled && bar.high >= tpLevel) {
+        promoteToGraduationFloor(position); // mutates position.stopLoss to max(current, entry × 1.30)
+
+        // Check weakness signals against the analyzer's indicators
+        // window. Note: shouldGraduateExit needs >=20 bars for the
+        // 20-bar volume baseline. Cheap when graduationEnabled is rare
+        // (only above takeProfit); skipped otherwise.
+        const windowBars = bars.slice(Math.max(0, i - 100), i + 1);
+        if (windowBars.length >= 20) {
+          const analysis = analyzeBars(symbol, windowBars);
+          const indicators = analysis.indicators as unknown as Record<string, number | null | undefined>;
+          const graduation = shouldGraduateExit(position, windowBars, indicators, bar.close);
+          if (graduation) {
+            exitPrice = bar.close;
+            exitReason = `graduated_exit`;
+          }
+          // Otherwise: hold. Don't fire the hard take_profit exit below.
+        }
       }
 
-      // 2. Take-profit hit
-      if (!exitPrice) {
-        const tpLevel = position.entryPrice * (1 + activeCfg.takeProfitPct);
+      // 1. Stop hit (check low against effective stop) — runs whether or
+      // not graduation fired above, because the locked +30% floor can be
+      // hit on the same bar that price gapped above takeProfit. The
+      // effectiveStop reads the (possibly graduation-promoted) stopLoss.
+      if (!exitPrice && bar.low <= effectiveStop) {
+        exitPrice = parseFloat(effectiveStop.toFixed(2));
+        exitReason = trailingStop >= position.stopLoss ? "trailing_stop" : "stop_loss";
+      }
+
+      // 2. Take-profit hit (hard exit) — ONLY when graduation is disabled.
+      // When graduation IS enabled, take-profit triggers the graduation
+      // block above instead of this hard exit.
+      if (!exitPrice && !graduationEnabled) {
         if (bar.high >= tpLevel) {
           exitPrice = parseFloat(tpLevel.toFixed(2));
           exitReason = "take_profit";
@@ -307,6 +361,7 @@ export function runBacktest(
       signal: result.signal,
       shares,
       peakPrice: entryPrice,
+      stopLoss: entryPrice * (1 - activeCfg.stopLossPct),
     };
   }
 
