@@ -260,6 +260,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div style={{ marginBottom: 6 }}>
                 <ThemePicker variant="sidebar" />
               </div>
+              {/* PWA install — mobile menu. PR 25 added it to the desktop
+                  sidebar above but the mobile menu is a separate JSX block
+                  that got missed in the initial pass. Renders nothing if
+                  the browser hasn't fired beforeinstallprompt. */}
+              <PWAInstallButton
+                className="mb-1.5 flex w-full items-center justify-center gap-2 rounded-md border border-accent/30 bg-accent/8 px-3 py-2 text-xs font-medium text-accent"
+              />
               <button
                 type="button"
                 onClick={() => { toggleChat(); setMobileOpen(false); }}
