@@ -107,6 +107,16 @@ export const traderStatus = pgTable("trader_status", {
 // Engine watchdog alerts: stalls, broker disconnects, daily-loss approaches, exit-order failures.
 // Written by src/lib/engine-watchdog.ts every 60s when conditions hit. Severity 'error' triggers
 // a push notification via sendPushToUser().
+// PR 21b (2026-05-26): persistent engine state across restarts.
+// Written at end of every successful runScan; read during autoStartIfNeeded.
+// Payload shape: serializeEngineState() in src/lib/trading-engine.ts.
+// One row per user; UPSERT keyed on user_id.
+export const traderEngineSnapshot = pgTable("trader_engine_snapshot", {
+  userId: text("user_id").primaryKey(),
+  snapshotAt: timestamp("snapshot_at", { withTimezone: true }).defaultNow().notNull(),
+  payload: jsonb("payload").notNull(),
+});
+
 export const engineAlerts = pgTable("engine_alerts", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull(),
