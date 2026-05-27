@@ -18,6 +18,7 @@ import {
 import { useTier } from "@/components/tiers/tier-gate";
 import { useAi } from "@/components/ai/ai-provider";
 import { ThemePicker } from "@/components/theme-picker";
+import { PWAInstallButton } from "@/components/pwa-install-button";
 import { BrokerSwitcher } from "./broker-switcher";
 import { PnlFormatToggle } from "./pnl-format-toggle";
 import { SidebarTierBadge } from "@/components/tiers/sidebar-tier-badge";
@@ -127,6 +128,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div style={{ marginBottom: 6 }}>
                 <ThemePicker variant="sidebar" />
               </div>
+              {/* PWA install — hidden unless browser fires beforeinstallprompt
+                  and the app isn't already installed. */}
+              <PWAInstallButton
+                className="mb-1.5 flex w-full items-center justify-center gap-2 rounded-md border border-accent/30 bg-accent/8 px-3 py-2 text-xs font-medium text-accent transition-colors hover:bg-accent/14"
+              />
               <PnlFormatToggle />
               <button
                 type="button"
