@@ -558,10 +558,11 @@
       <a href="#audit-log" data-num="19">Audit Log</a>
       <a href="#going-live" data-num="20">Going Live &amp; Rollback</a>
       <a href="#ai-provider" data-num="21">AI Provider &amp; System Config</a>
-      <a href="#marathon" data-num="22">Marathon Updates (2026-05-12)</a>
-      <a href="#adaptive" data-num="23">Adaptive Engine Mode (Phase 8)</a>
-      <a href="#reliability-2026-05-13" data-num="24">Reliability fixes (2026-05-13)</a>
+      <a href="#adaptive" data-num="22">Adaptive Engine Mode</a>
     </div>
+    <p style="margin-top:16px;font-size:0.85rem;color:var(--text-muted)">
+      Engineers and operators: see the <a href="/docs/changelog.html" style="color:var(--accent)">engineering changelog</a> for dated retrospectives of every hardening pass.
+    </p>
   </nav>
 
   <!-- ===== 1 · ENGINE MODES ===== -->
@@ -1794,54 +1795,14 @@ sudo podman run -d --name sentinel-app --network=host \
     </ul>
   </section>
 
-  <!-- ===== 22 · MARATHON UPDATES ===== -->
-  <section class="section" id="marathon">
-    <div class="section-header">
-      <div class="section-num">22</div>
-      <h2>Marathon Updates (2026-05-12, Phases 1&ndash;4)</h2>
-    </div>
-
-    <p>Post-launch hardening pass. Items here augment relevant sections above; cross-references CLAUDE.md's 6-phase retrospective for commit SHAs.</p>
-
-    <h3>Phase 1 &mdash; Money bugs from UI-lie audit</h3>
-    <ul>
-      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder()</code> is async + takes a fresh <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">account</code> snapshot.</strong> Refreshes the wash-sale symbol set (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">maybeRefreshWashSaleSet()</code>) before the wash-sale check; re-runs <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">evaluatePdtState(engine, account)</code> before the PDT check. A 2nd day-trade in a 15-min window or a same-scan losing-close-then-re-entry now correctly evaluates against live state instead of scan-boundary state.</li>
-      <li><strong>Gate ordering inside <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder()</code>:</strong> earnings blackout &rarr; sector exposure &rarr; wash-sale &rarr; PDT &rarr; daily notional &rarr; rate-limit. Cheapest checks first; the first reason found is what gets logged.</li>
-      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">bootEquity</code> re-snapshots at every new trading day</strong> across both remaining scan paths (tactical and main &mdash; the intraday path was retired in v3.1). The 50% equity-collapse tripwire stays calibrated as the account grows organically.</li>
-      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">tripSafeguardHalt()</code> writes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">halted=true</code> to <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">trader_daily_pnl</code> immediately</strong> (fire-and-forget) so the dashboard reflects halts on the next fetch instead of waiting for the next scan boundary.</li>
-      <li><strong>Dashboard <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">todayPnl</code> response carries <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">source</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">staleSeconds</code></strong> (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">"broker_intraday" | "broker_total" | "db_snapshot"</code>) so the UI can render staleness honestly instead of silently mixing broker intraday with DB snapshot.</li>
-    </ul>
-
-    <h3>Phase 2 &mdash; Frozen-value cleanup</h3>
-    <ul>
-      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">syncPositionMapFromBroker()</code> resets <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.peakPrice = currentPrice</code></strong> when broker qty drops &gt; 5% (partial close &mdash; trail recalibrates from post-close size).</li>
-      <li><strong>Re-resolves <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.trailingStopPct</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.takeProfit</code></strong> from the current strategy on every sync, so Strategies-page edits propagate to existing positions.</li>
-      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">syncBrokerStops()</code> writes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.stopLoss = targetStop</code></strong> after every successful broker place/replace. Dashboard route reads <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">Math.max(broker, tracked.stopLoss)</code> defensively. Closes the UI-lie where the Stop column displayed entry-time disaster value while the broker stop was correctly ratcheting up.</li>
-    </ul>
-
-    <h3>Phase 3 &mdash; Cache invalidation</h3>
-    <ul>
-      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">FILTER_CACHE_TTL_MS = 6h</code></strong> added on top of the existing day-string check for earnings + sentiment caches. Server-boot-at-3am-ET no longer means 20+ hours of stale data.</li>
-      <li><strong>Screener cache adds <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scanStartedAt: Date | null</code>.</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/api/screener</code> exposes both <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scannedAt</code> (completed) and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scanStartedAt</code> (in-flight). Same field added to <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">EngineState</code> and surfaced through <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">peekEngineStatus()</code>.</li>
-    </ul>
-
-    <h3>Phase 4 &mdash; Engine intelligence (migration 0029)</h3>
-    <p>Three columns added to <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">user_risk_profiles</code>: <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">max_sector_exposure_pct</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">adaptive_mode_enabled</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">earnings_blackout_days</code>.</p>
-    <ul>
-      <li><strong>Sector exposure cap.</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder</code> takes optional <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">sectorExposureContext</code> (live position market values keyed by symbol) and refuses BUYs that would push a sector over <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">cap &times; equity</code>. New <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">buildSectorExposureContext()</code> helper. <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">TrackedPosition</code> carries <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">currentPrice</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">marketValue</code> synced from broker so the cap check is in-memory.</li>
-      <li><strong>Earnings blackout.</strong> Calls existing <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">isInEarningsBlackout()</code> when <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">earningsBlackoutDays</code> is set on the risk profile.</li>
-      <li><strong>P&amp;L heatmap widget.</strong> New <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pnl-heatmap-widget</code> registered. Reads <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/api/performance/attribution</code>. Top-5 symbols by realized $ with proportional bars.</li>
-      <li><strong>Deferred:</strong> adaptive mode auto-switching (column shipped, no consumer wired yet); engine dry-run mode.</li>
-    </ul>
-
-    <p style="margin-top:24px;color:var(--text-muted);font-size:0.9rem">Mirror file: <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">docs/ENGINE_RULESET.md</code>. Both intentionally kept in sync &mdash; edit one, mirror to the other.</p>
-  </section>
-
-  <!-- ===== 23 · ADAPTIVE ENGINE MODE ===== -->
+  <!-- ===== 22 · ADAPTIVE ENGINE MODE =====
+       (was section 23 before changelog separation 2026-05-26;
+       previous §22 Marathon Updates + §24 Reliability + §25 Marathon
+       moved to /docs/changelog.html for dated retrospectives.) -->
   <section class="section" id="adaptive">
     <div class="section-header">
-      <div class="section-num">23</div>
-      <h2>Adaptive Engine Mode (Phase 8)</h2>
+      <div class="section-num">22</div>
+      <h2>Adaptive Engine Mode</h2>
     </div>
 
     <p><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">EngineMode</code> includes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">"adaptive"</code>. When a user selects adaptive, the engine reads market regime at each scan boundary and runs as one of <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">conservative / moderate / optimized / aggressive</code> underneath. The user-selected mode stays <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">"adaptive"</code>; strategy decisions go through <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getActiveMode(engine)</code> which returns the effective base mode. (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">tactical</code> is excluded from adaptive's targets &mdash; its all-in/all-out philosophy contradicts a regime classifier that would switch off it.)</p>
@@ -1878,89 +1839,12 @@ sudo podman run -d --name sentinel-app --network=host \
     <p>Live mode uses <strong>VIX + SPY only</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">refreshAdaptiveMode()</code> does NOT fetch breadth (a full breadth scan = 50 stocks &times; N days, kept as a v2 enhancement; the cost would land on every scan tick). The strong-risk-on &rarr; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">aggressive</code> bump in the classifier <strong>requires</strong> a breadth score, so in practice live adaptive can resolve only to <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">conservative</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">moderate</code>, or <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">optimized</code>. Backtest replays VIX + SPY only too. Defensible simplification &mdash; if you specifically want <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">aggressive</code> sizing in a strong bull, pick it directly instead of relying on adaptive.</p>
   </section>
 
-  <!-- ===== 2026-05-13 batch ===== -->
-  <section class="section" id="reliability-2026-05-13">
-    <div class="section-header">
-      <span class="section-num">24</span>
-      <h2>Reliability fixes (2026-05-13)</h2>
-    </div>
-
-    <h3>Scan re-entrancy guard</h3>
-    <p>The scan scheduler previously used a bare <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">setInterval(() =&gt; scanFn().catch())</code>. When a scan took longer than the tick interval (slow broker, large universe), the next tick fired while the previous scan was still in flight. Both concurrent scans called <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">client.getOrders()</code> independently &mdash; and because Alpaca's orders endpoint has hundreds-of-ms eventual consistency, the second scan's <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pendingBuySymbols</code> set frequently missed the first scan's order. Result: both scans passed the duplicate-buy guard and placed identical limit orders sub-second apart. User reported as "two SNDK buys at the same price/qty/age."</p>
-    <p>Fix: closure-local <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scanInFlight</code> flag flipped before <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scanFn()</code> and cleared in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.finally()</code>. <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.finally()</code> guarantees the flag clears even if scanFn throws. Belt: a 10-minute stale-flag watchdog overrides the flag if for some reason it stayed set (process crash mid-promise, runtime weirdness) so a wedged engine self-recovers within two intraday ticks. Same guard applied to the 1-minute exit-check interval.</p>
-
-    <h3>getOrders failure: now aborts scan</h3>
-    <p>Previously a <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">try { ... } catch {}</code> silently swallowed errors fetching open orders. The scan continued with an empty <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pendingBuySymbols</code> set &mdash; going blind on duplicate-order detection. Now all three BUY paths (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runScan</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runTacticalScan</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runTacticalSmartScan</code>) log a warning, push a user-visible error, and abort the BUY portion of the scan when getOrders fails. Exits + position-map sync already happened before the getOrders call, so the abort is safe for stop-loss management.</p>
-
-    <h3>Journal v2 hook in reconciler</h3>
-    <p>When <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">reconcilePendingTrades</code> transitions a row from PENDING to FILLED, it now also calls <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">createAutoJournalStub()</code> (fire-and-forget, never throws). Inserts a journal entry pre-filled with the trade mechanics (symbol, action, fill price, P&amp;L, signal) plus leading questions ("Why am I taking this trade?" for entries, "What's the lesson?" for exits). Idempotent via the <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">journal_auto_trade_uniq</code> partial unique index (migration 0032) &mdash; re-runs no-op. User opens the journal page and fills in the WHY; blank-canvas friction removed.</p>
-  </section>
-
-  <!-- ===== 2026-05-26 batch ===== -->
-  <section class="section" id="reliability-2026-05-26">
-    <div class="section-header">
-      <span class="section-num">25</span>
-      <h2>Reliability + Strategy fixes (2026-05-26)</h2>
-    </div>
-
-    <p>Marathon day. Triggered by the user observing tactical-smart outperforming optimized on the live account; expanded into a full audit pass that surfaced two P0 + several P1 bugs in the engine + GA, plus the strategy-frame gap between live and backtest.</p>
-
-    <h3>Phase 1 &mdash; PRs 1-13: incident response + observability</h3>
-    <ul>
-      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getOrders(100)</code> &rarr; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getOrders(100, "open")</code></strong> at 5 sites in trading-engine.ts. Alpaca's default status is <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">all</code>, so a churn-heavy account's 100-row response was dominated by filled/cancelled noise &mdash; open buys fell off the page, the duplicate-order guard went blind, and 3 identical WDC limits stacked up on a single user.</li>
-      <li><strong>PDT-rejected stop placement</strong> &rarr; new <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.unprotectedSymbols</code> set + UI banner. Same-day positions whose stop Alpaca rejects (40310100) used to look protected in the dashboard's Stop column (in-memory value showed) while the broker had no resting stop. Banner now lists them so the user knows to manually exit.</li>
-      <li><strong>PDT-rejected exit cascade</strong> &rarr; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">EXIT_REJECTION_THRESHOLD = 5</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">ENGINE_EXIT_SUPPRESSED</code> audit + push notification. APP on the admin account triggered stop_loss every minute for 60+ minutes, each rejected, with no escalation. Now suppressed after 5 rejections for 30 min with user-actionable alert.</li>
-      <li><strong>Standalone stop-sync scheduler</strong> (<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">stop-sync-scheduler.ts</code>) runs every 5 min independent of scan health. Previously syncBrokerStops only fired at scan tails; hung scans froze broker stops for the whole session. See &sect; In-Memory <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.stopLoss</code> vs Broker-Side Stop Order above.</li>
-      <li><strong>Tactical-smart scan hang fix</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">TACTICAL_SCAN_SYMBOL_BUDGET_MS = 8min</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">TACTICAL_MAX_EXTERNAL_SYMBOLS = 50</code>. The screener was feeding 500+ symbols to the active-management loop; at ~1s per symbol (Finnhub-rate-limited) scans took longer than the 15-min cadence, never completed, never reached <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">syncBrokerStops</code>.</li>
-      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">brokerConnected</code> set in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">startEngine</code></strong> + new <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">setBrokerConnected()</code> helper. 96 false-positive <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">broker_disconnect</code> alerts in 24h on the optimize@guardcyber account &mdash; the in-memory flag was initialized to false and only flipped to true in the scan body, leaving a multi-minute window post-restart where the watchdog cried wolf.</li>
-      <li><strong>PWA install fix</strong> &mdash; manifest <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">start_url</code> was redirecting to <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/login</code> for unauth users; Chrome rejects 3xx start_urls. Changed to <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/login?source=pwa</code> (200).</li>
-      <li><strong>Take-profit graduation feature</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">MODE_GRADUATION_DEFAULT</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">shouldGraduateExit</code> + <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">promoteToGraduationFloor</code>. At <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.takeProfit</code>, lock <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pos.stopLoss</code> to entry &times; 1.30 and hold until 2-of-3 weakness signals fire (volume contraction, plateau, RSI rollover). Tactical-smart enabled by default; optimized followed in PR 14.</li>
-      <li><strong><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">client_order_id</code> idempotency</strong> &mdash; every Alpaca <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">placeOrder</code> sends a UUID. Network-hiccup retries can't double-fill anymore. Logs include the id so duplicate-on-retry collisions are grep-able.</li>
-      <li><strong>Long Market Value display fix</strong> &mdash; Alpaca's <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">portfolio_value</code> is an alias for equity; the trader page was showing the same number in two slots. Now reads <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">long_market_value</code> directly with margin-loan sub-line when cash is negative.</li>
-      <li><strong>Admin per-user dashboard</strong> &mdash; new <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/api/admin/user-performance</code> + per-user drilldown at <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">/dashboard/admin/users/[id]</code>. Sortable table showing tier, engine state, today P&amp;L, lifetime stats, win rate, stale-engine warning icons. Drilldown shows full broker connection, engine state, performance metrics, daily P&amp;L history, last 50 trades, last 25 audit events.</li>
-    </ul>
-
-    <h3>Phase 2 &mdash; PR 14: optimized mode Option 2 (lean into the difference)</h3>
-    <p>User observation: tactical-smart was producing big runners (DELL +42%, MU +37%) while optimized produced steadier, smaller positions. Root cause was the strategy <em>frame</em>, not the GA params themselves.</p>
-    <ul>
-      <li><strong>Graduation enabled for optimized</strong> &mdash; the GA-tuned <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">takeProfitAtrMult</code> becomes a graduation point, not a hard exit. Lets runners ride past training-window-fit exit levels.</li>
-      <li><strong>Screener-fed universe</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runScan</code> now uses <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">selectExternalSymbolsForTactical(engine.externalSignals, SCAN_UNIVERSE)</code>. Top-50 by confidence, BUY/STRONG_BUY only. Optimized previously took every external signal regardless of direction or confidence; now properly bounded.</li>
-      <li><strong>Swap-sell post-exit redeploy</strong> &mdash; new <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">MODE_SWAP_SELL_DEFAULT</code> + deferred-candidates list. When an exit fires during the per-symbol loop, freed slots get redeployed into the top deferred STRONG_BUYs same-scan instead of waiting 15 min for the next tick.</li>
-      <li><strong>Multi-objective GA fitness</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">excessReturn &times; sharpeMult &times; drawdownMult</code>. Pushes the GA away from blow-up-risk param sets that score high on raw return alone.</li>
-    </ul>
-    <p>Optimized retains its distinct character: per-symbol GA-tuned params, fixed position sizing, finite hold periods. Tactical-smart keeps inverse-vol weighting, 999-day hold, pair-wise swap-sell. The two modes now converge structurally but stay distinct strategically.</p>
-
-    <h3>Phase 3 &mdash; PR 16: audit-driven hardening</h3>
-    <ul>
-      <li><strong>P0 #1: Graduation defeated by <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runExitCheck</code></strong> &mdash; the 1-min poll still hard-exited at takeProfit, so positions were sold before the next 15-min scan got a chance to graduate them. Now gated on <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getGraduationMode(getActiveMode(engine)) === "disabled"</code>. Locked floor still protects via the stop-loss branch.</li>
-      <li><strong>P0 #2: Stop-sync scheduler hung-scan recovery</strong> &mdash; gate checks <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">scanAgeMs &gt; STALE_SCAN_OVERRIDE_MS</code> (10 min) and runs sync anyway when exceeded. Previously skipped forever because <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.scanStartedAt</code> was overwritten by <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runScanGuarded</code>'s 10-min override but never cleared.</li>
-      <li><strong>P1 #3: Swap-sell missing gates</strong> &mdash; redeploy path now respects cooldown (150 min), exposure cap, and sector-concentration cap. The in-loop entry path checks all three; pre-fix swap-sell silently bypassed them.</li>
-      <li><strong>P1 #4: GA fitness preferred losers</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">excessReturn &times; mults</code> for negative returns inverted the order (a -50% strategy &times; 0.5 = -25 beat -50 &times; 0.0 = 0). Fix: skip multipliers when <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">excessReturn &le; 0</code>.</li>
-      <li><strong>P1 #5: GA drawdown gradient collapse</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">drawdownMult</code> went flat to 0 at maxDrawdown &ge; 20%. Softened to 30% window + 0.05 floor on both multipliers so the GA has gradient even at extreme risk profiles.</li>
-    </ul>
-
-    <h3>Phase 4 &mdash; PR 17: backtest/optimizer parity + audit follow-ups</h3>
-    <ul>
-      <li><strong>Backtester graduation parity</strong> &mdash; both <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runBacktest</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">portfolioBacktest</code> now simulate the graduation gate. Position objects gain mutable <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">stopLoss</code>. Without parity, GA tunes under hard-exit fitness while the live engine treats takeProfit as graduation.</li>
-      <li><strong>Backtester STRONG_BUY hardCap overshoot</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">BACKTEST_HARD_CAP_STRONG_BUY = 1.5 &times; BACKTEST_MAX_POSITIONS</code>. Mirrors runScan's hardCap. Without this, GA underestimated how many strong signals the live engine carries.</li>
-      <li><strong>Backtester confidence-based ranking</strong> &mdash; STRONG_BUYs ranked by confidence desc within signal type. Mirrors swap-sell's "deferred candidates sorted by confidence."</li>
-      <li><strong>Engine reboot state-loss audit</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">autoStartIfNeeded</code> writes an <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">ENGINE_STARTED</code> audit row with note explaining "any PDT alerts in next 5 min are state rebuild, not new conditions." Operator can correlate post-deploy alert spikes with restart events.</li>
-      <li><strong>Hung-scan orphan-promise diagnostic</strong> &mdash; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">runScanGuarded</code> tracks generation numbers; when an orphan resolves after a newer scan started, logs warn with the generation mismatch. Real concurrency fix deferred to focused PR; for now we observe the condition.</li>
-    </ul>
-
-    <div class="callout safe">
-      <span class="callout-icon">&#10003;</span>
-      <span><strong>Net for the user:</strong> the trader page's "stop below entry" condition that triggered this marathon is now fixed end-to-end (broker stops sync within 5 min via the dedicated scheduler), the optimizer is tuning for the strategy frame the live engine actually runs, and three classes of silent failure (PDT-rejected stops, PDT-rejected exits, scan hangs) now surface as user-actionable alerts instead of staying invisible.</span>
-    </div>
-
-    <p style="color:var(--text-muted);margin-top:14px;font-size:0.92rem"><strong>Deferred to future PRs</strong> (tracked in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">docs/future-ideas.md</code>): hung-scan orphan-promise concurrency fix (audit P1 #6), engine-reboot state persistence (audit P2 #8), swap-sell live-engine integration test (audit P2 #7).</p>
-  </section>
 
   <!-- ===== FOOTER ===== -->
   <footer class="footer">
     <p><span class="brand">Beacontry</span> &mdash; Trading Intelligence Platform &middot; v3.1 Live Trading + Adaptive Mode + Journal v2</p>
     <p style="margin-top:4px">All rules enforced programmatically. Hash-chained audit on every privileged action. Five capital circuit breakers. Tax + PDT protections layered on every BUY. Scan re-entrancy guarded. AI: Groq-only.</p>
-    <p style="margin-top:4px;color:var(--text-muted);font-size:0.85rem">Last revised: 2026-05-26 (PRs 1-17: incident response marathon &mdash; optimized mode Option 2, take-profit graduation, swap-sell, stop-sync scheduler, client_order_id idempotency, backtest+optimizer parity, audit-driven hardening)</p>
+    <p style="margin-top:4px;color:var(--text-muted);font-size:0.85rem">Full change history at <a href="/docs/changelog.html" style="color:var(--accent)">/docs/changelog.html</a>.</p>
   </footer>
 
 </div>

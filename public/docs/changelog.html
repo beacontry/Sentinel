@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beacontry — Engineering Changelog</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-root:     #0d1511;
+    --bg-primary:  #11181d;
+    --bg-surface:  #161e23;
+    --bg-elevated: #1c252b;
+    --bg-hover:    #232d34;
+
+    --text-primary:   #e8edf0;
+    --text-secondary: #b0bac1;
+    --text-muted:     #7d8a93;
+
+    --border: #2a353d;
+
+    --accent:     #4ade80;
+    --accent-dim: #22c55e;
+    --bullish:    #4ade80;
+    --bearish:    #f87171;
+    --warning:    #fbbf24;
+    --info:       #60a5fa;
+
+    --accent-bg:   rgba(74, 222, 128, 0.10);
+    --warning-bg:  rgba(251, 191, 36, 0.10);
+    --bearish-bg:  rgba(248, 113, 113, 0.10);
+
+    --radius-md: 8px;
+    --radius-lg: 12px;
+  }
+
+  html, body {
+    background: var(--bg-root);
+    color: var(--text-primary);
+    font-family: 'Inter', -apple-system, system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page-wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  /* Header */
+  .doc-header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 32px;
+  }
+  .doc-header .eyebrow {
+    display: inline-block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .doc-header h1 {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+  }
+  .doc-header p {
+    color: var(--text-secondary);
+    font-size: 0.94rem;
+    max-width: 700px;
+  }
+  .doc-header .breadcrumbs {
+    margin-top: 16px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+  .doc-header .breadcrumbs a {
+    color: var(--info);
+    text-decoration: none;
+  }
+  .doc-header .breadcrumbs a:hover {
+    text-decoration: underline;
+  }
+
+  /* Entry block */
+  .entry {
+    margin-bottom: 48px;
+    border-left: 2px solid var(--border);
+    padding-left: 24px;
+    position: relative;
+  }
+  .entry::before {
+    content: "";
+    position: absolute;
+    left: -7px;
+    top: 4px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-root);
+  }
+  .entry .date {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    letter-spacing: 0.03em;
+    margin-bottom: 4px;
+  }
+  .entry h2 {
+    font-size: 1.3rem;
+    color: var(--text-primary);
+    font-weight: 700;
+    margin-bottom: 6px;
+    letter-spacing: -0.01em;
+  }
+  .entry .summary {
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+  }
+
+  .entry h3 {
+    font-size: 1.02rem;
+    color: var(--text-primary);
+    font-weight: 600;
+    margin-top: 20px;
+    margin-bottom: 10px;
+  }
+
+  .entry p {
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+    margin-bottom: 12px;
+  }
+
+  .entry ul {
+    list-style: none;
+    margin-bottom: 12px;
+  }
+  .entry ul li {
+    padding-left: 18px;
+    position: relative;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+  }
+  .entry ul li::before {
+    content: "·";
+    position: absolute;
+    left: 6px;
+    top: -2px;
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 1rem;
+  }
+  .entry ul li strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  .entry code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.84rem;
+    background: var(--bg-elevated);
+    color: var(--accent-dim);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  .callout {
+    display: flex;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    margin: 16px 0;
+    font-size: 0.9rem;
+  }
+  .callout.safe {
+    background: var(--accent-bg);
+    border-left: 3px solid var(--accent);
+    color: var(--text-secondary);
+  }
+  .callout.safe strong { color: var(--text-primary); }
+  .callout.warn {
+    background: var(--warning-bg);
+    border-left: 3px solid var(--warning);
+    color: var(--text-secondary);
+  }
+  .callout.warn strong { color: var(--warning); }
+
+  /* Footer */
+  .doc-footer {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+  }
+  .doc-footer a {
+    color: var(--info);
+    text-decoration: none;
+  }
+  .doc-footer a:hover { text-decoration: underline; }
+
+  /* Selection — small QoL */
+  ::selection { background: var(--accent); color: var(--bg-root); }
+</style>
+</head>
+<body>
+
+<div class="page-wrap">
+
+  <header class="doc-header">
+    <div class="eyebrow">Engineering Changelog</div>
+    <h1>What changed and when</h1>
+    <p>Chronological log of engine + platform changes since launch. Read this if you're operating the engine, reviewing PRs, or investigating an incident. For a marketing/capability overview, see the <a href="/docs/engine-ruleset.html">engine ruleset</a>. For per-page user features, see the <a href="/docs/beacontry-features.html">features doc</a>.</p>
+    <div class="breadcrumbs">
+      <a href="/docs/engine-ruleset.html">← Engine Ruleset</a> &middot;
+      <a href="/docs/beacontry-features.html">Features</a> &middot;
+      <a href="/docs/tiers.html">Tiers</a>
+    </div>
+  </header>
+
+  <!-- ════════════════════════ 2026-05-26 ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-05-26</div>
+    <h2>Incident response marathon (PRs 1-17)</h2>
+    <p class="summary">Triggered by a user observation that tactical-smart was outperforming optimized on the live account. Expanded into a full audit pass that surfaced 2 P0 + several P1 bugs in the engine + GA, plus the strategy-frame gap between live and backtest. Closed both. Net result: optimized mode now competes with tactical-smart on capability while retaining its precision character; the audit trail catches what used to be silent failures.</p>
+
+    <h3>Phase 1 — incident response + observability (PRs 1-13)</h3>
+    <ul>
+      <li><strong><code>getOrders(100)</code> → <code>getOrders(100, "open")</code></strong> at 5 sites. Alpaca's default status was <code>all</code>, so a churn-heavy account's 100-row response was dominated by filled/cancelled noise — open buys fell off the page, the duplicate-order guard went blind, and 3 identical WDC limits stacked up.</li>
+      <li><strong>PDT-rejected stop placement</strong> → new <code>engine.unprotectedSymbols</code> + UI banner. Same-day positions whose stop Alpaca rejects (40310100) used to look protected in the dashboard while the broker had no resting stop.</li>
+      <li><strong>PDT-rejected exit cascade</strong> → <code>EXIT_REJECTION_THRESHOLD = 5</code> + <code>ENGINE_EXIT_SUPPRESSED</code> audit + push notification. APP triggered stop_loss every minute for 60+ min, each rejected, with no escalation. Now suppressed after 5 rejections for 30 min.</li>
+      <li><strong>Standalone stop-sync scheduler</strong> — <code>stop-sync-scheduler.ts</code> runs every 5 min independent of scan health. Previously syncBrokerStops only fired at scan tails; hung scans froze broker stops for the whole session.</li>
+      <li><strong>Tactical-smart scan hang fix</strong> — <code>TACTICAL_SCAN_SYMBOL_BUDGET_MS = 8min</code> + <code>TACTICAL_MAX_EXTERNAL_SYMBOLS = 50</code>. Screener was feeding 500+ symbols to the active-management loop; at ~1s/symbol (Finnhub-rate-limited) scans took longer than the 15-min cadence and never completed.</li>
+      <li><strong><code>brokerConnected</code> set in <code>startEngine</code></strong> + new <code>setBrokerConnected</code> helper centralizing transitions with diagnostic log. 96 false-positive <code>broker_disconnect</code> alerts in 24h before the fix.</li>
+      <li><strong>PWA install fix</strong> — manifest <code>start_url</code> was redirecting to <code>/login</code> for unauth users; Chrome rejects 3xx start_urls. Changed to <code>/login?source=pwa</code> (200).</li>
+      <li><strong>Take-profit graduation feature</strong> — <code>MODE_GRADUATION_DEFAULT</code> + <code>shouldGraduateExit</code> + <code>promoteToGraduationFloor</code>. At <code>pos.takeProfit</code>, lock <code>pos.stopLoss</code> to entry × 1.30 and hold until 2-of-3 weakness signals fire.</li>
+      <li><strong><code>client_order_id</code> idempotency</strong> — every Alpaca <code>placeOrder</code> sends a UUID. Network-hiccup retries can't double-fill anymore.</li>
+      <li><strong>Long Market Value display fix</strong> — Alpaca's <code>portfolio_value</code> is an alias for equity; the trader page was showing the same number twice. Now reads <code>long_market_value</code> directly with margin-loan sub-line when cash is negative.</li>
+      <li><strong>Admin per-user dashboard + drilldown</strong> — new <code>/api/admin/user-performance</code> + <code>/dashboard/admin/users/[id]</code>. Sortable table with stale-engine warning icons; drilldown shows full broker connection, engine state, performance metrics, daily P&amp;L, last 50 trades, last 25 audit events.</li>
+    </ul>
+
+    <h3>Phase 2 — optimized mode Option 2 (PR 14)</h3>
+    <p>User observation: tactical-smart producing big runners (DELL +42%, MU +37%) while optimized produced steadier, smaller positions. Root cause was the strategy <em>frame</em>, not the GA params themselves. Brought optimized to capability parity while preserving its distinct character.</p>
+    <ul>
+      <li><strong>Graduation enabled for optimized</strong> — GA-tuned <code>takeProfitAtrMult</code> becomes a graduation point, not a hard exit. Lets runners ride past training-window-fit exit levels.</li>
+      <li><strong>Screener-fed universe</strong> — <code>runScan</code> now uses <code>selectExternalSymbolsForTactical(engine.externalSignals, SCAN_UNIVERSE)</code>. Top-50 by confidence, BUY/STRONG_BUY only.</li>
+      <li><strong>Swap-sell post-exit redeploy</strong> — new <code>MODE_SWAP_SELL_DEFAULT</code> + deferred-candidates list. When an exit fires during the per-symbol loop, freed slots get redeployed into the top deferred STRONG_BUYs same-scan.</li>
+      <li><strong>Multi-objective GA fitness</strong> — <code>excessReturn × sharpeMult × drawdownMult</code>. Pushes the GA away from blow-up-risk param sets that score high on raw return alone.</li>
+    </ul>
+    <p>Optimized retains: per-symbol GA-tuned params, fixed position sizing, finite hold periods. Tactical-smart keeps: inverse-vol weighting, 999-day hold, pair-wise swap-sell.</p>
+
+    <h3>Phase 3 — audit-driven hardening (PR 16)</h3>
+    <ul>
+      <li><strong>P0 #1: Graduation defeated by <code>runExitCheck</code></strong> — the 1-min poll still hard-exited at takeProfit, defeating graduation. Now gated on <code>getGraduationMode === "disabled"</code>.</li>
+      <li><strong>P0 #2: Stop-sync scheduler hung-scan recovery</strong> — gate now checks scan age vs <code>STALE_SCAN_OVERRIDE_MS</code> and runs sync anyway when exceeded. Previously skipped forever when scans chronically hung.</li>
+      <li><strong>P1 #3: Swap-sell missing gates</strong> — redeploy now respects cooldown (150 min), exposure cap, sector-concentration cap. All silently bypassed pre-fix.</li>
+      <li><strong>P1 #4: GA fitness preferred losers</strong> — multipliers on negative returns inverted preference. Fix: skip multipliers when <code>excessReturn ≤ 0</code>.</li>
+      <li><strong>P1 #5: GA drawdown gradient collapse</strong> — multipliers floored at 0.05; drawdown softened to 30% window. Was flat-0 at maxDrawdown ≥ 20%, killing GA gradient.</li>
+    </ul>
+
+    <h3>Phase 4 — backtest/optimizer parity + audit follow-ups (PR 17)</h3>
+    <ul>
+      <li><strong>Backtester graduation parity</strong> — both <code>runBacktest</code> and <code>portfolioBacktest</code> now simulate the graduation gate. Without parity, GA tuned under hard-exit fitness while live engine treated takeProfit as graduation.</li>
+      <li><strong>Backtester STRONG_BUY hardCap overshoot</strong> — <code>BACKTEST_HARD_CAP_STRONG_BUY = 1.5 × BACKTEST_MAX_POSITIONS</code>. Mirrors runScan.</li>
+      <li><strong>Backtester confidence-based ranking</strong> — STRONG_BUYs ranked by confidence desc within signal type. Mirrors swap-sell's "deferred candidates sorted by confidence."</li>
+      <li><strong>Engine reboot state-loss audit</strong> — <code>autoStartIfNeeded</code> writes <code>ENGINE_STARTED</code> audit row with note explaining "any PDT alerts in next 5 min are state rebuild, not new conditions."</li>
+      <li><strong>Hung-scan orphan-promise diagnostic</strong> — <code>runScanGuarded</code> tracks generation numbers; when an orphan resolves after a newer scan started, logs warn with generation mismatch. Real concurrency fix deferred.</li>
+    </ul>
+
+    <div class="callout safe">
+      <strong>Net for the user:</strong> the trader page's "stop below entry" condition that triggered this marathon is now fixed end-to-end. The optimizer is tuning for the strategy frame the live engine actually runs. Three classes of silent failure (PDT-rejected stops, PDT-rejected exits, scan hangs) now surface as user-actionable alerts.
+    </div>
+
+    <p style="margin-top:14px;font-size:0.86rem;color:var(--text-muted)"><strong>Deferred to future PRs</strong> (tracked in <code>docs/future-ideas.md</code>): hung-scan orphan-promise concurrency fix, engine-reboot state persistence, swap-sell live-engine integration test.</p>
+  </article>
+
+  <!-- ════════════════════════ 2026-05-13 ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-05-13</div>
+    <h2>Reliability fixes</h2>
+    <p class="summary">Three targeted fixes from a duplicate-order incident on a single user (SNDK) + getOrders failure-mode tightening + journal v2 hook.</p>
+
+    <h3>Scan re-entrancy guard</h3>
+    <p>The scan scheduler previously used a bare <code>setInterval(() =&gt; scanFn().catch())</code>. When a scan took longer than the tick interval (slow broker, large universe), the next tick fired while the previous scan was still in flight. Both concurrent scans called <code>client.getOrders()</code> independently — and because Alpaca's orders endpoint has hundreds-of-ms eventual consistency, the second scan's <code>pendingBuySymbols</code> set frequently missed the first scan's order. Result: both scans passed the duplicate-buy guard and placed identical limit orders sub-second apart. User reported as "two SNDK buys at the same price/qty/age."</p>
+    <p>Fix: closure-local <code>scanInFlight</code> flag flipped before <code>scanFn()</code> and cleared in <code>.finally()</code>. <code>.finally()</code> guarantees the flag clears even if scanFn throws. Belt: a 10-minute stale-flag watchdog overrides the flag if for some reason it stayed set (process crash mid-promise, runtime weirdness) so a wedged engine self-recovers within two intraday ticks. Same guard applied to the 1-minute exit-check interval.</p>
+
+    <h3>getOrders failure: now aborts scan</h3>
+    <p>Previously a <code>try { ... } catch {}</code> silently swallowed errors fetching open orders. The scan continued with an empty <code>pendingBuySymbols</code> set — going blind on duplicate-order detection. Now all three BUY paths (<code>runScan</code>, <code>runTacticalScan</code>, <code>runTacticalSmartScan</code>) log a warning, push a user-visible error, and abort the BUY portion of the scan when getOrders fails. Exits + position-map sync already happened before the getOrders call, so the abort is safe for stop-loss management.</p>
+
+    <h3>Journal v2 hook in reconciler</h3>
+    <p>When <code>reconcilePendingTrades</code> transitions a row from PENDING to FILLED, it now also calls <code>createAutoJournalStub()</code> (fire-and-forget, never throws). Inserts a journal entry pre-filled with the trade mechanics (symbol, action, fill price, P&amp;L, signal) plus leading questions ("Why am I taking this trade?" for entries, "What's the lesson?" for exits). Idempotent via the <code>journal_auto_trade_uniq</code> partial unique index (migration 0032) — re-runs no-op. User opens the journal page and fills in the WHY; blank-canvas friction removed.</p>
+  </article>
+
+  <!-- ════════════════════════ 2026-05-12 ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-05-12</div>
+    <h2>Marathon updates (Phases 1-4)</h2>
+    <p class="summary">Post-launch hardening pass. Items here augment the engine ruleset's relevant sections; cross-references CLAUDE.md's 6-phase retrospective for commit SHAs.</p>
+
+    <h3>Phase 1 — money bugs from UI-lie audit</h3>
+    <ul>
+      <li><strong><code>canPlaceBuyOrder()</code> is async + takes a fresh <code>account</code> snapshot.</strong> Refreshes the wash-sale symbol set before the wash-sale check; re-runs <code>evaluatePdtState</code> before the PDT check. A 2nd day-trade in a 15-min window or a same-scan losing-close-then-re-entry now correctly evaluates against live state instead of scan-boundary state.</li>
+      <li><strong>Gate ordering inside <code>canPlaceBuyOrder()</code>:</strong> earnings blackout → sector exposure → wash-sale → PDT → daily notional → rate-limit. Cheapest checks first; the first reason found is what gets logged.</li>
+      <li><strong><code>bootEquity</code> re-snapshots at every new trading day</strong> across both remaining scan paths. The 50% equity-collapse tripwire stays calibrated as the account grows organically.</li>
+      <li><strong><code>tripSafeguardHalt()</code> writes <code>halted=true</code> to <code>trader_daily_pnl</code> immediately</strong> so the dashboard reflects halts on the next fetch.</li>
+      <li><strong>Dashboard <code>todayPnl</code> response carries <code>source</code> + <code>staleSeconds</code></strong> so the UI can render staleness honestly instead of silently mixing broker intraday with DB snapshot.</li>
+    </ul>
+
+    <h3>Phase 2 — frozen-value cleanup</h3>
+    <ul>
+      <li><strong><code>syncPositionMapFromBroker()</code> resets <code>pos.peakPrice = currentPrice</code></strong> when broker qty drops &gt; 5% (partial close — trail recalibrates from post-close size).</li>
+      <li><strong>Strategy params refresh per sync</strong> — strategy edits propagate to existing positions instead of being frozen at entry-time values.</li>
+      <li><strong>Take-profit recompute when strategy <code>takeProfitPct</code> changes</strong> — existing positions get the new target.</li>
+    </ul>
+
+    <h3>Phase 3 — live-trading safeguards</h3>
+    <ul>
+      <li><strong>5 capital circuit breakers:</strong> daily loss halt, consecutive losses halt, broker-unreachable halt, account-mismatch halt, equity-collapse halt. Every halt writes a hash-chained audit row.</li>
+      <li><strong>Account-switch detection</strong> — broker account number + boot equity captured at <code>startEngine()</code>. Mid-session change → halt.</li>
+      <li><strong>Order rate limit</strong> — 30 orders / 60s sliding window per engine. Prevents runaway loop scenarios.</li>
+      <li><strong>Daily notional cap</strong> — rejects BUYs exceeding <code>maxDailyNotionalPct × bootEquity</code>.</li>
+    </ul>
+
+    <h3>Phase 4 — Phase 5 (personalized live protections)</h3>
+    <ul>
+      <li><strong>§475(f) MTM election</strong> — self-attested via Trader → Tax election card. Disables wash-sale tracking when elected (MTM exempt from §1091).</li>
+      <li><strong>Wash-sale protection</strong> — blocks BUYs on symbols with a losing exit within the last 31 calendar days. Symbol-level, not lot-level — over-conservative but simpler.</li>
+      <li><strong>PDT protection</strong> — auto-detected from <code>account.equity &lt; $25,000</code>. Blocks BUYs (not SELLs) when <code>pdtVulnerable &amp;&amp; daytradeCount &gt;= 3</code>.</li>
+    </ul>
+  </article>
+
+  <footer class="doc-footer">
+    <p>Older entries: see <code>git log</code> on <a href="https://github.com/beacontry/Sentinel">github.com/beacontry/Sentinel</a> for pre-2026-05-12 history.</p>
+    <p style="margin-top:8px"><a href="/docs/engine-ruleset.html">← Engine Ruleset</a> &middot; <a href="/docs/beacontry-features.html">Features</a> &middot; <a href="/docs/tiers.html">Tiers</a></p>
+  </footer>
+
+</div>
+</body>
+</html>
