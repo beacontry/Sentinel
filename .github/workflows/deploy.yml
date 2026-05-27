@@ -79,6 +79,13 @@ jobs:
     name: Deploy to Production
     needs: build
     runs-on: ubuntu-latest
+    # packages:read so the auto-minted GITHUB_TOKEN can pull from ghcr.io.
+    # No long-lived PAT needed — the token is scoped to this workflow run
+    # and dies when it ends, eliminating an entire class of expired/revoked
+    # credential failures.
+    permissions:
+      contents: read
+      packages: read
 
     steps:
       - name: Deploy to droplet
@@ -92,19 +99,45 @@ jobs:
           # beacontry/sentinel) without needing to edit this workflow.
           # GHCR requires lowercase image names; `github.repository`
           # preserves the original case, so we lowercase in-script.
-          envs: GHCR_PAT,REPO,GH_USER
+          # GHCR_TOKEN is the workflow's auto-minted GITHUB_TOKEN — see
+          # CLAUDE.md / patterns-deploy.md § "Registry Auth Without PATs".
+          envs: GHCR_TOKEN,REPO,GH_USER
           script: |
-            IMAGE="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]'):latest"
-            echo "Deploying image: $IMAGE"
-            echo "$GHCR_PAT" | sudo -u sn-deploy -i podman login ghcr.io -u "$GH_USER" --password-stdin
-            echo "Login done, pulling image..."
-            sudo -u sn-deploy -i podman pull "$IMAGE"
-            echo "Pull done, replacing container..."
+            # set -e + pipefail: a podman login/pull 403 must FAIL the workflow.
+            # Pre-PR this script swallowed errors; podman run then used the
+            # locally-cached :latest tag and the health check passed against
+            # stale code — every "deploy" was a silent no-op for 10 days.
+            set -eo pipefail
+            IMAGE_LC="ghcr.io/$(echo "$REPO" | tr '[:upper:]' '[:lower:]'):latest"
+            echo "Deploying image: $IMAGE_LC"
+
+            # Login → pull → logout in one shot using ephemeral GITHUB_TOKEN.
+            # Username for GHCR login can be anything when using GITHUB_TOKEN.
+            echo "Logging into ghcr.io with workflow GITHUB_TOKEN..."
+            echo "$GHCR_TOKEN" | sudo -u sn-deploy -i podman login ghcr.io -u "$GH_USER" --password-stdin
+
+            echo "Pulling fresh image..."
+            sudo -u sn-deploy -i podman pull "$IMAGE_LC"
+
+            # Verify the pulled image is actually new — print Created date so a
+            # future regression (e.g. cached image being served) is visible in
+            # the workflow log without needing to SSH and inspect.
+            echo "Pulled image metadata:"
+            sudo -u sn-deploy -i podman image inspect "$IMAGE_LC" --format 'Created: {{.Created}} | Id: {{.Id}}'
+
+            # Logout so the ephemeral token can't be reused locally after the
+            # workflow ends. Token expires anyway, but no reason to leave creds
+            # in /run/user/<uid>/containers/auth.json.
+            echo "Logging out of ghcr.io..."
+            sudo -u sn-deploy -i podman logout ghcr.io || true
+
+            echo "Replacing container..."
             sudo -u sn-deploy -i podman stop sentinel-app 2>/dev/null || true
             sudo -u sn-deploy -i podman rm sentinel-app 2>/dev/null || true
             sudo -u sn-deploy -i bash -c 'mkdir -p /opt/apps/sentinel/cache'
-            sudo -u sn-deploy -i podman run -d --name sentinel-app --network=host --env-file /opt/apps/sentinel/.env -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache -v /opt/apps/sentinel/cache:/data/cache:Z --restart always -m 2g "$IMAGE"
+            sudo -u sn-deploy -i podman run -d --name sentinel-app --network=host --env-file /opt/apps/sentinel/.env -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache -v /opt/apps/sentinel/cache:/data/cache:Z --restart always -m 2g "$IMAGE_LC"
             echo "Container started"
+
             # Health check — wait for app to be ready
             for i in 1 2 3 4 5; do
               sleep 5
@@ -118,6 +151,6 @@ jobs:
             sudo -u sn-deploy -i bash -c 'podman logs --tail 50 sentinel-app'
             exit 1
         env:
-          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           GH_USER: ${{ github.actor }}
