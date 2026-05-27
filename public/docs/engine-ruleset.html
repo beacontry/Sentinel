@@ -529,10 +529,164 @@
 
   <!-- ===== HERO ===== -->
   <header class="hero">
-    <div class="hero-badge">Beacontry Engine &middot; v3.1 &middot; Live Trading + Adaptive Mode</div>
-    <h1>Trading Engine Ruleset</h1>
-    <p>How Beacontry scans the S&P 500, generates signals, enforces safety gates, and executes trades through Alpaca &mdash; with five circuit breakers, tamper-evident audit log, and personalized tax/PDT protections gating every live order.</p>
+    <div class="hero-badge">Beacontry Engine</div>
+    <h1>The trading engine, documented</h1>
+    <p>Beacontry runs your strategy on real-money brokerage accounts. Every signal traces back to indicators you can audit. Every order leaves a hash-chained record. Per-symbol params come from a GA tuned against your training window — not a vendor's secret model. Tax and PDT rules are enforced before the order leaves the engine, not after a 1099. This page is the full rulebook.</p>
   </header>
+
+  <!-- ===== DIFFERENTIATORS ===== -->
+  <section class="section" id="differentiators" style="border-top:none;padding-top:0">
+    <div class="section-header">
+      <div class="section-num">&middot;</div>
+      <h2>Why Beacontry is different</h2>
+    </div>
+    <div class="mode-grid" style="margin-top:18px">
+      <div class="mode-card" style="border-color:var(--accent)">
+        <span class="mode-tag tag-signal">Trust</span>
+        <div class="mode-name">Hash-chained audit log</div>
+        <div class="mode-params" style="grid-template-columns:1fr">
+          <span class="mode-param-label" style="text-align:left">Every order, every halt, every config change writes a tamper-evident row. Reproduce any decision the engine made.</span>
+        </div>
+      </div>
+      <div class="mode-card" style="border-color:var(--accent)">
+        <span class="mode-tag tag-signal">Tuning</span>
+        <div class="mode-name">Per-symbol GA-tuned strategy</div>
+        <div class="mode-params" style="grid-template-columns:1fr">
+          <span class="mode-param-label" style="text-align:left">Each S&amp;P 500 name gets its own optimized stop / take-profit / trail / hold-period. Most platforms apply one strategy globally.</span>
+        </div>
+      </div>
+      <div class="mode-card" style="border-color:var(--accent)">
+        <span class="mode-tag tag-signal">Reach</span>
+        <div class="mode-name">Multi-broker, your account</div>
+        <div class="mode-params" style="grid-template-columns:1fr">
+          <span class="mode-param-label" style="text-align:left">Alpaca, IBKR, Tradier. Your brokerage, your assets &mdash; Beacontry executes through your account, never takes custody.</span>
+        </div>
+      </div>
+      <div class="mode-card" style="border-color:var(--accent)">
+        <span class="mode-tag tag-signal">Pre-trade</span>
+        <div class="mode-name">Tax + PDT enforced</div>
+        <div class="mode-params" style="grid-template-columns:1fr">
+          <span class="mode-param-label" style="text-align:left">Wash-sale tracker. §475(f) MTM election. PDT day-trade counter. The engine refuses orders that violate these rules before the broker sees them.</span>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-top:24px;color:var(--text-secondary)">Two more we keep free across all tiers: <strong style="color:var(--text-primary)">Congressional trade tracking</strong> (the same House + Senate PTRs Quiver charges $10/mo for) and <strong style="color:var(--text-primary)">daily AI market digest</strong> (cached daily, shared across users). See <a href="/docs/tiers.html" style="color:var(--accent)">tiers</a> for the full free-vs-paid breakdown.</p>
+  </section>
+
+  <!-- ===== COMPARISON SNAPSHOT ===== -->
+  <section class="section" id="comparison">
+    <div class="section-header">
+      <div class="section-num">&middot;</div>
+      <h2>How Beacontry compares</h2>
+    </div>
+    <p>Beacontry sits in the mid-premium band of retail trading platforms. It's more capable than the charting-first tools (TradingView, Stock Rover) and the auto-execute-only ones (Composer.trade, Capitalise.ai), but cheaper than the institutional packages (Trade Ideas Premium, full Bloomberg Terminal).</p>
+    <div class="table-wrap" style="margin:16px 0">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Platform</th>
+            <th>Price</th>
+            <th>Engine + per-symbol tuning</th>
+            <th>Audit trail</th>
+            <th>Tax-aware</th>
+            <th>Free Congress data</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background:var(--accent-bg)">
+            <td><strong>Beacontry</strong></td>
+            <td class="mono">$0 / $20 / $40</td>
+            <td>Per-symbol GA</td>
+            <td>Hash-chained</td>
+            <td>Wash + MTM + PDT</td>
+            <td>Yes</td>
+          </tr>
+          <tr>
+            <td>Trade Ideas</td>
+            <td class="mono">$84&ndash;228/mo</td>
+            <td>Holly AI (black-box, global)</td>
+            <td>None public</td>
+            <td>No</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Trendspider</td>
+            <td class="mono">$48&ndash;148/mo</td>
+            <td>Multi-timeframe rules</td>
+            <td>None public</td>
+            <td>No</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Composer.trade</td>
+            <td class="mono">Free + $30+/mo</td>
+            <td>Visual builder (global)</td>
+            <td>None public</td>
+            <td>No</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Capitalise.ai</td>
+            <td class="mono">$100&ndash;300/mo</td>
+            <td>Natural-language rules</td>
+            <td>None public</td>
+            <td>No</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Quiver Quantitative</td>
+            <td class="mono">$10&ndash;50/mo</td>
+            <td>None (alt-data only)</td>
+            <td>n/a</td>
+            <td>No</td>
+            <td>Paywalled $10/mo</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="color:var(--text-muted);font-size:0.92rem">No retail platform stacks all five &mdash; per-symbol GA tuning, hash-chained audit, multi-broker, tax enforcement, free Congressional data &mdash; under one subscription. That's the gap Beacontry fills.</p>
+  </section>
+
+  <!-- ===== HOW IT PROTECTS YOU ===== -->
+  <section class="section" id="protection-overview">
+    <div class="section-header">
+      <div class="section-num">&middot;</div>
+      <h2>How Beacontry protects you</h2>
+    </div>
+    <p>Safety isn't one feature &mdash; it's a stack of layers that fire before, during, and after every trade. The four families:</p>
+    <div class="mode-grid" style="margin-top:18px">
+      <div class="mode-card">
+        <span class="mode-tag tag-tactical">Pre-trade</span>
+        <div class="mode-name">Six gates before order placement</div>
+        <div class="mode-params" style="grid-template-columns:1fr">
+          <span class="mode-param-label" style="text-align:left">Earnings blackout, sector exposure cap, wash-sale (or MTM-exempt), PDT day-trade count, daily notional cap, order rate limit. First failing gate is logged. <a href="#filters" style="color:var(--accent)">See §06</a>.</span>
+        </div>
+      </div>
+      <div class="mode-card">
+        <span class="mode-tag tag-tactical">Capital</span>
+        <div class="mode-name">Five circuit breakers</div>
+        <div class="mode-params" style="grid-template-columns:1fr">
+          <span class="mode-param-label" style="text-align:left">Daily loss halt, consecutive-loss halt, broker-unreachable halt, account-switch halt, equity-collapse halt. Each writes a hash-chained audit row. <a href="#circuit-breakers" style="color:var(--accent)">See §17</a>.</span>
+        </div>
+      </div>
+      <div class="mode-card">
+        <span class="mode-tag tag-tactical">Tax &amp; reg</span>
+        <div class="mode-name">Wash-sale + PDT enforcement</div>
+        <div class="mode-params" style="grid-template-columns:1fr">
+          <span class="mode-param-label" style="text-align:left">Symbol-level wash-sale tracker (31-day window, MTM-exempt when elected). PDT day-trade counter blocks BUYs when vulnerable. <a href="#tax-pdt" style="color:var(--accent)">See §18</a>.</span>
+        </div>
+      </div>
+      <div class="mode-card">
+        <span class="mode-tag tag-tactical">Forensics</span>
+        <div class="mode-name">Tamper-evident audit log</div>
+        <div class="mode-params" style="grid-template-columns:1fr">
+          <span class="mode-param-label" style="text-align:left">Every privileged action writes an append-only, hash-chained row. Verify the chain in one query &mdash; any tampering shows up. <a href="#audit-log" style="color:var(--accent)">See §19</a>.</span>
+        </div>
+      </div>
+    </div>
+    <p style="margin-top:18px;color:var(--text-secondary)">Plus: every position has a broker-side protective stop synced every 5 minutes regardless of scan health; manual orders are blocked while the engine is running to prevent position-map drift; idempotency keys on every order prevent network-hiccup duplicates. The deeper sections below cover each layer in detail.</p>
+  </section>
 
   <!-- ===== TOC ===== -->
   <nav class="toc">
