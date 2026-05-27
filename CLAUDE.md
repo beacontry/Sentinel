@@ -6,11 +6,11 @@
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)
-- Drizzle ORM + PostgreSQL (40 migrations as of `0039_users_billing_status.sql`)
+- Drizzle ORM + PostgreSQL (41 migrations as of `0040_trader_engine_snapshot.sql`)
 - Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
-- Vitest for testing (467 tests across 27 suites: indicators, analyzer, accuracy, validators, signal-translator, rate-limiter, db-timeout, crypto, audit, engine-safeguards incl. wash-sale + PDT, guide-search, spaced-repetition, market-hours, market-regime, position-intent, reconcile-broker-exit, market-close-guard, reconcile-pending-trades, tax-report, congress-house-parser, congress-senate-parser, reddit, tiers, billing-prices, system-config, breakeven-promote, dynamic-trail)
+- Vitest for testing (567 tests across 40 suites — includes engine-safeguards (wash-sale + PDT), swap-sell planner integration, engine-snapshot serialize/deserialize, scan cancellation, take-profit graduation, accuracy, audit, analyzer, breakeven-promote, dynamic-trail, market-regime, tax-report, etc.)
 - Alpaca Markets API for paper/live trading
 - Stripe for billing (Free / Trader $20 / Premium $40 / Self-Hosted) — webhook handler at `/api/webhooks/stripe`, sandbox + portal at `/api/billing/{checkout,portal}`
 
@@ -95,6 +95,44 @@ override (the previous hung scan's flag was never null'd). Now the
 scheduler checks scan age vs `STALE_SCAN_OVERRIDE_MS` (10 min) and runs
 sync anyway when exceeded. Logs warn-level so the operator sees these
 fires in journald.
+
+**Cooperative scan cancellation (PR 21c, 2026-05-26).** Closes the
+orphan-promise hole noted by PR 17 audit P1 #6. Each scan captures
+`myGeneration = ++engine.scanGeneration` at start. When runScanGuarded
+fires a 10-min override, the new scan bumps the counter; the stale
+scan calls `throwIfScanCancelled(engine, myGeneration)` at every major
+yield point (after enforceDailyLossHalt, between per-symbol loop
+iterations, before the swap-sell post-loop block, etc) and throws
+`ScanCancelledError` if its generation no longer matches. Top-level
+`runScan` / `runTacticalScan` / `runTacticalSmartScan` catch
+`ScanCancelledError` and exit cleanly without erroring. Non-cooperative
+HTTP requests that are already in-flight still resolve to /dev/null —
+the engine just stops acting on their results.
+
+**Engine state persistence (PR 21b, 2026-05-26).** Before this PR, only
+`mode` survived a deploy/restart. Now `src/lib/engine-snapshot.ts`
+serializes the position map + dailyLoss + dailyNotional +
+consecutiveLosses + cooldowns + pendingExits + recentOrderTimestamps +
+exitRejectionCount + exitSuppressedUntil + unprotectedSymbols + boot
+equity to a JSONB blob in the new `trader_engine_snapshot` table (one
+row per user, migration `0040`). Written at the end of every successful
+`runScan` (best-effort — a failed write doesn't abort the scan).
+Hydrated in `startEngine` after cooldown-from-DB hydration; snapshots
+older than `SNAPSHOT_MAX_AGE_MS = 60 min` are discarded (broker is
+authoritative past that). Versioned payload (`v: 1`); deserialize
+returns null on version mismatch so a future-schema snapshot doesn't
+crash boot. Audit row `ENGINE_STARTED` with `origin: "snapshot_hydrate"`
+fires on every successful hydrate so the trail captures the event.
+
+**Swap-sell planner extraction (PR 21a, 2026-05-26).** The post-loop
+swap-sell redeployment decision tree extracted from inline runScan into
+`planSwapSellRedeploy()` — a pure function that returns
+`{attempts, skips, reachedHardCap, reachedExposureCap}`. runScan now
+calls the planner, then executes only the I/O-bound parts (smart
+filters, canPlaceBuyOrder with sector context, placeEngineOrder,
+positionMap update). The planner's decision logic is integration-tested
+end-to-end in `tests/unit/swap-sell-plan.test.ts` with realistic
+multi-gate scenarios (cooldown + pending + exposure + cap interactions).
 
 ### Screener (Shared)
 The screener scans market data and is shared across users (not user-specific). It pushes actionable signals (BUY/STRONG_BUY, confidence ≥ 0.6) to the engine via `pushExternalSignal()`. Signals are in-memory, expire after 30 minutes. Optimization runs are admin-only but results (strategy params) are shared globally.
@@ -434,9 +472,9 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed` — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
 
 ## Migrations
-Browse `drizzle/*.sql` for the full list (40 migrations as of `0039_users_billing_status.sql`). All idempotent (`IF NOT EXISTS`).
+Browse `drizzle/*.sql` for the full list (41 migrations as of `0040_trader_engine_snapshot.sql`). All idempotent (`IF NOT EXISTS`).
 
-> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0039 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
+> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0040 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 
 ## Education Section
 

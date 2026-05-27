@@ -46,8 +46,49 @@ import { createAutoJournalStub } from "./journal-auto-stub";
 import { getUserTier } from "./tiers-server";
 import { userHasTier } from "./tiers";
 import { sendPushToUser } from "./push";
+import {
+  serializeEngineState,
+  saveEngineSnapshot,
+  loadEngineSnapshot,
+} from "./engine-snapshot";
 
 const log = createRouteLogger("trading-engine");
+
+// ─── Cooperative scan cancellation (PR 21c, 2026-05-26) ────────────────────
+//
+// A scan that gets stuck (e.g., broker network hang) can outlive the 10-min
+// override window in runScanGuarded. When that happens, runScanGuarded fires
+// a fresh scan; both end up executing simultaneously, racing on engine state
+// (cooldowns, dailyNotional, broker order placement).
+//
+// Cancellation model: each scan captures `myGeneration = ++engine.scanGeneration`
+// at start. When a new scan starts (override-fired or scheduler-fired), it
+// bumps engine.scanGeneration. The stale scan calls throwIfScanCancelled()
+// at every major yield point — if its captured generation no longer matches
+// engine.scanGeneration, throws ScanCancelledError and exits early.
+//
+// Top-level scan wrappers (runScan, runTacticalScan, runTacticalSmartScan)
+// catch ScanCancelledError and return without erroring — by design, this is
+// expected behavior when override fires.
+//
+// Non-cooperative cancellation (true Promise.cancel or AbortController on
+// every fetch) would need plumbing through every async dep. The cooperative
+// approach is good enough: we stop placing orders, stop updating state, the
+// in-flight HTTP request that's hung still resolves to /dev/null when it
+// eventually completes.
+
+export class ScanCancelledError extends Error {
+  constructor(myGen: number, activeGen: number) {
+    super(`Scan cancelled: generation ${myGen} superseded by ${activeGen}`);
+    this.name = "ScanCancelledError";
+  }
+}
+
+export function throwIfScanCancelled(engine: EngineState, myGeneration: number): void {
+  if (engine.scanGeneration !== myGeneration) {
+    throw new ScanCancelledError(myGeneration, engine.scanGeneration);
+  }
+}
 
 // ─── Engine State (globalThis singleton) ─────────────────────────────────────
 
@@ -220,6 +261,13 @@ export interface EngineState {
    *  not the Groq-driven layers they don't pay for. Tier picks up next
    *  time the engine is restarted. */
   userTier: "free" | "trader" | "premium" | "enterprise" | null;
+  /** PR 21c (2026-05-26) — Monotonic counter for cooperative cancellation
+   *  of orphan scan promises. Each scan increments and captures the value
+   *  into a local `myGeneration`. At every yield point, the scan body calls
+   *  `throwIfScanCancelled(engine, myGeneration)` — if a newer scan has
+   *  superseded it, throws ScanCancelledError and the orphan exits cleanly
+   *  instead of placing stale orders or corrupting engine state. */
+  scanGeneration: number;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -268,6 +316,7 @@ function createDefaultEngine(): EngineState {
     effectiveMode: null,
     adaptiveRegime: null,
     userTier: null,
+    scanGeneration: 0,
   };
 }
 
@@ -1482,6 +1531,134 @@ const MODE_SWAP_SELL_DEFAULT: Record<EngineMode, SwapSellMode> = {
 
 export function getSwapSellMode(activeMode: EngineMode): SwapSellMode {
   return MODE_SWAP_SELL_DEFAULT[activeMode];
+}
+
+// ─── Swap-sell planning (pure helper, extracted PR 21 2026-05-26) ───────────
+//
+// Extracted from runScan's inline swap-sell block so the decision tree is
+// testable without mocking the entire engine. The pure planner takes the
+// inputs of "should we attempt to BUY this deferred candidate" and returns
+// per-candidate decisions (attempt / skip+reason) in priority order. The
+// actual broker call + bookkeeping stays in runScan.
+//
+// The plan respects (in this order):
+//   1. swap-sell mode disabled → empty plan
+//   2. no exits fired this scan → empty plan
+//   3. position-map already at hardCap → empty plan
+//   4. per-candidate gates: in pendingBuySymbols, in cooldown window,
+//      qty rounds to 0, notional > buyingPower, would breach exposure cap
+//   5. cap-of-candidates: at most `exitsThisScan` attempts (one per freed slot)
+
+export type SwapSellSkipReason =
+  | "in_pending_buys"
+  | "cooldown_active"
+  | "qty_zero"
+  | "insufficient_buying_power"
+  | "exposure_cap_breach";
+
+export interface SwapSellPlanCandidate {
+  symbol: string;
+  confidence: number;
+  currentPrice: number;
+  signal: SignalType;
+}
+
+export interface SwapSellPlanInputs {
+  swapMode: SwapSellMode;
+  exitsThisScan: number;
+  deferredCandidates: ReadonlyArray<SwapSellPlanCandidate>;
+  positionMapSize: number;
+  hardCap: number;
+  pendingBuySymbols: ReadonlySet<string>;
+  cooldowns: ReadonlyMap<string, number>;
+  cooldownMs: number;
+  now: number;
+  // For sizing/exposure decisions
+  equity: number;
+  positionPct: number;
+  maxPositionSize: number;
+  buyingPower: number;
+  currentExposure: number;
+  maxExposure: number;
+}
+
+export interface SwapSellPlanDecision {
+  symbol: string;
+  decision: "attempt" | "skip";
+  reason?: SwapSellSkipReason;
+  qty?: number;
+  orderCost?: number;
+}
+
+export interface SwapSellPlan {
+  attempts: SwapSellPlanDecision[];
+  skips: SwapSellPlanDecision[];
+  reachedHardCap: boolean;
+  reachedExposureCap: boolean;
+}
+
+export function planSwapSellRedeploy(input: SwapSellPlanInputs): SwapSellPlan {
+  const attempts: SwapSellPlanDecision[] = [];
+  const skips: SwapSellPlanDecision[] = [];
+
+  if (input.swapMode !== "enabled" || input.exitsThisScan <= 0 || input.deferredCandidates.length === 0) {
+    return { attempts, skips, reachedHardCap: false, reachedExposureCap: false };
+  }
+
+  // Sort by confidence desc. Caller passes deferredCandidates already in
+  // insertion order — sort here so the planner owns ranking (mirrors the
+  // explicit sort runScan does before consuming the plan).
+  const ranked = [...input.deferredCandidates].sort((a, b) => b.confidence - a.confidence);
+
+  let positionsCount = input.positionMapSize;
+  let runningExposure = input.currentExposure;
+  let reachedHardCap = false;
+  let reachedExposureCap = false;
+
+  for (const cand of ranked) {
+    if (positionsCount >= input.hardCap) {
+      reachedHardCap = true;
+      break;
+    }
+    if (input.pendingBuySymbols.has(cand.symbol)) {
+      skips.push({ symbol: cand.symbol, decision: "skip", reason: "in_pending_buys" });
+      continue;
+    }
+    const lastBuyAt = input.cooldowns.get(cand.symbol);
+    if (lastBuyAt !== undefined && input.now - lastBuyAt < input.cooldownMs) {
+      skips.push({ symbol: cand.symbol, decision: "skip", reason: "cooldown_active" });
+      continue;
+    }
+    const positionValue = input.equity * input.positionPct;
+    const qty = Math.min(Math.floor(positionValue / cand.currentPrice), input.maxPositionSize);
+    if (qty <= 0) {
+      skips.push({ symbol: cand.symbol, decision: "skip", reason: "qty_zero" });
+      continue;
+    }
+    const orderCost = qty * cand.currentPrice;
+    if (orderCost > input.buyingPower) {
+      skips.push({ symbol: cand.symbol, decision: "skip", reason: "insufficient_buying_power" });
+      continue;
+    }
+    if (runningExposure + orderCost > input.maxExposure) {
+      skips.push({ symbol: cand.symbol, decision: "skip", reason: "exposure_cap_breach" });
+      reachedExposureCap = true;
+      // Same as the live engine: exposure breach ends the loop (one over-cap
+      // candidate means all remaining lower-confidence ones would also breach).
+      break;
+    }
+
+    attempts.push({ symbol: cand.symbol, decision: "attempt", qty, orderCost });
+    positionsCount++;
+    runningExposure += orderCost;
+
+    // Cap attempts at exitsThisScan — one redeployment per freed slot. The
+    // live engine's `if (redeployed >= exitsThisScan) break` after the
+    // placeOrder succeeds. We mirror that here at plan time.
+    if (attempts.length >= input.exitsThisScan) break;
+  }
+
+  return { attempts, skips, reachedHardCap, reachedExposureCap };
 }
 
 const MODE_GRADUATION_DEFAULT: Record<EngineMode, GraduationMode> = {
@@ -2859,6 +3036,21 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   const engine = getEngine(engineUserId);
   if (!engine.userId || !engine.running || engine.halted) return;
   if (!isMarketOpen()) return;
+  // PR 21c — generation capture for cooperative cancellation
+  const myGeneration = ++engine.scanGeneration;
+  try {
+    return await runTacticalScanInner(engine, myGeneration);
+  } catch (err) {
+    if (err instanceof ScanCancelledError) {
+      log.warn({ userId: engine.userId, myGeneration, activeGeneration: engine.scanGeneration },
+        "Tactical scan exited early — superseded by newer generation");
+      return;
+    }
+    throw err;
+  }
+}
+
+async function runTacticalScanInner(engine: EngineState, myGeneration: number): Promise<void> {
   // Phase 3 — mark scan as in-flight so dashboard can show "scanning…"
   engine.scanStartedAt = new Date();
   try { SCAN_UNIVERSE = await getSP500Symbols(); } catch { /* keep current */ }
@@ -2882,7 +3074,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   let client: BrokerClient;
   let account: BrokerAccount;
   try {
-    const resolved = await resolveBrokerClient(engine.userId);
+    const resolved = await resolveBrokerClient(engine.userId!);
     if (!resolved) { pushError(engine, "No usable broker connection"); return; }
     client = resolved.client;
     account = await client.getAccount();
@@ -2917,7 +3109,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
 
   const equity = account.equity;
   const provider = getMarketDataProvider();
-  const positionMap = getPositionMap(engine?.userId ?? engineUserId);
+  const positionMap = getPositionMap(engine.userId ?? undefined);
 
   // Fetch SPY bars for trend analysis
   let spyBars: Bar[];
@@ -3043,7 +3235,7 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
     // ── ENTRY: SPY above trend SMA → buy equal-weight (simple, proven) ──
     log.info("TACTICAL ENTRY — SPY above trend SMA, buying in");
 
-    const riskLimits = await loadRiskLimits(engine.userId);
+    const riskLimits = await loadRiskLimits(engine.userId!);
     const perPosition = equity * riskLimits.positionPct;
 
     for (const symbol of SCAN_UNIVERSE) {
@@ -3119,6 +3311,21 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   const engine = getEngine(engineUserId);
   if (!engine.userId || !engine.running || engine.halted) return;
   if (!isMarketOpen()) return;
+  // PR 21c — generation capture for cooperative cancellation
+  const myGeneration = ++engine.scanGeneration;
+  try {
+    return await runTacticalSmartScanInner(engine, myGeneration);
+  } catch (err) {
+    if (err instanceof ScanCancelledError) {
+      log.warn({ userId: engine.userId, myGeneration, activeGeneration: engine.scanGeneration },
+        "Tactical-smart scan exited early — superseded by newer generation");
+      return;
+    }
+    throw err;
+  }
+}
+
+async function runTacticalSmartScanInner(engine: EngineState, myGeneration: number): Promise<void> {
   engine.scanStartedAt = new Date();
   // Adaptive mode refresh — runs even on the tactical-smart scan path so
   // adaptive engines stay calibrated regardless of which scan loop invokes.
@@ -3147,7 +3354,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   let client: BrokerClient;
   let account: BrokerAccount;
   try {
-    const resolved = await resolveBrokerClient(engine.userId);
+    const resolved = await resolveBrokerClient(engine.userId!);
     if (!resolved) { pushError(engine, "No usable broker connection"); return; }
     client = resolved.client;
     account = await client.getAccount();
@@ -3169,7 +3376,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 
   const equity = account.equity;
   const provider = getMarketDataProvider();
-  const positionMap = getPositionMap(engine?.userId ?? engineUserId);
+  const positionMap = getPositionMap(engine.userId ?? undefined);
 
   // SPY trend check (same as tactical)
   let spyBars: Bar[];
@@ -3288,7 +3495,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   } else if (!isInvested && spyPrice > sma50) {
     // ── ENTRY: Use screener signals + analyzeBars to pick best stocks ──
     log.info("TACTICAL SMART ENTRY — picking stocks via signals");
-    const riskLimits = await loadRiskLimits(engine.userId);
+    const riskLimits = await loadRiskLimits(engine.userId!);
 
     // Score all stocks in universe + top-confidence screener externals
     // (capped — see TACTICAL_MAX_EXTERNAL_SYMBOLS). The full screener
@@ -3410,7 +3617,7 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 
   } else if (isInvested && !confirmedBelow) {
     // ── ACTIVE MANAGEMENT: scan for swaps and additions while holding ──
-    const riskLimits = await loadRiskLimits(engine.userId);
+    const riskLimits = await loadRiskLimits(engine.userId!);
     // Treat broker positions, in-memory positionMap, AND symbols with pending
     // buy orders as "held" — limit orders may take minutes to fill, and the
     // broker's getPositions() doesn't include them while pending.
@@ -3437,6 +3644,10 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
         activeMgmtAborted = allSymbols.length - allSymbols.indexOf(symbol);
         break;
       }
+      // PR 21c — cooperative cancellation. An override-fired stale scan
+      // exits cleanly here instead of placing orders against the newer scan's
+      // state.
+      throwIfScanCancelled(engine, myGeneration);
       try {
         const bars = await Promise.race([
           provider.fetchBars(symbol, 90, "1d"),
@@ -3679,6 +3890,27 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
 async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string): Promise<void> {
   const engine = getEngine(engineUserId);
 
+  // PR 21c — capture this scan's generation for cooperative cancellation.
+  // A subsequent scan that overrides this one bumps engine.scanGeneration;
+  // throwIfScanCancelled() at yield points then throws ScanCancelledError
+  // and this orphan exits cleanly.
+  const myGeneration = ++engine.scanGeneration;
+
+  try {
+    return await runScanInner(barResolution, engine, myGeneration);
+  } catch (err) {
+    if (err instanceof ScanCancelledError) {
+      log.warn(
+        { userId: engine.userId, myGeneration, activeGeneration: engine.scanGeneration },
+        "Scan exited early — superseded by newer generation"
+      );
+      return;
+    }
+    throw err;
+  }
+}
+
+async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myGeneration: number): Promise<void> {
   // Refresh S&P 500 universe (auto-updates daily from Wikipedia)
   try { SCAN_UNIVERSE = await getSP500Symbols(); } catch { /* keep current */ }
 
@@ -3763,6 +3995,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   // 2. Daily-loss halt — shared helper, runs in every scan path so the
   //    cap can't be bypassed by mode.
   if (await enforceDailyLossHalt(engine, client, today)) return;
+  throwIfScanCancelled(engine, myGeneration);
 
   // 3. Market health check — SPY trend filter
   const provider = getMarketDataProvider();
@@ -3878,7 +4111,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
   // No-op when MTM is elected. One DB query per scan max (cached for 5 min).
   await maybeRefreshWashSaleSet(engine);
 
-  const positionMap = getPositionMap(engine?.userId ?? engineUserId);
+  const positionMap = getPositionMap(engine.userId ?? undefined);
 
   // Sync position map with broker — handles manual sells/buys on Alpaca
   await syncPositionMapFromBroker(brokerPositions, positionMap, engine.userId!, client);
@@ -3966,6 +4199,9 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       if (engine.halted) break;
+      // Cooperative cancellation — abandon mid-loop if a newer scan
+      // superseded this one (PR 21c).
+      throwIfScanCancelled(engine, myGeneration);
 
       // Fetch bars and analyze
       const days = barResolution === "5m" ? 5 : BARS_FOR_ANALYSIS;
@@ -4487,88 +4723,93 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     }
   }
 
+  // Cancellation check before swap-sell — the orphan-scan window where this
+  // mattered most was the post-loop block placing fresh BUYs after exits.
+  throwIfScanCancelled(engine, myGeneration);
+
   // 5b. Swap-sell post-loop redeploy.
   //
-  // If any exits fired during the loop AND we have deferred STRONG_BUY
-  // candidates that hit the position cap before the exits happened, BUY
-  // the top-confidence candidates up to the slots freed. Otherwise the
-  // freed capital sits until the next scan tick (up to 15 min wait).
-  //
-  // Re-check position cap inline because mid-loop exits already adjusted
-  // positionMap.size. Gates per candidate: not in pendingBuySymbols (race
-  // with another buy), passes canPlaceBuyOrder (PDT/notional/rate-limit),
-  // passes smart filters (earnings blackout etc.), still has cash.
+  // Decision tree extracted to planSwapSellRedeploy() — pure function that
+  // returns per-candidate {attempt|skip+reason}. The thin loop below just
+  // consumes the plan and executes the broker calls. See PR 21a (2026-05-26)
+  // and tests/unit/swap-sell-plan.test.ts for the planner contract.
   if (swapMode === "enabled" && exitsThisScan > 0 && deferredCandidates.length > 0) {
     const riskLimits = await loadRiskLimits(engine.userId);
-    deferredCandidates.sort((a, b) => b.confidence - a.confidence);
-    const hardCap = Math.floor(riskLimits.maxPositions * 1.5);
-    // Mirror the in-loop entry path's exposure cap for parity (audit P1 #3).
     const swapEffectiveMaxExposure =
       riskLimits.maxExposure < 0
         ? equity * Math.abs(riskLimits.maxExposure)
         : riskLimits.maxExposure > 0
           ? riskLimits.maxExposure
           : equity * 1.5;
-    const swapCooldownNow = Date.now();
-    const COOLDOWN_MS = 150 * 60 * 1000; // mirrors in-loop entry gate
+    const COOLDOWN_MS = 150 * 60 * 1000;
+    const currentExposure = Array.from(positionMap.values())
+      .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
+
+    const plan = planSwapSellRedeploy({
+      swapMode,
+      exitsThisScan,
+      deferredCandidates: deferredCandidates.map((c) => ({
+        symbol: c.symbol,
+        confidence: c.confidence,
+        currentPrice: c.currentPrice,
+        signal: c.signal,
+      })),
+      positionMapSize: positionMap.size,
+      hardCap: Math.floor(riskLimits.maxPositions * 1.5),
+      pendingBuySymbols,
+      cooldowns: engine.cooldowns,
+      cooldownMs: COOLDOWN_MS,
+      now: Date.now(),
+      equity,
+      positionPct: riskLimits.positionPct,
+      maxPositionSize: riskLimits.maxPositionSize,
+      buyingPower: account.buyingPower,
+      currentExposure,
+      maxExposure: swapEffectiveMaxExposure,
+    });
+
+    // Log skips at debug level so journald carries the decision trace
+    // matching pre-PR-21 behavior (where skips were logged inline).
+    for (const skip of plan.skips) {
+      log.debug({ symbol: skip.symbol, reason: skip.reason }, "Swap-sell candidate skipped (planner)");
+    }
+
     let redeployed = 0;
-    for (const cand of deferredCandidates) {
-      if (positionMap.size >= hardCap) break;
-      if (pendingBuySymbols.has(cand.symbol)) continue;
-      // Cooldown gate — symbol bought in the last 150 min shouldn't be
-      // re-bought via swap-sell either. Audit P1 #3 (2026-05-26).
-      const lastBuyAt = engine.cooldowns.get(cand.symbol);
-      if (lastBuyAt && swapCooldownNow - lastBuyAt < COOLDOWN_MS) {
-        log.debug(
-          { symbol: cand.symbol, ageMs: swapCooldownNow - lastBuyAt },
-          "Swap-sell candidate skipped — cooldown active"
-        );
-        continue;
-      }
+    // candWithBars allows us to look up the deferredCandidate's bars (for
+    // passesSmartFilters) and indicators by symbol — not part of the planner's
+    // pure surface.
+    const candBySymbol = new Map(deferredCandidates.map((c) => [c.symbol, c]));
+
+    for (const attempt of plan.attempts) {
+      const candFull = candBySymbol.get(attempt.symbol);
+      if (!candFull) continue;
+      const qty = attempt.qty!;
+      const orderCost = attempt.orderCost!;
+
       try {
-        const strategy = await resolveStrategy(engine.userId, cand.symbol);
-        const positionValue = equity * riskLimits.positionPct;
-        const qty = Math.min(
-          Math.floor(positionValue / cand.currentPrice),
-          riskLimits.maxPositionSize
-        );
-        if (qty <= 0) continue;
-        const orderCost = qty * cand.currentPrice;
-        if (orderCost > account.buyingPower) continue;
-        // Exposure cap — sum of current open exposure + this BUY must not
-        // exceed effectiveMaxExposure. Same calc the in-loop entry path
-        // does (audit P1 #3 — was silently bypassed in swap-sell).
-        const currentExposure = Array.from(positionMap.values())
-          .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
-        if (currentExposure + orderCost > swapEffectiveMaxExposure) {
-          log.info(
-            { symbol: cand.symbol, currentExposure: currentExposure.toFixed(2), maxExposure: swapEffectiveMaxExposure.toFixed(2) },
-            "Swap-sell candidate skipped — max exposure reached"
-          );
-          break;
-        }
-        const filterResult = await passesSmartFilters(cand.symbol, cand.bars);
+        // Filters that need I/O (smart filters, canPlaceBuyOrder with sector
+        // context) run here — outside the planner because they require DB +
+        // async work. Mirrors the in-loop entry path's gate order.
+        const filterResult = await passesSmartFilters(candFull.symbol, candFull.bars);
         if (!filterResult.allowed) {
-          log.info({ symbol: cand.symbol, reason: filterResult.reason }, "Swap-sell candidate blocked by smart filter");
+          log.info({ symbol: candFull.symbol, reason: filterResult.reason }, "Swap-sell candidate blocked by smart filter");
           continue;
         }
-        // canPlaceBuyOrder with scanSectorCtx so sector-concentration cap
-        // is honored. The in-loop entry path passes this; pre-audit the
-        // swap-sell path silently bypassed it.
         const gate = await canPlaceBuyOrder(
-          engine, cand.symbol, orderCost, riskLimits,
+          engine, candFull.symbol, orderCost, riskLimits,
           engine.boot?.equity ?? equity, account, scanSectorCtx ?? undefined
         );
         if (!gate.ok) {
           log.warn(
-            { symbol: cand.symbol, qty, notional: orderCost, reason: gate.reason, ...gate.details },
+            { symbol: candFull.symbol, qty, notional: orderCost, reason: gate.reason, ...gate.details },
             "Swap-sell BUY blocked"
           );
           continue;
         }
-        const limitPrice = (cand.currentPrice * 1.001).toFixed(2);
+        const strategy = await resolveStrategy(engine.userId, candFull.symbol);
+        const limitPrice = (candFull.currentPrice * 1.001).toFixed(2);
         const order = await placeEngineOrder(client, {
-          symbol: cand.symbol,
+          symbol: candFull.symbol,
           side: "buy",
           qty: String(qty),
           type: "limit",
@@ -4576,41 +4817,37 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
           limitPrice,
         });
         recordOrderPlacement(engine, "buy", orderCost);
-        pendingBuySymbols.add(cand.symbol);
-        // Set cooldown so a swap-sell BUY here can't be re-bought via the
-        // next scan's in-loop entry path (or another swap-sell). Mirrors
-        // line 4418's cooldown set after a normal BUY.
-        engine.cooldowns.set(cand.symbol, Date.now());
+        pendingBuySymbols.add(candFull.symbol);
+        engine.cooldowns.set(candFull.symbol, Date.now());
         await logTrade(
-          cand.symbol,
-          `swap_sell_redeploy:${cand.signal}`,
+          candFull.symbol,
+          `swap_sell_redeploy:${candFull.signal}`,
           "BUY",
           qty,
-          cand.currentPrice,
+          candFull.currentPrice,
           "PENDING",
           null,
-          `Swap-sell redeploy (confidence ${cand.confidence.toFixed(3)})`,
+          `Swap-sell redeploy (confidence ${candFull.confidence.toFixed(3)})`,
           order.id,
           null,
           engine.userId
         );
-        positionMap.set(cand.symbol, {
-          symbol: cand.symbol,
+        positionMap.set(candFull.symbol, {
+          symbol: candFull.symbol,
           qty,
-          entryPrice: cand.currentPrice,
-          peakPrice: cand.currentPrice,
-          stopLoss: cand.currentPrice * (1 - strategy.stopLossPct),
-          takeProfit: cand.currentPrice * (1 + strategy.takeProfitPct),
+          entryPrice: candFull.currentPrice,
+          peakPrice: candFull.currentPrice,
+          stopLoss: candFull.currentPrice * (1 - strategy.stopLossPct),
+          takeProfit: candFull.currentPrice * (1 + strategy.takeProfitPct),
           trailingStopPct: strategy.trailingStopPct,
           entryDate: new Date(),
           holdPeriod: strategy.holdPeriod,
         });
         redeployed++;
         tradesThisScan++;
-        if (redeployed >= exitsThisScan) break;
       } catch (err) {
         log.error(
-          { symbol: cand.symbol, err: err instanceof Error ? err.message : "unknown" },
+          { symbol: candFull.symbol, err: err instanceof Error ? err.message : "unknown" },
           "Swap-sell redeploy failed"
         );
       }
@@ -4618,7 +4855,7 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
     }
     if (redeployed > 0) {
       log.info(
-        { exits: exitsThisScan, deferred: deferredCandidates.length, redeployed },
+        { exits: exitsThisScan, deferred: deferredCandidates.length, redeployed, skipped: plan.skips.length },
         "Swap-sell redeploy complete"
       );
     }
@@ -4663,6 +4900,21 @@ async function runScan(barResolution: "1d" | "5m" = "1d", engineUserId?: string)
 
   // Sync broker stop orders to match dynamic trailing stops
   await syncBrokerStops(engine.userId);
+
+  // PR 21b (2026-05-26): persist engine state so a restart (deploy, crash,
+  // reboot) doesn't reset dailyLoss/cooldowns/positionMap/etc. Best-effort —
+  // a failed write logs but doesn't abort the scan.
+  if (engine.userId) {
+    try {
+      const payload = serializeEngineState(engine, positionMap);
+      await saveEngineSnapshot(engine.userId, payload);
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : "unknown" },
+        "Engine snapshot serialize/save failed (non-fatal)"
+      );
+    }
+  }
 
   log.info(
     {
@@ -4832,6 +5084,86 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     log.warn(
       { err: err instanceof Error ? err.message : "unknown", userId },
       "Cooldown hydration skipped"
+    );
+  }
+
+  // PR 21b (2026-05-26): hydrate from persistent snapshot if available.
+  // Restores dailyLoss, dailyNotional, consecutiveLosses, recentOrderTimestamps,
+  // exitRejectionCount/exitSuppressedUntil, unprotectedSymbols, and the
+  // tracked-position map (stops + take-profits + ATR/RSI cache). Skipped
+  // when snapshot is older than SNAPSHOT_MAX_AGE_MS or version-mismatched.
+  // Cooldown hydration above runs FIRST and is then overwritten by the
+  // snapshot's cooldown map if present — snapshot wins because it captures
+  // post-buy state changes (e.g. swap-sell cooldowns) the trade table doesn't.
+  try {
+    const loaded = await loadEngineSnapshot(userId);
+    if (loaded) {
+      const { fields, positions } = loaded.snapshot;
+      // Only restore fields that survive a reboot (dailyLoss is keyed by
+      // dailyLossDate — preserve only if date matches today, else fresh).
+      const today = getETDateString();
+      if (fields.dailyLossDate === today) {
+        engine.dailyLoss = fields.dailyLoss;
+        engine.dailyNotional = fields.dailyNotional;
+      }
+      // Boot equity snapshot: keep only if same date — otherwise startEngine's
+      // fresh capture wins (the engine just re-baselined the tripwire).
+      if (fields.bootEquitySnapshotDate === today && fields.boot) {
+        engine.boot = fields.boot;
+        engine.bootEquitySnapshotDate = fields.bootEquitySnapshotDate;
+      }
+      engine.consecutiveLosses = fields.consecutiveLosses;
+      // Filter rate-limit timestamps to within the rolling window
+      const orderRateWindowMs = 60_000;
+      const cutoff = Date.now() - orderRateWindowMs;
+      engine.recentOrderTimestamps = fields.recentOrderTimestamps.filter((t) => t >= cutoff);
+      engine.pendingExits = fields.pendingExits;
+      // Snapshot cooldowns supersede DB hydration above
+      for (const [sym, ts] of fields.cooldowns) {
+        engine.cooldowns.set(sym, ts);
+      }
+      engine.exitRejectionCount = fields.exitRejectionCount;
+      engine.exitSuppressedUntil = fields.exitSuppressedUntil;
+      engine.unprotectedSymbols = fields.unprotectedSymbols;
+
+      // Hydrate position map. syncPositionMapFromBroker (which runs at
+      // every scan boundary) will reconcile against broker reality, so a
+      // snapshot listing a position the broker no longer holds gets evicted
+      // on first scan — safe by construction.
+      const positionMap = getPositionMap(userId);
+      for (const [sym, pos] of positions) {
+        positionMap.set(sym, pos);
+      }
+
+      log.info(
+        {
+          userId,
+          ageMs: loaded.ageMs,
+          positionsRestored: positions.size,
+          cooldownsRestored: fields.cooldowns.size,
+          dailyLossRestored: fields.dailyLossDate === today,
+        },
+        "Engine state hydrated from snapshot"
+      );
+
+      void writeAudit({
+        actor: { userId, email: null, role: null },
+        action: AuditAction.ENGINE_STARTED,
+        resourceType: "engine",
+        resourceId: userId,
+        metadata: {
+          origin: "snapshot_hydrate",
+          snapshotAgeMs: loaded.ageMs,
+          positionsRestored: positions.size,
+          cooldownsRestored: fields.cooldowns.size,
+          unprotectedRestored: fields.unprotectedSymbols.size,
+        },
+      });
+    }
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown", userId },
+      "Snapshot hydration failed — engine will boot cold (broker is authoritative anyway)"
     );
   }
 

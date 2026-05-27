@@ -232,6 +232,26 @@
     </div>
   </header>
 
+  <!-- ════════════════════════ 2026-05-26 (evening — PR 21) ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-05-26 (evening)</div>
+    <h2>Deferred items cleanup (PR 21)</h2>
+    <p class="summary">The three items the PR 16/17 audit flagged "deferred to focused PR" all shipped tonight while the market was closed. End-of-day count: 567 tests across 40 suites (+9 from earlier PR-19 baseline).</p>
+
+    <h3>a. Swap-sell planner extraction + integration test</h3>
+    <p>The post-loop swap-sell redeployment decision tree was inlined in <code>runScan</code> as a 90-line block — not directly testable without mocking the entire engine. PR 21a extracted <code>planSwapSellRedeploy()</code> as a pure function returning <code>{attempts, skips, reachedHardCap, reachedExposureCap}</code>. The thin loop in runScan now calls the planner, then executes only the I/O-bound parts (smart filters, canPlaceBuyOrder with sector context, placeEngineOrder, positionMap update). <strong>13 new integration tests</strong> pin the decision tree end-to-end with realistic combos (cooldown + pending + exposure + cap interactions). The unit test that landed in PR 17 (<code>backtester-swap-sell-equivalent.test.ts</code>) covers the backtester-side mirror; this one covers the live-engine path.</p>
+
+    <h3>b. Engine-reboot state persistence</h3>
+    <p>Before tonight, only <code>mode</code> survived a deploy/restart. After PR 21b, the engine writes a JSONB snapshot (<code>trader_engine_snapshot</code> table, migration <code>0040</code>) at the end of every successful scan covering: position map (TrackedPosition with stops, take-profits, ATR/RSI cache), <code>dailyLoss</code>, <code>dailyNotional</code>, <code>consecutiveLosses</code>, <code>recentOrderTimestamps</code> (rate-limit window), <code>cooldowns</code>, <code>pendingExits</code>, <code>exitRejectionCount</code> + <code>exitSuppressedUntil</code> (PDT suppression), <code>unprotectedSymbols</code>, boot equity snapshot. Hydrated in <code>startEngine</code> after cooldown-from-DB hydration when snapshot is younger than <code>SNAPSHOT_MAX_AGE_MS = 60 min</code>. Versioned payload (<code>v: 1</code>) — future-schema snapshots discard gracefully. Audit row <code>ENGINE_STARTED</code> with <code>origin: "snapshot_hydrate"</code> records the event. Best-effort save — a failed DB write logs but doesn't abort the scan. <strong>8 new tests</strong> pin the serialize/deserialize round-trip including Date preservation, version mismatch handling, and tolerant fallbacks on missing optional fields.</p>
+
+    <h3>c. Orphan scan promise cancellation</h3>
+    <p>Closes audit P1 #6. Each scan now captures <code>myGeneration = ++engine.scanGeneration</code> at start. When <code>runScanGuarded</code> fires a 10-min override and a fresh scan starts, the new scan bumps the counter. The stale scan calls <code>throwIfScanCancelled(engine, myGeneration)</code> at every major yield point (after <code>enforceDailyLossHalt</code>, between per-symbol loop iterations in <code>runScan</code> and <code>runTacticalSmartScan</code>, before the swap-sell post-loop block) and throws <code>ScanCancelledError</code> if its generation no longer matches. Top-level wrappers catch the error and exit cleanly. Non-cooperative HTTP requests already in-flight still resolve to <code>/dev/null</code> — the orphan stops <em>acting</em> on their results. <strong>9 new tests</strong> cover the helper + multi-generation lifecycle scenarios.</p>
+
+    <div class="callout safe">
+      <strong>What's left from the audit deferred list:</strong> Nothing. All three items are done. Future-ideas.md updated to remove the entries; CLAUDE.md updated with the new "Cooperative scan cancellation" and "Engine state persistence" sections.
+    </div>
+  </article>
+
   <!-- ════════════════════════ 2026-05-26 ════════════════════════ -->
   <article class="entry">
     <div class="date">2026-05-26</div>
@@ -285,7 +305,7 @@
       <strong>Net for the user:</strong> the trader page's "stop below entry" condition that triggered this marathon is now fixed end-to-end. The optimizer is tuning for the strategy frame the live engine actually runs. Three classes of silent failure (PDT-rejected stops, PDT-rejected exits, scan hangs) now surface as user-actionable alerts.
     </div>
 
-    <p style="margin-top:14px;font-size:0.86rem;color:var(--text-muted)"><strong>Deferred to future PRs</strong> (tracked in <code>docs/future-ideas.md</code>): hung-scan orphan-promise concurrency fix, engine-reboot state persistence, swap-sell live-engine integration test.</p>
+    <p style="margin-top:14px;font-size:0.86rem;color:var(--text-muted)"><strong>Originally deferred — now shipped same day in PR 21:</strong> hung-scan orphan-promise cancellation, engine-reboot state persistence, swap-sell live-engine integration test. See the PR 21 entry above.</p>
   </article>
 
   <!-- ════════════════════════ 2026-05-13 ════════════════════════ -->
