@@ -645,6 +645,9 @@
         <li><strong>PDT warning panel</strong> (yellow) — appears when account equity &lt; $25k. Shows current day-trade count.</li>
         <li><strong>Tax Status card</strong> — MTM election checkbox. Drives wash-sale protection on/off.</li>
         <li><strong>Tax callouts</strong> — harvestable unrealized losses surfaced inline.</li>
+        <li><strong>Long Market Value card</strong> — gross long $ value of held positions. When cash is negative (margin in use), shows a sub-line "$X on margin" so you see the loan size without doing the LMV − equity math. Distinct from Total Equity (your net ownership). <span class="added">Added 2026-05-26.</span></li>
+        <li><strong>Unprotected-position banner</strong> (red) — appears when one or more positions have no broker-side protective stop (typically because Alpaca rejected the stop with PDT). Lists affected symbols. These positions are guarded only by the in-process 1-min exit poll — flatten manually if you can't wait for PDT to clear. <span class="added">Added 2026-05-26.</span></li>
+        <li><strong>Engine-offline-with-positions banner</strong> (yellow) — appears when the engine is stopped but you still hold positions. One-click "Start engine" button to resume management.</li>
       </ul>
       <h4>Buttons &amp; controls</h4>
       <ul>
@@ -653,6 +656,14 @@
         <li><strong>Halt</strong> — manual halt. Closes all positions at market, refuses new orders for the day.</li>
         <li><strong>Flatten all</strong> — sells all positions immediately at market.</li>
         <li><strong>AI ✨</strong> (each trade row) — generates a Groq-powered 1-2 sentence plain-English summary of the trade (entry reason → hold period → exit). Cached on the row after first click. Label flips to ↻ once cached. Costs ~$0.0001 per click.</li>
+      </ul>
+      <h4>What runs automatically under the hood</h4>
+      <ul>
+        <li><strong>Take-profit graduation</strong> (tactical-smart + optimized) — when a position crosses its take-profit threshold, the engine doesn't hard-exit. Instead it locks the protective stop to entry × 1.30 (a +30% floor) and keeps holding until 2-of-3 weakness signals fire (volume contraction, price plateau, RSI rollover). Lets winners run past the training-window-fit exit while protecting a +30% minimum gain. <span class="added">Added 2026-05-26 (PR 8 + 14).</span></li>
+        <li><strong>Swap-sell post-exit redeploy</strong> (optimized) — when a held position exits during a 15-min scan, the freed slot doesn't sit idle until the next tick. Any STRONG_BUY candidate that hit the position cap earlier in the same scan is bought to redeploy that capital same-scan. Tactical-smart has its own pair-wise swap-sell. <span class="added">Added 2026-05-26 (PR 14).</span></li>
+        <li><strong>5-min stop-sync scheduler</strong> — broker-side protective stops are synced from the engine's in-memory state every 5 minutes independent of scan health. A breakeven-promote that fires on the 1-min poll reaches the broker within 5 min. Previously stops only updated at scan completion; hung scans froze them for the session. <span class="added">Added 2026-05-26 (PR 4).</span></li>
+        <li><strong>PDT-rejected exit suppression</strong> — when Alpaca rejects an exit order due to pattern-day-trading protection 5 times in a row, the engine stops retrying for 30 minutes and sends a push notification telling you to flatten manually. Prevents per-minute log-and-Alpaca-call spam on stuck positions. <span class="added">Added 2026-05-26 (PR 3).</span></li>
+        <li><strong>client_order_id idempotency</strong> — every order to Alpaca carries a UUID. Network-hiccup retries can't accidentally double-fill — Alpaca rejects the duplicate. <span class="added">Added 2026-05-26 (PR 9).</span></li>
       </ul>
       <div class="gotcha"><strong>Engine-gated:</strong> while running, manual orders and broker switching are refused with a 409 <code>ENGINE_RUNNING</code> response. Stop the engine first.</div>
     </div>
@@ -1093,10 +1104,11 @@
 
     <div class="page-card" id="page-admin">
       <div class="page-card-head"><span class="page-name">Admin home (Users + Invites)</span><span class="page-route">/dashboard/admin</span></div>
-      <p class="page-purpose">User management + invite system + engine overrides + reports.</p>
+      <p class="page-purpose">User management + invite system + engine overrides + reports + per-user performance.</p>
       <h4>Cards (top to bottom)</h4>
       <ul>
         <li><strong>User Management</strong> — list, create, edit (name/email/password/role), delete. Roles: admin / supervisor / operator / read-only.</li>
+        <li><strong>Per-user performance card</strong> — table of every user with running engine summary: mode, today's P&amp;L, open-position count, last-scan-at, broker-connected status. Each row links to the per-user drilldown. <span class="added">Added 2026-05-26.</span></li>
         <li><strong>Slippage Report</strong> — fills vs intended price across all users, by symbol.</li>
         <li><strong>Position Drift Audit</strong> — DB-recorded position state vs live broker reality, per user.</li>
         <li><strong>User Engines</strong> — start / stop / halt other users' trading engines. Toggle live-trading-enabled per user.</li>
@@ -1104,6 +1116,20 @@
         <li><strong>Reddit Feed Sources</strong> — admin list of subreddits the Analysis → Reddit tab queries. Add / toggle / reweight / delete a sub without a code change. Each mutation writes a hash-chained <code>reddit_subreddit.updated</code> audit row.</li>
         <li><strong>Invitations</strong> — send by email (creates token, sends signup link via Resend). Copy link manually if email is unconfigured. Sent / Registered / Expired status badges.</li>
       </ul>
+    </div>
+
+    <div class="page-card" id="page-admin-user-drilldown">
+      <div class="page-card-head"><span class="page-name">Per-user drilldown</span><span class="page-route">/dashboard/admin/users/[id]</span></div>
+      <p class="page-purpose">Deep-dive view of one user's engine, positions, recent trades, and rejected orders. Useful for incident response — diagnose a user's situation without asking them to share their screen. <span class="added">Added 2026-05-26.</span></p>
+      <h4>Key UI surfaces</h4>
+      <ul>
+        <li><strong>Identity strip</strong> — name, email, tier, role, MTM election, broker connection (active label + paper/live + last connectivity check).</li>
+        <li><strong>Engine state card</strong> — mode (with effective-mode in parens for adaptive), running/stopped, current P&amp;L, last-scan-at, consecutive-loss count, swap-sell enabled, graduation enabled.</li>
+        <li><strong>Live positions table</strong> — pulled from broker (not DB). Symbol, qty, entry, current, P&amp;L $, P&amp;L %, broker stop, in-memory stop, drift flag. Drift = in-memory ≠ broker, signals an upcoming stop-sync correction.</li>
+        <li><strong>Recent rejected orders</strong> — last 20 broker rejections with reason code (PDT, insufficient buying power, ENGINE_RUNNING duplicate, etc). Helps spot PDT-suppression candidates.</li>
+        <li><strong>Recent audit rows</strong> — last 30 actions for this user. Engine starts/stops/halts/mode-switches and order placements front-and-center.</li>
+      </ul>
+      <div class="gotcha"><strong>Read-only.</strong> Admin can mutate this user's engine state from the Admin home (start/stop/halt). The drilldown itself doesn't take destructive actions — that's intentional separation so a one-click on this page doesn't accidentally halt prod.</div>
     </div>
 
     <div class="page-card" id="page-admin-audit">
