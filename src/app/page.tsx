@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Search, Cpu, Zap, TrendingUp, Target, BarChart3, LineChart, Bell, Brain, Check, Lock, GitBranch, Server } from "lucide-react";
 import { ThemePicker } from "@/components/theme-picker";
 import { BeacontryMark } from "@/components/brand/beacontry-mark";
+import { PWAInstallButton } from "@/components/pwa-install-button";
 
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
@@ -225,6 +226,10 @@ export default function LandingPage() {
 
           <div className="hidden items-center gap-3 md:flex">
             <ThemePicker variant="icon" />
+            {/* PWA install — renders nothing unless Chrome fires beforeinstallprompt */}
+            <PWAInstallButton
+              className="inline-flex items-center gap-2 rounded-[10px] border border-ld-accent/40 bg-ld-accent/8 px-4 py-3 text-[0.9rem] font-medium text-ld-accent transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent/14"
+            />
             <Link href="/register" className="rounded-[10px] bg-ld-accent px-5 py-3 text-[0.92rem] font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
               Get Started
             </Link>
@@ -252,6 +257,13 @@ export default function LandingPage() {
             <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-[10px] bg-ld-accent py-3 text-center text-[0.92rem] font-semibold text-white">
               Get Started
             </Link>
+            {/* PWA install in the mobile menu — hidden unless the browser
+                fires beforeinstallprompt. This is the path Chrome Android
+                users will actually use (the ⋮-menu "Install app" item
+                doesn't always show). */}
+            <PWAInstallButton
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-[10px] border border-ld-accent/40 bg-ld-accent/8 py-3 text-center text-[0.92rem] font-medium text-ld-accent"
+            />
           </div>
         )}
       </nav>
