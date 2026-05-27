@@ -272,7 +272,7 @@ export type { SignalType };
 
 // ── Portfolio data preparation ──────────────────────────────────────
 
-interface PortfolioData {
+export interface PortfolioData {
   symbols: string[];
   dates: string[];
   dateIdx: Map<string, number>;
@@ -286,7 +286,7 @@ function normalizeDate(d: string): string {
   return d.split("T")[0];
 }
 
-function buildPortfolioData(allBars: Map<string, Bar[]>, trainPct: number): PortfolioData {
+export function buildPortfolioData(allBars: Map<string, Bar[]>, trainPct: number): PortfolioData {
   const dateSet = new Set<string>();
   const barLookup = new Map<string, Map<string, Bar>>();
 
@@ -361,7 +361,7 @@ interface Position {
   stopLoss: number;
 }
 
-interface PortfolioResult {
+export interface PortfolioResult {
   totalReturn: number;
   sharpeRatio: number;
   maxDrawdown: number;
@@ -373,7 +373,7 @@ interface PortfolioResult {
   perSymbol: Map<string, { returnPct: number; trades: number }>;
 }
 
-function portfolioBacktest(
+export function portfolioBacktest(
   data: PortfolioData,
   params: OptimizableParams,
   segment: "train" | "test"
