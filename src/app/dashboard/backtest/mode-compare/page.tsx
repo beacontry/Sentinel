@@ -53,6 +53,14 @@ interface CompareResponse {
   days: number;
   barCount: number;
   marketContextAvailable: boolean;
+  // PR 22 — what the Optimized (GA) row actually used.
+  optimizedParamsSource?: "symbol_strategy" | "latest_optimizer_run" | "defaults";
+  optimizedParams?: {
+    stopLossPct?: number;
+    takeProfitPct?: number;
+    trailingStopPct?: number;
+    holdPeriod?: number;
+  } | null;
   results: ModeResult[];
 }
 
@@ -235,6 +243,21 @@ function ModeComparePage() {
             {!data.marketContextAvailable && (
               <Badge variant="warning">
                 Adaptive unavailable — VIX/SPY context missing
+              </Badge>
+            )}
+            {data.optimizedParamsSource === "symbol_strategy" && (
+              <Badge variant="bullish">
+                Optimized (GA): your tuned params for {data.symbol}
+              </Badge>
+            )}
+            {data.optimizedParamsSource === "latest_optimizer_run" && (
+              <Badge variant="neutral">
+                Optimized (GA): latest global optimizer run
+              </Badge>
+            )}
+            {data.optimizedParamsSource === "defaults" && (
+              <Badge variant="warning">
+                Optimized (GA): no tuned params — using defaults. Run the optimizer for {data.symbol}.
               </Badge>
             )}
           </div>
