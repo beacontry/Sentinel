@@ -2,7 +2,11 @@
 // 2026-05-14: bumped to v3 alongside the Sentinel → Beacontry rebrand so
 // every existing user gets a fresh cache (their offline page still says
 // "Sentinel" until they reload at least once).
-const CACHE_NAME = "beacontry-v3";
+// 2026-05-27: bumped to v4 alongside the PWA manifest hardening + SW
+// registration error-surfacing (PR 23). Existing clients dump cached
+// pages so the next reload re-fetches the latest manifest and any
+// updated PWA-related metadata.
+const CACHE_NAME = "beacontry-v4";
 const STATIC_ASSETS = ["/dashboard/trader"];
 
 // Returned whenever both network and cache miss. Without this, the previous
