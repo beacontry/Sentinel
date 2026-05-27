@@ -21,10 +21,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getMarketDataProvider } from "@/lib/market-data";
-import { runBacktest, type BacktestResult } from "@/lib/backtester";
+import { runBacktest, type BacktestResult, type BacktestConfig } from "@/lib/backtester";
 import type { EngineMode } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 import { checkTier } from "@/lib/tiers-server";
+import { db, withTimeout } from "@/lib/db";
+import { symbolStrategies, optimizationRuns } from "@/lib/db/schema";
+import { and, eq, desc } from "drizzle-orm";
 
 const log = createRouteLogger("backtest/mode-compare");
 
@@ -45,6 +48,88 @@ const COMPARE_MODES: EngineMode[] = [
   "tactical",
   "adaptive",
 ];
+
+/**
+ * Mirrors the live engine's resolveStrategy() lookup order for the optimized
+ * mode: per-symbol GA-tuned row → global latest optimizer run → null.
+ *
+ * Pre-PR-22 mode-compare passed `{}` for backtester config, so "Optimized
+ * (GA)" actually ran with backtester defaults (~moderate-preset stops). The
+ * surface badly misrepresented what the live engine would do.
+ */
+async function loadOptimizedParamsForSymbol(
+  userId: string,
+  symbol: string
+): Promise<{ config: Partial<BacktestConfig>; holdPeriod?: number; source: string } | null> {
+  // 1. Per-symbol GA row
+  try {
+    const rows = await withTimeout(3000, (tx) =>
+      tx
+        .select()
+        .from(symbolStrategies)
+        .where(and(eq(symbolStrategies.userId, userId), eq(symbolStrategies.symbol, symbol)))
+        .limit(1)
+    );
+    if (rows.length > 0) {
+      const r = rows[0];
+      return {
+        config: {
+          stopLossPct: r.stopLossPct,
+          takeProfitPct: r.takeProfitPct,
+          trailingStopPct: r.trailingStopPct,
+        },
+        holdPeriod: r.holdPeriod,
+        source: "symbol_strategy",
+      };
+    }
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : "unknown", symbol }, "symbolStrategies lookup failed");
+  }
+
+  // 2. Latest completed optimizer run (global fallback — same as engine's
+  // getLatestOptimizedParams())
+  try {
+    const [activeRun] = await withTimeout(3000, (tx) =>
+      tx
+        .select({ bestParams: optimizationRuns.bestParams })
+        .from(optimizationRuns)
+        .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+        .limit(1)
+    );
+    const [run] = activeRun
+      ? [activeRun]
+      : await withTimeout(3000, (tx) =>
+          tx
+            .select({ bestParams: optimizationRuns.bestParams })
+            .from(optimizationRuns)
+            .where(eq(optimizationRuns.status, "complete"))
+            .orderBy(desc(optimizationRuns.completedAt))
+            .limit(1)
+        );
+    if (run?.bestParams) {
+      const p = run.bestParams as Record<string, number>;
+      if (
+        typeof p.stopLossPct === "number" &&
+        typeof p.takeProfitPct === "number" &&
+        typeof p.trailingStopPct === "number"
+      ) {
+        return {
+          config: {
+            stopLossPct: p.stopLossPct,
+            takeProfitPct: p.takeProfitPct,
+            trailingStopPct: p.trailingStopPct,
+          },
+          holdPeriod: typeof p.holdPeriod === "number" ? p.holdPeriod : undefined,
+          source: "latest_optimizer_run",
+        };
+      }
+    }
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "optimizationRuns lookup failed");
+  }
+
+  return null;
+}
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -122,10 +207,18 @@ export async function GET(request: NextRequest) {
       ? { spyBars: spyRes.value, vixBars: vixRes.value }
       : null;
 
+  // Load the GA-tuned params for this symbol once (used only for the
+  // optimized mode row). PR 22 fix — pre-PR-22 mode-compare passed `{}`
+  // for backtester config on every mode, so "Optimized (GA)" actually ran
+  // with backtester defaults instead of the user's tuned params. The
+  // surface badly misrepresented what the live engine would do.
+  const optimizedParams = await loadOptimizedParamsForSymbol(session.userId, symbol);
+
   // Backtest sizing — match the single-symbol backtest's logic so curves are
-  // comparable across pages.
-  const holdPeriod = 20;
-  const maxWindow = Math.floor((bars.length - holdPeriod) * 0.7);
+  // comparable across pages. Optimized mode uses its tuned holdPeriod when
+  // available so the curve reflects the live engine's exit timing.
+  const defaultHoldPeriod = 20;
+  const maxWindow = Math.floor((bars.length - defaultHoldPeriod) * 0.7);
   const windowSize = Math.max(30, Math.min(50, maxWindow));
   const stepSize = Math.max(1, Math.floor(windowSize / 10));
 
@@ -137,6 +230,14 @@ export async function GET(request: NextRequest) {
         if (mode === "adaptive" && !marketContext) {
           throw new Error("Adaptive mode requires SPY + VIX bars (not available for this date range)");
         }
+        // Optimized mode: layer the GA-tuned config + holdPeriod on top so
+        // this row actually reflects the live engine's optimized behavior.
+        // All other modes use defaults (the in-backtester preset map handles
+        // the per-mode stops/TP for tactical and adaptive).
+        const config: Partial<BacktestConfig> = mode === "optimized" && optimizedParams ? optimizedParams.config : {};
+        const holdPeriod = mode === "optimized" && optimizedParams?.holdPeriod !== undefined
+          ? optimizedParams.holdPeriod
+          : defaultHoldPeriod;
         return {
           mode,
           result: runBacktest(
@@ -145,7 +246,7 @@ export async function GET(request: NextRequest) {
             windowSize,
             holdPeriod,
             stepSize,
-            {},
+            config,
             mode,
             mode === "adaptive" && marketContext ? marketContext : undefined
           ),
@@ -175,6 +276,18 @@ export async function GET(request: NextRequest) {
       days,
       barCount: bars.length,
       marketContextAvailable: !!marketContext,
+      // PR 22 — surface what the "Optimized (GA)" row actually used so the
+      // page can render the source ("Your per-symbol tuned strategy" vs
+      // "Latest global optimizer run" vs "No GA params — backtester defaults").
+      optimizedParamsSource: optimizedParams?.source ?? "defaults",
+      optimizedParams: optimizedParams
+        ? {
+            stopLossPct: optimizedParams.config.stopLossPct,
+            takeProfitPct: optimizedParams.config.takeProfitPct,
+            trailingStopPct: optimizedParams.config.trailingStopPct,
+            holdPeriod: optimizedParams.holdPeriod,
+          }
+        : null,
       results,
     },
     {
