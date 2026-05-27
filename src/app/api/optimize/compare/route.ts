@@ -7,7 +7,13 @@ import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { optimizationRuns } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
-import { TOP_50, TOP_150 } from "@/lib/optimizer";
+import {
+  TOP_50,
+  TOP_150,
+  buildPortfolioData,
+  portfolioBacktest,
+  type OptimizableParams,
+} from "@/lib/optimizer";
 import { SP500_SYMBOLS } from "@/lib/sp500";
 import type { Bar } from "@/types";
 import { checkTier } from "@/lib/tiers-server";
@@ -547,23 +553,31 @@ export async function GET() {
 
     log.info({ symbols: allBars.size, spyBars: spyBars.length }, "Data fetched, running backtests");
 
-    // Get active optimizer params (or latest completed)
+    // Get active optimizer params (or latest completed). Used to drive
+    // both the legacy simulateSignalStrategy fallback (tactical/tactical-
+    // smart still call it) AND the GA-faithful portfolioBacktest below.
     let optimizedParams: StrategyParams = STRATEGY_PRESETS.optimized;
     let optimizedExtra: OptimizerExtraParams = {};
+    // PR 26 (2026-05-27): also build the GA's OptimizableParams shape so we
+    // can call portfolioBacktest directly. The previous code path passed
+    // only a subset (stop/TP/trail) to simulateSignalStrategy — same params
+    // but a DIFFERENT simulator → wildly different numbers vs Top Runs.
+    let gaParams: OptimizableParams | null = null;
+    let gaParamsSource: "active_run" | "latest_run" | "defaults" = "defaults";
     try {
       const run = await withTimeout(5000, async (tx) => {
         const [activeParams] = await tx.select({ bestParams: optimizationRuns.bestParams })
           .from(optimizationRuns)
           .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
           .limit(1);
-        if (activeParams) return activeParams;
+        if (activeParams) return { row: activeParams, source: "active_run" as const };
         const [fallback] = await tx.select({ bestParams: optimizationRuns.bestParams })
           .from(optimizationRuns).where(eq(optimizationRuns.status, "complete"))
           .orderBy(desc(optimizationRuns.completedAt)).limit(1);
-        return fallback ?? null;
+        return fallback ? { row: fallback, source: "latest_run" as const } : null;
       });
-      if (run?.bestParams) {
-        const p = run.bestParams as Record<string, number>;
+      if (run?.row.bestParams) {
+        const p = run.row.bestParams as Record<string, number>;
         if (p.stopLossPct != null) {
           optimizedParams = {
             stopLossPct: p.stopLossPct,
@@ -583,6 +597,30 @@ export async function GET() {
               rsiOverbought: Math.round(p.rsiOverbought ?? 70),
             } : undefined,
           };
+          // Build full OptimizableParams shape for portfolioBacktest.
+          // All fields required — fall back to sensible defaults for runs
+          // saved before the GA's param set was finalized.
+          if (
+            p.takeProfitAtrMult != null &&
+            p.emaFast != null &&
+            p.emaSlow != null &&
+            p.rsiOversold != null &&
+            p.rsiOverbought != null &&
+            p.rsThreshold != null
+          ) {
+            gaParams = {
+              stopLossPct: p.stopLossPct,
+              takeProfitAtrMult: p.takeProfitAtrMult,
+              trailingStopPct: p.trailingStopPct ?? 0.09,
+              holdPeriod: Math.round(p.holdPeriod ?? 43),
+              emaFast: Math.round(p.emaFast),
+              emaSlow: Math.round(p.emaSlow),
+              rsiOversold: Math.round(p.rsiOversold),
+              rsiOverbought: Math.round(p.rsiOverbought),
+              rsThreshold: p.rsThreshold,
+            };
+            gaParamsSource = run.source;
+          }
         }
       }
     } catch { /* use default */ }
@@ -608,11 +646,48 @@ export async function GET() {
     // (Tactical, Tactical Smart, and Optimized are computed below
     // with their respective simulators.)
 
-    // Optimized (GA) — uses tuned signal params when available
-    const optResult = simulateSignalStrategy(
-      allBars, optimizedParams, 10, 0.10, optimizedExtra,
-    );
-    results.push({ ...optResult, mode: "optimized", label: "Optimized (GA)" });
+    // Optimized (GA) — runs the SAME simulator the GA itself uses
+    // (portfolioBacktest), so this row's number matches what Top Runs
+    // shows and what the live engine actually does. Pre-PR-26 this called
+    // simulateSignalStrategy, a parallel simulator that diverged because
+    // it predated PR 14/16's graduation + swap-sell + multi-obj fitness.
+    if (gaParams) {
+      // Build PortfolioData from the bars already fetched. trainPct=100
+      // → the "train" segment IS the full 5-year period (no held-out
+      // test data needed for the comparison view).
+      const portfolioData = buildPortfolioData(allBars, 100);
+      const ga = portfolioBacktest(portfolioData, gaParams, "train");
+      // GA's PortfolioResult has totalReturn (already in %), sharpeRatio,
+      // maxDrawdown (in %), tradeCount, avgPositions. avgPositions is a
+      // float — use it × 10 to estimate timeInMarket %, capped at 100.
+      const timeInMarket = Math.min(100, Math.round(ga.avgPositions * 10));
+      results.push({
+        mode: "optimized",
+        label: "Optimized (GA)",
+        totalReturn: Math.round(ga.totalReturn * 10) / 10,
+        finalValue: Math.round(10000 * (1 + ga.totalReturn / 100)),
+        maxDrawdown: Math.round(ga.maxDrawdown * 10) / 10,
+        sharpe: Math.round(ga.sharpeRatio * 100) / 100,
+        trades: ga.tradeCount,
+        timeInMarket,
+      });
+      log.info(
+        { source: gaParamsSource, totalReturn: ga.totalReturn, trades: ga.tradeCount, sharpe: ga.sharpeRatio },
+        "Optimized row: portfolioBacktest result",
+      );
+    } else {
+      // No GA-tuned run available (or schema-incomplete) — fall back to
+      // the legacy simulator with the partial params we have, labeled so
+      // the user knows it's not GA-faithful.
+      const optResult = simulateSignalStrategy(
+        allBars, optimizedParams, 10, 0.10, optimizedExtra,
+      );
+      results.push({ ...optResult, mode: "optimized", label: "Optimized (defaults — no tuned run)" });
+      log.warn(
+        { gaParamsSource },
+        "Optimized row: no GA params available, used STRATEGY_PRESETS.optimized via simulateSignalStrategy",
+      );
+    }
     await new Promise(r => setTimeout(r, 1));
 
     // Tactical
