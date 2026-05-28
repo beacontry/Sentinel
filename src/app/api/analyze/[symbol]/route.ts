@@ -6,7 +6,6 @@ import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { signals, signalAccuracy } from "@/lib/db/schema";
 import { sendDiscordWebhook, signalStrengthValue } from "@/lib/discord";
 import { discordWebhooks } from "@/lib/db/schema";
-import { evaluateAlertRules } from "@/lib/alert-engine";
 import { pushSignalToTrader } from "@/lib/trader-push";
 import { eq, and } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
@@ -123,14 +122,10 @@ export async function GET(
 
     pushSignalToTrader(result.symbol, result.signal, result.confidence, result.price);
 
-    evaluateAlertRules({
-      symbol: upperSymbol,
-      price: result.price,
-      volume: result.volume,
-      signal: result.signal,
-    }).catch((err) => {
-      log.warn({ err: err instanceof Error ? err.message : String(err), symbol: upperSymbol }, "Alert rule evaluation failed");
-    });
+    // Alert rules are now evaluated by the scheduled /api/cron/evaluate-alerts
+    // job (per-user, on fresh data, market-hours-gated). The old fire-here
+    // path keyed rules by symbol-only, so a stranger's analyze drove your
+    // rule and symbols nobody analyzed were never checked.
 
     return NextResponse.json(result, {
       headers: { "Cache-Control": "private, max-age=60" },

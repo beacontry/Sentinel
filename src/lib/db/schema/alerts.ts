@@ -20,6 +20,10 @@ export const alertRules = pgTable("alert_rules", {
   channel: text("channel").notNull(),
   enabled: boolean("enabled").notNull().default(true),
   lastTriggered: timestamp("last_triggered", { withTimezone: true }),
+  // Edge-triggering: the condition's value at the last evaluation. The rule
+  // fires only on the false→true transition (migration 0044), so crossover/
+  // threshold rules signal the actual cross, not "still true since days ago".
+  lastConditionMet: boolean("last_condition_met").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("alert_rules_user_idx").on(t.userId),
