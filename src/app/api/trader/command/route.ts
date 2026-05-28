@@ -9,6 +9,8 @@ import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { rateLimit } from "@/lib/rate-limiter";
 import { checkTier } from "@/lib/tiers-server";
+import { getETDateString } from "@/lib/market-hours";
+import { reserveManualFlatten } from "@/lib/trading-engine";
 import { z } from "zod";
 
 const commandSchema = z.object({
@@ -46,6 +48,11 @@ export async function POST(request: NextRequest) {
   }
 
   const { command, symbol } = parsed.data;
+
+  // Flatten reservation tracked at handler scope so the catch below can
+  // release it if a per-symbol audit-write throws and escapes the loop.
+  let flattenRelease: ((sold: string[]) => void) | null = null;
+  const flattenSold: string[] = [];
 
   try {
     switch (command) {
@@ -85,6 +92,11 @@ export async function POST(request: NextRequest) {
         }
 
         const results: { symbol: string; qty: number; status: string; pnl?: number }[] = [];
+        // Reserve these symbols in the running engine's pendingExits so its
+        // 15-min scan / 1-min exit poll won't also sell them mid-flatten
+        // (double-sell / position-map drift). No-op when the engine isn't
+        // running, so flatten-while-stopped behaves exactly as before.
+        flattenRelease = reserveManualFlatten(auth.userId, toClose.map((p) => p.symbol)).release;
         for (const pos of toClose) {
           if (pos.qty <= 0) continue;
           try {
@@ -97,6 +109,7 @@ export async function POST(request: NextRequest) {
             });
             const realizedPnl = pos.unrealizedPnl;
             results.push({ symbol: pos.symbol, qty: pos.qty, status: "sold", pnl: realizedPnl });
+            flattenSold.push(pos.symbol);
             log.info({ symbol: pos.symbol, qty: pos.qty, pnl: realizedPnl }, "Position closed via command");
 
             await writeAudit({
@@ -133,9 +146,12 @@ export async function POST(request: NextRequest) {
               });
             } catch { /* best effort */ }
 
-            // Update daily P&L
+            // Update daily P&L. Key by ET date — the engine writes every
+            // traderDailyPnl row via getETDateString(); a UTC key here would
+            // fragment the day's realized total into a separate (tomorrow-
+            // dated) row whenever a flatten lands after ~8 PM ET.
             try {
-              const today = new Date().toISOString().slice(0, 10);
+              const today = getETDateString();
               const [existing] = await db.select().from(traderDailyPnl)
                 .where(and(eq(traderDailyPnl.date, today), eq(traderDailyPnl.userId, auth.userId)))
                 .limit(1);
@@ -167,6 +183,8 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        flattenRelease(flattenSold);
+        flattenRelease = null;
         return NextResponse.json({ status: "ok", closed: results });
       }
 
@@ -183,6 +201,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: `Unknown command: ${command}` }, { status: 400 });
     }
   } catch (err) {
+    // Release the flatten reservation if a sell's audit-write threw and
+    // escaped the loop — otherwise the reserved symbols stay stuck in
+    // pendingExits and the engine never re-evaluates them.
+    flattenRelease?.(flattenSold);
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ command, err: message }, "Command failed");
     return NextResponse.json({ error: `Command failed: ${message}` }, { status: 502 });

@@ -147,6 +147,10 @@ export interface ExternalSignal {
 
 export interface EngineState {
   running: boolean;
+  /** True during startEngine()'s async boot (broker check, disaster stops)
+   *  before `running` flips true. Guards against a second concurrent start
+   *  passing the `running` check and orphaning a duplicate interval loop. */
+  starting: boolean;
   halted: boolean;
   mode: EngineMode;
   intervalId: ReturnType<typeof setInterval> | null;
@@ -277,6 +281,7 @@ const g = globalThis as typeof globalThis & {
 function createDefaultEngine(): EngineState {
   return {
     running: false,
+    starting: false,
     halted: false,
     mode: "optimized",
     intervalId: null,
@@ -477,25 +482,44 @@ async function isInEarningsBlackout(symbol: string): Promise<boolean> {
 
   // Refresh cache daily OR every 6h (whichever first) — see FILTER_CACHE_TTL_MS
   if (isFilterCacheStale(gFilters.__earningsCacheDate, gFilters.__earningsCacheTimestamp, today) || !gFilters.__earningsCache) {
-    gFilters.__earningsCache = new Map();
-    gFilters.__earningsCacheDate = today;
-    gFilters.__earningsCacheTimestamp = Date.now();
-
     const client = getFinnhubClient();
     if (client.isConfigured) {
       try {
         const from = today;
         const to = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
         const result = await client.getEarningsCalendar(from, to);
+        // Build into a local map and commit only on success. Previously the
+        // cache was wiped BEFORE the fetch, so a transient Finnhub failure
+        // left it empty with a bumped timestamp — disabling earnings-blackout
+        // protection (engine could buy into earnings) for the full TTL window.
+        const next = new Map<string, string[]>();
         for (const e of result.earningsCalendar) {
-          const dates = gFilters.__earningsCache.get(e.symbol) ?? [];
+          const dates = next.get(e.symbol) ?? [];
           dates.push(e.date);
-          gFilters.__earningsCache.set(e.symbol, dates);
+          next.set(e.symbol, dates);
         }
-        log.info({ symbols: gFilters.__earningsCache.size }, "Earnings blackout cache refreshed");
-      } catch {
-        // If Finnhub fails, allow all trades
+        gFilters.__earningsCache = next;
+        gFilters.__earningsCacheDate = today;
+        gFilters.__earningsCacheTimestamp = Date.now();
+        log.info({ symbols: next.size }, "Earnings blackout cache refreshed");
+      } catch (err) {
+        // Keep the previous cache so blackout protection stays in force on a
+        // transient blip. Still bump the timestamp to throttle per-symbol
+        // retries against a down upstream — earnings dates are stable
+        // hour-to-hour, so slightly stale data beats hammering Finnhub.
+        gFilters.__earningsCacheDate = today;
+        gFilters.__earningsCacheTimestamp = Date.now();
+        if (!gFilters.__earningsCache) gFilters.__earningsCache = new Map();
+        log.warn(
+          { err: err instanceof Error ? err.message : "unknown" },
+          "Earnings calendar refresh failed — keeping previous cache"
+        );
       }
+    } else if (!gFilters.__earningsCache) {
+      // No Finnhub configured — initialize once (allow-all) and throttle.
+      gFilters.__earningsCache = new Map();
+      gFilters.__earningsCacheDate = today;
+      gFilters.__earningsCacheTimestamp = Date.now();
     }
   }
 
@@ -2236,7 +2260,10 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
       if (!quote) continue;
 
       const currentPrice = quote.price;
-      if (currentPrice <= 0) continue;
+      // `!(x > 0)` rejects 0, negative, AND NaN — a NaN quote would slip past
+      // `<= 0` and make the stop comparison below (`NaN <= stop`) false, so a
+      // bad feed would silently stop protecting the position.
+      if (!(currentPrice > 0)) continue;
 
       // Update peak
       if (currentPrice > pos.peakPrice) pos.peakPrice = currentPrice;
@@ -2304,6 +2331,14 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
       }
 
       if (exitReason) {
+        // Atomic claim against the concurrent 15-min runScan. The
+        // pendingExits.has check at the top of the loop is stale by now —
+        // an await (fetchQuote/resolveStrategy) sat between it and here, and
+        // runScan could have claimed this symbol in that window. Re-check and
+        // add synchronously (no await between this check and the .add below)
+        // so exactly one path places the sell. Without this, both intervals
+        // can fire a market sell on the same position → oversell into a short.
+        if (engine.pendingExits.has(symbol)) continue;
         // Skip retry loop on PDT-blocked symbols — the engine has already
         // tried EXIT_REJECTION_THRESHOLD times in a row, written a critical
         // audit + push, and is now in a 30-min cooldown. Spamming Alpaca
@@ -2626,6 +2661,23 @@ function setBrokerPositionCache(userId: string, positions: CachedBrokerPositions
 /** Get cached broker positions for a user. Returns null if no cache exists. */
 export function getBrokerPositionCache(userId: string): CachedBrokerPositions | null {
   return g3.__brokerPositionCache?.get(userId) ?? null;
+}
+
+/**
+ * Reclaim all per-user engine state from the process-global maps. Called from
+ * stopEngine on a delay (past the max scan window) and guarded by a re-check
+ * that the engine is still stopped — so a scan still in flight when we stopped
+ * can't be left holding a freed map, and a user who restarted isn't evicted.
+ * Without this, __tradingEngines / __enginePositionMaps / __brokerPositionCache
+ * grew by one entry per user who ever booted an engine and never shrank.
+ */
+function evictEngineState(userId: string): void {
+  const engine = g.__tradingEngines?.get(userId);
+  if (engine && (engine.running || engine.starting)) return; // restarted — keep it
+  g.__tradingEngines?.delete(userId);
+  g2.__enginePositionMaps?.delete(userId);
+  g3.__brokerPositionCache?.delete(userId);
+  log.info({ userId }, "Evicted idle engine state");
 }
 
 // ─── Broker Position Sync ───────────────────────────────────────────────────
@@ -4214,6 +4266,15 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
       // Use hybrid pipeline (technical + sentiment + analyst + options) for signal decisions
       const analysis = await analyzeHybrid(symbol, bars, hybridOpts);
       const currentPrice = analysis.price;
+      // Guard a bad bar (price 0/negative/NaN) before any sizing or exit math.
+      // `!(x > 0)` also rejects NaN (which `<= 0` would let through). Without
+      // this: buy sizing does floor(value/0)=Infinity → qty caps to
+      // maxPositionSize at orderCost 0 (passes every gate → junk $0 order),
+      // and the held-position exit sees `0 <= stopLoss` → spurious stop-loss.
+      if (!(currentPrice > 0)) {
+        log.warn({ symbol, currentPrice }, "Skipping symbol — invalid price from analysis");
+        continue;
+      }
       const confidence = analysis.confidence;
       const signal = analysis.signal;
 
@@ -4369,6 +4430,14 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         }
 
         if (shouldExit) {
+          // Atomic claim against the concurrent 1-min runExitCheck. The
+          // pendingExits.has check at the top of the loop is stale by now —
+          // an await (resolveStrategy) sat between it and here, and the exit
+          // poll could have claimed this symbol in that window. Re-check and
+          // add synchronously (no await between this check and the .add below)
+          // so exactly one path places the sell. Without this, both intervals
+          // can fire a market sell on the same position → oversell into a short.
+          if (engine.pendingExits.has(symbol)) continue;
           // Skip retry loop on PDT-blocked symbols — see EXIT_REJECTION_THRESHOLD
           // for the cooldown logic. Without this gate, a stop_loss on a
           // same-day-bought position re-fires the rejected sell every scan
@@ -4936,12 +5005,25 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
 }> {
   const engine = getEngine(userId);
 
-  if (engine.running) {
+  if (engine.running || engine.starting) {
     return { ok: false, error: "Engine is already running" };
   }
+  // Claim synchronously, before the awaits below. Without this, a second
+  // concurrent startEngine() would also pass the guard during these awaits,
+  // run the full boot, and assign a second pair of intervals — orphaning the
+  // first pair (still firing, now uncancellable). EVERY exit before
+  // `engine.running = true` must clear this flag (the three returns below and
+  // the resolveBrokerClient throw path), or the engine becomes unstartable.
+  engine.starting = true;
 
   // Verify broker connection exists and is allowed in current environment.
-  const resolved = await resolveBrokerClient(userId);
+  let resolved;
+  try {
+    resolved = await resolveBrokerClient(userId);
+  } catch (err) {
+    engine.starting = false;
+    throw err;
+  }
   if (!resolved) {
     // Check whether the user has a live connection that's blocked by the env gate
     // — give them a specific actionable error rather than a generic "no connection".
@@ -4957,6 +5039,7 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
           )
         );
       if (liveOnly.length > 0 && !isLiveTradingAllowed()) {
+        engine.starting = false;
         return {
           ok: false,
           error:
@@ -4966,6 +5049,7 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     } catch {
       /* fall through to generic error */
     }
+    engine.starting = false;
     return {
       ok: false,
       error: "No active broker connection found. Add a paper or live broker in Settings.",
@@ -4978,6 +5062,7 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     bootAccount = await resolved.client.getAccount();
   } catch (err) {
     const msg = err instanceof Error ? err.message : "unknown";
+    engine.starting = false;
     return { ok: false, error: `Broker connection test failed: ${msg}` };
   }
   // Reachability proof captured — set brokerConnected immediately so the
@@ -5005,6 +5090,7 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   }
 
   engine.running = true;
+  engine.starting = false; // boot done — the `running` guard now blocks re-entry
   engine.halted = false;
   engine.mode = mode;
   engine.userId = userId;
@@ -5343,8 +5429,23 @@ export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?
 
   log.info("Trading engine stopped — safety stops placed on broker");
 
+  // Reclaim this user's in-memory engine state after a grace period. Deferred
+  // past the 10-min max-scan-override window so any scan already in flight when
+  // we stopped has finished (evictEngineState re-checks running, so a restart
+  // in the meantime cancels the eviction). unref() so the timer never keeps the
+  // process alive.
+  const evictUserId = engine.userId;
+  if (evictUserId) {
+    setTimeout(() => evictEngineState(evictUserId), ENGINE_EVICTION_DELAY_MS).unref?.();
+  }
+
   return { ok: true };
 }
+
+/** Grace period before a stopped engine's in-memory state is evicted. Must
+ *  exceed the max scan-override window (10 min) so no in-flight scan is using
+ *  the maps when they're deleted. */
+const ENGINE_EVICTION_DELAY_MS = 11 * 60 * 1000;
 
 /**
  * Place stop-loss orders directly on Alpaca for all open positions.
@@ -6179,6 +6280,42 @@ export function peekEngineStatus(userId: string): {
     environment: engine.environment,
     brokerConnected: engine.brokerConnected,
     errors: engine.errors.slice(-5),
+  };
+}
+
+/**
+ * Coordinate a manual flatten with a *running* engine so the 15-min scan and
+ * 1-min exit poll don't also place a sell on the same symbols (double-sell /
+ * position-map drift). Reserves the symbols in pendingExits up front and
+ * returns a release() to call in a finally:
+ *   - clears the reservation for all reserved symbols
+ *   - drops the successfully-sold symbols from the in-memory position map
+ *     (the next syncPositionMapFromBroker would also reconcile, but doing it
+ *     here closes the brief post-flatten window)
+ * No-op (release is a noop) when the engine isn't running for this user, so
+ * manual flatten while stopped behaves exactly as before.
+ */
+export function reserveManualFlatten(
+  userId: string,
+  symbols: string[]
+): { release: (soldSymbols: string[]) => void } {
+  const map = (globalThis as typeof globalThis & {
+    __tradingEngines?: Map<string, EngineState>;
+  }).__tradingEngines;
+  const engine = map?.get(userId);
+  if (!engine || !engine.running) {
+    return { release: () => {} };
+  }
+  for (const s of symbols) engine.pendingExits.add(s);
+  return {
+    release: (soldSymbols: string[]) => {
+      for (const s of symbols) engine.pendingExits.delete(s);
+      if (soldSymbols.length > 0) {
+        const posMap = getPositionMap(userId);
+        for (const s of soldSymbols) posMap.delete(s);
+        engine.positionCount = posMap.size;
+      }
+    },
   };
 }
 
