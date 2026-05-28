@@ -28,7 +28,15 @@ WHERE a.id > b.id
   AND COALESCE(a.ticker, '') = COALESCE(b.ticker, '')
   AND COALESCE(a.amount_from, -1) = COALESCE(b.amount_from, -1);
 
--- 2. Swap the column index for the NULL-safe expression index.
+-- 2. Swap the column index/constraint for the NULL-safe expression index.
+--    The original was created as a UNIQUE CONSTRAINT (which owns a backing
+--    index of the same name), so DROP INDEX alone errors with "constraint
+--    requires it" — drop the constraint first. The DROP INDEX after is a
+--    fallback for any env where it's a plain index with no constraint. Both
+--    IF EXISTS so the migration stays idempotent. A unique *index* (not a
+--    constraint) is required because a constraint can't span COALESCE
+--    expressions; targetless ON CONFLICT DO NOTHING still matches it.
+ALTER TABLE congressional_trades DROP CONSTRAINT IF EXISTS congressional_trades_unique;
 DROP INDEX IF EXISTS congressional_trades_unique;
 
 CREATE UNIQUE INDEX IF NOT EXISTS congressional_trades_unique
