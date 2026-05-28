@@ -68,9 +68,9 @@ export default function PnlCalendarPage() {
   const [dayTrades, setDayTrades] = useState<DayTrade[]>([]);
   const [loadingTrades, setLoadingTrades] = useState(false);
 
-  // Fetch trades whenever a day modal opens. Uses the existing trader-trades
-  // endpoint with a date filter; falls back to client-side filtering if the
-  // endpoint doesn't support filtering yet.
+  // Fetch trades whenever a day modal opens. The endpoint filters to the
+  // requested ET calendar day server-side, so no client-side re-filter is
+  // needed (a UTC `startsWith` check would drop late-session fills).
   useEffect(() => {
     if (!openDay) return;
     let cancelled = false;
@@ -80,10 +80,7 @@ export default function PnlCalendarPage() {
       .then(async (res) => {
         if (cancelled || !res.ok) return;
         const data = await res.json();
-        const rows: DayTrade[] = (data.trades ?? []).filter(
-          (t: DayTrade) => t.fillTime?.startsWith(openDay.date)
-        );
-        setDayTrades(rows);
+        setDayTrades((data.trades ?? []) as DayTrade[]);
       })
       .catch(() => {
         /* non-critical */
