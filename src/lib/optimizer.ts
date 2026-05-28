@@ -849,7 +849,12 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       // The base excessReturn already orders losers correctly.
       if (r.excessReturn <= 0) return r.excessReturn;
       const sharpeMult = Math.min(Math.max(r.sharpeRatio, 0) / 1.0, 1.0);
-      const drawdownMult = Math.max(0, 1 - r.maxDrawdown / 0.30);
+      // r.maxDrawdown is a PERCENT (portfolioBacktest returns (peak-v)/peak*100),
+      // so the 30% window is `/ 30`, not `/ 0.30`. The old `/ 0.30` treated the
+      // percent as a fraction → 1 - 9.2/0.30 ≈ -30 → floored to 0.05 for every
+      // run, silently DISABLING the drawdown penalty so the GA chased raw
+      // return with no risk control (the source of the fantasy-return overfit).
+      const drawdownMult = Math.max(0, 1 - r.maxDrawdown / 30);
       // Soft floor so the GA still has a gradient at extreme risk profiles.
       const softSharpe = Math.max(0.05, sharpeMult);
       const softDrawdown = Math.max(0.05, drawdownMult);
