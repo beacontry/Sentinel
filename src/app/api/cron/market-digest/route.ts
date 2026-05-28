@@ -45,14 +45,20 @@ export async function GET(request: NextRequest) {
     const context = await gatherMarketContext();
     const result = await claude.generateMarketDigest(context, true);
 
-    // Persist
-    await db.insert(marketDigests).values({
-      date: today,
-      summary: result.summary,
-      watchlistSymbols: context.recentSignals?.map((s: { symbol: string }) => s.symbol) ?? [],
-      newsContext: context.news ?? [],
-      signalContext: context.recentSignals ?? [],
-    });
+    // Persist. onConflictDoNothing: the existence check above + this insert
+    // aren't atomic, so a concurrent user-triggered /api/market-summary on the
+    // same day could insert first. The date unique index backs the conflict
+    // clause — without it the second writer throws an unhandled unique violation.
+    await db
+      .insert(marketDigests)
+      .values({
+        date: today,
+        summary: result.summary,
+        watchlistSymbols: context.recentSignals?.map((s: { symbol: string }) => s.symbol) ?? [],
+        newsContext: context.news ?? [],
+        signalContext: context.recentSignals ?? [],
+      })
+      .onConflictDoNothing();
 
     // Articles auto-populate
     //

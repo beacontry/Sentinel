@@ -102,7 +102,10 @@ export const traderStatus = pgTable("trader_status", {
   mode: text("mode").notNull().default("paper"),
   lastHeartbeat: timestamp("last_heartbeat", { withTimezone: true }).defaultNow().notNull(),
   watchlist: jsonb("watchlist").notNull().default([]),
-});
+}, (t) => [
+  // Queried by user_id on every dashboard load + engine heartbeat (migration 0042).
+  index("trader_status_user_id_idx").on(t.userId),
+]);
 
 // Engine watchdog alerts: stalls, broker disconnects, daily-loss approaches, exit-order failures.
 // Written by src/lib/engine-watchdog.ts every 60s when conditions hit. Severity 'error' triggers

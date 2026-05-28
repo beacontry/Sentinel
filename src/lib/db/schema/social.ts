@@ -8,6 +8,7 @@ import {
   index,
   uniqueIndex,
   jsonb,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
@@ -40,7 +41,10 @@ export const forumReplies = pgTable("forum_replies", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   threadId: uuid("thread_id").notNull().references(() => forumThreads.id, { onDelete: "cascade" }),
-  parentReplyId: uuid("parent_reply_id"),
+  // Self-referential FK (added in migration 0043). ON DELETE SET NULL so
+  // deleting a parent reply promotes its children to top-level rather than
+  // cascading the delete — preserves user content.
+  parentReplyId: uuid("parent_reply_id").references((): AnyPgColumn => forumReplies.id, { onDelete: "set null" }),
   body: text("body").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

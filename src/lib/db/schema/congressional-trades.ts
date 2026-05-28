@@ -40,6 +40,12 @@ export const congressionalTrades = pgTable(
     index("congressional_trades_ticker_idx").on(t.ticker, t.transactionDate),
     index("congressional_trades_txn_date_idx").on(t.transactionDate, t.filingDate),
     index("congressional_trades_chamber_idx").on(t.chamber, t.transactionDate),
+    // NOTE: in prod this index is an EXPRESSION index using
+    // COALESCE(ticker,'') + COALESCE(amount_from,-1) so NULL ticker/amount
+    // rows dedup instead of inserting duplicates every re-ingest (migration
+    // 0041). Drizzle can't express a COALESCE index, so the column form below
+    // is kept only for type/relation awareness — the .sql migration is
+    // authoritative for prod and fresh rebuilds.
     uniqueIndex("congressional_trades_unique").on(
       t.chamber,
       t.filerName,

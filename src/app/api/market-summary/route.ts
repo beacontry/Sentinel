@@ -63,8 +63,11 @@ export async function GET() {
     const context = await gatherMarketContext();
     const result = await claude.generateMarketDigest(context);
 
-    // Persist to DB
-    const [row] = await db
+    // Persist to DB. onConflictDoNothing because the existence check above +
+    // this insert aren't atomic — a concurrent cron/user generation on the
+    // same day (date is unique) could insert first. On conflict no row is
+    // returned, so fall back to reading the row the other writer created.
+    const [inserted] = await db
       .insert(marketDigests)
       .values({
         date: today,
@@ -73,7 +76,16 @@ export async function GET() {
         newsContext: context.news ?? [],
         signalContext: context.recentSignals ?? [],
       })
+      .onConflictDoNothing()
       .returning();
+
+    const row =
+      inserted ??
+      (await db.select().from(marketDigests).where(eq(marketDigests.date, today)).limit(1))[0];
+
+    if (!row) {
+      return NextResponse.json({ error: "Failed to generate digest" }, { status: 500 });
+    }
 
     return NextResponse.json({
       configured: true,
