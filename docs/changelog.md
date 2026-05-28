@@ -28,6 +28,11 @@ The known limitation flagged during the hunt was fixed the same day. The alerts 
 - Real `volume_spike` (× trailing avg volume) and `pct_drop` (vs prior close); the hardcoded ×1M / never-set-previousPrice placeholders are gone.
 - **Operational TODO:** schedule the cron (`*/5 * * * *` curl with `x-cron-secret`) — it doesn't run until wired up.
 
+### Optimizer realism fixes (same day — prompted by analysing two TOP150 runs showing 900–1300% vs a ~flat market)
+- **Drawdown penalty was disabled by a unit bug** (`optimizer.ts`): `blendedFitness` did `1 - maxDrawdown/0.30`, but `maxDrawdown` is a *percent*, so the term floored to a constant 0.05 for every run → GA chased raw return with no risk control. Fixed to `/30`.
+- **Both backtesters were frictionless** → a tiny per-trade edge compounded into fantasy returns. Added a shared cost model (`BACKTEST_COSTS`: per-side slippage bps + per-fill commission) to `portfolioBacktest` and `runBacktest`.
+- **Action:** existing optimizer runs were scored under the broken fitness + frictionless fills — re-run the optimizer; don't trust the current ACTIVE preset for live until then.
+
 ---
 
 ## 2026-05-17 — Marathon: public-source security, billing wired, admin gaps closed, correctness sweep

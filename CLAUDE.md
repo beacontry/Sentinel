@@ -59,7 +59,7 @@ The 2026-05-26 prod observation that tactical-smart was outperforming optimized 
 - **Per-symbol GA-tuned params** — each symbol carries its own `stopLossPct`, `takeProfitAtrMult`, `trailingStopPct`, `holdPeriod`, RSI bounds, EMAs from the GA. Tactical-smart uses uniform defaults (`entry × 0.88` stop, `entry × 1.50` take, 11.7% trail, 999 hold).
 - **Fixed position sizing** — `equity × positionPct` per position. Tactical-smart uses inverse-volatility weighting (lower vol → bigger position).
 - **Finite hold period** — GA-tuned, typically ~33 days. Tactical-smart's `999` effectively never times out.
-- **Multi-objective GA fitness** — `blendedFitness` now scales `excessReturn` by `sharpeMult = min(sharpe/1.0, 1.0)` and `drawdownMult = max(0, 1 - maxDrawdown/0.20)`. Pushes the GA away from blow-up-risk param sets that score high on raw return alone. Re-run optimizer to retune existing strategies.
+- **Multi-objective GA fitness** — `blendedFitness` scales `excessReturn` by `sharpeMult = min(sharpe/1.0, 1.0)` and `drawdownMult = max(0, 1 - maxDrawdown/30)` (`maxDrawdown` is a *percent*). **2026-05-28 fix:** the divisor was `0.30`, which treated the percent as a fraction and floored the drawdown term to a constant `0.05` for every run — the GA was effectively chasing raw return with no risk control (root cause of fantasy-return overfit). Multipliers apply only to positive returns, floored at 0.05. Re-run optimizer to retune existing strategies.
 
 **Per-mode opt-in maps:**
 | Map | Optimized | Tactical-smart | Others |
@@ -87,6 +87,15 @@ drawdownMult` applies multipliers only to positive returns (negative
 returns skip — otherwise the GA preferred worse-risk-profile losers).
 Multipliers floored at 0.05 so the GA has gradient even at extreme
 drawdowns.
+
+**Trading costs (2026-05-28).** Both backtesters apply a shared cost model
+(`BACKTEST_COSTS` in `config.ts` — per-side slippage in bps + per-fill
+commission, default 5 bps / $0): buys fill above and sells below the trigger,
+commission per fill, entry slippage carried in the cost basis. Before this
+they were **frictionless**, which compounded a tiny per-trade edge into
+fantasy returns (e.g. 900–1300% test vs a ~flat-market buy-hold). Together with
+the drawdown-unit fix above, GA fitness now reflects realistic risk-adjusted
+performance — re-run the optimizer after any cost change.
 
 **Stop-sync scheduler hung-scan recovery (PR 16 audit fix).** The
 scheduler's `scan_in_flight` gate previously skipped forever when

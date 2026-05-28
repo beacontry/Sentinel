@@ -150,7 +150,7 @@
     <h3>Verified-not-bugs (agent over-flags downgraded after reading the source)</h3>
     <ul>
       <li><strong>Backtester "lookahead"</strong> — <code>portfolioBacktest</code>'s signal-includes-latest-bar + fill-at-close <em>matches the live engine</em>; no future bar is read, so GA params aren't invalidated.</li>
-      <li><strong>Intrabar stop-vs-take-profit ordering</strong> &amp; <strong>zero-slippage</strong> — standard daily-backtest simplifications present in both backtesters, not defects.</li>
+      <li><strong>Intrabar stop-vs-take-profit ordering</strong> — a standard daily-backtest simplification, left as-is. <strong>Zero-slippage</strong> was flagged as a simplification but later addressed (2026-05-28): both backtesters now model per-side slippage + commission (<code>BACKTEST_COSTS</code>), which — with the drawdown-penalty fix below — was the cause of optimizer "fantasy returns" (900–1300% vs a flat market).</li>
       <li><strong>Correlation on price levels</strong> — a common methodology shortcut (P3), left as-is.</li>
       <li><strong>Multiple security checks</strong> (timing-safe compares, JWT alg pinning, SSRF guard, SQL parameterization, auth rate-limits, push subscription lifecycle, public share-token routes, signup tier-hardcoding) — audited and confirmed correct.</li>
     </ul>
