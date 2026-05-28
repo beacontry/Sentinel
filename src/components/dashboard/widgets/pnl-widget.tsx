@@ -18,7 +18,9 @@ interface LifetimePnl {
   realizedPnl: number;
   unrealizedPnl: number;
   totalPnl: number;
-  costBasis?: number;
+  // Current account equity — basis for expressing lifetime P&L as a % of
+  // account size. Optional; server omits it when the broker is unreachable.
+  equity?: number;
 }
 
 export function PnlWidget() {
@@ -85,10 +87,11 @@ export function PnlWidget() {
   const isPositive = todayPnl.totalPnl >= 0;
   const realized = lifetimePnl?.realizedPnl ?? todayPnl.realizedPnl;
   const unrealized = lifetimePnl?.unrealizedPnl ?? todayPnl.unrealizedPnl;
-  // Use start-of-day equity if server provides it; otherwise fall back to
-  // the total P&L delta — at least the dollar value is always correct.
-  const todayBasis = todayPnl.startEquity ?? Math.abs(todayPnl.totalPnl);
-  const lifetimeBasis = lifetimePnl?.costBasis ?? Math.abs(realized + unrealized);
+  // Percent basis only when the server supplies a real denominator. Never
+  // fabricate one from |pnl| — that yields a meaningless ±100%. When the
+  // basis is undefined, formatPnl() falls back to dollar-only.
+  const todayBasis = todayPnl.startEquity; // start-of-day equity
+  const lifetimeBasis = lifetimePnl?.equity; // current account equity
 
   return (
     <div>

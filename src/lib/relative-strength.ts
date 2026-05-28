@@ -116,14 +116,17 @@ export async function calculateRelativeStrength(
           const lastClose = bars[bars.length - 1].close;
           const returnPct = computeReturn(firstClose, lastClose);
 
-          // RS score = symbol return / benchmark return
-          // Handle division by zero: if benchmark return is 0, use raw return as score
-          let rsScore: number;
-          if (benchmarkReturnPct === 0) {
-            rsScore = returnPct > 0 ? 2 : returnPct < 0 ? 0.5 : 1;
-          } else {
-            rsScore = returnPct / benchmarkReturnPct;
-          }
+          // RS score as a ratio of GROWTH FACTORS, not return/return. The
+          // naive ratio inverts in down markets: with the benchmark at -10%,
+          // a stock at +5% gives 5/-10 = -0.5 (looks like underperformance)
+          // while a stock at -20% gives -20/-10 = +2.0 (looks like
+          // outperformance) — backwards, exactly when RS matters most.
+          // (1+r)/(1+b) stays monotonic through zero: >1 outperformed, <1
+          // underperformed, =1 parity. Guards the only singular point,
+          // benchmark = -100% (factor 0), which can't happen for SPY.
+          const benchFactor = 1 + benchmarkReturnPct / 100;
+          const rsScore =
+            benchFactor !== 0 ? (1 + returnPct / 100) / benchFactor : 1;
 
           return {
             symbol,

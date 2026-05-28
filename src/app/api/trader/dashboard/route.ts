@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db, withTimeout, isStatementTimeout } from "@/lib/db";
+import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { traderStatus, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
@@ -9,6 +9,7 @@ import { getBrokerPositionCache, getTrackedPositionData, getUnprotectedSymbols }
 import { createRouteLogger } from "@/lib/logger";
 import { rateLimit } from "@/lib/rate-limiter";
 import { checkTier } from "@/lib/tiers-server";
+import { getETDateString } from "@/lib/market-hours";
 
 const log = createRouteLogger("trader-dashboard");
 
@@ -110,8 +111,11 @@ export async function GET() {
 
     const isConnected = traderServiceAlive || brokerConnected;
 
-    // All remaining DB reads in a single timeout
-    const today = new Date().toISOString().slice(0, 10);
+    // All remaining DB reads in a single timeout.
+    // ET date — the engine writes traderDailyPnl rows via getETDateString().
+    // A UTC key here would read a non-existent (tomorrow-dated) row after
+    // ~8 PM ET and silently miss the day's real row in the db_snapshot path.
+    const today = getETDateString();
     const { todayPnl, trades, signals, pnlHistory, filledTrades, todayTradesActual } = await withTimeout(3000, async (tx) => {
       // Today's P&L — scoped to current user
       const [tp] = await tx
@@ -190,22 +194,37 @@ export async function GET() {
     const winRate = pnls.length > 0 ? (wins.length / pnls.length) * 100 : 0;
     const avgWin = wins.length > 0 ? grossProfit / wins.length : 0;
     const avgLoss = losses.length > 0 ? grossLoss / losses.length : 0;
-    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : 0;
+    // A flawless record (wins, zero losses) is an infinite profit factor —
+    // not 0. Serialized as a 999 sentinel below (JSON.stringify(Infinity)
+    // === "null" would silently break the UI). Matches the admin routes.
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0;
     const lifetimeRealized = pnls.reduce((a, b) => a + b, 0);
 
-    // Max drawdown from daily P&L
+    // Daily mark-to-market P&L series, oldest → newest. Each daily row's
+    // unrealizedPnl is an end-of-day *snapshot* of open-position P&L, not a
+    // per-day change — so the true daily return is the realized P&L banked
+    // that day plus the *delta* in unrealized vs the prior day. The previous
+    // code summed the raw snapshot, counting the same open gain on every
+    // subsequent day and inflating both drawdown and the Sharpe series.
     const sortedPnl = [...pnlHistory].reverse();
+    const dailyReturns: number[] = [];
+    let prevUnrealized = sortedPnl.length > 0 ? sortedPnl[0].unrealizedPnl : 0;
+    for (const day of sortedPnl) {
+      dailyReturns.push(day.realizedPnl + (day.unrealizedPnl - prevUnrealized));
+      prevUnrealized = day.unrealizedPnl;
+    }
+
+    // Max drawdown from the cumulative daily-return equity curve
     let peak = 0;
     let maxDrawdown = 0;
     let cumulative = 0;
-    for (const day of sortedPnl) {
-      cumulative += day.realizedPnl + day.unrealizedPnl;
+    for (const r of dailyReturns) {
+      cumulative += r;
       peak = Math.max(peak, cumulative);
       maxDrawdown = Math.max(maxDrawdown, peak - cumulative);
     }
 
     // Sharpe ratio (annualized from daily returns)
-    const dailyReturns = sortedPnl.map((d) => d.realizedPnl + d.unrealizedPnl);
     let sharpeRatio = 0;
     if (dailyReturns.length > 1) {
       const mean = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
@@ -224,7 +243,7 @@ export async function GET() {
       grossLoss: Math.round(grossLoss * 100) / 100,
       avgWin: Math.round(avgWin * 100) / 100,
       avgLoss: Math.round(avgLoss * 100) / 100,
-      profitFactor: Math.round(profitFactor * 100) / 100,
+      profitFactor: Number.isFinite(profitFactor) ? Math.round(profitFactor * 100) / 100 : 999,
       maxDrawdown: Math.round(maxDrawdown * 100) / 100,
       sharpeRatio: Math.round(sharpeRatio * 100) / 100,
     };
@@ -345,6 +364,16 @@ export async function GET() {
         const realized = todayTradesActual.realizedSum;
         const tradesCount = todayTradesActual.count;
 
+        // Start-of-day equity = current equity minus today's total P&L.
+        // This is the only honest basis for a daily-return %. Returns
+        // undefined when the broker isn't reachable (no equity) or the
+        // math would produce a non-positive denominator — the client then
+        // falls back to dollar-only rather than a fabricated percentage.
+        const startEquityFor = (total: number) =>
+          brokerAccount && brokerAccount.equity - total > 0
+            ? brokerAccount.equity - total
+            : undefined;
+
         if (brokerConnected && brokerPositions.length > 0) {
           // Sum the broker's intraday P&L. Alpaca: real "change since
           // prev close" per position. IBKR/Tradier: hardcoded 0 (no
@@ -360,6 +389,7 @@ export async function GET() {
             realizedPnl: realized,
             unrealizedPnl: unrealizedToday,
             totalPnl: realized + unrealizedToday,
+            startEquity: startEquityFor(realized + unrealizedToday),
             tradesCount,
             halted: todayPnl?.halted ?? false,
             // "broker_intraday" — Alpaca, real intraday change.
@@ -380,6 +410,7 @@ export async function GET() {
             realizedPnl: realized,
             unrealizedPnl: todayPnl.unrealizedPnl,
             totalPnl: realized + todayPnl.unrealizedPnl,
+            startEquity: startEquityFor(realized + todayPnl.unrealizedPnl),
             tradesCount,
             halted: todayPnl.halted,
             source: "db_snapshot",
@@ -393,6 +424,7 @@ export async function GET() {
             realizedPnl: realized,
             unrealizedPnl: 0,
             totalPnl: realized,
+            startEquity: startEquityFor(realized),
             tradesCount,
             halted: false,
             source: "trades_only",
@@ -411,6 +443,13 @@ export async function GET() {
           realizedPnlToday: Math.round(realizedToday * 100) / 100,
           unrealizedPnl: Math.round(unrealized * 100) / 100,
           totalPnl: Math.round((lifetimeRealized + unrealized) * 100) / 100,
+          // Current account equity — basis for expressing lifetime P&L as a
+          // % of account size. Omitted when the broker isn't reachable so
+          // the client falls back to dollar-only instead of fabricating one.
+          equity:
+            brokerAccount && brokerAccount.equity > 0
+              ? Math.round(brokerAccount.equity * 100) / 100
+              : undefined,
         };
       })(),
       positions: finalPositions,

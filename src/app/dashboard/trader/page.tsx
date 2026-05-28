@@ -798,10 +798,12 @@ export default function TraderPage() {
         const unrealizedVal = lifetimePnl?.unrealizedPnl ?? todayPnl?.unrealizedPnl ?? 0;
         // Use account equity as the basis for percent — gives a "X% of
         // account" reading that's most intuitive for the headline cards.
+        // No equity (broker unreachable) → undefined basis, so formatPnl()
+        // shows dollar-only rather than a fabricated ±100%.
         const basis =
           (data.brokerAccount?.equity ?? 0) > 0
             ? (data.brokerAccount?.equity as number)
-            : Math.abs(totalPnlVal) || 1;
+            : undefined;
         return (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card>
@@ -875,7 +877,7 @@ export default function TraderPage() {
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Profit Factor</span>
               <span className={`text-lg font-display font-bold ${(analytics.profitFactor ?? 0) >= 1 ? "text-bullish" : "text-bearish"}`}>
-                {(analytics.profitFactor ?? 0).toFixed(2)}
+                {analytics.profitFactor === 999 ? "∞" : (analytics.profitFactor ?? 0).toFixed(2)}
               </span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
