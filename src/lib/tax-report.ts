@@ -30,6 +30,8 @@
  * just sums realized gains as ordinary income with no §1091 adjustments.
  */
 
+import { neutralizeCsvFormula } from "./csv";
+
 export interface TaxTradeEvent {
   /** Unique row id from trader_trades */
   id: string;
@@ -278,8 +280,10 @@ export function formatForm8949Csv(lots: ClosedLot[]): {
     (lot.realizedGainLoss + lot.washSaleDisallowed).toFixed(2),
   ];
 
-  const escape = (cell: string) =>
-    cell.includes(",") || cell.includes('"') ? `"${cell.replace(/"/g, '""')}"` : cell;
+  const escape = (raw: string) => {
+    const cell = neutralizeCsvFormula(raw);
+    return cell.includes(",") || cell.includes('"') ? `"${cell.replace(/"/g, '""')}"` : cell;
+  };
   const toCsv = (filtered: ClosedLot[]) =>
     [header, ...filtered.map(row)].map((r) => r.map(escape).join(",")).join("\r\n") + "\r\n";
 

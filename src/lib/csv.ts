@@ -1,9 +1,27 @@
 /**
+ * Defang spreadsheet formula injection (OWASP): a CSV cell beginning with
+ * = + - @ (or tab/CR) is executed as a formula by Excel / Google Sheets /
+ * LibreOffice, so a malicious free-text field (a trade note, user-agent,
+ * audit metadata) can exfiltrate data or run commands when the export is
+ * opened. Prefix a single quote to force the cell to text. `+`/`-` can begin
+ * a legitimate number, so those are only defanged when NOT number-like —
+ * negative financial figures like -150.00 stay intact.
+ */
+export function neutralizeCsvFormula(s: string): string {
+  if (s === "") return s;
+  const c = s[0];
+  if (c === "=" || c === "@" || c === "\t" || c === "\r") return "'" + s;
+  if ((c === "+" || c === "-") && !/^[+-]?\d/.test(s)) return "'" + s;
+  return s;
+}
+
+/**
  * Convert headers and rows to a properly escaped CSV string.
  * (Legacy — kept for backward compatibility with existing callers.)
  */
 export function toCSV(headers: string[], rows: string[][]): string {
-  const escapeField = (field: string): string => {
+  const escapeField = (raw: string): string => {
+    const field = neutralizeCsvFormula(raw);
     if (field.includes(",") || field.includes('"') || field.includes("\n")) {
       return `"${field.replace(/"/g, '""')}"`;
     }
@@ -32,7 +50,9 @@ export function csvCell(value: unknown): string {
   }
   if (typeof value === "boolean") return value ? "true" : "false";
   if (value instanceof Date) return value.toISOString();
-  const s = String(value);
+  // Numbers/booleans/dates returned above bypass this — only genuine text
+  // reaches here, so formula-neutralization can't corrupt a numeric column.
+  const s = neutralizeCsvFormula(String(value));
   if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
     return `"${s.replace(/"/g, '""')}"`;
   }

@@ -208,9 +208,24 @@ export const createForumReplySchema = z.object({
 
 // ─── Social ───────────────────────────────────────────────────────
 
+// Optional trade attached to a post. Bounded shape — Zod strips unknown keys
+// so a client can't stash arbitrary unbounded JSON in the jsonb column.
+const sharedTradeSchema = z.object({
+  symbol: z.string().min(1).max(10),
+  action: z.enum(["BUY", "SELL"]),
+  quantity: z.number().finite(),
+  entryPrice: z.number().finite(),
+  exitPrice: z.number().finite().nullish(),
+  pnl: z.number().finite().nullish(),
+  pnlPercent: z.number().finite().nullish(),
+  strategy: z.string().max(100).nullish(),
+  timestamp: z.string().max(40),
+});
+
 export const createSocialPostSchema = z.object({
   content: z.string().min(1, "Content is required").max(500, "Post must be 500 characters or fewer"),
   symbol: z.string().max(10).optional(),
+  sharedTrade: sharedTradeSchema.nullish(),
 });
 
 export const createCommentSchema = z.object({

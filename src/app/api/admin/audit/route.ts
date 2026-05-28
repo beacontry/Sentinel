@@ -4,6 +4,7 @@ import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { auditLog } from "@/lib/db/schema/audit";
 import { users } from "@/lib/db/schema/users";
 import { createRouteLogger } from "@/lib/logger";
+import { neutralizeCsvFormula } from "@/lib/csv";
 import { desc, and, eq, sql, gt, lt, gte, lte, inArray, ilike } from "drizzle-orm";
 
 const log = createRouteLogger("admin/audit");
@@ -191,9 +192,9 @@ function rowsToCsv(rows: Array<typeof auditLog.$inferSelect>): string {
 
 function csvCell(v: string | null | undefined): string {
   if (v == null) return "";
-  // RFC 4180: wrap in double-quotes, escape internal quotes by doubling.
-  // Wrap anything that contains comma, quote, or newline.
-  const s = String(v);
+  // Defang formula injection (userAgent / metadata / email are free-text and
+  // attacker-influenced), then RFC 4180 quote for comma/quote/newline.
+  const s = neutralizeCsvFormula(String(v));
   if (/[",\n\r]/.test(s)) {
     return `"${s.replace(/"/g, '""')}"`;
   }

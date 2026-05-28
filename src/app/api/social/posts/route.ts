@@ -117,7 +117,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const sharedTrade = body.sharedTrade ?? null;
+    // Validated + key-stripped by the schema (no longer raw body) so the
+    // jsonb column can't receive arbitrary unbounded client JSON.
+    const sharedTrade = parsed.data.sharedTrade ?? null;
 
     const [post] = await db
       .insert(socialPosts)

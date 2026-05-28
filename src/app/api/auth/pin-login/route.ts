@@ -34,6 +34,20 @@ export async function POST(request: Request) {
   }
 
   const { email, pin } = parsed.data;
+  const emailKey = email.toLowerCase();
+
+  // Per-account lockout (IP-independent). The per-IP limit above doesn't stop
+  // a distributed / IP-rotating attack from brute-forcing a 4-digit PIN, since
+  // each IP gets a fresh budget against the same account. 5 attempts / 15 min
+  // per account; the user can still fall back to password (message says so).
+  const acct = rateLimit(`pin:acct:${emailKey}`, 5, 900);
+  if (!acct.allowed) {
+    log.warn({ email }, "PIN login locked — too many per-account attempts");
+    return NextResponse.json(
+      { error: "Too many attempts. Please sign in with your password." },
+      { status: 429 }
+    );
+  }
 
   const [user] = await db
     .select({
@@ -44,7 +58,7 @@ export async function POST(request: Request) {
       pinHash: users.pinHash,
     })
     .from(users)
-    .where(eq(users.email, email.toLowerCase()))
+    .where(eq(users.email, emailKey))
     .limit(1);
 
   if (!user || !user.pinHash) {

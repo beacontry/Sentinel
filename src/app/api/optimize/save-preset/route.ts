@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { optimizationRuns } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
 import { checkTier } from "@/lib/tiers-server";
 
@@ -33,10 +33,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Scope to the caller's own runs — without the userId predicate this was
+    // an IDOR: any trader could pass another user's runId to read their tuned
+    // bestParams (returned below) and flip its active flag.
     const [run] = await db
       .select()
       .from(optimizationRuns)
-      .where(eq(optimizationRuns.id, runId))
+      .where(and(eq(optimizationRuns.id, runId), eq(optimizationRuns.userId, auth.userId)))
       .limit(1);
 
     if (!run) {
@@ -47,16 +50,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Run is not complete" }, { status: 400 });
     }
 
-    // Deactivate all runs for this user, then activate the selected one
+    // The active preset is GLOBAL: the engine's _loadOptimizedParams() reads
+    // `status=complete AND isActive=true LIMIT 1` with no userId into a single
+    // module-level cache shared by every optimized-mode engine. So deactivate
+    // ALL currently-active runs (not just the caller's) before activating the
+    // chosen one — otherwise multiple users' active rows coexist and the
+    // global LIMIT 1 lookup becomes nondeterministic. The SELECT above already
+    // proved the caller owns `runId`, so this only activates their own run.
     await db
       .update(optimizationRuns)
       .set({ isActive: false })
-      .where(eq(optimizationRuns.userId, auth.userId));
+      .where(eq(optimizationRuns.isActive, true));
 
     await db
       .update(optimizationRuns)
       .set({ isActive: true })
-      .where(eq(optimizationRuns.id, runId));
+      .where(and(eq(optimizationRuns.id, runId), eq(optimizationRuns.userId, auth.userId)));
 
     log.info({ runId, params: run.bestParams }, "Saved optimization run as active preset");
 

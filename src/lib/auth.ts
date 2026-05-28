@@ -71,11 +71,37 @@ export async function requireAuth(): Promise<JWTPayload> {
   return session;
 }
 
+/**
+ * Read the user's CURRENT role from the DB — not the (up-to-7-day) JWT claim.
+ * Role gates must use this so a demoted admin, a deleted user, or a stolen/
+ * stale token can't retain privileges until token expiry (stateless JWTs have
+ * no revocation). Dynamic import keeps auth.ts edge-safe (db only loads when a
+ * role gate actually runs, i.e. on node-runtime route handlers). Fails closed:
+ * any DB error / missing user → null → access denied.
+ */
+async function getCurrentRole(userId: string): Promise<UserRole | null> {
+  try {
+    const { db } = await import("./db");
+    const { users } = await import("./db/schema");
+    const { eq } = await import("drizzle-orm");
+    const [row] = await db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    return (row?.role as UserRole | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function requireRole(roles: UserRole[]): Promise<JWTPayload> {
   const session = await requireAuth();
-  if (!roles.includes(session.role)) {
+  const currentRole = await getCurrentRole(session.userId);
+  if (!currentRole || !roles.includes(currentRole)) {
     throw new Error("Forbidden");
   }
+  session.role = currentRole; // reflect the live role downstream, not the token
   return session;
 }
 
@@ -89,7 +115,7 @@ export function setSessionCookie(token: string): {
     value: token,
     options: {
       httpOnly: true,
-      secure: process.env.FORCE_HTTPS === "true",
+      secure: process.env.NODE_ENV === "production" || process.env.FORCE_HTTPS === "true",
       sameSite: "lax" as const,
       maxAge: AUTH_CONFIG.maxAge,
       path: "/",
@@ -107,7 +133,7 @@ export function clearSessionCookie(): {
     value: "",
     options: {
       httpOnly: true,
-      secure: process.env.FORCE_HTTPS === "true",
+      secure: process.env.NODE_ENV === "production" || process.env.FORCE_HTTPS === "true",
       sameSite: "lax" as const,
       maxAge: 0,
       path: "/",
@@ -136,8 +162,13 @@ export async function requireAuthWithCsrf(
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (roles && !roles.includes(session.role)) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+  if (roles) {
+    // Re-check the role against the DB, not the token (see getCurrentRole).
+    const currentRole = await getCurrentRole(session.userId);
+    if (!currentRole || !roles.includes(currentRole)) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+    session.role = currentRole; // reflect the live role downstream
   }
 
   return session;

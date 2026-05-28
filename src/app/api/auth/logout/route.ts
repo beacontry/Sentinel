@@ -20,7 +20,7 @@ export async function POST() {
   response.cookies.set("csrf-token", "", {
     httpOnly: false,
     sameSite: "strict",
-    secure: process.env.FORCE_HTTPS === "true",
+    secure: process.env.NODE_ENV === "production" || process.env.FORCE_HTTPS === "true",
     path: "/",
     maxAge: 0,
   });
