@@ -37,6 +37,7 @@ export const TOP_150 = [
   "DE", "UNP", "UPS", "FDX", "LMT", "NOC", "GD", "HON", "WAB", "IR",
 ];
 import { STRATEGY_PRESETS } from "./strategy-presets";
+import { BACKTEST_COSTS } from "./config";
 import { shouldGraduateExit, promoteToGraduationFloor } from "./trading-engine";
 import { db } from "./db";
 import {
@@ -101,6 +102,10 @@ const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
   emaSlow:         { min: 15,    max: 50, step: 1 },
   rsThreshold:     { min: -0.10, max: 0.10 },
 };
+
+// Per-side slippage as a fraction (5 bps → 0.0005). See BACKTEST_COSTS.
+const SLIP = BACKTEST_COSTS.slippageBps / 10000;
+const COMMISSION = BACKTEST_COSTS.commissionPerFill;
 
 // Fixed position sizing for backtesting (user risk profiles control live sizing)
 const BACKTEST_POSITION_PCT = 0.10;
@@ -487,8 +492,12 @@ export function portfolioBacktest(
       if (!exitPrice && (di - pos.entryDateIdx) >= params.holdPeriod) exitPrice = bar.close;
 
       if (exitPrice !== null) {
-        cash += pos.shares * exitPrice;
-        const ret = (exitPrice - pos.entryPrice) / pos.entryPrice;
+        // Sells fill below the trigger level (slippage); pay commission.
+        // pos.entryPrice already includes entry-side slippage, so `ret` is the
+        // realistic round-trip return net of execution cost.
+        const exitFill = exitPrice * (1 - SLIP);
+        cash += pos.shares * exitFill - COMMISSION;
+        const ret = (exitFill - pos.entryPrice) / pos.entryPrice;
         if (ret > 0) wins++; else losses++;
 
         // Track per-symbol
@@ -561,14 +570,18 @@ export function portfolioBacktest(
           const b = data.barLookup.get(pos.symbol)?.get(date);
           portfolioValue += pos.shares * (b?.close ?? pos.entryPrice);
         }
+        // Buys fill above the close (slippage); pay commission. entryPrice
+        // (cost basis) carries the slippage; trigger levels stay on the raw
+        // market price so exit detection is unchanged.
+        const fillPrice = cand.price * (1 + SLIP);
         const posSize = portfolioValue * BACKTEST_POSITION_PCT;
-        const shares = Math.floor(posSize / cand.price);
-        if (shares <= 0 || shares * cand.price > cash) continue;
+        const shares = Math.floor(posSize / fillPrice);
+        if (shares <= 0 || shares * fillPrice + COMMISSION > cash) continue;
 
-        cash -= shares * cand.price;
+        cash -= shares * fillPrice + COMMISSION;
         positions.push({
           symbol: cand.symbol,
-          entryPrice: cand.price,
+          entryPrice: fillPrice,
           entryDateIdx: di,
           shares,
           peakPrice: cand.price,

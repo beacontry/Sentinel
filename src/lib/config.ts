@@ -106,6 +106,21 @@ export const RS_CONFIG = {
   defaultPeriod: 30,
 } as const;
 
+// Trading-cost model for BOTH backtesters (optimizer's portfolioBacktest and
+// the single-symbol runBacktest) — kept here so they stay in parity. Without
+// it the backtests are frictionless and a tiny per-trade edge compounds into
+// fantasy returns over hundreds of trades (e.g. 1000%+ vs a flat market).
+export const BACKTEST_COSTS = {
+  // Per-SIDE slippage in basis points: the gap between the assumed fill (a
+  // bar close or an exact stop/TP level) and a realistic fill. Buys fill
+  // higher, sells lower. 5 bps/side ≈ 10 bps round-trip — conservative for
+  // liquid large-caps, light for thin names.
+  slippageBps: 5,
+  // Commission charged per fill (entry and exit each). $0 on Alpaca stocks;
+  // configurable for brokers/instruments that charge.
+  commissionPerFill: 0,
+} as const;
+
 export const HYBRID_CONFIG = {
   sentimentEnabled: process.env.HYBRID_SENTIMENT_ENABLED !== "false",
   optionsFlowEnabled: process.env.HYBRID_OPTIONS_ENABLED !== "false",

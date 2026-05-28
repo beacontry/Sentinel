@@ -2,6 +2,12 @@ import type { Bar } from "@/types";
 import { analyzeBars } from "./indicators/analyzer";
 import { detectMarketRegime, type AdaptiveTarget } from "./market-regime";
 import { STRATEGY_PRESETS } from "./strategy-presets";
+import { BACKTEST_COSTS } from "./config";
+
+// Trading-cost model — shared with the optimizer's portfolioBacktest so the
+// two backtesters stay in parity (see config.ts § BACKTEST_COSTS).
+const SLIP = BACKTEST_COSTS.slippageBps / 10000; // per-side slippage fraction
+const COMMISSION = BACKTEST_COSTS.commissionPerFill;
 import {
   type EngineMode,
   getGraduationMode,
@@ -308,15 +314,18 @@ export function runBacktest(
       }
 
       if (exitPrice !== null) {
-        const returnPct = ((exitPrice - position.entryPrice) / position.entryPrice) * 100;
-        cash += position.shares * exitPrice;
+        // Sells fill below the trigger level (slippage); pay commission. Record
+        // the realized fill so exitPrice and returnPct stay consistent.
+        const exitFill = exitPrice * (1 - SLIP);
+        const returnPct = ((exitFill - position.entryPrice) / position.entryPrice) * 100;
+        cash += position.shares * exitFill - COMMISSION;
 
         trades.push({
           entryDate: position.entryDate,
           exitDate: bar.date,
           signal: position.signal,
           entryPrice: position.entryPrice,
-          exitPrice,
+          exitPrice: parseFloat(exitFill.toFixed(2)),
           returnPct,
           wasCorrect: returnPct > 0,
           exitReason,
@@ -341,7 +350,9 @@ export function runBacktest(
     // Long-only: only open on BUY/STRONG_BUY
     if (result.signal !== "BUY" && result.signal !== "STRONG_BUY") continue;
 
-    const entryPrice = bar.close;
+    // Buys fill above the close (slippage); entryPrice is the cost basis, so
+    // stop/TP levels and returns all derive from the real fill.
+    const entryPrice = bar.close * (1 + SLIP);
 
     // Risk-based position sizing: max_single_trade_loss / stop_distance.
     // activeCfg honors adaptive's per-bar regime swap.
@@ -353,7 +364,7 @@ export function runBacktest(
 
     if (shares <= 0) continue;
 
-    cash -= shares * entryPrice;
+    cash -= shares * entryPrice + COMMISSION;
     position = {
       entryPrice,
       entryDate: bar.date,
@@ -365,19 +376,20 @@ export function runBacktest(
     };
   }
 
-  // Close any remaining position at end of data
+  // Close any remaining position at end of data (liquidate at the last close,
+  // net of exit slippage + commission, same as any other exit).
   if (position) {
     const lastBar = bars[bars.length - 1];
-    const exitPrice = lastBar.close;
-    const returnPct = ((exitPrice - position.entryPrice) / position.entryPrice) * 100;
-    cash += position.shares * exitPrice;
+    const exitFill = lastBar.close * (1 - SLIP);
+    const returnPct = ((exitFill - position.entryPrice) / position.entryPrice) * 100;
+    cash += position.shares * exitFill - COMMISSION;
 
     trades.push({
       entryDate: position.entryDate,
       exitDate: lastBar.date,
       signal: position.signal,
       entryPrice: position.entryPrice,
-      exitPrice,
+      exitPrice: parseFloat(exitFill.toFixed(2)),
       returnPct,
       wasCorrect: returnPct > 0,
       exitReason: "end_of_data",
