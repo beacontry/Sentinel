@@ -4,6 +4,28 @@ Dated retrospectives extracted from CLAUDE.md. Day-to-day "when did X land" ques
 
 ---
 
+## 2026-05-28 — Six-round defensive bug hunt (31 fixes)
+
+A sustained find→verify→fix audit across the whole surface. Full itemized report with severities at `docs/bug-hunt-report-2026-05-28.html`. Each finding was surfaced by a read-only pass and **verified against source before fixing** — several agent over-flags were downgraded rather than patched (notably a claimed backtester "lookahead" that actually matches the live engine). `tsc` clean, 573/573 tests pass throughout.
+
+Highest-severity fixes:
+- **Stripe webhook idempotency was inverted (P0)** — dedup row inserted *before* the handler + best-effort rollback DELETE; a failed rollback permanently swallowed the event. Now records *after* handler success (handlers verified idempotent).
+- **Double-sell race (P0)** — the 15-min scan and 1-min exit poll each did a stale `pendingExits.has` check then awaited then claimed; both could market-sell one position. Added an atomic synchronous re-check before the claim in both paths.
+
+Notable P1s: P&L "±100%" and profit-factor "0.00"-for-flawless display bugs; relative-strength inverting in down markets; tax-year UTC→ET bucketing (+ `form8949` fill-date) and the long-term off-by-one; JWT role never re-checked from DB (demotion/stolen-token priv-esc window); `save-preset` IDOR; removal of 3 legacy `x-trader-secret` write endpoints (no userId scoping, WHERE-less status clobber); zero/NaN-price junk-order + spurious-stop-loss guard; earnings-blackout protection gap on transient Finnhub failure; CSV formula injection across all export paths; 5 frontend symbol-fetch races.
+
+P2 hardening: flatten/engine `pendingExits` coordination; double-start interval leak; per-user engine-state eviction; PIN per-account lockout; cookie `Secure` in prod; SW no longer caches authed dashboard navigations; per-symbol cache eviction (`sec-filings`, `quick-insights`); `groqChat` timeout; `market_digests` concurrent-insert; screener daily/intraday in-flight split.
+
+### Migrations (idempotent; apply on prod manually as `postgres`)
+- `0041_congress_dedup_nulls.sql` — NULL-safe COALESCE unique index so NULL-ticker congress rows stop duplicating on re-ingest (dedups existing rows first).
+- `0042_trader_status_user_idx.sql` — btree index on `trader_status.user_id`.
+- `0043_forum_replies_parent_fk.sql` — self-ref FK `ON DELETE SET NULL` on `parent_reply_id` (nulls orphans first).
+
+### Known limitation (deferred to a focused PR)
+The alerts engine evaluates rules only as a side-effect of `GET /api/analyze/[symbol]`, keyed by symbol not user (fires/cooldowns on a stranger's analyze; symbols nobody analyzes are never checked), and "crossover" rule types are really level checks. Needs a scheduled per-user evaluator with crossing-state.
+
+---
+
 ## 2026-05-17 — Marathon: public-source security, billing wired, admin gaps closed, correctness sweep
 
 After opening the repo to public visibility under FSL-1.1-ALv2, an end-to-end pass: vuln assessment specifically through the public-code lens, finish wiring Stripe billing lifecycle, fill the admin operational gaps that would surface the moment customers arrive, then a correctness sweep before pushing.

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sentinel — Bug Hunt Report (2026-05-28)</title>
+<style>
+  :root {
+    --bg: #0f1310; --surface: #161b17; --surface2: #1d231e; --border: #2a322b;
+    --text: #e7ece8; --muted: #97a39a; --accent: #34d399;
+    --p0: #f87171; --p1: #fb923c; --p2: #fbbf24; --p3: #60a5fa; --ok: #34d399;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 2.5rem 1.25rem;
+  }
+  main { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 1.9rem; margin: 0 0 .25rem; letter-spacing: -.02em; }
+  h2 {
+    font-size: 1.15rem; margin: 2.25rem 0 .75rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--border); letter-spacing: -.01em;
+  }
+  .sub { color: var(--muted); margin: 0 0 1.5rem; }
+  .summary {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: .75rem; margin: 1.5rem 0 2rem;
+  }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: .9rem 1rem; }
+  .stat .n { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .l { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
+  table { width: 100%; border-collapse: collapse; margin: .5rem 0 1rem; font-size: 14px; }
+  th, td { text-align: left; padding: .55rem .6rem; vertical-align: top; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: .76rem; text-transform: uppercase; letter-spacing: .05em; }
+  tr:last-child td { border-bottom: none; }
+  td.sev { white-space: nowrap; }
+  code { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: .08em .4em; font-size: .85em; font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; }
+  .badge { display: inline-block; font-size: .72rem; font-weight: 700; padding: .12em .5em; border-radius: 999px; letter-spacing: .03em; }
+  .b-p0 { background: rgba(248,113,113,.16); color: var(--p0); }
+  .b-p1 { background: rgba(251,146,60,.16); color: var(--p1); }
+  .b-p2 { background: rgba(251,191,36,.16); color: var(--p2); }
+  .b-p3 { background: rgba(96,165,250,.16); color: var(--p3); }
+  .note { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; margin: 1rem 0; }
+  .note h3 { margin: 0 0 .4rem; font-size: 1rem; }
+  .muted { color: var(--muted); }
+  ul { margin: .4rem 0; padding-left: 1.2rem; }
+  li { margin: .25rem 0; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sentinel — Bug Hunt Report</h1>
+  <p class="sub">Multi-round defensive audit &amp; remediation · 2026-05-28 · all fixes validated (<code>tsc</code> clean · 573/573 tests pass)</p>
+
+  <div class="summary">
+    <div class="stat"><div class="n">31</div><div class="l">Bugs fixed</div></div>
+    <div class="stat"><div class="n">6</div><div class="l">Hunt rounds</div></div>
+    <div class="stat"><div class="n">3</div><div class="l">DB migrations</div></div>
+    <div class="stat"><div class="n">5</div><div class="l">P0 / P1</div></div>
+    <div class="stat"><div class="n">573</div><div class="l">Tests passing</div></div>
+  </div>
+
+  <p>Each finding below was surfaced by a read-only audit pass and then <strong>verified against the source</strong> before fixing — several agent over-flags were downgraded rather than blindly patched (see <em>Verified-not-bugs</em>). Severity: <span class="badge b-p0">P0</span> exploitable / money-corrupting · <span class="badge b-p1">P1</span> wrong result, leak, or priv-esc · <span class="badge b-p2">P2</span> reliability / hardening · <span class="badge b-p3">P3</span> minor.</p>
+
+  <h2>Financial &amp; numeric correctness</h2>
+  <table>
+    <tr><th>Bug</th><th class="sev">Sev</th><th>Where</th></tr>
+    <tr><td><strong>P&amp;L percent showed ±100%</strong> — the widget computed <code>pnl / Math.abs(pnl) × 100</code> because the server never sent a real basis; always exactly ±100%.</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>trader/dashboard/route.ts</code>, <code>pnl-widget.tsx</code>, <code>trader/page.tsx</code></td></tr>
+    <tr><td><strong>Profit factor "0.00" in red for a flawless record</strong> — wins + zero losses scored 0 (worst-looking) instead of ∞.</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>trader/dashboard/route.ts:193</code></td></tr>
+    <tr><td><strong>Drawdown/Sharpe treated the unrealized snapshot as a daily delta</strong> — accumulated the same open gain every day, inflating both.</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>trader/dashboard/route.ts</code></td></tr>
+    <tr><td><strong>Relative-strength inverted in down markets</strong> — <code>return/benchmarkReturn</code> flips sign when the benchmark is negative; a stock that fell <em>less</em> than SPY ranked as "underperforming." Switched to a growth-factor ratio.</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>relative-strength.ts:125</code></td></tr>
+    <tr><td><strong>Zero/NaN price produced junk $0 orders + spurious stop-loss exits</strong> — <code>runScan</code> lacked the <code>price&gt;0</code> guard the exit-poll had; <code>floor(x/0)=Infinity</code> sized to the share cap, and <code>0&nbsp;&le;&nbsp;stopLoss</code> fired false exits.</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>trading-engine.ts</code> (runScan + runExitCheck)</td></tr>
+  </table>
+
+  <h2>Trading engine — concurrency &amp; safety</h2>
+  <table>
+    <tr><th>Bug</th><th class="sev">Sev</th><th>Where</th></tr>
+    <tr><td><strong>Double-sell race</strong> — the 15-min scan and 1-min exit poll each did a stale <code>pendingExits.has</code> check, then awaited, then claimed; both could fire a market sell on one position (oversell into a short) + double-count daily loss. Added an atomic synchronous re-check immediately before the claim in both paths.</td><td class="sev"><span class="badge b-p0">P0</span></td><td><code>trading-engine.ts</code></td></tr>
+    <tr><td><strong>Double-start interval leak</strong> — <code>startEngine</code> checked <code>running</code> but set it only after 3 awaits, so two concurrent starts orphaned a scan-loop interval. Added a synchronous <code>starting</code> claim cleared on every exit path (incl. the DB-throw path).</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>trading-engine.ts</code></td></tr>
+    <tr><td><strong>flatten-all could double-sell with the running engine</strong> — added <code>reserveManualFlatten()</code> to reserve symbols in <code>pendingExits</code> for the flatten's duration (no-op when stopped), released on success and on the outer catch.</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>trading-engine.ts</code>, <code>trader/command/route.ts</code></td></tr>
+    <tr><td><strong>Per-user engine state never evicted</strong> — <code>stopEngine</code> cleared timers but left <code>EngineState</code>/position-map/broker-cache in the globalThis maps forever. Added a guarded, deferred eviction (past the max scan window, re-checks still-stopped).</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>trading-engine.ts</code></td></tr>
+  </table>
+
+  <h2>Security · auth · multi-tenancy</h2>
+  <table>
+    <tr><th>Bug</th><th class="sev">Sev</th><th>Where</th></tr>
+    <tr><td><strong>JWT role never re-checked</strong> — admin gates read <code>role</code> from the 7-day token; a demoted admin or stolen/stale token kept privileges until expiry (logout is stateless). Now re-reads the live role from DB on role-gated routes (fails closed).</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>auth.ts</code></td></tr>
+    <tr><td><strong>save-preset IDOR + global-preset corruption</strong> — selected/activated an optimization run by id with no userId; any trader could read another user's tuned params and flip the shared active preset. Scoped to the caller; deactivate-all so the single global active row stays deterministic.</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>optimize/save-preset/route.ts</code></td></tr>
+    <tr><td><strong>Removed 3 legacy <code>x-trader-secret</code> write endpoints</strong> (<code>trader/pnl</code>, <code>trader/signals</code>, <code>trader/trades</code> POST/PATCH) — daemon-era, no userId scoping, a WHERE-less <code>traderStatus</code> update clobbered every user's row. Replaced <code>trader/trades</code> with a session-authed GET (also fixed the silently-broken P&amp;L-calendar drill-down). Deleted dead <code>trader-auth</code> + <code>trader-validators</code>.</td><td class="sev"><span class="badge b-p1">P1</span></td><td>3 routes + 2 libs</td></tr>
+    <tr><td><strong>Session/CSRF cookie <code>Secure</code> tied to <code>FORCE_HTTPS</code> only</strong> — a missing env var in prod shipped cookies over plaintext HTTP. Now also Secure when <code>NODE_ENV==="production"</code>.</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>auth.ts</code>, <code>csrf.ts</code>, <code>logout</code></td></tr>
+    <tr><td><strong>PIN brute-force per-IP only</strong> — a 4-digit PIN with no per-account lockout was guessable via IP rotation. Added an IP-independent per-account attempt limit.</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>auth/pin-login/route.ts</code></td></tr>
+    <tr><td><strong>Unvalidated <code>sharedTrade</code> JSON</strong> written to the DB from the raw body. Added a bounded Zod schema (strips unknown keys).</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>social/posts/route.ts</code>, <code>validators.ts</code></td></tr>
+    <tr><td><strong>CSV formula injection</strong> — export helpers never neutralized a leading <code>= + - @</code>; free-text columns (trade notes, audit user-agent/metadata, signal text) executed as formulas in Excel/Sheets. Added a number-safe neutralizer across every export path.</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>csv.ts</code>, <code>tax-report.ts</code>, <code>admin/audit/route.ts</code></td></tr>
+  </table>
+
+  <h2>Billing</h2>
+  <table>
+    <tr><th>Bug</th><th class="sev">Sev</th><th>Where</th></tr>
+    <tr><td><strong>Stripe webhook idempotency inverted</strong> — the dedup row was inserted <em>before</em> handling and rolled back with a best-effort DELETE; a failed rollback (same DB blip that broke the handler) permanently swallowed the event (lost tier grant/downgrade). Now records the event <em>after</em> the handler succeeds, with a fast-path pre-check; handlers verified idempotent.</td><td class="sev"><span class="badge b-p0">P0</span></td><td><code>webhooks/stripe/route.ts</code></td></tr>
+  </table>
+
+  <h2>Tax</h2>
+  <table>
+    <tr><th>Bug</th><th class="sev">Sev</th><th>Where</th></tr>
+    <tr><td><strong>Tax-year bucketed by UTC, not ET</strong> — a Dec 31 evening fill landed in the next tax year. Both routes now bound the year on ET; <code>form8949</code> also now filters engine trades by <em>fill</em> date, not order-creation.</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>tax/report</code>, <code>tax/form8949</code></td></tr>
+    <tr><td><strong>Long-term holding off-by-one</strong> — <code>holdingDays &ge; 365</code> classed an exactly-one-year hold as long-term; IRS requires <em>more than</em> a year. Switched to a leap-year-correct calendar-anniversary check.</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>tax-engine.ts:258</code></td></tr>
+  </table>
+
+  <h2>Date/time anchoring (ET vs UTC)</h2>
+  <table>
+    <tr><th>Bug</th><th class="sev">Sev</th><th>Where</th></tr>
+    <tr><td><strong>Daily-P&amp;L row keyed by UTC date</strong> in two spots while the engine writes ET-keyed rows — after ~8 PM ET a flatten wrote a phantom tomorrow-dated row (split realized total) and the dashboard read a non-existent row. Both switched to <code>getETDateString()</code>.</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>trader/command</code>, <code>trader/dashboard</code></td></tr>
+  </table>
+
+  <h2>Data integrity · migrations</h2>
+  <table>
+    <tr><th>Bug</th><th class="sev">Sev</th><th>Where</th></tr>
+    <tr><td><strong>Congress trades duplicated every re-ingest</strong> — the unique index covered nullable <code>ticker</code>/<code>amount_from</code>; Postgres treats NULLs as distinct, so NULL-ticker rows never deduped. Migration recreates it as a NULL-safe COALESCE expression index (dedups existing rows first).</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>drizzle/0041_congress_dedup_nulls.sql</code></td></tr>
+    <tr><td><strong><code>market_digests</code> concurrent insert</strong> — check-then-bare-insert with a date-only unique threw on a cron+user race. Added <code>onConflictDoNothing</code> + read-back fallback.</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>cron/market-digest</code>, <code>market-summary</code></td></tr>
+    <tr><td><strong><code>trader_status.user_id</code> unindexed</strong> — seq scan per dashboard load + heartbeat. Added a btree index.</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>drizzle/0042_trader_status_user_idx.sql</code></td></tr>
+    <tr><td><strong><code>forum_replies.parent_reply_id</code> had no FK</strong> — orphaned child replies on parent delete. Added a self-ref FK with <code>ON DELETE SET NULL</code> (nulls orphans first).</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>drizzle/0043_forum_replies_parent_fk.sql</code></td></tr>
+  </table>
+  <p class="muted">All three migrations are idempotent and clean pre-existing bad data before adding the constraint. They are <strong>not yet applied</strong> — to be run on prod manually as <code>postgres</code> per the multi-phase-remediation procedure.</p>
+
+  <h2>Frontend</h2>
+  <table>
+    <tr><th>Bug</th><th class="sev">Sev</th><th>Where</th></tr>
+    <tr><td><strong>5 fetch races showed the wrong ticker's data</strong> — symbol-driven research panels swap the symbol prop in place; a slow response for a previous symbol overwrote the visible card. Added <code>cancelled</code>-flag guards.</td><td class="sev"><span class="badge b-p1">P1</span></td><td>analyst-consensus, social-buzz, peer-stocks, insider-activity, sentiment-gauge</td></tr>
+    <tr><td><strong>Service worker cached authenticated <code>/dashboard/*</code> navigations</strong> in the shared cache — cross-user shell staleness on a shared device + stale shell after deploy. Skipped caching dashboard navigations; bumped the SW cache version to purge existing shells.</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>public/sw.js</code></td></tr>
+  </table>
+
+  <h2>Resilience · memory · caching</h2>
+  <table>
+    <tr><th>Bug</th><th class="sev">Sev</th><th>Where</th></tr>
+    <tr><td><strong>Earnings-blackout protection gap</strong> — the cache was wiped <em>before</em> the Finnhub fetch; a transient failure left it empty with a bumped timestamp, so the engine could buy into earnings for ~6h. Now commits on success, keeps the previous cache on failure.</td><td class="sev"><span class="badge b-p1">P1</span></td><td><code>trading-engine.ts</code></td></tr>
+    <tr><td><strong>Screener daily/intraday shared one in-flight promise</strong> — a concurrent caller could get 5m-bar results labelled as a daily scan. Split by timeframe (wait-out the other type, then run yours).</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>screener.ts</code></td></tr>
+    <tr><td><strong><code>groqChat</code> had no fetch timeout</strong> — the market digest / AI chat could hang forever. Added AbortController + 20s timeout.</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>claude.ts</code></td></tr>
+    <tr><td><strong>Per-symbol caches never pruned</strong> (<code>sec-filings</code>, <code>quick-insights</code>) — TTL gated reads but expired entries lingered forever over the whole-market key space. Added delete-on-expired-read + size-capped sweep.</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>sec-filings.ts</code>, <code>quick-insights.ts</code></td></tr>
+    <tr><td><strong>Finnhub usage-tracking failure swallowed silently</strong> — added a warn log.</td><td class="sev"><span class="badge b-p3">P3</span></td><td><code>finnhub.ts</code></td></tr>
+  </table>
+
+  <div class="note">
+    <h3>Known limitation — noted, not fixed (needs a feature-level change)</h3>
+    <p class="muted">The <strong>alerts engine</strong> (<code>alert-engine.ts</code>) has two structural issues that warrant a focused PR rather than a patch: (1) rules are evaluated only as a side-effect of <code>GET /api/analyze/[symbol]</code> and keyed by symbol (not user), so an alert fires/cooldowns based on whoever happens to analyze the symbol — and a symbol nobody analyzes is never checked (missed alerts); (2) "crossover" rule types are really level checks (fire while-above, not on the cross). The proper fix is a scheduled per-user alert evaluator with crossing-state tracking.</p>
+  </div>
+
+  <div class="note">
+    <h3>Verified-not-bugs (agent over-flags downgraded after reading the source)</h3>
+    <ul>
+      <li><strong>Backtester "lookahead"</strong> — <code>portfolioBacktest</code>'s signal-includes-latest-bar + fill-at-close <em>matches the live engine</em>; no future bar is read, so GA params aren't invalidated.</li>
+      <li><strong>Intrabar stop-vs-take-profit ordering</strong> &amp; <strong>zero-slippage</strong> — standard daily-backtest simplifications present in both backtesters, not defects.</li>
+      <li><strong>Correlation on price levels</strong> — a common methodology shortcut (P3), left as-is.</li>
+      <li><strong>Multiple security checks</strong> (timing-safe compares, JWT alg pinning, SSRF guard, SQL parameterization, auth rate-limits, push subscription lifecycle, public share-token routes, signup tier-hardcoding) — audited and confirmed correct.</li>
+    </ul>
+  </div>
+
+  <footer>
+    Generated 2026-05-28 · Validation: <code>tsc --noEmit</code> clean, ESLint 0 errors, 573/573 Vitest tests passing across 41 suites.
+  </footer>
+</main>
+</body>
+</html>

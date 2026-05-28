@@ -6,11 +6,11 @@
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)
-- Drizzle ORM + PostgreSQL (41 migrations as of `0040_trader_engine_snapshot.sql`)
+- Drizzle ORM + PostgreSQL (44 migrations as of `0043_forum_replies_parent_fk.sql`)
 - Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
-- Vitest for testing (567 tests across 40 suites — includes engine-safeguards (wash-sale + PDT), swap-sell planner integration, engine-snapshot serialize/deserialize, scan cancellation, take-profit graduation, accuracy, audit, analyzer, breakeven-promote, dynamic-trail, market-regime, tax-report, etc.)
+- Vitest for testing (573 tests across 41 suites — includes engine-safeguards (wash-sale + PDT), swap-sell planner integration, engine-snapshot serialize/deserialize, scan cancellation, take-profit graduation, accuracy, audit, analyzer, breakeven-promote, dynamic-trail, market-regime, tax-report, etc.)
 - Alpaca Markets API for paper/live trading
 - Stripe for billing (Free / Trader $20 / Premium $40 / Self-Hosted) — webhook handler at `/api/webhooks/stripe`, sandbox + portal at `/api/billing/{checkout,portal}`
 
@@ -386,7 +386,7 @@ if (auth instanceof Response) return auth;
 ```
 Admin routes: `requireAuthWithCsrf(request, ["admin"])`. GET handlers use `getSession()`.
 
-**Excluded from CSRF:** `auth/login`, `auth/register`, `auth/logout`, `csrf`, `cron/*`, trader-secret routes (`trader/pnl`, `trader/signals`, `trader/trades`).
+**Excluded from CSRF:** `auth/login`, `auth/register`, `auth/logout`, `csrf`, `cron/*`. (The legacy `x-trader-secret` write routes — `trader/pnl`, `trader/signals`, `trader/trades` POST/PATCH — were removed 2026-05-28; the in-process engine writes those tables directly with `userId`. `trader/trades` now exposes only a session-authed GET. `TRADER_SECRET` is still used for *outbound* push via `TRADER_PUSH_CONFIG`/`trader-push.ts`.)
 
 ### Statement Timeouts on GET Routes
 All GET routes with DB queries use `withTimeout()` from `@/lib/db`:
@@ -472,9 +472,9 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed` — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
 
 ## Migrations
-Browse `drizzle/*.sql` for the full list (41 migrations as of `0040_trader_engine_snapshot.sql`). All idempotent (`IF NOT EXISTS`).
+Browse `drizzle/*.sql` for the full list (44 migrations as of `0043_forum_replies_parent_fk.sql`). All idempotent (`IF NOT EXISTS`).
 
-> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0040 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
+> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0043 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 
 ## Education Section
 
@@ -522,7 +522,7 @@ Pages are organized under sidebar nav items via `SUB_NAV` in `nav-config.ts`:
 
 ## Changelog
 
-Dated retrospectives of major rollouts (2026-05-12 through 2026-05-16) — covering multi-watchlist, manual trading, broker switching, support/DMs/ToS, journal v2, Reddit feed, tier enforcement + Stripe billing, public free-tier signup, brand rebrand to Beacontry, the 6-phase marathon, beginner-friendliness audit, and the 2026-05-16 6-batch security/a11y/theming hardening pass (incl. CSP nonce strategy + sanitize-html removal) — live in `docs/changelog.md`. Read it when investigating "when did X land" or "what changed in batch Y"; day-to-day work uses `git log`.
+Dated retrospectives of major rollouts (2026-05-12 through 2026-05-28) — covering multi-watchlist, manual trading, broker switching, support/DMs/ToS, journal v2, Reddit feed, tier enforcement + Stripe billing, public free-tier signup, brand rebrand to Beacontry, the 6-phase marathon, beginner-friendliness audit, the 2026-05-16 6-batch security/a11y/theming hardening pass (incl. CSP nonce strategy + sanitize-html removal), the 2026-05-17 public-source security marathon, and the 2026-05-28 six-round defensive bug hunt (31 fixes — itemized in `docs/bug-hunt-report-2026-05-28.html`) — live in `docs/changelog.md`. Read it when investigating "when did X land" or "what changed in batch Y"; day-to-day work uses `git log`.
 
 ### CSP — current state (post-hotfix)
 
