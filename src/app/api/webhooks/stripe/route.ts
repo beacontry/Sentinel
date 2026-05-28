@@ -92,72 +92,58 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Idempotency check — INSERT-OR-CONFLICT-DO-NOTHING on event ID.
-  // If insert returns 0 rows, the event was already processed; ack
-  // and return.
-  //
-  // CRITICAL ordering: we insert the dedup row BEFORE handling so two
-  // concurrent deliveries of the same event don't double-process. But
-  // if the handler throws, we DELETE the dedup row again so Stripe
-  // retries — otherwise a transient handler failure (network blip,
-  // DB hiccup) silently swallows a tier-grant event with no way to
-  // recover.
-  const inserted = await db
-    .insert(stripeEventsProcessed)
-    .values({
-      eventId: event.id,
-      eventType: event.type,
-      // userId + actionTaken filled in by handlers below if applicable
-    })
-    .onConflictDoNothing()
-    .returning({ eventId: stripeEventsProcessed.eventId });
+  // Idempotency: record the event AFTER the handler succeeds — never before.
+  // The previous ordering inserted the dedup row first and rolled it back
+  // with a best-effort DELETE on handler failure; if that DELETE failed on
+  // the same DB blip that broke the handler, the event was permanently
+  // marked processed and Stripe's retry was silently swallowed (lost tier
+  // grant / downgrade). Handlers here are state-idempotent (tier + billing
+  // status are set-to-value), so a rare *concurrent* duplicate delivery that
+  // slips past the pre-check below is harmless; sequential Stripe retries are
+  // deduped by the recorded row.
 
-  if (inserted.length === 0) {
+  // Fast-path: skip re-handling an event we've already recorded (the common
+  // case — Stripe's sequential redelivery of an event we acked late).
+  const [already] = await db
+    .select({ eventId: stripeEventsProcessed.eventId })
+    .from(stripeEventsProcessed)
+    .where(eq(stripeEventsProcessed.eventId, event.id))
+    .limit(1);
+  if (already) {
     log.info({ eventId: event.id, type: event.type }, "Duplicate webhook event ignored");
     return NextResponse.json({ received: true, deduped: true });
   }
 
-  // Process the event. Wrap in try/catch — but on failure, REMOVE the
-  // dedup row + return 500 so Stripe retries. Returning 200 would
-  // permanently swallow the event because the dedup table now thinks
-  // it was handled.
+  let result: HandlerResult;
   try {
-    const result = await handleEvent(event);
-
-    // Update the audit row with what we did
-    if (result.userId || result.actionTaken) {
-      await db
-        .update(stripeEventsProcessed)
-        .set({ userId: result.userId ?? null, actionTaken: result.actionTaken ?? null })
-        .where(eq(stripeEventsProcessed.eventId, event.id));
-    }
-
-    log.info(
-      { eventId: event.id, type: event.type, action: result.actionTaken, userId: result.userId },
-      "Webhook processed"
-    );
-    return NextResponse.json({ received: true });
+    result = await handleEvent(event);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message, eventId: event.id, type: event.type }, "Webhook handler error");
-    // Roll back the idempotency row so Stripe's automatic retry policy
-    // can deliver the event again on its standard ~3-day schedule.
-    // Best-effort — if the delete itself fails (DB unavailable), the
-    // bigger problem will surface elsewhere; logging the original
-    // handler error is more important.
-    try {
-      await db.delete(stripeEventsProcessed).where(eq(stripeEventsProcessed.eventId, event.id));
-    } catch (rollbackErr) {
-      log.error(
-        { err: rollbackErr instanceof Error ? rollbackErr.message : "unknown", eventId: event.id },
-        "Failed to roll back idempotency row after handler error — event permanently swallowed"
-      );
-    }
+    // No dedup row was written, so Stripe's automatic retry will redeliver.
     return NextResponse.json(
       { error: { code: "HANDLER_FAILED", message: "Webhook handler error; please retry", retryable: true } },
       { status: 500 }
     );
   }
+
+  // Handler succeeded — record the event so future retries are deduped.
+  // onConflictDoNothing in case a concurrent delivery recorded it first.
+  await db
+    .insert(stripeEventsProcessed)
+    .values({
+      eventId: event.id,
+      eventType: event.type,
+      userId: result.userId ?? null,
+      actionTaken: result.actionTaken ?? null,
+    })
+    .onConflictDoNothing();
+
+  log.info(
+    { eventId: event.id, type: event.type, action: result.actionTaken, userId: result.userId },
+    "Webhook processed"
+  );
+  return NextResponse.json({ received: true });
 }
 
 /** What the handler did, for audit trail. */
