@@ -2,7 +2,6 @@
 // Compute short-term vs long-term capital gains from trade history,
 // generate Form 8949 lot-level detail, and suggest tax-loss harvesting.
 
-const LONG_TERM_DAYS = 365;
 const WASH_SALE_DAYS = 30;
 
 // ─── Tax bracket tables (2024 rates) ──────────────────────────────
@@ -255,7 +254,14 @@ export function generateForm8949(
         const holdingDays = Math.floor(
           (sellDate.getTime() - lot.date.getTime()) / (1000 * 60 * 60 * 24)
         );
-        const isLongTerm = holdingDays >= LONG_TERM_DAYS;
+        // Long-term = held MORE than one year (IRS Pub 550). The holding
+        // period starts the day after purchase, so a sale on the 1-year
+        // anniversary is still short-term. Compare against the calendar
+        // anniversary (leap-year-correct) rather than a fixed 365-day count,
+        // which would mis-classify an exactly-one-year hold as long-term.
+        const oneYearAfterPurchase = new Date(lot.date);
+        oneYearAfterPurchase.setFullYear(oneYearAfterPurchase.getFullYear() + 1);
+        const isLongTerm = sellDate.getTime() > oneYearAfterPurchase.getTime();
 
         // Wash sale detection: did we buy the same symbol within
         // 30 days before or after this loss sale?

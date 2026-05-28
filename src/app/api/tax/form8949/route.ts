@@ -41,8 +41,12 @@ export async function GET(request: NextRequest) {
       ? filingStatusParam
       : "single";
 
-  const yearStart = new Date(`${year}-01-01T00:00:00Z`);
-  const yearEnd = new Date(`${year}-12-31T23:59:59Z`);
+  // Tax-year boundaries anchored to ET, not UTC. A fill at ~8 PM ET on
+  // Dec 31 is ~01:00 UTC the next day — with UTC boundaries it would fall
+  // into the following tax year. Jan 1 and Dec 31 are always EST (US DST
+  // never spans them), so the fixed -05:00 offset is correct for both edges.
+  const yearStart = new Date(`${year}-01-01T00:00:00.000-05:00`);
+  const yearEnd = new Date(`${year}-12-31T23:59:59.999-05:00`);
 
   try {
     const allTrades: TaxTrade[] = [];
@@ -77,24 +81,26 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 2. Fetch engine/trader trades (filled only)
+    // 2. Fetch engine/trader trades (filled only). No SQL date filter —
+    //    the tax year is set by the disposition (fill) date, not order
+    //    creation, so filter in JS by fillTime (falling back to createdAt
+    //    for the rare null-fillTime row) against the ET boundaries.
     const engineTrades = await db
       .select()
       .from(traderTrades)
       .where(
         and(
           eq(traderTrades.userId, session.userId as string),
-          eq(traderTrades.status, "FILLED"),
-          gte(traderTrades.createdAt, yearStart),
-          lte(traderTrades.createdAt, yearEnd)
+          eq(traderTrades.status, "FILLED")
         )
       );
 
     for (const t of engineTrades) {
       // Use fillPrice/fillTime when available, fall back to order data
       const price = t.fillPrice ?? t.limitPrice ?? 0;
-      const executedAt = t.fillTime ?? t.createdAt;
       if (price <= 0) continue; // skip unfilled
+      const executedAt = t.fillTime ?? t.createdAt;
+      if (executedAt < yearStart || executedAt > yearEnd) continue;
 
       allTrades.push({
         symbol: t.symbol,

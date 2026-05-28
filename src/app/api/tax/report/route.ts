@@ -7,6 +7,7 @@ import { calculateTaxSummary, type TaxTrade } from "@/lib/tax-engine";
 import { toCSV } from "@/lib/csv";
 import { createRouteLogger } from "@/lib/logger";
 import { checkTier } from "@/lib/tiers-server";
+import { getETDateString } from "@/lib/market-hours";
 
 const log = createRouteLogger("tax-report");
 
@@ -22,8 +23,12 @@ export async function GET(request: NextRequest) {
   const year = Number(searchParams.get("year")) || new Date().getFullYear();
   const format = searchParams.get("format"); // "csv" for export
 
-  const yearStart = new Date(`${year}-01-01T00:00:00Z`);
-  const yearEnd = new Date(`${year}-12-31T23:59:59Z`);
+  // Tax-year boundaries anchored to ET, not UTC. A fill at ~8 PM ET on
+  // Dec 31 is ~01:00 UTC the next day — with UTC boundaries it would fall
+  // into the following tax year. Jan 1 and Dec 31 are always EST (US DST
+  // never spans them), so the fixed -05:00 offset is correct for both edges.
+  const yearStart = new Date(`${year}-01-01T00:00:00.000-05:00`);
+  const yearEnd = new Date(`${year}-12-31T23:59:59.999-05:00`);
 
   try {
     // 1. Manual portfolio trades
@@ -116,7 +121,9 @@ export async function GET(request: NextRequest) {
       const rows = allTrades
         .sort((a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime())
         .map((t) => [
-          new Date(t.executedAt).toISOString().slice(0, 10),
+          // ET trade date — matches the tax-year bucketing above. A UTC
+          // slice would print Jan 1 for a Dec 31 evening fill.
+          getETDateString(new Date(t.executedAt)),
           t.symbol,
           t.action,
           String(t.quantity),
