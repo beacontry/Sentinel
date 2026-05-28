@@ -122,7 +122,7 @@
     <tr><td><strong><code>trader_status.user_id</code> unindexed</strong> — seq scan per dashboard load + heartbeat. Added a btree index.</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>drizzle/0042_trader_status_user_idx.sql</code></td></tr>
     <tr><td><strong><code>forum_replies.parent_reply_id</code> had no FK</strong> — orphaned child replies on parent delete. Added a self-ref FK with <code>ON DELETE SET NULL</code> (nulls orphans first).</td><td class="sev"><span class="badge b-p2">P2</span></td><td><code>drizzle/0043_forum_replies_parent_fk.sql</code></td></tr>
   </table>
-  <p class="muted">All three migrations are idempotent and clean pre-existing bad data before adding the constraint. They are <strong>not yet applied</strong> — to be run on prod manually as <code>postgres</code> per the multi-phase-remediation procedure.</p>
+  <p class="muted">All three migrations are idempotent and clean pre-existing bad data before adding the constraint. <strong>Applied to prod 2026-05-28</strong> as <code>postgres</code> with <code>--single-transaction</code> (verified: 1852 congress rows intact, NULL-safe COALESCE unique index, trader_status index, forum FK <code>ON DELETE SET NULL</code>). Note: <code>0041</code> was corrected to drop the unique <em>constraint</em> (not just the index) — on prod the unique was a constraint that owned its backing index, so <code>DROP INDEX</code> alone errored.</p>
 
   <h2>Frontend</h2>
   <table>
