@@ -22,6 +22,17 @@ const g = globalThis as typeof globalThis & {
 g.__insightCache ??= new Map();
 const cache = g.__insightCache;
 
+// Set + bounded eviction. Without the sweep the map grows one entry per
+// distinct symbol queried over the process lifetime (TTL only gates read
+// freshness, not memory). Mirrors the hybrid layers' caches.
+function setInsightCache(symbol: string, data: QuickInsightResult): void {
+  cache.set(symbol, { data, expiry: Date.now() + CACHE_TTL_MS });
+  if (cache.size > 200) {
+    const now = Date.now();
+    for (const [k, v] of cache) if (now > v.expiry) cache.delete(k);
+  }
+}
+
 const INSIGHT_SYSTEM_PROMPT = `You are a concise market analyst. Given a stock's current price, recent change, and news headlines, explain in 2-3 sentences why this stock is moving today. Be specific and cite news when possible.
 
 Respond with valid JSON only, no markdown. The JSON must have this exact structure:
@@ -39,6 +50,7 @@ export async function getQuickInsight(symbol: string): Promise<QuickInsightResul
   if (cached && Date.now() < cached.expiry) {
     return cached.data;
   }
+  if (cached) cache.delete(upperSymbol); // expired — free it instead of lingering
 
   // Fetch current quote
   const provider = getMarketDataProvider();
@@ -60,7 +72,7 @@ export async function getQuickInsight(symbol: string): Promise<QuickInsightResul
   const apiKey = await getLlmApiKey();
   if (!apiKey) {
     const fallback = buildFallbackInsight(upperSymbol, quote, newsHeadlines);
-    cache.set(upperSymbol, { data: fallback, expiry: Date.now() + CACHE_TTL_MS });
+    setInsightCache(upperSymbol, fallback);
     return fallback;
   }
 
@@ -138,7 +150,7 @@ export async function getQuickInsight(symbol: string): Promise<QuickInsightResul
       parsed.sentiment = "neutral";
     }
 
-    cache.set(upperSymbol, { data: parsed, expiry: Date.now() + CACHE_TTL_MS });
+    setInsightCache(upperSymbol, parsed);
     return parsed;
   } finally {
     clearTimeout(timeout);

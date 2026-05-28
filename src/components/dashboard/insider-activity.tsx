@@ -52,6 +52,9 @@ export function InsiderActivity({ symbol }: InsiderActivityProps) {
 
   useEffect(() => {
     if (!symbol) return;
+    // Guard against a slow response for a previous symbol resolving after a
+    // newer one and painting the wrong ticker's data (symbol swaps in place).
+    let cancelled = false;
     setLoading(true);
     setError(false);
 
@@ -61,15 +64,23 @@ export function InsiderActivity({ symbol }: InsiderActivityProps) {
         return res.json();
       })
       .then((json) => {
+        if (cancelled) return;
         setTransactions(json.transactions ?? []);
         setSummary(json.summary ?? null);
       })
       .catch(() => {
+        if (cancelled) return;
         setError(true);
         setTransactions([]);
         setSummary(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [symbol]);
 
   if (loading) {

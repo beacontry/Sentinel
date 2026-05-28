@@ -55,6 +55,11 @@ export interface ScreenerCache {
   scanStartedAt: Date | null;
   scanning: boolean;
   scanInFlight: Promise<ScreenerResult[]> | null;
+  /** Which timeframe the in-flight scan is for. Daily (90×1d bars) and
+   * intraday (2d×5m bars) scans share one `results` array, so a caller must
+   * only share the in-flight promise when it matches its own timeframe —
+   * otherwise it would receive 5m-bar signals labelled as a daily scan. */
+  scanInFlightType: "daily" | "intraday" | null;
   traderPushResults: TraderPushResult[];
 }
 
@@ -69,7 +74,7 @@ const g = globalThis as typeof globalThis & {
    * refreshes + recovery). */
   __screenerDailyTimeout?: ReturnType<typeof setTimeout> | null;
 };
-g.__screenerCache ??= { results: [], scannedAt: new Date(0), scanStartedAt: null, scanning: false, scanInFlight: null, traderPushResults: [] };
+g.__screenerCache ??= { results: [], scannedAt: new Date(0), scanStartedAt: null, scanning: false, scanInFlight: null, scanInFlightType: null, traderPushResults: [] };
 
 export function getScreenerCache(): ScreenerCache {
   return g.__screenerCache!;
@@ -167,12 +172,21 @@ const isMarketOpen = isMarketOpenShared;
 export async function scanAllSymbols(): Promise<ScreenerResult[]> {
   const cache = g.__screenerCache!;
 
-  // Prevent concurrent scans — share the in-flight promise so callers wait for the current scan
-  if (cache.scanning && cache.scanInFlight) {
+  // A DAILY scan already running → share its promise. A different-timeframe
+  // (intraday) scan running → wait it out first; returning its promise would
+  // hand 5m-bar signals to a daily caller (both write the shared `results`).
+  // Node's single-threaded microtask ordering makes the post-await
+  // synchronous claim below race-free: a second daily caller that wakes after
+  // we've set scanInFlight sees type "daily" and shares it.
+  while (cache.scanInFlight && cache.scanInFlightType !== "daily") {
+    await cache.scanInFlight.catch(() => {});
+  }
+  if (cache.scanInFlight && cache.scanInFlightType === "daily") {
     return cache.scanInFlight;
   }
 
   cache.scanning = true;
+  cache.scanInFlightType = "daily";
   cache.scanStartedAt = new Date();
   const scanPromise = runScanInternal();
   cache.scanInFlight = scanPromise;
@@ -181,6 +195,7 @@ export async function scanAllSymbols(): Promise<ScreenerResult[]> {
   } finally {
     cache.scanning = false;
     cache.scanInFlight = null;
+    cache.scanInFlightType = null;
     cache.scanStartedAt = null; // cleared on completion; scannedAt now reflects completion time
   }
 }
@@ -279,11 +294,18 @@ async function runScanInternal(): Promise<ScreenerResult[]> {
 export async function scanAllSymbolsIntraday(): Promise<ScreenerResult[]> {
   const cache = g.__screenerCache!;
 
-  if (cache.scanning && cache.scanInFlight) {
+  // Symmetric to scanAllSymbols: share only a same-timeframe (intraday)
+  // in-flight scan; wait out a daily scan rather than returning its
+  // daily-bar promise to an intraday caller.
+  while (cache.scanInFlight && cache.scanInFlightType !== "intraday") {
+    await cache.scanInFlight.catch(() => {});
+  }
+  if (cache.scanInFlight && cache.scanInFlightType === "intraday") {
     return cache.scanInFlight;
   }
 
   cache.scanning = true;
+  cache.scanInFlightType = "intraday";
   cache.scanStartedAt = new Date();
   const scanPromise = runIntradayScanInternal();
   cache.scanInFlight = scanPromise;
@@ -292,6 +314,7 @@ export async function scanAllSymbolsIntraday(): Promise<ScreenerResult[]> {
   } finally {
     cache.scanning = false;
     cache.scanInFlight = null;
+    cache.scanInFlightType = null;
     cache.scanStartedAt = null;
   }
 }

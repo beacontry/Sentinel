@@ -6,7 +6,11 @@
 // registration error-surfacing (PR 23). Existing clients dump cached
 // pages so the next reload re-fetches the latest manifest and any
 // updated PWA-related metadata.
-const CACHE_NAME = "beacontry-v4";
+// 2026-05-28: bumped to v5 — stopped runtime-caching authenticated
+// /dashboard/* navigations (one shared cache could serve User A's cached
+// dashboard shell to User B on a shared device). The bump purges any
+// dashboard shells already cached under v4.
+const CACHE_NAME = "beacontry-v5";
 const STATIC_ASSETS = ["/dashboard/trader"];
 
 // Returned whenever both network and cache miss. Without this, the previous
@@ -109,7 +113,11 @@ self.addEventListener("fetch", (event) => {
       .then((res) => {
         // Cache only successful, basic-CORS responses. Caching opaque or
         // error responses can break HTML rendering on reload.
-        if (res.ok && res.type === "basic") {
+        // Skip authenticated /dashboard/* navigations: they'd go in the
+        // single shared cache, so on a shared device one user's cached
+        // dashboard shell could be served to another (and stale-after-deploy
+        // offline). Public/marketing pages are safe to cache.
+        if (res.ok && res.type === "basic" && !url.pathname.startsWith("/dashboard")) {
           const clone = res.clone();
           caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
         }

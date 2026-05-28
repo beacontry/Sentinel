@@ -62,19 +62,30 @@ export async function groqChat(messages: GroqMessage[], maxTokens: number): Prom
   if (!apiKey) {
     throw new Error("LLM not configured — set GROQ_API_KEY in admin → System Config");
   }
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: CLAUDE_CONFIG.model,
-      messages,
-      max_tokens: maxTokens,
-      temperature: 0.7,
-    }),
-  });
+  // Bound the request — every other Groq call site (ai-scoring, quick-insights,
+  // sentiment) has a timeout; without one a hung connection blocks the market
+  // digest / AI chat indefinitely. 20s matches quick-insights.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  let res: Response;
+  try {
+    res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: CLAUDE_CONFIG.model,
+        messages,
+        max_tokens: maxTokens,
+        temperature: 0.7,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     const err = await res.text().catch(() => "Unknown error");

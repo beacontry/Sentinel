@@ -81,6 +81,7 @@ export async function searchFilings(
   if (cached && Date.now() < cached.expiry) {
     return cached.data;
   }
+  if (cached) cache.delete(cacheKey); // expired — free it instead of lingering
 
   const ticker = await resolveTicker(upperSymbol);
   if (!ticker) return [];
@@ -134,6 +135,12 @@ export async function searchFilings(
     filings.sort((a, b) => b.filingDate.localeCompare(a.filingDate));
 
     cache.set(cacheKey, { data: filings, expiry: Date.now() + CACHE_TTL_MS });
+    // Bounded eviction — without this the map grows one entry per distinct
+    // SYMBOL:type queried over the process lifetime (TTL only gates reads).
+    if (cache.size > 200) {
+      const swept = Date.now();
+      for (const [k, v] of cache) if (swept > v.expiry) cache.delete(k);
+    }
     return filings;
   } catch {
     return [];

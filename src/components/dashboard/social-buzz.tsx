@@ -23,6 +23,9 @@ export function SocialBuzz({ symbol }: SocialBuzzProps) {
 
   useEffect(() => {
     if (!symbol) return;
+    // Guard against a slow response for a previous symbol resolving after a
+    // newer one and painting the wrong ticker's data (symbol swaps in place).
+    let cancelled = false;
     setLoading(true);
     setError(false);
 
@@ -32,6 +35,7 @@ export function SocialBuzz({ symbol }: SocialBuzzProps) {
         return res.json();
       })
       .then((json) => {
+        if (cancelled) return;
         if (json.configured === false) {
           setData(null);
         } else {
@@ -39,10 +43,17 @@ export function SocialBuzz({ symbol }: SocialBuzzProps) {
         }
       })
       .catch(() => {
+        if (cancelled) return;
         setError(true);
         setData(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [symbol]);
 
   if (loading) {

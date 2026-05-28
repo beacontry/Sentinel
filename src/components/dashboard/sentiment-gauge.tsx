@@ -22,22 +22,28 @@ export function SentimentGauge({ symbol }: SentimentGaugeProps) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Guard against a slow response for a previous symbol resolving after a
+    // newer one and painting the wrong ticker's gauge (symbol swaps in place).
+    let cancelled = false;
     async function fetchSentiment() {
       setLoading(true);
       try {
         const res = await fetch(`/api/sentiment/${encodeURIComponent(symbol)}`);
         if (!res.ok) return;
         const json = await res.json();
-        if (json.configured !== false) {
+        if (!cancelled && json.configured !== false) {
           setData(json);
         }
       } catch {
         // Non-critical
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     fetchSentiment();
+    return () => {
+      cancelled = true;
+    };
   }, [symbol]);
 
   if (loading || !data) return null;

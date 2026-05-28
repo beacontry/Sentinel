@@ -26,6 +26,9 @@ export function AnalystConsensus({ symbol }: AnalystConsensusProps) {
 
   useEffect(() => {
     if (!symbol) return;
+    // Guard against a slow response for a previous symbol resolving after a
+    // newer one and painting the wrong ticker's data (symbol swaps in place).
+    let cancelled = false;
     setLoading(true);
     setError(false);
 
@@ -35,13 +38,21 @@ export function AnalystConsensus({ symbol }: AnalystConsensusProps) {
         return res.json();
       })
       .then((json) => {
+        if (cancelled) return;
         setData(json.recommendations ?? null);
       })
       .catch(() => {
+        if (cancelled) return;
         setError(true);
         setData(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [symbol]);
 
   if (loading) {

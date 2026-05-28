@@ -15,6 +15,9 @@ export function PeerStocks({ symbol, onPeerClick }: PeerStocksProps) {
 
   useEffect(() => {
     if (!symbol) return;
+    // Guard against a slow response for a previous symbol resolving after a
+    // newer one and painting the wrong ticker's peers (symbol swaps in place).
+    let cancelled = false;
     setLoading(true);
     setError(false);
 
@@ -24,13 +27,21 @@ export function PeerStocks({ symbol, onPeerClick }: PeerStocksProps) {
         return res.json();
       })
       .then((json) => {
+        if (cancelled) return;
         setPeers(json.peers ?? []);
       })
       .catch(() => {
+        if (cancelled) return;
         setError(true);
         setPeers([]);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [symbol]);
 
   if (loading) {

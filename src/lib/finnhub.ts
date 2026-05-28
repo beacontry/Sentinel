@@ -1,4 +1,7 @@
 import { FINNHUB_CONFIG } from "./config";
+import { createRouteLogger } from "./logger";
+
+const log = createRouteLogger("finnhub");
 
 interface CacheEntry<T> {
   data: T;
@@ -283,12 +286,16 @@ class FinnhubClient {
       if (!res.ok) {
         // Fire-and-forget tracking. Import lazily because the schema file
         // is a sibling module; circular-import-safe via dynamic import.
-        import("./api-usage").then((m) => m.recordApiUsage("finnhub", { error: true })).catch(() => {});
+        import("./api-usage")
+          .then((m) => m.recordApiUsage("finnhub", { error: true }))
+          .catch((err) => log.warn({ err: err?.message }, "Finnhub usage tracking failed"));
         throw new Error(`Finnhub API error: ${res.status} ${res.statusText}`);
       }
       const data: T = await res.json();
       this.setCache(cacheKey, data, cacheTtl);
-      import("./api-usage").then((m) => m.recordApiUsage("finnhub")).catch(() => {});
+      import("./api-usage")
+        .then((m) => m.recordApiUsage("finnhub"))
+        .catch((err) => log.warn({ err: err?.message }, "Finnhub usage tracking failed"));
       return data;
     } finally {
       clearTimeout(timeout);
