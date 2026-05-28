@@ -179,7 +179,7 @@ src/
 │   ├── indicators/             # 10+ technical indicators
 │   ├── strategy-presets.ts     # 9 preset strategies
 │   ├── sp500.ts                # S&P 500 universe (auto-updates from Wikipedia)
-│   ├── db/                     # Drizzle schema (43 migrations) + connection
+│   ├── db/                     # Drizzle schema (44 migrations) + connection
 │   └── ...
 ├── hooks/
 │   ├── usePolling.ts           # Shared polling with Page Visibility pause

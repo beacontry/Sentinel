@@ -142,8 +142,8 @@
   </table>
 
   <div class="note">
-    <h3>Known limitation — noted, not fixed (needs a feature-level change)</h3>
-    <p class="muted">The <strong>alerts engine</strong> (<code>alert-engine.ts</code>) has two structural issues that warrant a focused PR rather than a patch: (1) rules are evaluated only as a side-effect of <code>GET /api/analyze/[symbol]</code> and keyed by symbol (not user), so an alert fires/cooldowns based on whoever happens to analyze the symbol — and a symbol nobody analyzes is never checked (missed alerts); (2) "crossover" rule types are really level checks (fire while-above, not on the cross). The proper fix is a scheduled per-user alert evaluator with crossing-state tracking.</p>
+    <h3>Alerts engine — RESOLVED (2026-05-28, same day)</h3>
+    <p class="muted">Flagged here as a feature-level item, then built the same day. The <strong>alerts engine</strong> (<code>alert-engine.ts</code>) had two structural issues: (1) rules evaluated only as a side-effect of <code>GET /api/analyze/[symbol]</code>, keyed by symbol not user — an alert fired/cooled-down on whoever analyzed the symbol, and a symbol nobody analyzed was never checked; (2) "crossover" rule types were really level checks. Fixed via a scheduled <code>GET /api/cron/evaluate-alerts</code> (market-hours-gated, one fetch per distinct symbol) plus edge-triggering (<code>last_condition_met</code>, migration <code>0044</code>) so rules fire on the actual cross. Real <code>volume_spike</code>/<code>pct_drop</code> too. 15 unit tests. <strong>Operational TODO:</strong> the cron still needs to be scheduled (<code>*/5</code> curl with <code>x-cron-secret</code>).</p>
   </div>
 
   <div class="note">

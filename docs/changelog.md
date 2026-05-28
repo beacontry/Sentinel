@@ -21,8 +21,12 @@ P2 hardening: flatten/engine `pendingExits` coordination; double-start interval 
 - `0042_trader_status_user_idx.sql` — btree index on `trader_status.user_id`.
 - `0043_forum_replies_parent_fk.sql` — self-ref FK `ON DELETE SET NULL` on `parent_reply_id` (nulls orphans first).
 
-### Known limitation (deferred to a focused PR)
-The alerts engine evaluates rules only as a side-effect of `GET /api/analyze/[symbol]`, keyed by symbol not user (fires/cooldowns on a stranger's analyze; symbols nobody analyzes are never checked), and "crossover" rule types are really level checks. Needs a scheduled per-user evaluator with crossing-state.
+### Alerts engine rebuild (same day — was the deferred item)
+The known limitation flagged during the hunt was fixed the same day. The alerts engine had evaluated rules only as a side-effect of `GET /api/analyze/[symbol]`, keyed by symbol not user (a stranger's analyze drove your rule's cooldown; symbols nobody analyzed were never checked), and "crossover" rule types were really level checks.
+- New `GET /api/cron/evaluate-alerts` (x-cron-secret, market-hours-gated): one data fetch per distinct enabled-rule symbol, evaluates every rule on fresh data. Analyze-route trigger removed.
+- Edge-triggering via `alert_rules.last_condition_met` (migration `0044`): fire on `false→true` only, re-arm when cleared; pure `decideAlert()`, 15 unit tests.
+- Real `volume_spike` (× trailing avg volume) and `pct_drop` (vs prior close); the hardcoded ×1M / never-set-previousPrice placeholders are gone.
+- **Operational TODO:** schedule the cron (`*/5 * * * *` curl with `x-cron-secret`) — it doesn't run until wired up.
 
 ---
 

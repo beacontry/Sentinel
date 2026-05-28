@@ -6,11 +6,11 @@
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)
-- Drizzle ORM + PostgreSQL (44 migrations as of `0043_forum_replies_parent_fk.sql`)
+- Drizzle ORM + PostgreSQL (45 migrations as of `0044_alert_rules_last_condition.sql`)
 - Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
-- Vitest for testing (573 tests across 41 suites — includes engine-safeguards (wash-sale + PDT), swap-sell planner integration, engine-snapshot serialize/deserialize, scan cancellation, take-profit graduation, accuracy, audit, analyzer, breakeven-promote, dynamic-trail, market-regime, tax-report, etc.)
+- Vitest for testing (588 tests across 42 suites — includes engine-safeguards (wash-sale + PDT), swap-sell planner integration, engine-snapshot serialize/deserialize, scan cancellation, take-profit graduation, accuracy, audit, analyzer, breakeven-promote, dynamic-trail, market-regime, tax-report, etc.)
 - Alpaca Markets API for paper/live trading
 - Stripe for billing (Free / Trader $20 / Premium $40 / Self-Hosted) — webhook handler at `/api/webhooks/stripe`, sandbox + portal at `/api/billing/{checkout,portal}`
 
@@ -361,6 +361,14 @@ Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.sourc
 - **Cron:** `GET /api/cron/refresh-congress` (`x-cron-secret` header vs `CRON_SECRET`). Pulls current year + (in Jan-Feb) prior year. Schedule daily 6 AM ET.
 - **Backfill:** `npx tsx scripts/backfill-congress.ts --years 2026,2025,2024`. Idempotent. House + Senate failures are independent.
 
+## Price/indicator alerts (scheduled, edge-triggered)
+
+User alert rules (`alert_rules` table) are evaluated by a **scheduled cron**, not inline. `evaluateAlertRules()` in `src/lib/alert-engine.ts` is pure-ish (the caller supplies a fully-populated `AlertContext`); the engine no longer fetches data per rule.
+
+- **Cron:** `GET /api/cron/evaluate-alerts` (`x-cron-secret` vs `CRON_SECRET`, gated to `isMarketOpen()`). One `fetchBars` per distinct enabled-rule symbol, runs `analyzeBars` once, then evaluates every rule on that symbol. Schedule every ~5 min (the route self-skips off-hours, so a flat `*/5 * * * *` is fine). **Not yet wired into prod cron — add the crontab entry.**
+- **Edge-triggering:** rules fire only on the `false→true` transition and re-arm when the condition clears (`alert_rules.last_condition_met`, migration `0044`). The 1h `last_triggered` cooldown is a secondary anti-spam guard. The pure decision lives in `decideAlert()` (tested in `tests/unit/alert-engine.test.ts`). This makes "crossover" rule types signal the actual cross, not "still above since days ago".
+- **History:** 2026-05-28 — replaced the old per-analyze trigger (keyed by symbol-only → a stranger's analyze drove your rule; symbols nobody analyzed were never checked). See `docs/changelog.md`.
+
 ## AI Providers & System Configuration
 
 **All AI flows go through Groq (`llama-3.3-70b-versatile`)** — Insights, Quick Insight widget, hybrid AI scoring + sentiment layers, filings chat, market digest, AI chat panel, and the Recent Trades **AI ✨** button. The single-Anthropic-route holdover at `summarize-trade` was migrated 2026-05-12; `@anthropic-ai/sdk` is no longer a dependency. The misleadingly-named `CLAUDE_CONFIG` in `src/lib/config.ts` is still the source of truth for `.model` + `.maxTokens` constants but no longer reads `.apiKey` directly — all key lookups go through `getLlmApiKey()` / `getFinnhubApiKey()` / `getAnthropicApiKey()` in `src/lib/system-config.ts`.
@@ -472,9 +480,9 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed` — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
 
 ## Migrations
-Browse `drizzle/*.sql` for the full list (44 migrations as of `0043_forum_replies_parent_fk.sql`). All idempotent (`IF NOT EXISTS`).
+Browse `drizzle/*.sql` for the full list (45 migrations as of `0044_alert_rules_last_condition.sql`). All idempotent (`IF NOT EXISTS`).
 
-> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0043 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
+> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0044 (`0041`–`0044` applied 2026-05-28) + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 
 ## Education Section
 
