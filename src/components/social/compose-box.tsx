@@ -72,15 +72,23 @@ export function ComposeBox({ onPost }: ComposeBoxProps) {
   }
 
   function handleAttachTrade(trade: RecentTrade) {
+    // fillPrice is the EXIT price for a closed (SELL) trade. Derive the true
+    // entry + cost-basis % from realized P&L: entry = fill − pnl/qty, cost
+    // basis = entry × qty. The old code labeled the exit fill as the entry and
+    // divided P&L by exit proceeds, which understated the return (a real +89%
+    // trade displayed as +47%).
+    const fill = trade.fillPrice ?? 0;
+    const pnl = trade.pnl;
+    const entryPrice = pnl != null && trade.quantity > 0 ? fill - pnl / trade.quantity : fill;
+    const costBasis = entryPrice * trade.quantity;
     setAttachedTrade({
       symbol: trade.symbol,
       action: trade.action as "BUY" | "SELL",
       quantity: trade.quantity,
-      entryPrice: trade.fillPrice ?? 0,
-      pnl: trade.pnl,
-      pnlPercent: trade.pnl && trade.fillPrice
-        ? (trade.pnl / (trade.fillPrice * trade.quantity)) * 100
-        : null,
+      entryPrice,
+      exitPrice: fill,
+      pnl,
+      pnlPercent: pnl != null && costBasis > 0 ? (pnl / costBasis) * 100 : null,
       timestamp: trade.fillTime ?? trade.createdAt,
     });
     setShowTradePicker(false);

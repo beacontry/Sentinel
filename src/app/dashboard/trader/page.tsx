@@ -1117,15 +1117,19 @@ export default function TraderPage() {
                       : t.status === "REJECTED" ? "bearish"
                       : "neutral"
                     }>{t.status}</Badge>
-                    {t.pnl != null && (
-                      <span className={`text-xs font-mono ml-auto ${t.pnl >= 0 ? "text-bullish" : "text-bearish"}`}>
-                        {formatPnl(
-                          t.pnl,
-                          (t.fillPrice ?? 0) * t.quantity,
-                          pnlFormat
-                        )}
-                      </span>
-                    )}
+                    {t.pnl != null && (() => {
+                      // Percent basis must be the ENTRY cost, not the exit
+                      // proceeds. cost = proceeds − realized P&L = entryPrice ×
+                      // qty. The old basis (proceeds) understated the return
+                      // (e.g. a real +89% trade showed +47%). Guard ≤ 0 so a
+                      // missing fill price falls back to dollar-only.
+                      const costBasis = (t.fillPrice ?? 0) * t.quantity - t.pnl;
+                      return (
+                        <span className={`text-xs font-mono ml-auto ${t.pnl >= 0 ? "text-bullish" : "text-bearish"}`}>
+                          {formatPnl(t.pnl, costBasis > 0 ? costBasis : undefined, pnlFormat)}
+                        </span>
+                      );
+                    })()}
                     <span className="text-xs text-text-muted">
                       {timeAgo(t.traderTimestamp)}
                     </span>
