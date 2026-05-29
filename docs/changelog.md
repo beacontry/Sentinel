@@ -4,6 +4,24 @@ Dated retrospectives extracted from CLAUDE.md. Day-to-day "when did X land" ques
 
 ---
 
+## 2026-05-29 — Optimizer honesty, responsiveness & P&L-percent fixes
+
+A day of making the optimizer's numbers trustworthy, its runs non-disruptive, and trade P&L percentages correct.
+
+**Survivorship & out-of-sample integrity**
+- **Point-in-time S&P 500 membership** — the `sp500` universe reconstructs `date → constituents` from Wikipedia's change log (`getSP500MembershipResolver()` in `sp500.ts`) and gates GA entries to then-members, removing the *membership* half of survivorship bias. `top50`/`top150` stay today's-winners lists (no PIT data exists) and are labeled biased; the optimizer defaults to `sp500`. Residual: fully-delisted names have no free price data, so they still drop out — bias reduced, not eliminated.
+- **Mode comparison is now out-of-sample.** Every mode is scored on the held-out **test** window (warm up over full history, trade/record only the held-out segment, PIT-gated). The Optimized row was diverging from the run card (re-simulated 948% vs the run's stored 549% holdout — different fresh data/split), so it now reads the run's **stored** OOS metrics directly. Always ties to the Top Runs card.
+
+**Responsiveness**
+- **GA runs in a `worker_threads` worker** (`optimizer-worker.ts`, esbuild-bundled into the standalone output, spawned from `startOptimization`). The CPU-bound GA no longer starves the single-threaded event loop — other requests (broker status, polls) stayed timing out as "Offline" mid-run. Fail-safe: existsSync gate + spawn try/catch fall back to in-process; the esbuild build step is non-fatal. First attempt mis-marked deps external (`Cannot find module 'pino'` at gen 0); fixed by bundling everything (no native addons in the graph).
+
+**Correctness**
+- **P&L percent used the wrong basis.** The recent-trades row and trade-share card divided realized P&L by *exit proceeds* instead of *entry cost basis* — a +89% DELL trade ($214.59 → $405.71) displayed as +47%. Now uses `cost basis = proceeds − P&L`. The share card also mislabeled the exit fill as the entry and never set the exit; both derived correctly now.
+- **Tactical proxy de-noised** — the comparison's plain Tactical bought the *first 16* names in map order (an alphabetical slice = noise); now ranks by 60-day momentum, top 16. Tactical/Tactical-Smart labeled as simplified SPY-timing proxies (not the live engine).
+
+### Migration (idempotent; applied on prod as `postgres`)
+- `0045_optimization_test_metrics.sql` — `test_trade_count` + `test_avg_positions` on `optimization_runs`, so the comparison's Optimized row can show trades/time-in-market from stored run metrics (older runs show "—" until re-run).
+
 ## 2026-05-28 — Six-round defensive bug hunt (31 fixes)
 
 A sustained find→verify→fix audit across the whole surface. Full itemized report with severities at `docs/bug-hunt-report-2026-05-28.html`. Each finding was surfaced by a read-only pass and **verified against source before fixing** — several agent over-flags were downgraded rather than patched (notably a claimed backtester "lookahead" that actually matches the live engine). `tsc` clean, 573/573 tests pass throughout.
