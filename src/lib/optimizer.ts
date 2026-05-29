@@ -855,8 +855,13 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     //     a 30% drawdown window so a 20%-drawdown strategy isn't tied
     //     with a 50%-drawdown one
     //
-    // Weighting between train (0.6) and test (0.4) is unchanged — that's
-    // overfitting protection, orthogonal to risk-aware scoring.
+    // Fitness is TRAIN-ONLY (2026-05-28). It previously blended
+    // 0.6*train + 0.4*test, which put the test window INTO the selection
+    // objective — data leakage. The GA was literally optimizing the "test"
+    // return, so it was not out-of-sample: test ≈ train by construction and
+    // the reported OOS number was meaningless. Now the test window is a true
+    // holdout — evaluated ONCE on the final winner below and reported as
+    // genuine out-of-sample validation.
     function riskAdjust(r: PortfolioResult): number {
       // Negative returns: skip multipliers (otherwise GA prefers worse risk).
       // The base excessReturn already orders losers correctly.
@@ -873,17 +878,17 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       const softDrawdown = Math.max(0.05, drawdownMult);
       return r.excessReturn * softSharpe * softDrawdown;
     }
-    function blendedFitness(params: OptimizableParams): number {
-      const train = portfolioBacktest(portfolioData, params, "train");
-      const test = portfolioBacktest(portfolioData, params, "test");
-      return 0.6 * riskAdjust(train) + 0.4 * riskAdjust(test);
+    // Train-only. The test set is NOT evaluated here — it must stay unseen by
+    // selection to be a valid out-of-sample holdout (see comment above).
+    function fitness(params: OptimizableParams): number {
+      return riskAdjust(portfolioBacktest(portfolioData, params, "train"));
     }
 
     let population: Individual[] = [];
     const initParams = [...presetSeeds, ...Array.from({ length: Math.max(0, config.populationSize - presetSeeds.length) }, () => randomIndividual())];
 
     for (let pi = 0; pi < initParams.length; pi++) {
-      population.push({ params: initParams[pi], fitness: blendedFitness(initParams[pi]) });
+      population.push({ params: initParams[pi], fitness: fitness(initParams[pi]) });
       // Yield every 5 evaluations to keep HTTP alive
       if (pi % 5 === 0) await new Promise((r) => setTimeout(r, 1));
     }
@@ -912,7 +917,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       let evalCount = 0;
       for (let i = 0; i < immigrantCount; i++) {
         const imm = randomIndividual();
-        nextPop.push({ params: imm, fitness: blendedFitness(imm) });
+        nextPop.push({ params: imm, fitness: fitness(imm) });
         if (++evalCount % 3 === 0) await new Promise((r) => setTimeout(r, 1));
       }
 
@@ -922,7 +927,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
         const childParams = Math.random() < CROSSOVER_RATE
           ? mutate(crossover(p1.params, p2.params), mutRate)
           : mutate(p1.params, mutRate);
-        nextPop.push({ params: childParams, fitness: blendedFitness(childParams) });
+        nextPop.push({ params: childParams, fitness: fitness(childParams) });
         if (++evalCount % 3 === 0) await new Promise((r) => setTimeout(r, 1));
       }
 
