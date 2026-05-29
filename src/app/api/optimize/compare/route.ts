@@ -14,7 +14,7 @@ import {
   portfolioBacktest,
   type OptimizableParams,
 } from "@/lib/optimizer";
-import { SP500_SYMBOLS } from "@/lib/sp500";
+import { SP500_SYMBOLS, getSP500MembershipResolver } from "@/lib/sp500";
 import type { Bar } from "@/types";
 import { checkTier } from "@/lib/tiers-server";
 
@@ -223,6 +223,8 @@ function simulateSignalStrategy(
 function simulateTactical(
   allBars: Map<string, Bar[]>,
   spyBars: Bar[],
+  splitDate: string,
+  eligibleOn?: (dateKey: string) => Set<string>,
 ): ModeResult {
   const dateSet = new Set<string>();
   const barLookup = new Map<string, Map<string, Bar>>();
@@ -243,10 +245,17 @@ function simulateTactical(
   let isInvested = false;
   const spyCloses: number[] = [];
 
+  // Warm rolling state over the full history, but only trade + record equity
+  // from the test window onward — matches the GA's held-out segment (true OOS).
+  let testStartIdx = dates.findIndex((d) => d >= splitDate);
+  if (testStartIdx < 0) testStartIdx = 0;
+
   for (let di = 0; di < dates.length; di++) {
     const date = dates[di];
     const spyBar = spyLookup.get(date);
     if (spyBar) spyCloses.push(spyBar.close);
+
+    if (di < testStartIdx) continue; // warm-up only — no trading/equity
 
     if (isInvested) daysInMarket++;
 
@@ -285,6 +294,7 @@ function simulateTactical(
       const perPosition = cash / Math.min(allBars.size, 16);
       for (const sym of allBars.keys()) {
         if (positions.size >= 16) break;
+        if (eligibleOn && !eligibleOn(date).has(sym)) continue; // PIT membership
         const b = barLookup.get(sym)?.get(date);
         if (!b) continue;
         const qty = Math.floor(perPosition / b.close);
@@ -349,6 +359,8 @@ function simulateTactical(
 function simulateTacticalSmart(
   allBars: Map<string, Bar[]>,
   spyBars: Bar[],
+  splitDate: string,
+  eligibleOn?: (dateKey: string) => Set<string>,
 ): ModeResult {
   const dateSet = new Set<string>();
   const barLookup = new Map<string, Map<string, Bar>>();
@@ -370,6 +382,11 @@ function simulateTacticalSmart(
   const spyCloses: number[] = [];
   const windows = new Map<string, Bar[]>();
 
+  // Warm rolling state over the full history, but only trade + record equity
+  // from the test window onward — matches the GA's held-out segment (true OOS).
+  let testStartIdx = dates.findIndex((d) => d >= splitDate);
+  if (testStartIdx < 0) testStartIdx = 0;
+
   for (let di = 0; di < dates.length; di++) {
     const date = dates[di];
     const spyBar = spyLookup.get(date);
@@ -384,6 +401,8 @@ function simulateTacticalSmart(
       w.push(bar);
       if (w.length > 90) w.shift();
     }
+
+    if (di < testStartIdx) continue; // warm-up only — no trading/equity
 
     if (isInvested) daysInMarket++;
 
@@ -416,6 +435,7 @@ function simulateTacticalSmart(
       const scored: { symbol: string; score: number; price: number }[] = [];
 
       for (const sym of allBars.keys()) {
+        if (eligibleOn && !eligibleOn(date).has(sym)) continue; // PIT membership
         const w = windows.get(sym);
         if (!w || w.length < 60) continue;
         const bar = barLookup.get(sym)?.get(date);
@@ -500,26 +520,38 @@ export async function GET() {
   try {
     const provider = getMarketDataProvider();
 
-    // Determine universe from active optimizer run (or latest completed)
+    // Determine universe + train/test split from the active optimizer run (or
+    // latest completed). All modes are then evaluated on the held-out TEST
+    // window, so the comparison is genuinely out-of-sample and apples-to-apples
+    // (no mode gets credit for in-sample tuning).
     let universe: string[] = TOP_50;
+    let trainPct = 60;
+    let eligibleOn: ((dateKey: string) => Set<string>) | undefined;
     try {
       const savedRun = await withTimeout(5000, async (tx) => {
         const [activeRun] = await tx
-          .select({ universe: optimizationRuns.universe })
+          .select({ universe: optimizationRuns.universe, trainPct: optimizationRuns.trainPct })
           .from(optimizationRuns)
           .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
           .limit(1);
         if (activeRun) return activeRun;
         const [fallback] = await tx
-          .select({ universe: optimizationRuns.universe })
+          .select({ universe: optimizationRuns.universe, trainPct: optimizationRuns.trainPct })
           .from(optimizationRuns)
           .where(eq(optimizationRuns.status, "complete"))
           .orderBy(desc(optimizationRuns.completedAt))
           .limit(1);
         return fallback ?? null;
       });
-      if (savedRun?.universe === "sp500") universe = SP500_SYMBOLS;
-      else if (savedRun?.universe === "top150") universe = TOP_150;
+      if (savedRun?.trainPct != null) trainPct = savedRun.trainPct;
+      if (savedRun?.universe === "sp500") {
+        // PIT membership: trade only then-index-members (union as the fetch
+        // universe), removing the membership half of survivorship bias — same
+        // basis the Top Runs card uses for the sp500 number.
+        const membership = await getSP500MembershipResolver().catch(() => null);
+        if (membership) { universe = membership.universe; eligibleOn = membership.eligibleOn; }
+        else universe = SP500_SYMBOLS;
+      } else if (savedRun?.universe === "top150") universe = TOP_150;
     } catch { /* use default top50 */ }
 
     // Fetch 5Y data for all stocks + SPY
@@ -539,12 +571,23 @@ export async function GET() {
 
     const spyBars = await provider.fetchBars("SPY", 1825, "1d");
 
-    // SPY buy-and-hold
-    const spyReturn = spyBars.length > 1
-      ? ((spyBars[spyBars.length - 1].close - spyBars[0].close) / spyBars[0].close) * 100
+    // Build the unified train/test split once; every mode is scored on the
+    // test window so the table is out-of-sample. splitDate is the first date
+    // of the held-out segment (empty universe → "" degrades to full period).
+    const portfolioData = buildPortfolioData(allBars, trainPct);
+    const splitDate = portfolioData.dates[portfolioData.trainEnd]
+      ?? portfolioData.dates[portfolioData.dates.length - 1]
+      ?? "";
+
+    // SPY buy-and-hold — over the test window only (apples-to-apples with the
+    // other modes, which now trade only the held-out segment).
+    const spyTest = spyBars.filter((b) => b.date.split("T")[0] >= splitDate);
+    const spyBase = spyTest[0];
+    const spyReturn = spyTest.length > 1 && spyBase
+      ? ((spyTest[spyTest.length - 1].close - spyBase.close) / spyBase.close) * 100
       : 0;
     let spyPeak = 10000, spyMaxDD = 0;
-    const spyEquity = spyBars.map(b => 10000 * (b.close / spyBars[0].close));
+    const spyEquity = spyBase ? spyTest.map((b) => 10000 * (b.close / spyBase.close)) : [];
     for (const v of spyEquity) {
       if (v > spyPeak) spyPeak = v;
       const dd = ((spyPeak - v) / spyPeak) * 100;
@@ -652,11 +695,10 @@ export async function GET() {
     // simulateSignalStrategy, a parallel simulator that diverged because
     // it predated PR 14/16's graduation + swap-sell + multi-obj fitness.
     if (gaParams) {
-      // Build PortfolioData from the bars already fetched. trainPct=100
-      // → the "train" segment IS the full 5-year period (no held-out
-      // test data needed for the comparison view).
-      const portfolioData = buildPortfolioData(allBars, 100);
-      const ga = portfolioBacktest(portfolioData, gaParams, "train");
+      // Evaluate on the held-out TEST segment (segment "test") with PIT
+      // gating, so this row is the honest out-of-sample number — the same
+      // basis as the Top Runs test column, not the in-sample inflated figure.
+      const ga = portfolioBacktest(portfolioData, gaParams, "test", eligibleOn);
       // GA's PortfolioResult has totalReturn (already in %), sharpeRatio,
       // maxDrawdown (in %), tradeCount, avgPositions. avgPositions is a
       // float — use it × 10 to estimate timeInMarket %, capped at 100.
@@ -691,19 +733,22 @@ export async function GET() {
     await new Promise(r => setTimeout(r, 1));
 
     // Tactical
-    const tactical = simulateTactical(allBars, spyBars);
+    const tactical = simulateTactical(allBars, spyBars, splitDate, eligibleOn);
     results.push(tactical);
 
     // Tactical Smart
     await new Promise(r => setTimeout(r, 1));
-    const tacticalSmart = simulateTacticalSmart(allBars, spyBars);
+    const tacticalSmart = simulateTacticalSmart(allBars, spyBars, splitDate, eligibleOn);
     results.push(tacticalSmart);
 
     log.info("Mode comparison complete");
 
-    return NextResponse.json({ results, period: "5 years", startingCapital: 10000 }, {
-      headers: { "Cache-Control": "private, no-store" },
-    });
+    const testBars = portfolioData.dates.length - portfolioData.trainEnd;
+    const testYears = (testBars / 252).toFixed(1);
+    return NextResponse.json(
+      { results, period: `out-of-sample test window (~${testYears}y)`, startingCapital: 10000 },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
   } catch (err) {
     if (isStatementTimeout(err)) {
       return NextResponse.json(

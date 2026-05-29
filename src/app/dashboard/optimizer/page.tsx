@@ -379,7 +379,10 @@ export default function OptimizerPage() {
       {comparison && (
         <Card>
           <CardHeader>
-            <CardTitle>Mode Comparison — $10,000 over 5 Years</CardTitle>
+            <CardTitle>Mode Comparison — $10,000, out-of-sample window</CardTitle>
+            <p className="text-xs text-text-muted mt-1">
+              Every mode is scored on the held-out test window the optimizer didn&apos;t train on, so returns are comparable and not inflated by in-sample tuning.
+            </p>
           </CardHeader>
           {comparison.length === 0 ? (
             <div className="px-4 pb-4 flex items-center gap-2 text-sm text-text-muted">
