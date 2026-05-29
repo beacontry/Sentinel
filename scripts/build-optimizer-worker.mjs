@@ -27,12 +27,16 @@ async function run() {
     format: "cjs",
     outfile,
     alias: { "@": join(root, "src") },
-    // Resolve these from the standalone node_modules at runtime instead of
-    // bundling: pino's transport layer bundles poorly, and the other four are
-    // Next's serverExternalPackages (native/dynamic-require unfriendly). All
-    // are traced into .next/standalone/node_modules, so require() finds them
-    // next to the worker at /app/optimizer-worker.cjs.
-    external: ["pino", "pino-pretty", "pdf-parse", "adm-zip", "fast-xml-parser", "node-html-parser"],
+    // Bundle EVERYTHING into the .cjs (no externals). Next's standalone trace
+    // does not place node_modules where this file can require() them at
+    // runtime (e.g. `Cannot find module 'pino'`), so anything left external
+    // fails in prod. The optimizer's import graph has no native addons —
+    // pino/drizzle/postgres are all pure JS — so a fully self-contained
+    // bundle resolves nothing at runtime and can't hit a missing module.
+    // Lazy/dynamic requires that aren't statically resolvable (e.g. web-push
+    // via runtimeLoader) stay as runtime requires but are never hit by the
+    // optimizer path.
+    external: [],
     logLevel: "warning",
     minify: false,
   });
