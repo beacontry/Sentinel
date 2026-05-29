@@ -1,6 +1,6 @@
 import type { Bar } from "@/types";
 import { getMarketDataProvider } from "./market-data";
-import { SP500_SYMBOLS, getSP500Symbols } from "./sp500";
+import { SP500_SYMBOLS, getSP500Symbols, getSP500MembershipResolver } from "./sp500";
 
 /**
  * Top 50/150 most liquid S&P 500 stocks by market cap — curated lists
@@ -381,7 +381,12 @@ export interface PortfolioResult {
 export function portfolioBacktest(
   data: PortfolioData,
   params: OptimizableParams,
-  segment: "train" | "test"
+  segment: "train" | "test",
+  // Point-in-time membership gate (sp500 universe). When provided, ENTRIES are
+  // only allowed for symbols that were index members on the bar's date —
+  // reducing survivorship bias. Exits are always allowed. Omitted/undefined =
+  // no gating (top50/top150 use today's static lists).
+  eligibleOn?: (dateKey: string) => Set<string>
 ): PortfolioResult {
   const startIdx = segment === "train" ? 0 : data.trainEnd;
   const endIdx = segment === "train" ? data.trainEnd : data.dates.length;
@@ -527,10 +532,14 @@ export function portfolioBacktest(
     // STRONG_BUY positions the live engine can carry in strong-signal windows.
     if (isStepBoundary && positions.length < BACKTEST_HARD_CAP_STRONG_BUY) {
       const heldSymbols = new Set(positions.map((p) => p.symbol));
+      // Point-in-time membership for this bar's date (sp500 only). Resolved
+      // once per step-boundary, not per symbol. null = no gating.
+      const eligible = eligibleOn ? eligibleOn(date) : null;
       const candidates: { symbol: string; signal: SignalType; price: number; atr: number; confidence: number }[] = [];
 
       for (const symbol of data.symbols) {
         if (heldSymbols.has(symbol)) continue;
+        if (eligible && !eligible.has(symbol)) continue; // wasn't an index member on this date
         const w = windows.get(symbol);
         if (!w || w.length < 60) continue;
         const bar = data.barLookup.get(symbol)?.get(date);
@@ -788,12 +797,26 @@ export async function startOptimization(userId: string, config: OptimizationConf
 async function runOptimization(runId: string, config: OptimizationConfig) {
   const progress = g.__optimizerJobs!.get(runId)!;
   try {
-    // ── Select universe (sp500 uses live list from Wikipedia) ──
-    const universeSymbols = config.universe === "sp500"
-      ? await getSP500Symbols().catch(() => SP500_SYMBOLS)
-      : config.universe === "top150" ? TOP_150
-      : TOP_50;
-    logger.info({ runId, universe: config.universe, symbols: universeSymbols.length }, "Universe selected");
+    // ── Select universe ──
+    // sp500: reconstruct point-in-time membership (entries gated per-date to
+    //   reduce survivorship bias) and fetch the union of all historical members.
+    // top50/top150: hardcoded *today's* top-by-cap lists — inherently
+    //   survivorship-biased; no PIT data exists, so no gating (a full-history
+    //   guard below at least drops recent IPOs/additions).
+    let eligibleOn: ((dateKey: string) => Set<string>) | undefined;
+    let universeSymbols: string[];
+    if (config.universe === "sp500") {
+      const membership = await getSP500MembershipResolver().catch(() => null);
+      if (membership) {
+        universeSymbols = membership.universe;
+        eligibleOn = membership.eligibleOn;
+      } else {
+        universeSymbols = await getSP500Symbols().catch(() => SP500_SYMBOLS);
+      }
+    } else {
+      universeSymbols = config.universe === "top150" ? TOP_150 : TOP_50;
+    }
+    logger.info({ runId, universe: config.universe, symbols: universeSymbols.length, pit: !!eligibleOn }, "Universe selected");
 
     // ── Fetch data ──
     progress.status = "fetching_data";
@@ -812,6 +835,29 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     });
     logger.info({ runId, symbolCount: barsMap.size }, "Data fetching complete");
 
+    // ── Full-history guard (non-sp500 only) ──
+    // top50/top150 are *today's* top-by-cap lists, so a name that IPO'd mid-
+    // window is a survivorship winner with only partial history. Drop symbols
+    // whose first bar is well after the window start. (sp500 skips this — PIT
+    // gating already prevents trading a name before it joined the index, and a
+    // legitimately mid-window-added member SHOULD be tradeable from its add date.)
+    if (config.universe !== "sp500" && barsMap.size > 0) {
+      const firsts = [...barsMap.values()]
+        .map((b) => b[0]?.date?.split("T")[0])
+        .filter((d): d is string => !!d)
+        .sort();
+      const windowStart = firsts[0];
+      if (windowStart) {
+        const cutoff = new Date(new Date(windowStart).getTime() + 15 * 86400000).toISOString().slice(0, 10);
+        let dropped = 0;
+        for (const [sym, bars] of barsMap) {
+          const first = bars[0]?.date?.split("T")[0];
+          if (!first || first > cutoff) { barsMap.delete(sym); dropped++; }
+        }
+        if (dropped) logger.info({ runId, dropped, cutoff }, "Full-history guard: dropped late-listing symbols");
+      }
+    }
+
     // ── Build portfolio data ──
     progress.status = "optimizing";
     progress.totalSymbols = barsMap.size;
@@ -825,8 +871,8 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
       stopLossPct: 0.02, takeProfitAtrMult: 5, trailingStopPct: 0.015, holdPeriod: 20,
       rsiOversold: 30, rsiOverbought: 70, emaFast: 9, emaSlow: 21, rsThreshold: -0.05,
     };
-    const baselineTrain = portfolioBacktest(portfolioData, baselineParams, "train");
-    const baselineTest = portfolioBacktest(portfolioData, baselineParams, "test");
+    const baselineTrain = portfolioBacktest(portfolioData, baselineParams, "train", eligibleOn);
+    const baselineTest = portfolioBacktest(portfolioData, baselineParams, "test", eligibleOn);
     logger.info({ runId, baselineTrain: baselineTrain.totalReturn.toFixed(1), baselineTest: baselineTest.totalReturn.toFixed(1), buyHoldTrain: baselineTrain.buyHoldReturn.toFixed(1) }, "Baseline computed");
 
     // ── GA ──
@@ -881,7 +927,7 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     // Train-only. The test set is NOT evaluated here — it must stay unseen by
     // selection to be a valid out-of-sample holdout (see comment above).
     function fitness(params: OptimizableParams): number {
-      return riskAdjust(portfolioBacktest(portfolioData, params, "train"));
+      return riskAdjust(portfolioBacktest(portfolioData, params, "train", eligibleOn));
     }
 
     let population: Individual[] = [];
@@ -970,8 +1016,8 @@ async function runOptimization(runId: string, config: OptimizationConfig) {
     }
 
     // ── Validate ──
-    const trainResult = portfolioBacktest(portfolioData, bestEver.params, "train");
-    const testResult = portfolioBacktest(portfolioData, bestEver.params, "test");
+    const trainResult = portfolioBacktest(portfolioData, bestEver.params, "train", eligibleOn);
+    const testResult = portfolioBacktest(portfolioData, bestEver.params, "test", eligibleOn);
 
     // Store per-symbol results
     const rows = [];

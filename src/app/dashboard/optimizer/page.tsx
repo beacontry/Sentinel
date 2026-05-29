@@ -101,7 +101,7 @@ export default function OptimizerPage() {
   const [popSize, setPopSize] = useState(30);
   const [gens, setGens] = useState(25);
   const [trainPct, setTrainPct] = useState(60);
-  const [universe, setUniverse] = useState<"top50" | "top150" | "sp500">("top50");
+  const [universe, setUniverse] = useState<"top50" | "top150" | "sp500">("sp500");
 
   const fetchRuns = useCallback(async () => {
     try {
@@ -343,11 +343,15 @@ export default function OptimizerPage() {
                   onChange={(e) => setUniverse(e.target.value as "top50" | "top150" | "sp500")}
                   className="w-full bg-bg-surface border border-border rounded-lg px-3 py-2 text-sm min-h-[44px]"
                 >
-                  <option value="top50">Top 50 (~3 min)</option>
-                  <option value="top150">Top 150 (~10 min)</option>
-                  <option value="sp500">Full S&P 500 (~30 min)</option>
+                  <option value="sp500">Full S&P 500 (~30 min) — recommended</option>
+                  <option value="top150">Top 150 (~10 min) — biased</option>
+                  <option value="top50">Top 50 (~3 min) — biased</option>
                 </select>
-                <p className="text-[11px] text-text-muted mt-1">{universe === "sp500" ? "~495 stocks" : universe === "top150" ? "150 most liquid" : "50 most liquid"}</p>
+                <p className="text-[11px] text-text-muted mt-1">
+                  {universe === "sp500"
+                    ? "Point-in-time membership — only trades stocks that were in the index on each date (reduced survivorship bias)."
+                    : "Today's top-by-cap list applied to past data → survivorship-biased (you're trading today's winners). Quick research only; use S&P 500 for credible results."}
+                </p>
               </div>
             </div>
             <div className="flex justify-end gap-2">
@@ -664,7 +668,7 @@ function RunDetailView({
             <StatCard
               label="Optimized Return"
               value={`${run.bestTrainReturn?.toFixed(1) ?? "—"}%`}
-              subtext="Avg across S&P 500 (train)"
+              subtext="Portfolio return (train)"
               tone={run.bestTrainReturn && run.bestTrainReturn > 0 ? "positive" : "negative"}
               icon={TrendingUp}
             />
@@ -725,6 +729,15 @@ function RunDetailView({
               tone="negative"
               icon={TrendingDown}
             />
+          </div>
+
+          {/* Survivorship + realism caveat */}
+          <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-[12px] leading-relaxed text-text-secondary">
+            <span className="font-semibold text-warning">Read these as relative scores, not live expectations.</span>{" "}
+            {run.universe === "sp500"
+              ? "S&P 500 runs use point-in-time membership (only trades stocks that were in the index on each date), but fully-delisted companies have no free price data — so survivorship bias is reduced, not eliminated."
+              : "This universe is today's top-by-cap list applied to past data — heavily survivorship-biased (you're trading today's winners). Use the S&P 500 universe for credible runs."}{" "}
+            Execution friction is modeled only as a small per-trade slippage. Validate any preset with paper trading before going live.
           </div>
         </>
       )}
