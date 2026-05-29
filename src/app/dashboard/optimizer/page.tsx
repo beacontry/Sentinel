@@ -206,7 +206,15 @@ export default function OptimizerPage() {
     .sort((a, b) => (b.bestTestReturn ?? 0) - (a.bestTestReturn ?? 0));
   const bestRunId = completedRuns[0]?.id ?? null;
   const activeRuns = runs.filter((r) => ["pending", "fetching_data", "optimizing"].includes(r.status));
-  const displayedRuns = [...activeRuns, ...completedRuns.slice(0, 5)];
+  // Top 5 by test return, but always surface the active preset even if its
+  // (honest, often lower) test return ranks it outside the top 5 — otherwise
+  // the engine is using a run the user can't see selected anywhere.
+  const topCompleted = completedRuns.slice(0, 5);
+  const activePreset = completedRuns.find((r) => r.isActive);
+  if (activePreset && !topCompleted.some((r) => r.id === activePreset.id)) {
+    topCompleted.push(activePreset);
+  }
+  const displayedRuns = [...activeRuns, ...topCompleted];
 
   // Sort symbol results
   const sortedSymbols = selectedRun?.symbolResults
