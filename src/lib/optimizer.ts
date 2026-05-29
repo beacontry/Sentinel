@@ -49,6 +49,7 @@ import { eq } from "drizzle-orm";
 import { writeFile, readFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import { Worker } from "node:worker_threads";
 import pino from "pino";
 
 const logger = pino({ name: "optimizer" });
@@ -772,29 +773,89 @@ function adaptiveMutationRate(diversity: number): number {
 
 // ── Main Optimization Loop ──────────────────────────────────────────
 
+function universeSize(universe: OptimizationConfig["universe"]): number {
+  return universe === "sp500" ? SP500_SYMBOLS.length : universe === "top150" ? TOP_150.length : TOP_50.length;
+}
+
+/** Seed the in-memory progress entry runOptimization reads/mutates. Exported
+ *  so the worker thread can seed its own globalThis map before running. */
+export function initJobProgress(runId: string, config: OptimizationConfig): void {
+  g.__optimizerJobs!.set(runId, {
+    runId, status: "pending", symbolsFetched: 0, totalSymbols: universeSize(config.universe),
+    currentGeneration: 0, totalGenerations: config.generations, bestFitness: 0, bestParams: null,
+  });
+}
+
 export async function startOptimization(userId: string, config: OptimizationConfig): Promise<string> {
   const [run] = await db
     .insert(optimizationRuns)
     .values({
       userId, status: "pending", targetMetric: "total_return", universe: config.universe,
       populationSize: config.populationSize, generations: config.generations,
-      trainPct: config.trainPct, totalSymbols: config.universe === "sp500" ? SP500_SYMBOLS.length : config.universe === "top150" ? TOP_150.length : TOP_50.length,
+      trainPct: config.trainPct, totalSymbols: universeSize(config.universe),
     })
     .returning({ id: optimizationRuns.id });
 
   const runId = run.id;
-  g.__optimizerJobs!.set(runId, {
-    runId, status: "pending", symbolsFetched: 0, totalSymbols: config.universe === "sp500" ? SP500_SYMBOLS.length : config.universe === "top150" ? TOP_150.length : TOP_50.length,
-    currentGeneration: 0, totalGenerations: config.generations, bestFitness: 0, bestParams: null,
-  });
+  initJobProgress(runId, config);
 
-  runOptimization(runId, config).catch((err) => {
-    logger.error({ runId, err: (err as Error).message }, "Optimization failed");
-  });
+  // The GA is CPU-bound and Node is single-threaded, so running it inline
+  // starves the event loop — every other request (broker status, dashboard
+  // polls) stalls until the run finishes. Offload to a worker thread so the
+  // main event loop stays responsive. Falls back to in-process when the
+  // bundled worker isn't present (dev / unbuilt) or spawn fails, so the worst
+  // case is exactly today's behavior — never a regression.
+  if (!trySpawnOptimizationWorker(runId, config)) {
+    runOptimization(runId, config).catch((err) => {
+      logger.error({ runId, err: (err as Error).message }, "Optimization failed");
+    });
+  }
   return runId;
 }
 
-async function runOptimization(runId: string, config: OptimizationConfig) {
+// The standalone build copies .next/standalone → /app, so the esbuild-bundled
+// worker lands at <cwd>/optimizer-worker.cjs. Absent in dev (no standalone
+// build) → existsSync gate routes to the in-process path.
+function trySpawnOptimizationWorker(runId: string, config: OptimizationConfig): boolean {
+  const workerPath = join(process.cwd(), "optimizer-worker.cjs");
+  if (!existsSync(workerPath)) return false;
+  try {
+    const worker = new Worker(workerPath, { workerData: { runId, config } });
+    worker.on("message", (msg: { type?: string; progress?: OptimizationProgress; message?: string }) => {
+      if (msg?.type === "progress" && msg.progress) {
+        g.__optimizerJobs!.set(runId, msg.progress); // feed the GET route's live view
+      } else if (msg?.type === "done") {
+        setTimeout(() => g.__optimizerJobs!.delete(runId), 60 * 60 * 1000);
+      } else if (msg?.type === "error") {
+        const p = g.__optimizerJobs!.get(runId);
+        if (p) p.status = "failed";
+        logger.error({ runId, err: msg.message }, "Optimization worker reported failure");
+        setTimeout(() => g.__optimizerJobs!.delete(runId), 10 * 60 * 1000);
+      }
+    });
+    worker.on("error", (err) => {
+      // Catastrophic worker failure (the run never wrote its own result row).
+      logger.error({ runId, err: err.message }, "Optimizer worker thread crashed");
+      const p = g.__optimizerJobs!.get(runId);
+      if (p) p.status = "failed";
+      db.update(optimizationRuns)
+        .set({ status: "failed", error: err.message, completedAt: new Date() })
+        .where(eq(optimizationRuns.id, runId))
+        .catch(() => { /* best-effort; already in failure path */ });
+      setTimeout(() => g.__optimizerJobs!.delete(runId), 10 * 60 * 1000);
+    });
+    worker.on("exit", (code) => {
+      if (code !== 0) logger.warn({ runId, code }, "Optimizer worker exited non-zero");
+    });
+    logger.info({ runId }, "Optimization dispatched to worker thread");
+    return true;
+  } catch (err) {
+    logger.warn({ runId, err: (err as Error).message }, "Worker spawn failed — running optimization in-process");
+    return false;
+  }
+}
+
+export async function runOptimization(runId: string, config: OptimizationConfig) {
   const progress = g.__optimizerJobs!.get(runId)!;
   try {
     // ── Select universe ──
