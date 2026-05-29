@@ -381,7 +381,7 @@ export default function OptimizerPage() {
           <CardHeader>
             <CardTitle>Mode Comparison — $10,000, out-of-sample window</CardTitle>
             <p className="text-xs text-text-muted mt-1">
-              Every mode is scored on the held-out test window the optimizer didn&apos;t train on, so returns are comparable and not inflated by in-sample tuning.
+              Every mode is scored on the held-out test window the optimizer didn&apos;t train on, so returns are comparable and not inflated by in-sample tuning. Tactical / Tactical-Smart are simplified SPY-timing proxies, not the live engine modes.
             </p>
           </CardHeader>
           {comparison.length === 0 ? (

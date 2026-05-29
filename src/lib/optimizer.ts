@@ -1110,6 +1110,8 @@ export async function runOptimization(runId: string, config: OptimizationConfig)
       testSharpe: testResult.sharpeRatio,
       trainMaxDrawdown: trainResult.maxDrawdown,
       testMaxDrawdown: testResult.maxDrawdown,
+      testTradeCount: testResult.tradeCount,
+      testAvgPositions: testResult.avgPositions,
     }).where(eq(optimizationRuns.id, runId));
 
     progress.status = "complete";

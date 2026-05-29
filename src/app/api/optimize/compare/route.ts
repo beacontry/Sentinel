@@ -293,16 +293,26 @@ function simulateTactical(
 
     // Check for entry: SPY above 50 SMA and not invested
     if (!isInvested && sma50 && spyPrice > sma50) {
-      const perPosition = cash / Math.min(allBars.size, 16);
+      // Rank eligible names by 60-day momentum and take the top 16 — rather
+      // than the first 16 in map order, which was just an alphabetical slice
+      // of the universe (noise, not a strategy).
+      const ranked: { sym: string; price: number; mom: number }[] = [];
       for (const sym of allBars.keys()) {
-        if (positions.size >= 16) break;
         if (eligibleOn && !eligibleOn(date).has(sym)) continue; // PIT membership
         const b = barLookup.get(sym)?.get(date);
         if (!b) continue;
-        const qty = Math.floor(perPosition / b.close);
+        const past = di >= 60 ? barLookup.get(sym)?.get(dates[di - 60]) : undefined;
+        if (!past || past.close <= 0) continue;
+        ranked.push({ sym, price: b.close, mom: (b.close - past.close) / past.close });
+      }
+      ranked.sort((a, b) => b.mom - a.mom);
+      const top = ranked.slice(0, 16);
+      const perPosition = cash / Math.max(top.length, 1);
+      for (const c of top) {
+        const qty = Math.floor(perPosition / c.price);
         if (qty <= 0) continue;
-        cash -= qty * b.close;
-        positions.set(sym, { qty, entryPrice: b.close });
+        cash -= qty * c.price;
+        positions.set(c.sym, { qty, entryPrice: c.price });
         trades++;
       }
       isInvested = positions.size > 0;
@@ -615,12 +625,16 @@ export async function GET() {
     let storedTestReturn: number | null = null;
     let storedTestSharpe: number | null = null;
     let storedTestMaxDrawdown: number | null = null;
+    let storedTestTradeCount: number | null = null;
+    let storedTestAvgPositions: number | null = null;
     try {
       const sel = {
         bestParams: optimizationRuns.bestParams,
         testReturn: optimizationRuns.bestTestReturn,
         testSharpe: optimizationRuns.testSharpe,
         testMaxDrawdown: optimizationRuns.testMaxDrawdown,
+        testTradeCount: optimizationRuns.testTradeCount,
+        testAvgPositions: optimizationRuns.testAvgPositions,
       };
       const run = await withTimeout(5000, async (tx) => {
         const [activeParams] = await tx.select(sel)
@@ -637,6 +651,8 @@ export async function GET() {
         storedTestReturn = run.row.testReturn ?? null;
         storedTestSharpe = run.row.testSharpe ?? null;
         storedTestMaxDrawdown = run.row.testMaxDrawdown ?? null;
+        storedTestTradeCount = run.row.testTradeCount ?? null;
+        storedTestAvgPositions = run.row.testAvgPositions ?? null;
         const p = run.row.bestParams as Record<string, number>;
         if (p.stopLossPct != null) {
           optimizedParams = {
@@ -724,8 +740,9 @@ export async function GET() {
         finalValue: Math.round(10000 * (1 + storedTestReturn / 100)),
         maxDrawdown: storedTestMaxDrawdown != null ? Math.round(storedTestMaxDrawdown * 10) / 10 : null,
         sharpe: storedTestSharpe != null ? Math.round(storedTestSharpe * 100) / 100 : null,
-        trades: null,
-        timeInMarket: null,
+        trades: storedTestTradeCount,
+        // Same avgPositions×10 heuristic the re-sim path uses, for consistency.
+        timeInMarket: storedTestAvgPositions != null ? Math.min(100, Math.round(storedTestAvgPositions * 10)) : null,
       });
       log.info({ source: gaParamsSource, storedTestReturn }, "Optimized row: stored OOS metrics");
     } else if (gaParams) {

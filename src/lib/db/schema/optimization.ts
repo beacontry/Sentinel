@@ -38,6 +38,10 @@ export const optimizationRuns = pgTable("optimization_runs", {
   testSharpe: real("test_sharpe"),
   trainMaxDrawdown: real("train_max_drawdown"),
   testMaxDrawdown: real("test_max_drawdown"),
+  // Test-segment activity (for the mode comparison's Optimized row, which
+  // reads stored OOS metrics rather than re-simulating). Migration 0045.
+  testTradeCount: integer("test_trade_count"),
+  testAvgPositions: real("test_avg_positions"),
 
   // Active preset — only one run should be active at a time
   isActive: boolean("is_active").default(false),
