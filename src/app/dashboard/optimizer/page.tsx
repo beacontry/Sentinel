@@ -96,7 +96,7 @@ export default function OptimizerPage() {
   const [symbolSort, setSymbolSort] = useState<"return" | "sharpe" | "drawdown">("return");
   const [symbolOrder, setSymbolOrder] = useState<"desc" | "asc">("desc");
   const [showAllSymbols, setShowAllSymbols] = useState(false);
-  const [comparison, setComparison] = useState<{ mode: string; label: string; totalReturn: number; finalValue: number; maxDrawdown: number; sharpe: number; trades: number; timeInMarket: number }[] | null>(null);
+  const [comparison, setComparison] = useState<{ mode: string; label: string; totalReturn: number; finalValue: number; maxDrawdown: number | null; sharpe: number | null; trades: number | null; timeInMarket: number | null }[] | null>(null);
   const [comparingModes, setComparingModes] = useState(false);
   const [popSize, setPopSize] = useState(30);
   const [gens, setGens] = useState(25);
@@ -415,10 +415,10 @@ export default function OptimizerPage() {
                         {r.totalReturn >= 0 ? "+" : ""}{r.totalReturn}%
                       </td>
                       <td className="py-2 pr-4 text-right">${r.finalValue.toLocaleString()}</td>
-                      <td className="py-2 pr-4 text-right text-bearish">-{r.maxDrawdown}%</td>
-                      <td className="py-2 pr-4 text-right text-text-secondary">{r.sharpe}</td>
-                      <td className="py-2 pr-4 text-right text-text-secondary">{r.trades}</td>
-                      <td className="py-2 text-right text-text-secondary">{r.timeInMarket}%</td>
+                      <td className="py-2 pr-4 text-right text-bearish">{r.maxDrawdown != null ? `-${r.maxDrawdown}%` : "—"}</td>
+                      <td className="py-2 pr-4 text-right text-text-secondary">{r.sharpe ?? "—"}</td>
+                      <td className="py-2 pr-4 text-right text-text-secondary">{r.trades ?? "—"}</td>
+                      <td className="py-2 text-right text-text-secondary">{r.timeInMarket != null ? `${r.timeInMarket}%` : "—"}</td>
                     </tr>
                   ))}
                 </tbody>

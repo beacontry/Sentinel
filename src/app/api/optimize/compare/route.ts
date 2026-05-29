@@ -25,10 +25,12 @@ interface ModeResult {
   label: string;
   totalReturn: number;
   finalValue: number;
-  maxDrawdown: number;
-  sharpe: number;
-  trades: number;
-  timeInMarket: number; // percentage
+  // Nullable: the Optimized row reads the run's stored OOS metrics, and
+  // per-segment trade count / time-in-market aren't stored → "—" in the UI.
+  maxDrawdown: number | null;
+  sharpe: number | null;
+  trades: number | null;
+  timeInMarket: number | null; // percentage
 }
 
 interface StrategyParams {
@@ -607,19 +609,34 @@ export async function GET() {
     // but a DIFFERENT simulator → wildly different numbers vs Top Runs.
     let gaParams: OptimizableParams | null = null;
     let gaParamsSource: "active_run" | "latest_run" | "defaults" = "defaults";
+    // The run's STORED out-of-sample metrics. The Optimized row uses these
+    // directly so it always equals the Top Runs card — re-simulating here
+    // diverged (different fresh data/split → 948% vs the run's 549% holdout).
+    let storedTestReturn: number | null = null;
+    let storedTestSharpe: number | null = null;
+    let storedTestMaxDrawdown: number | null = null;
     try {
+      const sel = {
+        bestParams: optimizationRuns.bestParams,
+        testReturn: optimizationRuns.bestTestReturn,
+        testSharpe: optimizationRuns.testSharpe,
+        testMaxDrawdown: optimizationRuns.testMaxDrawdown,
+      };
       const run = await withTimeout(5000, async (tx) => {
-        const [activeParams] = await tx.select({ bestParams: optimizationRuns.bestParams })
+        const [activeParams] = await tx.select(sel)
           .from(optimizationRuns)
           .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
           .limit(1);
         if (activeParams) return { row: activeParams, source: "active_run" as const };
-        const [fallback] = await tx.select({ bestParams: optimizationRuns.bestParams })
+        const [fallback] = await tx.select(sel)
           .from(optimizationRuns).where(eq(optimizationRuns.status, "complete"))
           .orderBy(desc(optimizationRuns.completedAt)).limit(1);
         return fallback ? { row: fallback, source: "latest_run" as const } : null;
       });
       if (run?.row.bestParams) {
+        storedTestReturn = run.row.testReturn ?? null;
+        storedTestSharpe = run.row.testSharpe ?? null;
+        storedTestMaxDrawdown = run.row.testMaxDrawdown ?? null;
         const p = run.row.bestParams as Record<string, number>;
         if (p.stopLossPct != null) {
           optimizedParams = {
@@ -694,14 +711,27 @@ export async function GET() {
     // shows and what the live engine actually does. Pre-PR-26 this called
     // simulateSignalStrategy, a parallel simulator that diverged because
     // it predated PR 14/16's graduation + swap-sell + multi-obj fitness.
-    if (gaParams) {
-      // Evaluate on the held-out TEST segment (segment "test") with PIT
-      // gating, so this row is the honest out-of-sample number — the same
-      // basis as the Top Runs test column, not the in-sample inflated figure.
+    if (gaParams && storedTestReturn != null) {
+      // Use the run's STORED out-of-sample metrics so this row is identical to
+      // the Top Runs card. Re-simulating here recomputed on the comparison's
+      // own freshly-fetched data + split, which diverged from the run's actual
+      // holdout (e.g. 948% vs the stored 549%). Per-segment trades / time-in-
+      // market aren't stored, so they render as "—".
+      results.push({
+        mode: "optimized",
+        label: "Optimized (GA)",
+        totalReturn: Math.round(storedTestReturn * 10) / 10,
+        finalValue: Math.round(10000 * (1 + storedTestReturn / 100)),
+        maxDrawdown: storedTestMaxDrawdown != null ? Math.round(storedTestMaxDrawdown * 10) / 10 : null,
+        sharpe: storedTestSharpe != null ? Math.round(storedTestSharpe * 100) / 100 : null,
+        trades: null,
+        timeInMarket: null,
+      });
+      log.info({ source: gaParamsSource, storedTestReturn }, "Optimized row: stored OOS metrics");
+    } else if (gaParams) {
+      // Older run with params but no stored test metrics — re-simulate the
+      // held-out segment (less consistent, but better than nothing).
       const ga = portfolioBacktest(portfolioData, gaParams, "test", eligibleOn);
-      // GA's PortfolioResult has totalReturn (already in %), sharpeRatio,
-      // maxDrawdown (in %), tradeCount, avgPositions. avgPositions is a
-      // float — use it × 10 to estimate timeInMarket %, capped at 100.
       const timeInMarket = Math.min(100, Math.round(ga.avgPositions * 10));
       results.push({
         mode: "optimized",
@@ -714,8 +744,8 @@ export async function GET() {
         timeInMarket,
       });
       log.info(
-        { source: gaParamsSource, totalReturn: ga.totalReturn, trades: ga.tradeCount, sharpe: ga.sharpeRatio },
-        "Optimized row: portfolioBacktest result",
+        { source: gaParamsSource, totalReturn: ga.totalReturn, trades: ga.tradeCount },
+        "Optimized row: re-simulated (no stored test metrics)",
       );
     } else {
       // No GA-tuned run available (or schema-incomplete) — fall back to
