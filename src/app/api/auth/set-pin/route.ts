@@ -13,7 +13,12 @@ export async function POST(request: Request) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
 
-  const body = await request.json();
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
   const parsed = pinSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "PIN must be 4-6 digits" }, { status: 400 });

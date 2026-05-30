@@ -81,7 +81,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
-    const body = await request.json();
+    let body: Record<string, unknown>;
+    try {
+      const parsed = await request.json();
+      // Reject non-object bodies (arrays, strings, null) so downstream
+      // property reads don't blow up with a 500.
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+      }
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
 
     // Honeypot — bots fill hidden form fields, real users never see them.
     // If `website` is present and non-empty, drop silently with 201 so the

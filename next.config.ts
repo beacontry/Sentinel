@@ -43,6 +43,16 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // Cross-origin isolation. COOP isolates our window from any
+          // cross-origin opener (Spectre / window.opener leaks); CORP
+          // limits who can embed our responses as resources. COEP
+          // (`require-corp`) is intentionally NOT set — it would block
+          // the TradingView widget iframe (cross-origin without an
+          // explicit CORP header on their side). The remaining cross-
+          // origin-isolation gap is acceptable since we don't need
+          // SharedArrayBuffer / cross-origin-isolated APIs.
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
           ...(useHttps ? [{
             key: "Strict-Transport-Security",
             value: "max-age=31536000; includeSubDomains; preload",

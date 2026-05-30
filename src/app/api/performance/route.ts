@@ -1,12 +1,33 @@
+// GET /api/performance
+//
+// Per-user performance: win rate + avg return + signal-type breakdown +
+// per-symbol leaderboard + weekly trend across the caller's own closed
+// trades. Queried from `trader_trades` filled SELL / manual_close rows
+// scoped by userId.
+//
+// History — until 2026-05-29 this read the platform-wide `signals` /
+// `signal_accuracy` tables (the analyzer's overall accuracy across every
+// user). The page is in the Journal sub-nav, tier-gated to Trader+, and
+// the empty-state copy explicitly describes personal data ("trades
+// you've actually taken") — so leaking a platform aggregate to every
+// authenticated user was a cross-tenant data exposure. Migrated to
+// per-user `trader_trades` (same source as /api/performance/attribution)
+// to match the page's UX intent.
+
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { withTimeout, isStatementTimeout } from "@/lib/db";
-import { signals, signalAccuracy } from "@/lib/db/schema";
-import { eq, isNotNull, sql, desc } from "drizzle-orm";
+import { traderTrades } from "@/lib/db/schema";
+import { and, eq, isNotNull, sql, inArray, desc } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
 import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("performance");
+
+// Per-trade % return on entry cost basis. proceeds = fillPrice * qty;
+// cost basis = proceeds - pnl. nullif() guards a zero-cost edge case so
+// avg() ignores instead of dividing by zero.
+const PNL_PCT_SQL = sql`(${traderTrades.pnl} * 100.0) / nullif(${traderTrades.fillPrice} * ${traderTrades.quantity} - ${traderTrades.pnl}, 0)`;
 
 export async function GET() {
   const session = await getSession();
@@ -17,57 +38,58 @@ export async function GET() {
   if (tierFail) return tierFail;
 
   try {
+    const baseFilter = and(
+      eq(traderTrades.userId, session.userId),
+      eq(traderTrades.status, "FILLED"),
+      inArray(traderTrades.action, ["SELL", "manual_close"]),
+      isNotNull(traderTrades.pnl),
+      isNotNull(traderTrades.fillPrice),
+    );
+
     const { overall, byType, bySymbol, weekly } = await withTimeout(3000, async (tx) => {
-      // Overall stats
       const [ov] = await tx
         .select({
-          totalSignals: sql<number>`count(*)`,
-          correctSignals: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
-          avgReturn: sql<number>`avg(${signalAccuracy.actualReturn})`,
+          totalSignals: sql<number>`count(*)::int`,
+          correctSignals: sql<number>`(count(*) filter (where ${traderTrades.pnl} > 0))::int`,
+          avgReturn: sql<number>`avg(${PNL_PCT_SQL})::float`,
         })
-        .from(signalAccuracy)
-        .where(isNotNull(signalAccuracy.exitPrice));
+        .from(traderTrades)
+        .where(baseFilter);
 
-      // By signal type
       const bt = await tx
         .select({
-          signalType: signals.signal,
-          count: sql<number>`count(*)`,
-          correct: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
-          avgReturn: sql<number>`avg(${signalAccuracy.actualReturn})`,
+          signalType: traderTrades.signal,
+          count: sql<number>`count(*)::int`,
+          correct: sql<number>`(count(*) filter (where ${traderTrades.pnl} > 0))::int`,
+          avgReturn: sql<number>`avg(${PNL_PCT_SQL})::float`,
         })
-        .from(signalAccuracy)
-        .innerJoin(signals, eq(signalAccuracy.signalId, signals.id))
-        .where(isNotNull(signalAccuracy.exitPrice))
-        .groupBy(signals.signal);
+        .from(traderTrades)
+        .where(baseFilter)
+        .groupBy(traderTrades.signal);
 
-      // By symbol (top performers)
       const bs = await tx
         .select({
-          symbol: signals.symbol,
-          count: sql<number>`count(*)`,
-          correct: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
-          avgReturn: sql<number>`avg(${signalAccuracy.actualReturn})`,
+          symbol: traderTrades.symbol,
+          count: sql<number>`count(*)::int`,
+          correct: sql<number>`(count(*) filter (where ${traderTrades.pnl} > 0))::int`,
+          avgReturn: sql<number>`avg(${PNL_PCT_SQL})::float`,
         })
-        .from(signalAccuracy)
-        .innerJoin(signals, eq(signalAccuracy.signalId, signals.id))
-        .where(isNotNull(signalAccuracy.exitPrice))
-        .groupBy(signals.symbol)
-        .orderBy(desc(sql`avg(${signalAccuracy.actualReturn})`))
+        .from(traderTrades)
+        .where(baseFilter)
+        .groupBy(traderTrades.symbol)
+        .orderBy(desc(sql`avg(${PNL_PCT_SQL})`))
         .limit(10);
 
-      // Recent signal accuracy over time (weekly buckets)
       const wk = await tx
         .select({
-          week: sql<string>`to_char(date_trunc('week', ${signals.createdAt}), 'YYYY-MM-DD')`.as("week"),
-          count: sql<number>`count(*)`,
-          correct: sql<number>`count(*) filter (where ${signalAccuracy.wasCorrect} = true)`,
+          week: sql<string>`to_char(date_trunc('week', ${traderTrades.fillTime}), 'YYYY-MM-DD')`.as("week"),
+          count: sql<number>`count(*)::int`,
+          correct: sql<number>`(count(*) filter (where ${traderTrades.pnl} > 0))::int`,
         })
-        .from(signalAccuracy)
-        .innerJoin(signals, eq(signalAccuracy.signalId, signals.id))
-        .where(isNotNull(signalAccuracy.exitPrice))
-        .groupBy(sql`date_trunc('week', ${signals.createdAt})`)
-        .orderBy(sql`date_trunc('week', ${signals.createdAt})`);
+        .from(traderTrades)
+        .where(and(baseFilter, isNotNull(traderTrades.fillTime)))
+        .groupBy(sql`date_trunc('week', ${traderTrades.fillTime})`)
+        .orderBy(sql`date_trunc('week', ${traderTrades.fillTime})`);
 
       return { overall: ov, byType: bt, bySymbol: bs, weekly: wk };
     });
