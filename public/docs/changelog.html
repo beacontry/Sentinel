@@ -232,6 +232,120 @@
     </div>
   </header>
 
+  <!-- ════════════════════════ 2026-05-29 ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-05-29</div>
+    <h2>Optimizer honesty, responsiveness &amp; P&amp;L-percent fixes</h2>
+    <p class="summary">A day of making the optimizer's numbers trustworthy, its runs non-disruptive, and trade P&amp;L percentages correct.</p>
+
+    <h3>Survivorship &amp; out-of-sample integrity</h3>
+    <ul>
+      <li><strong>Point-in-time S&amp;P 500 membership.</strong> The <code>sp500</code> universe reconstructs <code>date &rarr; constituents</code> from Wikipedia's change log (<code>getSP500MembershipResolver()</code> in <code>sp500.ts</code>) and gates GA entries to then-members &mdash; removes the <em>membership</em> half of survivorship bias. <code>top50</code>/<code>top150</code> stay today's-winners lists (no PIT data exists), are labeled biased, and the optimizer defaults to <code>sp500</code>. <strong>Residual:</strong> fully-delisted names have no free price data, so they still drop out &mdash; bias reduced, not eliminated.</li>
+      <li><strong>Mode comparison is now out-of-sample.</strong> Every mode is scored on the held-out <strong>test</strong> window (warm up over full history, trade/record only the held-out segment, PIT-gated). The Optimized row was diverging from the run card (re-simulated 948% vs the run's stored 549% holdout); it now reads the run's <strong>stored</strong> OOS metrics directly so it always ties to the Top Runs card.</li>
+    </ul>
+
+    <h3>Responsiveness</h3>
+    <p><strong>GA runs in a <code>worker_threads</code> worker</strong> (<code>optimizer-worker.ts</code>, esbuild-bundled into the standalone output, spawned from <code>startOptimization</code>). The CPU-bound GA no longer starves the single-threaded event loop &mdash; other requests (broker status, polls) used to time out as "Offline" mid-run. Fail-safe: existsSync gate + spawn try/catch fall back to in-process; the esbuild build step is non-fatal. First attempt mis-marked deps external (<code>Cannot find module 'pino'</code> at gen 0); fixed by bundling everything.</p>
+
+    <h3>Correctness</h3>
+    <ul>
+      <li><strong>P&amp;L percent used the wrong basis.</strong> Recent-trades row and trade-share card divided realized P&amp;L by <em>exit proceeds</em> instead of <em>entry cost basis</em> &mdash; a +89% DELL trade ($214.59 &rarr; $405.71) displayed as +47%. Now uses <code>cost basis = proceeds &minus; P&amp;L</code>. The share card also mislabeled the exit fill as the entry and never set the exit; both derived correctly now.</li>
+      <li><strong>Tactical proxy de-noised.</strong> The mode comparison's plain Tactical bought the <em>first 16</em> names in map order (alphabetical slice = noise); now ranks by 60-day momentum, top 16. Tactical / Tactical-Smart labeled as simplified SPY-timing proxies (not the live engine).</li>
+    </ul>
+
+    <h3>Migration (idempotent; applied on prod as <code>postgres</code>)</h3>
+    <ul>
+      <li><code>0045_optimization_test_metrics.sql</code> &mdash; <code>test_trade_count</code> + <code>test_avg_positions</code> on <code>optimization_runs</code> so the comparison's Optimized row can show trades / time-in-market from stored run metrics (older runs show "&mdash;" until re-run).</li>
+    </ul>
+  </article>
+
+  <!-- ════════════════════════ 2026-05-28 ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-05-28</div>
+    <h2>Six-round defensive bug hunt (31 fixes) + optimizer realism</h2>
+    <p class="summary">A sustained find&rarr;verify&rarr;fix audit across the whole surface. Full itemized report at <a href="/docs/bug-hunt-report-2026-05-28.html">bug-hunt-report-2026-05-28.html</a>. Each finding was verified against source before fixing &mdash; several agent over-flags were downgraded rather than patched. <code>tsc</code> clean, 573/573 tests pass throughout.</p>
+
+    <h3>Highest-severity fixes</h3>
+    <ul>
+      <li><strong>Stripe webhook idempotency was inverted (P0).</strong> Dedup row inserted <em>before</em> the handler + best-effort rollback DELETE; a failed rollback permanently swallowed the event. Now records <em>after</em> handler success (handlers verified idempotent).</li>
+      <li><strong>Double-sell race (P0).</strong> The 15-min scan and 1-min exit poll each did a stale <code>pendingExits.has</code> check then awaited then claimed; both could market-sell one position. Added an atomic synchronous re-check before the claim in both paths.</li>
+    </ul>
+
+    <h3>Notable P1s</h3>
+    <p>P&amp;L "&plusmn;100%" and profit-factor "0.00"-for-flawless display bugs; relative-strength inverting in down markets; tax-year UTC&rarr;ET bucketing (+ <code>form8949</code> fill-date) and the long-term off-by-one; JWT role never re-checked from DB (demotion / stolen-token priv-esc window); <code>save-preset</code> IDOR; removal of 3 legacy <code>x-trader-secret</code> write endpoints (no userId scoping, WHERE-less status clobber); zero / NaN-price junk-order + spurious stop-loss guard; earnings-blackout protection gap on transient Finnhub failure; CSV formula injection across all export paths; 5 frontend symbol-fetch races.</p>
+
+    <h3>Alerts engine rebuild (same day)</h3>
+    <p>The alerts engine had evaluated rules only as a side-effect of <code>GET /api/analyze/[symbol]</code>, keyed by symbol not user (a stranger's analyze drove your rule's cooldown; symbols nobody analyzed were never checked), and "crossover" rule types were really level checks.</p>
+    <ul>
+      <li>New <code>GET /api/cron/evaluate-alerts</code> (x-cron-secret, market-hours-gated): one data fetch per distinct enabled-rule symbol, evaluates every rule on fresh data. Analyze-route trigger removed.</li>
+      <li>Edge-triggering via <code>alert_rules.last_condition_met</code> (migration <code>0044</code>): fire on <code>false&rarr;true</code> only, re-arm when cleared; pure <code>decideAlert()</code>, 15 unit tests.</li>
+      <li>Real <code>volume_spike</code> (&times; trailing avg volume) and <code>pct_drop</code> (vs prior close); the hardcoded &times;1M / never-set-previousPrice placeholders are gone.</li>
+      <li><strong>Operational TODO:</strong> schedule the cron (<code>*/5 * * * *</code> curl with x-cron-secret) &mdash; doesn't run until wired up.</li>
+    </ul>
+
+    <h3>Optimizer realism fixes (same day)</h3>
+    <p>Triggered by two TOP150 runs showing 900&ndash;1300% on a roughly flat-market window. Three independent issues compounded:</p>
+    <ul>
+      <li><strong>Drawdown penalty disabled by a unit bug.</strong> <code>blendedFitness</code> did <code>1 &minus; maxDrawdown / 0.30</code>, but <code>maxDrawdown</code> is a <em>percent</em>, so the term floored to a constant 0.05 for every run &mdash; the GA chased raw return with no risk control. Fixed to <code>/30</code>.</li>
+      <li><strong>Both backtesters were frictionless</strong> &mdash; a tiny per-trade edge compounded into fantasy returns. Added a shared cost model (<code>BACKTEST_COSTS</code>: per-side slippage bps + per-fill commission) to <code>portfolioBacktest</code> and <code>runBacktest</code>.</li>
+      <li><strong>Test-set leakage in GA fitness &mdash; the actual root cause.</strong> After the two fixes above, a re-run still showed ~800% test &asymp; ~813% train. The reason: fitness blended <code>0.6 &times; train + 0.4 &times; test</code>, so the test window was part of the <em>selection</em> objective &mdash; the GA optimized the "test" return, making it not out-of-sample (test &asymp; train by construction). Fixed to <strong>train-only fitness</strong> with the test window evaluated once on the winner as a genuine holdout. Expect honest, much-lower test returns now.</li>
+    </ul>
+
+    <h3>Migrations (idempotent; apply on prod as <code>postgres</code>)</h3>
+    <ul>
+      <li><code>0041_congress_dedup_nulls.sql</code> &mdash; NULL-safe COALESCE unique index so NULL-ticker congress rows stop duplicating on re-ingest (dedups existing rows first).</li>
+      <li><code>0042_trader_status_user_idx.sql</code> &mdash; btree index on <code>trader_status.user_id</code>.</li>
+      <li><code>0043_forum_replies_parent_fk.sql</code> &mdash; self-ref FK <code>ON DELETE SET NULL</code> on <code>parent_reply_id</code> (nulls orphans first).</li>
+      <li><code>0044_alert_rules_last_condition_met.sql</code> &mdash; edge-triggering column for the alerts engine rebuild above.</li>
+    </ul>
+
+    <div class="callout warn">
+      <strong>Action required:</strong> all prior optimizer runs were scored under leakage + broken risk control + frictionless fills. Re-run; don't trust the current ACTIVE preset for live trading.
+    </div>
+  </article>
+
+  <!-- ════════════════════════ 2026-05-17 ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-05-17</div>
+    <h2>Marathon: public-source security, billing wired, admin gaps closed</h2>
+    <p class="summary">After the repo went public under FSL-1.1-ALv2, an end-to-end pass: vuln assessment through the public-code lens, finish wiring Stripe billing lifecycle, fill the admin operational gaps that surface the moment customers arrive, then a correctness sweep before pushing.</p>
+
+    <h3>Security &mdash; public-source threat model</h3>
+    <p>Three P0s fixed in commit <code>2d5964d</code>:</p>
+    <ul>
+      <li><strong>JWT secret hardcoded fallback</strong> (<code>src/lib/config.ts</code>) &mdash; literal default removed. Throws at first request if env unset. Lazy-resolved so <code>next build</code> still works without runtime env.</li>
+      <li><strong>Rate-limiter bypass via spoofed <code>X-Forwarded-For</code></strong> &mdash; new <code>src/lib/rate-limit-ip.ts</code> reads only <code>cf-connecting-ip</code> (Cloudflare-trusted). All 4 auth-rate-limit routes migrated.</li>
+      <li><strong>Cron-secret timing oracle</strong> &mdash; all 6 cron routes use <code>safeCompare</code> from <code>src/lib/crypto.ts</code> (<code>crypto.timingSafeEqual</code>).</li>
+      <li><strong>JWT alg pin (P2 hardening)</strong> &mdash; <code>{ algorithms: ["HS256"] }</code> on both <code>jwtVerify</code> call sites.</li>
+    </ul>
+    <p>Operator-action scripts: <code>scripts/rotate-secrets.sh</code> (<code>rotate</code> / <code>check-cf</code> / <code>check-env</code> subcommands) with atomic backup &rarr; sed &rarr; podman recreate &rarr; health-check, <code>--dry-run</code> preview. Documented at <code>docs/runbooks/rotate-secrets.md</code>. <code>.mailmap</code> consolidates historical Co-Authored-By Claude commits under the canonical author.</p>
+
+    <h3>Billing pipeline wired end-to-end</h3>
+    <p>Stripe was in sandbox until today. Live mode active, webhook fully subscribed.</p>
+    <ul>
+      <li><strong><code>charge.refunded</code> webhook handler</strong> &mdash; audit-log entry (no auto-cancel).</li>
+      <li><strong><code>invoice.payment_failed</code></strong> marks <code>users.billing_status = 'past_due'</code> (migration <code>0039_users_billing_status</code>) + <code>BILLING_PAYMENT_FAILED</code> audit row. Tier stays intact for Stripe's ~3 week dunning; only <code>customer.subscription.deleted</code> downgrades.</li>
+      <li><strong><code>invoice.payment_succeeded</code></strong> clears <code>billing_status</code> + writes <code>BILLING_PAYMENT_RECOVERED</code>.</li>
+      <li><strong>Dashboard past-due banner</strong> at <code>src/components/layout/billing-status-banner.tsx</code>. Yellow warning + "Update payment method &rarr;" CTA. 6h-TTL localStorage dismissal.</li>
+      <li><code>scripts/configure-stripe-webhook.mjs</code> auto-syncs the prod webhook's enabled_events with the handler's switch cases. Used to add 6 missing event subscriptions to the live endpoint.</li>
+    </ul>
+
+    <h3>Admin operational gaps closed</h3>
+    <ul>
+      <li><strong><code>app_settings</code> KV table</strong> (migration <code>0037</code>) + helper at <code>src/lib/app-settings.ts</code>. Non-secret feature flags (sibling of <code>system_config</code> for encrypted API keys). Known keys: <code>REGISTRATION_OPEN</code>, <code>NOTIFY_ADMINS_ON_REGISTER</code>.</li>
+      <li><strong>Audit page filters + CSV export</strong> &mdash; <code>/api/admin/audit</code> supports <code>from</code>/<code>to</code> date range, <code>actorEmail</code> ILIKE search (joined via users), <code>format=csv</code> RFC-4180 export (5000-row cap, 10s timeout).</li>
+      <li><strong><code>api_usage_log</code> table</strong> (migration <code>0038</code>) + helper at <code>src/lib/api-usage.ts</code>. Daily aggregate of external API calls (Groq tokens, Finnhub counts). Recorded fire-and-forget; admin UI shows Today / Last 7 days / 30-day breakdown.</li>
+      <li><strong>ToS &sect; 12 Limitation of Liability</strong> (cap at greater of last-12-months fees or $100) and <strong>&sect; 13 Indemnification</strong>. <code>TERMS_VERSION</code> bumped to <code>2026-05-17b</code> so existing users re-accept.</li>
+    </ul>
+
+    <h3>Marketing + legal readiness</h3>
+    <ul>
+      <li><strong>Legal-entity identification</strong> in <code>/terms</code> / <code>/privacy</code> / <code>/contact</code>: "Guard Cyber Solutions LLC d/b/a Beacontry" + Wyoming Sheridan address. Wyoming governing law + Sheridan County venue added to ToS &sect; 14. Centralized in <code>src/lib/legal-entity.ts</code>.</li>
+      <li><strong>Source visibility decision doc</strong> at <code>docs/legal/source-visibility-decision.md</code>. Recommendation: stay public + FSL.</li>
+      <li><strong>SEO</strong>: root layout gained Open Graph + Twitter Card + 12 keywords + <code>metadataBase</code>. Landing page gained schema.org <code>SoftwareApplication</code> JSON-LD with per-tier <code>Offer</code> blocks.</li>
+    </ul>
+  </article>
+
   <!-- ════════════════════════ 2026-05-26 (evening — PR 21) ════════════════════════ -->
   <article class="entry">
     <div class="date">2026-05-26 (evening)</div>

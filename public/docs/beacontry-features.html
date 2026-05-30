@@ -699,6 +699,7 @@
         <li><strong>Run</strong> — kicks off the backtest. Equity curve animates in as it processes.</li>
       </ul>
       <div class="gotcha"><strong>Long-range 5m backtests aren't possible</strong> without a paid intraday data feed. Daily bars are the supported window.</div>
+      <div class="gotcha"><strong>Backtests are cost-aware (since 2026-05-28).</strong> Buys fill above the trigger and sells below it (default 5 bps per side); commissions deduct from net proceeds. Results from before this change will look meaningfully better than re-runs &mdash; the old frictionless model compounded a tiny per-trade edge into fantasy returns. Re-run saved strategies to see their honest numbers.</div>
     </div>
 
     <div class="page-card" id="page-backtest-compare">
@@ -708,7 +709,7 @@
 
     <div class="page-card" id="page-mode-compare">
       <div class="page-card-head"><span class="page-name">Mode Compare</span><span class="page-route">/dashboard/backtest/mode-compare?symbol=AAPL</span></div>
-      <p class="page-purpose">Runs all 6 comparable engine modes (conservative through adaptive) against the same symbol + date-range in parallel. See empirically whether adaptive's regime-switching beats sticking with one mode.</p>
+      <p class="page-purpose">Runs the 3 user-pickable comparable engine modes (<code>optimized</code> / <code>tactical</code> / <code>adaptive</code>) against the same symbol + date-range in parallel. See empirically whether adaptive's regime-switching beats sticking with one mode. The Optimized row reads the run's stored out-of-sample metrics directly so it always ties to the Top Runs card on the optimizer page.</p>
       <h4>Key UI surfaces</h4>
       <ul>
         <li><strong>Symbol input</strong> + <strong>days back</strong> selector (defaults to 5 years).</li>
@@ -731,21 +732,22 @@
 
     <div class="page-card" id="page-optimizer">
       <div class="page-card-head"><span class="page-name">Optimizer</span><span class="page-route">/dashboard/optimizer</span></div>
-      <p class="page-purpose">Genetic algorithm optimization across the 8 strategy parameters. Train on 5 years of S&amp;P 500 data, walk-forward validate.</p>
+      <p class="page-purpose">Genetic algorithm optimization across the 8 strategy parameters. Trains on a configurable window and scores the holdout once on the winner as a genuine out-of-sample number.</p>
       <h4>Key UI surfaces</h4>
       <ul>
         <li>Convergence chart — fitness vs generation.</li>
-        <li>Results table — top-N evolved strategies with returns, drawdown, walk-forward stability.</li>
+        <li>Results table — top-N evolved strategies with returns, drawdown, holdout (OOS) stability.</li>
       </ul>
       <h4>Buttons &amp; controls</h4>
       <ul>
         <li><strong>Population</strong> — 10–100 strategies per generation.</li>
         <li><strong>Generations</strong> — 5–100 evolution rounds.</li>
-        <li><strong>Train/Test split</strong> — 40–80% walk-forward.</li>
-        <li><strong>Universe</strong> — Top 50 vs Full S&amp;P 500.</li>
-        <li><strong>Run</strong> — kicks off the GA. Admin-only.</li>
+        <li><strong>Train/Test split</strong> — 40–80% walk-forward. The test window is now a true holdout (scored once on the winner); the GA optimizes train only.</li>
+        <li><strong>Universe</strong> — <code>sp500</code> (default; point-in-time membership, reduces survivorship bias) vs <code>top50</code> / <code>top150</code> (today's-winners lists, labeled biased).</li>
+        <li><strong>Run</strong> — kicks off the GA. Admin-only. Runs on a worker thread so the rest of the app stays responsive.</li>
       </ul>
-      <div class="gotcha"><strong>Admin-only:</strong> running optimization is gated to role=admin. Results are shared globally though — the "optimized" engine mode picks up the latest stable params for every user.</div>
+      <div class="gotcha"><strong>Admin-only:</strong> running optimization is gated to role=admin. Results are shared globally — the "optimized" engine mode picks up the latest stable params for every user.</div>
+      <div class="gotcha"><strong>Re-run after 2026-05-28.</strong> Prior runs were scored under (a) a unit bug that disabled the drawdown penalty, (b) frictionless backtests, and (c) a fitness blend that leaked the test window into selection. The current ACTIVE preset from before that date is not trustworthy for live trading until re-run.</div>
     </div>
 
     <div class="page-card" id="page-alerts">

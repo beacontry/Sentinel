@@ -257,11 +257,13 @@ SPY health filter only blocks new entries (SPY < SMA(20)), does NOT force exits 
 
 **Universe (PR 14).** Now consumes the screener feed alongside SCAN_UNIVERSE — same `selectExternalSymbolsForTactical` helper as tactical-smart (top-50 by confidence, BUY/STRONG_BUY only, dedup'd against the hardcoded universe). Previously took every external signal regardless of direction or confidence, no cap.
 
-**Multi-objective GA fitness (PR 14).** `blendedFitness` now scales `excessReturn` by two risk multipliers:
+**Multi-objective GA fitness.** `fitness()` scales `excessReturn` by two risk multipliers:
 - `sharpeMult = min(sharpe / 1.0, 1.0)` — penalizes Sharpe < 1.0 proportionally
-- `drawdownMult = max(0, 1 − maxDrawdown / 0.20)` — zeroes at 20% drawdown
+- `drawdownMult = max(0, 1 − maxDrawdown / 30)` — zeroes at 30% drawdown. `maxDrawdown` is a *percent*; an earlier `/0.20` was a percent/fraction unit bug that floored the term to ~0.05 (effectively no risk control). Fixed 2026-05-28.
 
-Pushes the GA away from blow-up-risk parameter sets that score high on raw return alone. Re-run the optimizer after deploy to retune existing strategies with the new fitness.
+Multipliers apply only to *positive* returns (negative-return strategies don't get the risk discount — otherwise the GA preferred worse-risk-profile losers) and are floored at 0.05 so the GA still has gradient at extreme drawdowns. Pushes the GA away from blow-up-risk parameter sets that score high on raw return alone.
+
+**Train-only fitness (2026-05-28).** `fitness()` is now evaluated on the *training* window only. Previously it blended `0.6 × train + 0.4 × test`, which leaked the holdout into selection — the GA literally optimized the "test" return, so test ≈ train and the reported OOS number was meaningless. The test window is now scored *once* on the final winner and reported as a genuine out-of-sample number. **Re-run the optimizer after deploying this change; expect honest (much lower) test returns.** The Mode-Comparison "Optimized" row uses the run's stored OOS metrics directly so it lines up with the test-segment number on the run-detail page.
 
 ### Tactical Smart — Market Regime + Active Swapping
 
@@ -407,6 +409,7 @@ Reference list of all gates a main-scan BUY traverses:
 - Transient broker/DB errors retry up to 3 times with 2s/4s backoff before giving up at error level
 - If positions exist → auto-starts in the last used mode (from `traderStatus.mode` in DB)
 - Syncs broker positions into in-memory map so the engine immediately resumes dynamic management (trailing stops, exits, etc.)
+- **Engine-state snapshot rehydration.** Beyond mode, the engine also restores its in-RAM safety counters from `trader_engine_snapshot` (migration `0040`, one JSONB row per user): the position map, `dailyLoss`, `dailyNotional`, `consecutiveLosses`, cooldowns, `pendingExits`, `recentOrderTimestamps`, `exitRejectionCount`, `exitSuppressedUntil`, `unprotectedSymbols`, and the boot-equity snapshot. Written at the end of every successful `runScan` (best-effort — a failed write doesn't abort the scan). Snapshots older than `SNAPSHOT_MAX_AGE_MS` (60 min) are discarded on hydrate — broker is authoritative past that. Versioned payload (`v: 1`); deserialize returns `null` on version mismatch so a future-schema snapshot doesn't crash boot. A successful hydrate emits an `ENGINE_STARTED` audit row with `metadata.origin: "snapshot_hydrate"`. Without this, only `mode` survived a deploy — a redeploy mid-halt would have cleared the consecutive-loss counter and daily notional cap, effectively re-arming the engine after the very protections that had fired.
 
 ### Graceful Shutdown
 - SIGTERM and SIGINT handlers in `instrumentation.ts` call `shutdownAllEngines()` — for each running engine: clear scan/exit-check intervals, then run `placeSafetyStops()` so every position has a tighter GTC stop on Alpaca before the process exits
@@ -426,6 +429,12 @@ Reference list of all gates a main-scan BUY traverses:
 - The 1-min live-quote exit check and the 15-min main scan both call `placeOrder({side:"sell"})` — without coordination, both could fire on the same position during the window between `placeOrder()` and `positionMap.delete()`
 - `pendingExits: Set<symbol>` on engine state gates both code paths — `add()` before placing the sell, `delete()` in `finally`
 - Prevents the double-sell that previously surfaced as Alpaca rejecting a second order with "insufficient qty"
+
+### Cooperative Scan Cancellation
+- A `runScanGuarded` watchdog overrides any scan still running past 10 minutes (`STALE_SCAN_OVERRIDE_MS`). Without cancellation, the orphaned scan kept executing in the background, racing the new one and mutating shared state (position map, daily notional, cooldowns)
+- Every scan captures `myGeneration = ++engine.scanGeneration` at start. The 10-min override bumps the counter; the stale scan calls `throwIfScanCancelled(engine, myGeneration)` at every major yield point (after `enforceDailyLossHalt`, between per-symbol iterations, before the swap-sell post-loop block, etc.) and throws `ScanCancelledError` if its generation no longer matches
+- `runScan` / `runTacticalScan` / `runTacticalSmartScan` catch `ScanCancelledError` at the top level and exit cleanly — no error row, no audit pollution
+- In-flight HTTP requests the stale scan already issued still complete, but their results land on the floor (the engine just stops acting on them) — sufficient because the new scan reads fresh state
 
 ### Mode Persistence
 - Current engine mode saved to `traderStatus.mode` on every heartbeat
@@ -630,6 +639,17 @@ The GA search uses lightweight diversity controls to avoid getting stuck in loca
 - **Convergence chart:** Best, average, and diversity lines shown per generation on the optimizer dashboard
 
 Diversity is purely a GA search mechanism — it has no effect on live trading. It controls how the optimizer explores the 8-dimensional parameter space to find the best strategy.
+
+### Backtest Realism (cost model + survivorship)
+
+Both backtesters — single-symbol `runBacktest` and the optimizer's `portfolioBacktest` — now apply a shared **cost model** (`BACKTEST_COSTS` in `src/lib/config.ts`):
+
+- **Per-side slippage** in bps (default 5 bps): buys fill *above* the trigger, sells *below* it. Entry slippage is carried in the cost basis so realized P&L reflects it.
+- **Per-fill commission** (default $0): subtracted from net proceeds.
+
+Before this change (pre-2026-05-28) both backtesters were **frictionless**, which compounded a tiny per-trade edge into fantasy returns (e.g. 900–1300% test windows vs a roughly flat-market buy-and-hold). Together with the drawdown-unit fix and train-only fitness above, GA fitness now reflects realistic risk-adjusted performance. **Re-run the optimizer after any cost-model change** — fitness landscapes shift and existing best-params are no longer the best on the new objective.
+
+**Survivorship bias — partially fixed (2026-05-29).** The `sp500` universe now uses **point-in-time membership**: `getSP500MembershipResolver()` in `src/lib/sp500.ts` reconstructs `date → constituents` from Wikipedia's changes table (walked backward from today's list), and `portfolioBacktest` gates entries to then-members via `eligibleOn(date)`. The `top50` / `top150` universes are hardcoded *today's-winners* lists with no PIT data — those remain biased (the full-history guard drops mid-window IPOs; the UI labels them biased and defaults to `sp500`). **Residual:** fully-delisted names have no free Yahoo price data, so they still drop out — survivorship is reduced, not eliminated. Treat backtest returns as relative scores; validate via paper trading.
 
 ## Risk Overrides (from DB)
 

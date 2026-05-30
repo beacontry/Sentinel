@@ -41,6 +41,15 @@ What does NOT carry over from paper because it lives at the broker/market layer:
 
 **Net effect:** expect live results to look like a worse, slower version of paper — same trades attempted, fewer filled, exits slightly worse. The signal/strategy/risk-profile evaluation transfers; the realized-P&L number does not. Run paper and live in parallel for at least the first week with matched risk profile but small live size to measure the paper-to-live tax for your particular signal mix.
 
+## Engine state persistence & scan safety (since 2026-05-26)
+
+Two engine improvements landed alongside live-trading enablement that matter when you ship a deploy mid-session:
+
+- **Engine-state snapshot rehydration** (migration `0040`, table `trader_engine_snapshot`). Before this, only `mode` survived a deploy/restart — a redeploy mid-halt would have cleared the consecutive-loss counter and daily notional cap, effectively re-arming the engine after the very protections that fired. Now the position map + risk counters (`dailyLoss`, `dailyNotional`, `consecutiveLosses`, cooldowns, `pendingExits`, `recentOrderTimestamps`, `exitRejectionCount`, `exitSuppressedUntil`, `unprotectedSymbols`, boot equity) are JSONB-persisted at the end of every successful `runScan` and rehydrated in `startEngine` if younger than 60 min. Hydrate emits `ENGINE_STARTED` with `metadata.origin: "snapshot_hydrate"` — that's how you confirm it actually rehydrated. Snapshots older than 60 min are discarded; the broker is authoritative past that.
+- **Cooperative scan cancellation.** A `runScanGuarded` watchdog overrides scans running past 10 min (`STALE_SCAN_OVERRIDE_MS`). Without cancellation, an orphan scan kept executing in the background, racing the new one and mutating shared state. Each scan now holds a `myGeneration` counter; the override bumps `engine.scanGeneration` and the stale scan throws `ScanCancelledError` at yield points. Top-level scan fns catch it and exit cleanly — no error row, no audit pollution. In-flight HTTP requests the orphan already issued still complete but the engine stops acting on them.
+
+**Operator implication.** It is now safe to deploy *with the engine running in live mode* — the safety counters, cooldowns, and protections all survive the container restart, and any scan in flight when SIGTERM hits will be cancelled cleanly on the new boot if it overstays the 10-min budget. Preferring to deploy when the market is closed is still good hygiene (no in-flight fills to reconcile), but the engine no longer re-arms itself after a mid-halt redeploy.
+
 ## Rollback procedures
 
 Three off-ramps, cheapest to most invasive. Pick the lightest one that fixes the actual problem.
