@@ -156,9 +156,9 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
         <header
           data-app-topnav
           className="hidden lg:flex sticky top-0 z-30 border-b border-border bg-bg-elevated"
-          style={{ height: 52, flexShrink: 0 }}
+          style={{ minHeight: 52, flexShrink: 0 }}
         >
-          <div className="flex w-full items-center gap-2 px-4">
+          <div className="flex w-full items-center gap-2 px-4 py-1.5">
             {/* Logo */}
             <Link href="/dashboard" className="flex items-center gap-2.5 shrink-0 mr-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-white">
@@ -168,9 +168,12 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
             </Link>
 
             {/* Nav sections with dropdowns */}
+            {/* overflow-x-auto would clip the dropdowns vertically (per CSS
+                spec, overflow-x:auto implies overflow-y:clip). Use flex-wrap
+                so a too-wide nav wraps instead of scrolling. */}
             <nav
               ref={navContainerRef}
-              className="relative flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="relative flex flex-wrap items-center gap-0.5 flex-1 min-w-0"
             >
               {navItems.map((item) => {
                 const subTabs = getSubTabs(item, role);
