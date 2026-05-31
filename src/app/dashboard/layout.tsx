@@ -1,6 +1,8 @@
 "use client";
 
-import { AppShell } from "@/components/layout/app-shell";
+// Top-nav trial. To revert: swap back to `import { AppShell } from "@/components/layout/app-shell"`
+// and rename the `<AppShell>` JSX below. AppShell is left fully intact.
+import { TopNavShell as AppShell } from "@/components/layout/top-nav-shell";
 import { AiProvider } from "@/components/ai/ai-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "@/components/ui/toast";
