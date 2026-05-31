@@ -5,8 +5,6 @@ import type { FeedPost } from "@/types";
 import { SignalPost } from "@/components/feed/signal-post";
 import { LeaderboardCard } from "@/components/feed/leaderboard-card";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { Rss } from "lucide-react";
 
 export default function FeedPage() {
@@ -40,7 +38,6 @@ export default function FeedPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.community} />
       <PageIntro
         eyebrow="Network"
         title="Feed"

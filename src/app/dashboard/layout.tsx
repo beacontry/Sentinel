@@ -1,8 +1,6 @@
 "use client";
 
-// Top-nav trial. To revert: swap back to `import { AppShell } from "@/components/layout/app-shell"`
-// and rename the `<AppShell>` JSX below. AppShell is left fully intact.
-import { TopNavShell as AppShell } from "@/components/layout/top-nav-shell";
+import { TopNavShell } from "@/components/layout/top-nav-shell";
 import { AiProvider } from "@/components/ai/ai-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "@/components/ui/toast";
@@ -26,11 +24,11 @@ export default function DashboardLayout({
       <ToastProvider>
         <DisplayPrefsProvider>
           <AiProvider>
-            <AppShell>
+            <TopNavShell>
               <BillingStatusBanner />
               <PinSetupBanner />
               {children}
-            </AppShell>
+            </TopNavShell>
             <CommandPalette />
             <KeyboardShortcuts />
             <CsrfInit />

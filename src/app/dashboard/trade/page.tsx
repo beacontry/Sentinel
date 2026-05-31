@@ -23,8 +23,6 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
 import { useToast } from "@/components/ui/toast";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 
 interface EngineStatus {
   running: boolean;
@@ -137,7 +135,6 @@ export default function TradeIndexPage() {
           <ExternalLink className="h-3.5 w-3.5" />
         </Link>
       </div>
-      <SubNav tabs={SUB_NAV.trader} />
 
       {/* Engine-running gate — shown prominently so users don't click
           into a per-symbol page and find the submit disabled there. */}

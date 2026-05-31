@@ -12,8 +12,6 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 
 export default function CalculatorPage() {
   const [accountSize, setAccountSize] = useState("10000");
@@ -130,7 +128,6 @@ export default function CalculatorPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.trader} />
       <PageIntro
         eyebrow="Execution"
         title="Calculator"

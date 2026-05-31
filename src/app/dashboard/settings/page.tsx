@@ -10,8 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { Toggle } from "@/components/ui/toggle";
 import { Modal, ModalHeader, ModalTitle, ModalDescription, ModalFooter } from "@/components/ui/modal";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import {
   Webhook, Plus, Trash2, TestTube, Check, X, Shield,
   Link, Unlink, Pencil, CircleDot, Zap, Sliders,
@@ -456,8 +454,6 @@ export default function SettingsPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-3xl">
-      <SubNav tabs={SUB_NAV.admin} />
-
       <PageIntro
         eyebrow="Desk Controls"
         title="Settings"

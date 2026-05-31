@@ -5,8 +5,6 @@ import { usePolling } from "@/hooks/usePolling";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { useRouter } from "next/navigation";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { PenSquare, Hash, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,7 +123,6 @@ export default function PostsPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.community} />
       <PageIntro
         eyebrow="Network"
         title="Posts"

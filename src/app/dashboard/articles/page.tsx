@@ -8,8 +8,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { FileText, Lock, Calendar, User } from "lucide-react";
 
 interface ArticleListItem {
@@ -68,7 +66,6 @@ export default function ArticlesPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.research} />
       <PageIntro
         eyebrow="Research"
         title="Articles"

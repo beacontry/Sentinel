@@ -10,7 +10,7 @@
 - Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
-- Vitest for testing (596 tests across 43 suites — includes engine-safeguards (wash-sale + PDT), swap-sell planner integration, engine-snapshot serialize/deserialize, scan cancellation, take-profit graduation, accuracy, audit, analyzer, breakeven-promote, dynamic-trail, market-regime, tax-report, etc.)
+- Vitest for testing (596 tests across 43 suites — engine-safeguards, swap-sell planner, engine-snapshot, scan cancellation, graduation, accuracy, audit, analyzer, market-regime, tax-report, etc.)
 - Alpaca Markets API for paper/live trading
 - Stripe for billing (Free / Trader $20 / Premium $40 / Self-Hosted) — webhook handler at `/api/webhooks/stripe`, sandbox + portal at `/api/billing/{checkout,portal}`
 
@@ -32,34 +32,30 @@ All trader tables are scoped by `userId`:
 - `traderPositions` — **DEPRECATED** (table exists but is never read/written; broker is source of truth)
 
 ### Alpaca as Source of Truth
-Positions come from the broker API, not the database:
-1. **Live broker data** — `client.getPositions()` on every scan and dashboard load
-2. **Engine cache fallback** — `getBrokerPositionCache(userId)` when broker is temporarily unreachable
-3. **No DB fallback** — the `traderPositions` table is unused
-4. `syncPositionMapFromBroker()` runs on every scan to reconcile the in-memory position map
+Positions come from the broker, not the DB: `client.getPositions()` on every scan + dashboard load → `getBrokerPositionCache(userId)` fallback when the broker is unreachable → no DB fallback (`traderPositions` unused). `syncPositionMapFromBroker()` reconciles the in-memory map every scan.
 
 ### Signal Pipeline (Unified)
-All components use the same signal function — `analyzeBars()` from `src/lib/indicators/analyzer.ts`:
-- **Engine** calls `analyzeHybrid()` → `analyzeBars(symbol, bars, signalParams?)` — passes optimizer-tuned signal params in "optimized" mode
-- **Optimizer** uses `analyzeSignalOnly()` — lightweight variant with same logic, accepts tunable `SignalParams`
-- **Screener** calls `analyzeHybrid()` with `enableSentiment/OptionsFlow/Analyst/AiScoring: false` — pure technicals via `analyzeBars()` (shared resource, not per-user). Hybrid layers are re-applied by the engine when it processes the screener-pushed signal, so trade-decision quality is unchanged.
-- **Multi-Timeframe** API calls `analyzeBars()` at both 5m and 1d resolutions, computes confluence
-- `SignalParams` (emaFast, emaSlow, rsiOversold, rsiOverbought) flow through `HybridPipelineOptions.signalParams`
+All components share `analyzeBars()` (`src/lib/indicators/analyzer.ts`):
+- **Engine** — `analyzeHybrid()` → `analyzeBars(symbol, bars, signalParams?)`, passing optimizer-tuned params in "optimized" mode.
+- **Optimizer** — `analyzeSignalOnly()`, a lightweight same-logic variant accepting tunable `SignalParams`.
+- **Screener** — `analyzeHybrid()` with hybrid layers off (pure technicals); the engine re-applies hybrid layers on the pushed signal, so trade quality is unchanged.
+- **Multi-Timeframe** — `analyzeBars()` at 5m + 1d, computes confluence.
+- `SignalParams` (emaFast, emaSlow, rsiOversold, rsiOverbought) flow via `HybridPipelineOptions.signalParams`.
 
-### Optimized mode (post-PR-14 — Option 2: lean into the difference)
+### Optimized mode (post-PR-14)
 
-The 2026-05-26 prod observation that tactical-smart was outperforming optimized triggered this. Three structural gaps were closed; one was preserved.
+2026-05-26 prod showed tactical-smart outperforming optimized. Response ("lean into the difference"): close 3 structural gaps, preserve what makes optimized distinct. Full PR-by-PR rationale in `docs/changelog.md`; current behavior in `docs/ENGINE_RULESET.md`.
 
-**Closed gaps (Optimized now matches tactical-smart on these axes):**
-- **Universe** — `runScan` consumes the screener feed via `selectExternalSymbolsForTactical(engine.externalSignals, SCAN_UNIVERSE)`. Top-50 by analyzer confidence, BUY/STRONG_BUY only, dedup'd against SCAN_UNIVERSE. Was previously unfiltered (HOLDs and SELLs got through) with no cap.
-- **Take-profit graduation** — `MODE_GRADUATION_DEFAULT.optimized = "enabled"`. The GA-tuned takeProfit (`pos.takeProfit` set from `takeProfitAtrMult` or `takeProfitPct`) is now treated as a graduation point: first crossing locks `pos.stopLoss` to entry × 1.30, subsequent scans hold until 2-of-3 weakness signals fire (volume contraction, plateau, RSI rollover). Same logic as tactical-smart got in PR 8.
-- **Active rotation** — `MODE_SWAP_SELL_DEFAULT.optimized = "enabled"`. When a scan exit fires, freed capital doesn't wait for the next 15-min tick. Any STRONG_BUY candidates that hit the position cap before the exit happened are deferred during the scan loop; post-loop, top deferred candidates (by analyzer confidence) get bought to redeploy the freed slot. Tactical-smart's swap-sell stays in `runTacticalSmartScan` (pair-wise weak→strong); optimized's runs in `runScan` post-loop (any-exit→top-deferred).
+**Closed gaps (now matches tactical-smart):**
+- **Universe** — `runScan` consumes the screener feed via `selectExternalSymbolsForTactical(engine.externalSignals, SCAN_UNIVERSE)`: top-50 by analyzer confidence, BUY/STRONG_BUY only, dedup'd against SCAN_UNIVERSE (was unfiltered + uncapped).
+- **Take-profit graduation** (`MODE_GRADUATION_DEFAULT.optimized = "enabled"`) — GA-tuned `pos.takeProfit` becomes a graduation point: first crossing locks `pos.stopLoss` to entry × 1.30, then holds until 2-of-3 weakness signals (volume contraction, plateau, RSI rollover).
+- **Active rotation** (`MODE_SWAP_SELL_DEFAULT.optimized = "enabled"`) — on a scan exit, top deferred STRONG_BUY candidates (capped-out earlier in the loop) get bought post-loop to redeploy freed capital. Optimized's runs in `runScan` post-loop; tactical-smart's pair-wise swap-sell stays in `runTacticalSmartScan`.
 
-**Preserved distinctions (what makes optimized still distinct):**
-- **Per-symbol GA-tuned params** — each symbol carries its own `stopLossPct`, `takeProfitAtrMult`, `trailingStopPct`, `holdPeriod`, RSI bounds, EMAs from the GA. Tactical-smart uses uniform defaults (`entry × 0.88` stop, `entry × 1.50` take, 11.7% trail, 999 hold).
-- **Fixed position sizing** — `equity × positionPct` per position. Tactical-smart uses inverse-volatility weighting (lower vol → bigger position).
-- **Finite hold period** — GA-tuned, typically ~33 days. Tactical-smart's `999` effectively never times out.
-- **GA fitness — `fitness()` is TRAIN-ONLY** (2026-05-28). It scales `excessReturn` by `sharpeMult = min(sharpe/1.0, 1.0)` and `drawdownMult = max(0, 1 - maxDrawdown/30)` (`maxDrawdown` is a *percent*; the divisor was a `/0.30` unit bug that floored the term to a constant 0.05 → no risk control). **Critically, the test window is NOT in the fitness** — it used to blend `0.6*train + 0.4*test`, which leaked the holdout into selection (the GA optimized the "test" return, so test ≈ train and the reported OOS number was meaningless). Now the test set is evaluated once on the final winner and reported as genuine out-of-sample. Re-run the optimizer; expect honest (much lower) test returns. **Survivorship bias (partially fixed 2026-05-29):** the `sp500` universe now uses **point-in-time membership** — `getSP500MembershipResolver()` in `sp500.ts` reconstructs `date → constituents` from Wikipedia's changes table (walked backward from today's list), and `portfolioBacktest` gates entries to then-members (`eligibleOn`). `top50`/`top150` are hardcoded *today's*-winners lists with no PIT data → still biased (a full-history guard drops mid-window IPOs; UI labels them biased + defaults to `sp500`). **Residual:** fully-delisted names have no free Yahoo price data, so they still drop out — survivorship is reduced, not eliminated. Treat backtest returns as relative scores, validate via paper trading.
+**Preserved distinctions:**
+- **Per-symbol GA params** — own `stopLossPct`, `takeProfitAtrMult`, `trailingStopPct`, `holdPeriod`, RSI bounds, EMAs. Tactical-smart uses uniform defaults (entry × 0.88 stop, × 1.50 take, 11.7% trail, 999 hold).
+- **Fixed position sizing** — `equity × positionPct`. Tactical-smart uses inverse-volatility weighting.
+- **Finite hold period** — GA-tuned ~33 days vs tactical-smart's 999 (effectively never).
+- **GA fitness is TRAIN-ONLY** (2026-05-28) — `excessReturn × sharpeMult × drawdownMult`, multipliers on positive returns only, floored at 0.05 (`drawdownMult` divisor is a percent — the old `/0.30` froze it at 0.05). The test window is NOT in fitness (it used to blend `0.6*train + 0.4*test`, leaking the holdout); the holdout is now scored once on the final winner as genuine OOS. Both backtesters apply a shared cost model (`BACKTEST_COSTS`, default 5 bps/$0) — were frictionless before. **Re-run the optimizer after any fitness/cost change; expect honest (lower) test returns.** Survivorship bias only *partially* fixed (PIT membership via `getSP500MembershipResolver()` on `sp500`; `top50`/`top150` still today's-winners, fully-delisted names drop out) — treat returns as relative scores, validate via paper trading. Full detail in `docs/ENGINE_RULESET.md`.
 
 **Per-mode opt-in maps:**
 | Map | Optimized | Tactical-smart | Others |
@@ -68,92 +64,25 @@ The 2026-05-26 prod observation that tactical-smart was outperforming optimized 
 | `MODE_GRADUATION_DEFAULT` (take-profit graduation) | `enabled` | `enabled` | `disabled` |
 | `MODE_SWAP_SELL_DEFAULT` (post-exit redeploy) | `enabled` | `disabled` (uses own pair-wise) | `disabled` |
 
-**Graduation gates BOTH scan paths (PR 16, 2026-05-26 audit fix).** When
-graduation is enabled, the hard take-profit exit is gated in BOTH
-`runScan` (15-min) and `runExitCheck` (1-min). Pre-audit, `runExitCheck`
-still fired the hard exit at `pos.takeProfit`, so the 1-min poll would
-exit before the next 15-min scan got a chance to graduate. The gate check
-in both paths is `getGraduationMode(getActiveMode(engine)) === "disabled"`.
-
-**Backtester parity (PR 16).** Both `runBacktest` (`src/lib/backtester.ts`)
-and `portfolioBacktest` (`src/lib/optimizer.ts`) now simulate graduation
-for modes where it's enabled. Without this parity, GA-tuned
-`takeProfitAtrMult` values were chosen under hard-exit fitness while the
-live engine treats them as graduation points. Swap-sell parity is NOT
-yet mirrored in the backtester — single-symbol `runBacktest` doesn't have
-the multi-symbol candidate pool the runtime swap-sell needs; deferred to
-focused PR. Multi-objective GA fitness `excessReturn × sharpeMult ×
-drawdownMult` applies multipliers only to positive returns (negative
-returns skip — otherwise the GA preferred worse-risk-profile losers).
-Multipliers floored at 0.05 so the GA has gradient even at extreme
-drawdowns.
-
-**Trading costs (2026-05-28).** Both backtesters apply a shared cost model
-(`BACKTEST_COSTS` in `config.ts` — per-side slippage in bps + per-fill
-commission, default 5 bps / $0): buys fill above and sells below the trigger,
-commission per fill, entry slippage carried in the cost basis. Before this
-they were **frictionless**, which compounded a tiny per-trade edge into
-fantasy returns (e.g. 900–1300% test vs a ~flat-market buy-hold). Together with
-the drawdown-unit fix above, GA fitness now reflects realistic risk-adjusted
-performance — re-run the optimizer after any cost change.
-
-**Stop-sync scheduler hung-scan recovery (PR 16 audit fix).** The
-scheduler's `scan_in_flight` gate previously skipped forever when
-`engine.scanStartedAt` was overwritten by `runScanGuarded`'s 10-min
-override (the previous hung scan's flag was never null'd). Now the
-scheduler checks scan age vs `STALE_SCAN_OVERRIDE_MS` (10 min) and runs
-sync anyway when exceeded. Logs warn-level so the operator sees these
-fires in journald.
-
-**Cooperative scan cancellation (PR 21c, 2026-05-26).** Closes the
-orphan-promise hole noted by PR 17 audit P1 #6. Each scan captures
-`myGeneration = ++engine.scanGeneration` at start. When runScanGuarded
-fires a 10-min override, the new scan bumps the counter; the stale
-scan calls `throwIfScanCancelled(engine, myGeneration)` at every major
-yield point (after enforceDailyLossHalt, between per-symbol loop
-iterations, before the swap-sell post-loop block, etc) and throws
-`ScanCancelledError` if its generation no longer matches. Top-level
-`runScan` / `runTacticalScan` / `runTacticalSmartScan` catch
-`ScanCancelledError` and exit cleanly without erroring. Non-cooperative
-HTTP requests that are already in-flight still resolve to /dev/null —
-the engine just stops acting on their results.
-
-**Engine state persistence (PR 21b, 2026-05-26).** Before this PR, only
-`mode` survived a deploy/restart. Now `src/lib/engine-snapshot.ts`
-serializes the position map + dailyLoss + dailyNotional +
-consecutiveLosses + cooldowns + pendingExits + recentOrderTimestamps +
-exitRejectionCount + exitSuppressedUntil + unprotectedSymbols + boot
-equity to a JSONB blob in the new `trader_engine_snapshot` table (one
-row per user, migration `0040`). Written at the end of every successful
-`runScan` (best-effort — a failed write doesn't abort the scan).
-Hydrated in `startEngine` after cooldown-from-DB hydration; snapshots
-older than `SNAPSHOT_MAX_AGE_MS = 60 min` are discarded (broker is
-authoritative past that). Versioned payload (`v: 1`); deserialize
-returns null on version mismatch so a future-schema snapshot doesn't
-crash boot. Audit row `ENGINE_STARTED` with `origin: "snapshot_hydrate"`
-fires on every successful hydrate so the trail captures the event.
-
-**Swap-sell planner extraction (PR 21a, 2026-05-26).** The post-loop
-swap-sell redeployment decision tree extracted from inline runScan into
-`planSwapSellRedeploy()` — a pure function that returns
-`{attempts, skips, reachedHardCap, reachedExposureCap}`. runScan now
-calls the planner, then executes only the I/O-bound parts (smart
-filters, canPlaceBuyOrder with sector context, placeEngineOrder,
-positionMap update). The planner's decision logic is integration-tested
-end-to-end in `tests/unit/swap-sell-plan.test.ts` with realistic
-multi-gate scenarios (cooldown + pending + exposure + cap interactions).
+**Implementation notes** (full PR-by-PR rationale in `docs/changelog.md`):
+- **Graduation gates BOTH scan paths** (PR 16) — `runScan` (15-min) and `runExitCheck` (1-min) both gate the hard take-profit on `getGraduationMode(getActiveMode(engine)) !== "disabled"`, else the 1-min poll exits before the 15-min scan can graduate.
+- **Backtester graduation parity** (PR 16) — `runBacktest` + `portfolioBacktest` simulate graduation where enabled, so GA-tuned `takeProfitAtrMult` is chosen under the same exit logic the engine uses. Swap-sell parity NOT yet mirrored (single-symbol backtest lacks the candidate pool).
+- **Stop-sync hung-scan recovery** (PR 16) — scheduler runs sync anyway when scan age > `STALE_SCAN_OVERRIDE_MS` (10 min) instead of skipping forever on a stale `scan_in_flight` flag.
+- **Cooperative scan cancellation** (PR 21c) — each scan holds `myGeneration`; a 10-min override bumps `engine.scanGeneration` and the stale scan calls `throwIfScanCancelled()` at yield points, throwing `ScanCancelledError`. Top-level scan fns catch it and exit cleanly; in-flight HTTP just resolves to nothing.
+- **Engine state persistence** (PR 21b) — `src/lib/engine-snapshot.ts` writes the position map + risk counters (dailyLoss, dailyNotional, consecutiveLosses, cooldowns, pendingExits, recentOrderTimestamps, etc.) to `trader_engine_snapshot` (migration `0040`, one row/user) at each successful `runScan`; hydrated in `startEngine`, discarded if older than `SNAPSHOT_MAX_AGE_MS` (60 min). Versioned (`v: 1`); audit `ENGINE_STARTED` `origin: "snapshot_hydrate"` on hydrate.
+- **Swap-sell planner** (PR 21a) — pure `planSwapSellRedeploy()` returns the decision tree (`{attempts, skips, reachedHardCap, reachedExposureCap}`); `runScan` executes only the I/O parts. Integration-tested in `tests/unit/swap-sell-plan.test.ts`.
 
 ### Screener (Shared)
-The screener scans market data and is shared across users (not user-specific). It pushes actionable signals (BUY/STRONG_BUY, confidence ≥ 0.6) to the engine via `pushExternalSignal()`. Signals are in-memory, expire after 30 minutes. Optimization runs are admin-only but results (strategy params) are shared globally.
+The screener scans market data, shared across users (not per-user). It pushes actionable signals (BUY/STRONG_BUY, confidence ≥ 0.6) to the engine via `pushExternalSignal()` — in-memory, expire after 30 min. Optimization runs are admin-only; results (strategy params) are shared globally.
 
-**Concurrency:** `scanAllSymbols` / `scanAllSymbolsIntraday` store the in-flight scan promise on the cache (`cache.scanInFlight`). Concurrent callers (e.g. user clicks "Scan Market" while the scheduler is running) await the running scan rather than receiving an empty cache. The route surfaces `cache.scanning` to the client; the screener page shows "Scan in progress" when true. `scannedAt` is `null` until the first scan completes (not epoch).
+**Concurrency:** `scanAllSymbols`/`scanAllSymbolsIntraday` store the in-flight promise on `cache.scanInFlight`, so concurrent callers await the running scan instead of getting an empty cache. The route surfaces `cache.scanning`; `scannedAt` is `null` until the first scan completes.
 
-**Performance:** `SCREENER_CONFIG.batchSize = 25`, inter-batch delay 50ms, 5m bar disk cache TTL = 11min (slightly longer than the 5min scan interval so the next scheduled scan hits cache fully even if the prior straddled the boundary). Hybrid layers (sentiment/options/analyst) are NOT run in the screener — without that, full-universe scans took 15–45 min because the analyst + sentiment layers serialize through Finnhub's 60 req/min rate limiter. Pure-technical scans complete in ~30–60s cold, ~10s warm.
+**Performance:** `SCREENER_CONFIG.batchSize = 25`, 50ms inter-batch delay, 5m-bar disk cache TTL 11min (> the 5min scan interval so the next scan hits cache fully). Hybrid layers (sentiment/options/analyst) are NOT run here — they serialize through Finnhub's 60 req/min limiter and pushed full scans to 15–45 min. Pure-technical scans: ~30–60s cold, ~10s warm.
 
 ### Tax Center Data Sources
-`/api/tax/report` and `/api/tax/harvesting` merge **both** manual portfolio entries and live engine activity:
-- **Realized gains:** `portfolioTrades` (manual) + `traderTrades` (engine fills, `status=FILLED`, scoped by `userId`, filtered by `fillTime` so cross-year fills land in the right tax year). Engine actions `BUY`/`SELL`/`manual_close` normalize to `BUY`/`SELL`.
-- **Harvesting candidates:** `portfolioPositions` (manual) + `getBrokerPositionCache(userId)` (live broker positions — broker is source of truth, no DB query).
+`/api/tax/report` and `/api/tax/harvesting` merge manual portfolio entries + live engine activity:
+- **Realized gains:** `portfolioTrades` (manual) + `traderTrades` (engine fills, `status=FILLED`, scoped by `userId`, filtered by `fillTime` for correct tax year; `BUY`/`SELL`/`manual_close` normalize to `BUY`/`SELL`).
+- **Harvesting candidates:** `portfolioPositions` (manual) + `getBrokerPositionCache(userId)` (live broker, no DB query).
 
 The separate `/dashboard/tax` page (Form 8949) reads engine trades only; Tax Center is the unified view.
 
@@ -175,30 +104,15 @@ All tokens defined in `src/app/globals.css` `@theme` block. Light is the implici
 
 Trading semantics (`bullish`, `bearish`, `warning`) stay universal red/green across all themes so P&L is recognizable.
 
-**ThemeProvider** (`src/components/theme-provider.tsx`): wraps root layout, persists preference to `localStorage("sentinel-theme")`, applies the right class on `<html>`, updates PWA `theme-color` meta tag. Use `useTheme()` hook for `{ theme, setTheme, toggleTheme }`. `toggleTheme()` cycles through all 5 in declaration order; `setTheme(t)` jumps directly. `isDarkTheme(theme)` helper exported for embeds (TradingView widget) that need their own dark/light flag — returns true for `dark` and `gray`.
+**ThemeProvider** (`src/components/theme-provider.tsx`): persists to `localStorage("sentinel-theme")`, applies the class on `<html>`, updates PWA `theme-color`. `useTheme()` → `{ theme, setTheme, toggleTheme }` (`toggleTheme()` cycles all 5; `setTheme(t)` jumps). `isDarkTheme(theme)` (true for `dark`/`gray`) exported for embeds like the TradingView widget.
 
-**Theme picker UI** (`src/components/theme-picker.tsx`): replaces the old binary toggle. Two variants:
-- `variant="sidebar"` — full-width button styled to match the existing sidebar footer; upward popover with all 5 themes (swatch + label + active check).
-- `variant="icon"` — 36-40px palette icon button; downward popover. Used in landing nav and mobile contexts.
+**Theme picker** (`src/components/theme-picker.tsx`): two variants — `variant="icon"` (palette icon button, downward popover; default in the dashboard top bar + landing navbar) and `variant="sidebar"` (full-width button, upward 5-theme popover; used inside the mobile drawer of `TopNavShell`). Name predates the layout swap — "sidebar" now means "full-width button suitable for a stacked menu", not literal sidebar.
 
-**Toggle locations:** Landing page navbar (palette icon → 5-option popover), dashboard sidebar footer (full-width "Theme: X" button → 5-option popover).
+**Landing page** uses separate `ld-*` tokens (`bg-ld-deep`, `text-ld-accent`, …) that also switch via `html.dark` overrides.
 
-**Landing page** uses separate `ld-*` tokens (`bg-ld-deep`, `text-ld-accent`, etc.) for its distinct aesthetic. These also switch with the theme via `html.dark` overrides.
+**Backgrounds** (dark, higher elevation = lighter): `bg-bg-primary` (10%L) → `secondary` (13%) → `surface` (16%) → `elevated` (20%) → `hover` (24%). **Text:** `text-text-primary` (96%) / `secondary` (68%) / `muted` (50%). **Borders:** `border-border` (28%) / `border-border-hover` (36%). **Accent:** `text-accent`/`bg-accent` (emerald), `bg-accent-hover`.
 
-**Backgrounds (dark hierarchy — higher elevation = lighter):**
-`bg-bg-primary` (10% L) > `bg-bg-secondary` (13% L) > `bg-bg-surface` (16% L) > `bg-bg-elevated` (20% L) > `bg-bg-hover` (24% L)
-
-**Text:** `text-text-primary` (96% L) | `text-text-secondary` (68% L) | `text-text-muted` (50% L)
-
-**Borders:** `border-border` (28% L) | `border-border-hover` (36% L)
-
-**Accent:** `text-accent` / `bg-accent` (emerald) | `bg-accent-hover`
-
-**Trading semantics:**
-- Bullish/positive: `text-bullish` | `bg-bullish/10` for badges
-- Bearish/negative: `text-bearish` | `bg-bearish/10` for badges
-- Warning: `text-warning` | `bg-warning/10` for badges
-- Use `font-mono` for ALL financial numbers (prices, percentages, quantities)
+**Trading semantics:** `text-bullish` / `text-bearish` / `text-warning` (badges use the `/10` tint). `font-mono` for ALL financial numbers.
 
 ### Typography
 - Display/Body: Geist Sans (`geist` npm package) | Monospace: Geist Mono / JetBrains Mono (`font-mono`)
@@ -225,21 +139,14 @@ All use `cubic-bezier(0.16, 1, 0.3, 1)` (expo ease-out) — no bounce/elastic ea
 ## Component Library (`src/components/ui/`)
 
 Always use existing components — never recreate them:
-- **Button** — variants: primary/secondary/ghost/destructive/outline, sizes: sm/md/lg, has `loading` prop
-- **Card, CardHeader, CardTitle** — `rounded-xl`, optional `hover` prop for clickable cards, selected: `border-accent/50`
-- **Badge** — variants: default/bullish/bearish/warning/neutral (pill-shaped, `rounded-full`)
-- **SignalBadge** — STRONG_BUY/BUY/HOLD/SELL/STRONG_SELL mapped to Badge variants
-- **StatCard** — label/value/subtext with tone coloring (positive/negative/neutral), icon without container
-- **Input** — with label, error, icon props. `rounded-lg min-h-[44px]`
-- **Select, Textarea, Checkbox, Toggle**
-- **Modal, ModalHeader, ModalTitle, ModalFooter** — focus trap, Escape close
-- **Tabs, TabPanel** — underline-style, active=`text-accent` with accent underline
-- **Pagination** — with ellipsis logic
-- **Skeleton** — shimmer loading placeholder
-- **EmptyState** — icon + title + description + optional action CTA
-- **Toast** (via `useToast()`) — success/error/warning/info with auto-dismiss, solid bg (no gradients)
-- **Dropdown** — solid `bg-bg-elevated` (no gradients), `rounded-lg`
-- **Tooltip** — solid `bg-bg-elevated` (no gradients), `rounded-lg`
+- **Button** — variants primary/secondary/ghost/destructive/outline, sizes sm/md/lg, `loading` prop
+- **Card / CardHeader / CardTitle** — `rounded-xl`, optional `hover`, selected `border-accent/50`
+- **Badge** (default/bullish/bearish/warning/neutral, pill) + **SignalBadge** (STRONG_BUY…STRONG_SELL → Badge variants)
+- **StatCard** — label/value/subtext, tone coloring, bare icon
+- **Input** (label/error/icon, `rounded-lg min-h-[44px]`), **Select, Textarea, Checkbox, Toggle**
+- **Modal** suite — focus trap, Escape close; **Tabs / TabPanel** — underline, active `text-accent`
+- **Pagination** (ellipsis), **Skeleton** (shimmer), **EmptyState** (icon/title/desc/CTA)
+- **Toast** (`useToast()`, solid bg), **Dropdown** + **Tooltip** (solid `bg-bg-elevated`, `rounded-lg`)
 - **Avatar, SearchInput, CommandPalette, DataTable**
 
 ## Registration & Invites
@@ -250,35 +157,17 @@ Two registration paths share one endpoint:
 2. **Plan-intent signup** (`/register?plan=trader|premium&cadence=month|year`) — same anonymous path, but the page renders plan-aware UI ("Start your Trader trial — $20/mo") and after successful signup forwards to `/dashboard/billing?upgrade=<tier>:<cadence>`, which auto-fires Stripe Checkout. The account is still created at `tier=free`; the real grant comes from the Stripe webhook after payment. Driven by the `/pricing` "Start with Trader / Premium" CTAs.
 3. **Invite-token signup** (`/register?token=...`) — admin-issued. Email pre-filled and locked; tier still inserts as `free` (admin upgrades post-signup via the admin UI or Stripe). Used for closed cohorts where admin wants to control who lands.
 
-**Key files:**
-- `src/lib/db/schema/invites.ts` — `invites` table (token, email, expiry, used)
-- `src/app/api/admin/invites/route.ts` — GET (list), POST (create + send email)
-- `src/app/api/auth/validate-invite/route.ts` — GET (check token validity)
-- `src/app/api/auth/register/route.ts` — handles all three paths; tier always hardcoded to `free` server-side
-- `src/app/register/page.tsx` — branches on `?token=` vs `?plan=` vs neither
-- `src/app/dashboard/billing/page.tsx` — reads `?upgrade=<tier>:<cadence>` and auto-fires `/api/billing/checkout`
+**Key files:** `invites` table (`src/lib/db/schema/invites.ts`); admin list/create at `src/app/api/admin/invites/route.ts`; token check at `.../auth/validate-invite`; `.../auth/register/route.ts` handles all three paths (tier always hardcoded `free` server-side); `src/app/register/page.tsx` branches on `?token=`/`?plan=`/neither; `src/app/dashboard/billing/page.tsx` reads `?upgrade=<tier>:<cadence>` → auto-fires `/api/billing/checkout`.
 
-**Admin UI:** Invitations section on admin page — email input to send invites, table of sent invites with status (Pending/Registered/Expired), copy link button.
+**Admin UI:** Invitations section — send invites, table with status (Pending/Registered/Expired), copy-link.
 
 ### Email delivery (Resend)
 
-Invite and alert emails are sent through **[Resend](https://resend.com)** via `src/lib/email.ts`. Two helpers: `sendInviteEmail(to, signupUrl)` and `sendAlertEmail(to, subject, body)`. Both branded HTML templates inlined in the same file.
+Invite + alert emails go through **[Resend](https://resend.com)** via `src/lib/email.ts` (`sendInviteEmail`, `sendAlertEmail`; branded HTML inlined). Prod env (`/opt/apps/sentinel/.env`): `RESEND_API_KEY` (sending-only key). `EMAIL_FROM` intentionally unset — defaults to `Beacontry <hello@beacontry.com>`, DKIM-aligned with the Resend-verified `beacontry.com` so DMARC passes without per-app DNS. (Legacy GuardCyber apex `guardcybersolutionsllc.com` still verified for other apps; Beacontry stopped using it 2026-05-14.)
 
-**Required env vars** (`/opt/apps/sentinel/.env` on prod):
-```bash
-RESEND_API_KEY=re_...   # Sending-only API key from Resend → API Keys
-# EMAIL_FROM intentionally unset on prod — `src/lib/email.ts` defaults to
-# "Beacontry <hello@beacontry.com>". Override only if self-hosting under a
-# different verified domain.
-```
-
-**Graceful fallback** — if `RESEND_API_KEY` is missing, both helpers log `"Email not configured"` and return `{ success: false }`. The invite route still creates the DB record and returns the signup URL so admins can copy/paste the link manually. **Never throws**, so the app stays usable when email is mis-configured.
-
-**Verified domain** — `beacontry.com` is verified in Resend (DKIM-signed). The in-code `EMAIL_FROM` default (`Beacontry <hello@beacontry.com>`) aligns with that DKIM so DMARC passes without per-app DNS work. The legacy GuardCyber apex (`guardcybersolutionsllc.com`) remains verified for other GuardCyber-stack apps; Beacontry no longer uses it as of 2026-05-14.
-
-**Rotating the key:** Revoke old key in Resend → create new "sentinel-prod" key (Sending access only) → update `RESEND_API_KEY=` in `/opt/apps/sentinel/.env` → **`podman stop && rm && run`** (`podman restart` does NOT re-read the env-file, only `run` does). Full recreate command lives in `podman inspect` history / deploy runbook.
-
-**Inbound mail** (bounces, replies to `noreply@`, anyone emailing the domain): Cloudflare Email Routing forwards everything to the admin inbox via a catch-all rule. See GuardCyber `README.md` § Email Infrastructure for the shared setup.
+- **Graceful fallback** — missing `RESEND_API_KEY` → helpers log `"Email not configured"`, return `{ success: false }`, never throw; the invite route still creates the DB record and returns the signup URL for manual copy/paste.
+- **Rotating the key** — rotate in Resend, update `.env`, then **`podman stop && rm && run`** (`podman restart` does NOT re-read the env-file). Full procedure in the deploy runbook.
+- **Inbound mail** — Cloudflare Email Routing catch-all forwards everything to the admin inbox. See GuardCyber `README.md` § Email Infrastructure.
 
 ## Risk Profile (Single Source of Truth)
 
@@ -313,39 +202,33 @@ Live trading is gated behind `ALLOW_LIVE_TRADING=1`. Without it, the engine refu
 All halts emit `engine.halted` audit events with `metadata.reason ∈ {broker_unreachable, account_mismatch, equity_collapse, consecutive_losses, user_requested_flatten_all}`.
 
 **Phase 5 — Personalized live protections** (layered on the safeguards above):
-- **MTM election** (Trader → Tax election card): self-attested §475(f), writes `user_tax_status`. MTM unchecked → wash-sale protection ON; MTM checked → OFF (MTM exempt from §1091). Toggle takes effect on next engine start.
-- **Wash-sale protection**: blocks BUYs on any symbol with a losing exit (`action IN ('SELL','manual_close') AND pnl < 0`) within the last 31 calendar days. Symbol-level, not lot-level — over-conservative but simpler. Wash-sale set refreshed every 5 min from `trader_trades`. Audit reason: `wash_sale_protection`. Does NOT catch manual buys via Alpaca's UI, "substantially identical" ETFs, or different share classes (GOOG ≠ GOOGL).
-- **PDT protection**: auto-detected from `account.equity < $25,000`. Mid-session re-evaluates every scan; transition emits `engine.pdt_vulnerable`. Blocks BUYs (not SELLs) when `pdtVulnerable && daytradeCount >= 3`. Audit reason: `pdt_protection`. (v3.1 — startup intraday-mode refusal removed alongside the intraday mode itself.)
+- **MTM election** (Trader → Tax election card): self-attested §475(f) → `user_tax_status`. MTM unchecked → wash-sale ON; checked → OFF (MTM exempt from §1091). Effective on next engine start.
+- **Wash-sale protection**: blocks BUYs on a symbol with a losing exit (`SELL`/`manual_close`, `pnl < 0`) in the last 31 calendar days. Symbol-level not lot-level (over-conservative but simpler); set refreshed every 5 min from `trader_trades`; audit reason `wash_sale_protection`. Does NOT catch manual Alpaca-UI buys, "substantially identical" ETFs, or different share classes (GOOG ≠ GOOGL).
+- **PDT protection**: auto-detected from `account.equity < $25,000`, re-evaluated every scan (transition emits `engine.pdt_vulnerable`). Blocks BUYs (not SELLs) when `pdtVulnerable && daytradeCount >= 3`. Audit reason `pdt_protection`.
 
 Gate ordering inside `canPlaceBuyOrder()`: wash-sale → PDT → notional → rate-limit (cheapest first).
 
-**Recommended risk profile for $5k cash-only live account:**
-- Mode: `optimized` or `adaptive` (tactical-smart's loose stops + 50% take-profit assume larger equity to absorb drawdowns)
-- `maxPositionPct` 25-33% (3-4 positions max — meaningful per-trade size)
-- `maxDailyLossPct` 2% ($100/day stop)
-- `maxDailyNotionalPct` 0.5 (50% of equity/day)
-- `maxConsecutiveLosses` 3
-- MTM checkbox unchecked unless you actually filed §475(f) at last year-start
+**Recommended risk profile for a $5k cash-only live account:** mode `optimized`/`adaptive` (tactical-smart's loose stops + 50% take-profit assume larger equity); `maxPositionPct` 25-33% (3-4 positions); `maxDailyLossPct` 2% ($100/day); `maxDailyNotionalPct` 0.5; `maxConsecutiveLosses` 3; MTM unchecked unless you actually filed §475(f) at last year-start.
 
 > **Going-live procedure, paper-vs-live differences, and 3-option rollback procedures** (env-only → code revert → migration drop) live in `docs/runbooks/live-trading.md`. Read it before flipping `ALLOW_LIVE_TRADING=1` or when planning a rollback.
 
 ### Manual trading (first-class path alongside the engine)
 
-Manual orders go through `/dashboard/trade` (index — symbol search + recently-viewed + watchlist quick-trade + open-orders table) → `/dashboard/trade/[symbol]` (the actual ticket). Tier-gated at `trader`. Engine-gated at THREE layers:
+Manual orders go through `/dashboard/trade` (index: symbol search + recently-viewed + watchlist quick-trade + open-orders) → `/dashboard/trade/[symbol]` (the ticket). Tier-gated at `trader`. Engine-gated at THREE layers:
 
-1. **API** — `/api/broker/orders` POST calls `peekEngineStatus(userId).running` and returns 409 `ENGINE_RUNNING` if the engine is active. Hard server-side block.
-2. **`/dashboard/trade/[symbol]` UI** — `validate()` returns "Stop the engine before placing manual orders." and disables submit.
-3. **`/dashboard/trade` index UI** — yellow warning banner pinned at the top of the page when the engine is running, with a link to stop it on `/dashboard/trader`.
+1. **API** — `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` via `peekEngineStatus(userId).running` (hard block).
+2. **Ticket UI** — `validate()` blocks submit with "Stop the engine before placing manual orders."
+3. **Index UI** — warning banner when the engine runs, linking to `/dashboard/trader` to stop it.
 
-The block exists because concurrent manual + engine orders create position-map drift: the engine's in-memory `Map<symbol, TrackedPosition>` lags the broker by up to one scan interval, during which it may place a protective stop sized for a position that's now double the assumed size. Easier to require human exclusivity than to reconcile.
+The block exists because concurrent manual + engine orders create position-map drift: the engine's in-memory position map lags the broker by up to one scan interval, risking a protective stop sized for the wrong quantity. Easier to require exclusivity than to reconcile.
 
 Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.source = "manual_ui"`) as engine fills, the same journal auto-stub, and merge into the same Tax Center (`/api/tax/report` reads `trader_trades.action IN ('BUY', 'SELL', 'manual_close')`).
 
 ## Adaptive engine mode (8th mode, regime-driven)
 
-`EngineMode` includes `"adaptive"` (`src/lib/trading-engine.ts`). When a user selects adaptive, the engine reads market regime at each scan boundary (VIX + SPY trend) and sets `engine.effectiveMode` to one of `conservative` / `moderate` / `optimized` / `aggressive`. The user-selected mode (`engine.mode`) stays `"adaptive"`; everywhere strategy decisions are made, code goes through `getActiveMode(engine)` which returns the effective mode.
+`EngineMode` includes `"adaptive"` (`src/lib/trading-engine.ts`). At each scan boundary it reads market regime (VIX + SPY trend) and sets `engine.effectiveMode` to `conservative` / `moderate` / `optimized` / `aggressive`; `engine.mode` stays `"adaptive"`. Strategy decisions go through `getActiveMode(engine)`, which returns the effective mode.
 
-**User-facing mode picker** (v3.1) shows only `optimized` / `tactical` / `tactical-smart` / `adaptive`. The four "base" modes (`conservative` / `moderate` / `aggressive`) remain in the `EngineMode` enum because the adaptive regime classifier maps to them internally — but they aren't directly selectable. Use `USER_FACING_MODES` constant from `src/lib/trading-engine.ts` whenever you need to iterate the picker surface (Trader page mode select, backtest mode-compare, optimizer compare). Intraday mode was fully removed in v3.1.
+**User-facing mode picker** (v3.1) shows only `optimized` / `tactical` / `tactical-smart` / `adaptive`. The base modes (`conservative` / `moderate` / `aggressive`) stay in the `EngineMode` enum (adaptive maps to them internally) but aren't directly selectable — iterate the picker via `USER_FACING_MODES` from `src/lib/trading-engine.ts`. Intraday mode was fully removed in v3.1.
 
 **Regime rules** (centralized in `src/lib/market-regime.ts`):
 - `VIX > 28` OR `SPY < SMA50` → risk_off → `conservative`
@@ -357,18 +240,17 @@ Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.sourc
 
 **Audit:** every regime-driven mode switch writes an `ENGINE_MODE_SWITCHED` audit row with metadata `{ adaptive: true, from, to, regime, vix, spyPrice, spyMA50, reasons }`. No-op when regime stays put scan-to-scan.
 
-**Live vs backtest:** live engine reads VIX + SPY + breadth. Backtest replays VIX + SPY only (breadth replay is expensive: 50 stocks × N days). The classifier handles missing breadth gracefully — the strong-risk-on `aggressive` bump just doesn't fire in backtest.
+**Live vs backtest:** live reads VIX + SPY + breadth; backtest replays VIX + SPY only (breadth replay is expensive). The classifier degrades gracefully — the strong-risk-on `aggressive` bump just doesn't fire in backtest.
 
-**Mode-compare backtest** at `/dashboard/backtest/mode-compare?symbol=AAPL` runs the user-selectable comparable modes (`optimized` / `tactical` / `adaptive`; `tactical-smart` excluded as its active-management logic doesn't translate to backtesting) against the same symbol+date-range. Stats table + equity-curve overlay + adaptive's modeTimeline visualization. (v3.1 — pre-trim this ran 6 modes including conservative/moderate/aggressive; those are reachable via adaptive only and no longer shown standalone.)
+**Mode-compare backtest** at `/dashboard/backtest/mode-compare?symbol=AAPL` runs comparable modes (`optimized` / `tactical` / `adaptive`; `tactical-smart` excluded — its active-management logic doesn't translate to backtesting) against the same symbol+date-range: stats table + equity-curve overlay + adaptive's modeTimeline.
 
 ## Congressional trades (official source)
 
-`/dashboard/congress` and `/api/congress` read from the local `congressional_trades` table (migration `0031`), populated by the daily refresh cron from the official House Clerk bulk PTR archive (`disclosures-clerk.house.gov`) and Senate efdsearch. Replaces the previous Finnhub integration that went paid in May 2026.
+`/dashboard/congress` and `/api/congress` read from the local `congressional_trades` table (migration `0031`), populated by a daily cron from the official House Clerk bulk PTR archive (`disclosures-clerk.house.gov`) + Senate efdsearch. Replaces the Finnhub integration that went paid May 2026.
 
-- **House ingester** (`src/lib/congress-house-ingester.ts`): bulk ZIP → XML index → per-PTR PDF text extract (`pdf-parse`, strip NUL bytes) → regex transaction rows → filter Treasury CUSIPs → upsert with `ON CONFLICT DO NOTHING` on `(chamber, filer_name, transaction_date, ticker, transaction_type, amount_from)`. 5-PDF parallelism, 250 ms inter-batch pacing.
-- **Senate ingester** (`src/lib/congress-senate-ingester.ts`): efdsearch.senate.gov requires a CSRF-token dance (GET `/search/home/`, POST with `prohibition_agreement=1`, then DataTables POST to `/search/report/data/` with `report_type=11`, then per-PTR GET `/search/view/ptr/{uuid}/`). Akamai-fronted — realistic UA, sequential 500 ms pacing. Skips paper PDFs (would need OCR) and `--` ticker rows. Parser uses `node-html-parser`.
-- **Cron:** `GET /api/cron/refresh-congress` (`x-cron-secret` header vs `CRON_SECRET`). Pulls current year + (in Jan-Feb) prior year. Schedule daily 6 AM ET.
-- **Backfill:** `npx tsx scripts/backfill-congress.ts --years 2026,2025,2024`. Idempotent. House + Senate failures are independent.
+- **Ingesters:** `src/lib/congress-house-ingester.ts` (bulk ZIP → XML index → per-PTR PDF extract via `pdf-parse` → regex rows → upsert `ON CONFLICT DO NOTHING`) and `src/lib/congress-senate-ingester.ts` (efdsearch CSRF-token dance, Akamai-fronted → realistic UA + sequential pacing; skips paper PDFs + `--` tickers, parses with `node-html-parser`). Step-by-step detail lives in those files.
+- **Cron:** `GET /api/cron/refresh-congress` (`x-cron-secret` vs `CRON_SECRET`). Current year + (Jan-Feb) prior year. Daily 6 AM ET.
+- **Backfill:** `npx tsx scripts/backfill-congress.ts --years 2026,2025,2024`. Idempotent; House + Senate failures independent.
 
 ## Price/indicator alerts (scheduled, edge-triggered)
 
@@ -380,17 +262,13 @@ User alert rules (`alert_rules` table) are evaluated by a **scheduled cron**, no
 
 ## AI Providers & System Configuration
 
-**All AI flows go through Groq (`llama-3.3-70b-versatile`)** — Insights, Quick Insight widget, hybrid AI scoring + sentiment layers, filings chat, market digest, AI chat panel, and the Recent Trades **AI ✨** button. The single-Anthropic-route holdover at `summarize-trade` was migrated 2026-05-12; `@anthropic-ai/sdk` is no longer a dependency. The misleadingly-named `CLAUDE_CONFIG` in `src/lib/config.ts` is still the source of truth for `.model` + `.maxTokens` constants but no longer reads `.apiKey` directly — all key lookups go through `getLlmApiKey()` / `getFinnhubApiKey()` / `getAnthropicApiKey()` in `src/lib/system-config.ts`.
+**All AI flows go through Groq (`llama-3.3-70b-versatile`)** — Insights, Quick Insight, hybrid AI scoring + sentiment, filings chat, market digest, AI chat panel, Recent-Trades **AI ✨**. The last Anthropic route (`summarize-trade`) was migrated 2026-05-12; `@anthropic-ai/sdk` is gone. The misleadingly-named `CLAUDE_CONFIG` (`src/lib/config.ts`) still holds `.model` + `.maxTokens` but no longer reads `.apiKey` — key lookups go through `getLlmApiKey()` / `getFinnhubApiKey()` / `getAnthropicApiKey()` in `src/lib/system-config.ts`.
 
 **Keys live in the `system_config` table** (migration `0030_system_config.sql`), encrypted with AES-256-GCM via `src/lib/crypto.ts`. Rotate from **/dashboard/admin/system-config** — no SSH required. Lookup order at runtime: 60s in-memory cache → DB → `process.env[<key>]` fallback. The env fallback is intentional so a fresh install boots cleanly before the admin has populated the DB.
 
-**Audit:** every save emits a hash-chained `SYSTEM_CONFIG_UPDATED` audit row whose metadata records `{key, hadOldValue, valueLength}` — never the value itself.
+**Audit:** every save emits a hash-chained `SYSTEM_CONFIG_UPDATED` row recording `{key, hadOldValue, valueLength}` — never the value. **Test-before-save:** the [Test] button calls `POST /api/admin/system-config/test` (1-token live-provider ping with the candidate key; not persisted, only [Save] writes). **Known keys** (allow-list in API + helper): `GROQ_API_KEY`, `FINNHUB_API_KEY`, `ANTHROPIC_API_KEY` — anything else rejected.
 
-**Test-before-save:** the admin UI's [Test] button calls `POST /api/admin/system-config/test` which hits the live provider with a 1-token ping using the candidate key. The candidate is not persisted; only [Save] writes.
-
-**Known keys** (allow-list enforced in both API + helper): `GROQ_API_KEY`, `FINNHUB_API_KEY`, `ANTHROPIC_API_KEY`. Anything else is rejected — admins can't silently overwrite arbitrary env vars from the UI.
-
-**Caveat — Finnhub:** the Finnhub client (`src/lib/finnhub.ts`) constructs once at process boot and reads its key field at that time. Rotating `FINNHUB_API_KEY` via the admin UI requires an app restart for the trading engine + per-symbol routes (news, sentiment, recommendations, fundamentals, etc.) to pick up the new value. The LLM path (`getLlmApiKey()`) is fully async and picks up changes on the next call after the 60s cache window.
+**Caveat — Finnhub:** the Finnhub client (`src/lib/finnhub.ts`) reads its key once at process boot, so rotating `FINNHUB_API_KEY` via the admin UI needs an app restart to take effect. The LLM path (`getLlmApiKey()`) picks up changes on the next call after the 60s cache window.
 
 ## Security & Route Patterns
 
@@ -433,19 +311,8 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 
 ## Page Layout Rules
 
-### Standard page template:
-```tsx
-<div className="p-4 lg:p-6 space-y-6">
-  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-    <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Title</h1>
-      <p className="text-sm text-text-secondary">Subtitle</p>
-    </div>
-    <Button>Action</Button>
-  </div>
-  {/* Content in Cards */}
-</div>
-```
+### Standard page template
+Wrapper `div.p-4 lg:p-6 space-y-6` → header `div.flex flex-col sm:flex-row sm:items-center justify-between gap-3` (h1 `text-2xl font-semibold tracking-tight` + `p.text-sm text-text-secondary` subtitle + `<Button>` action) → content in Cards. Full code in `.claude/skills/sentinel-redesign/references/page-templates.md`.
 
 ### Responsive (mandatory):
 - Page padding: `p-4 lg:p-6` (never bare `p-6`)
@@ -457,22 +324,8 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 - Form grids: `grid-cols-1 sm:grid-cols-2 gap-3`
 - Form pages: constrain with `max-w-3xl`
 
-### Table pattern:
-```tsx
-<div className="overflow-x-auto">
-  <table className="w-full text-sm">
-    <thead>
-      <tr className="border-b border-border text-text-muted text-left">
-        <th className="pb-2 pr-4 font-medium">Col</th>
-        <th className="pb-2 font-medium text-right">Number</th>
-      </tr>
-    </thead>
-    <tbody className="font-mono">
-      <tr className="border-b border-border/50">...</tr>
-    </tbody>
-  </table>
-</div>
-```
+### Table pattern
+Wrap in `div.overflow-x-auto` → `table.w-full text-sm`; header row `border-b border-border text-text-muted text-left` (th `pb-2 pr-4 font-medium`, numbers `text-right`); `tbody.font-mono` rows `border-b border-border/50`. Full code in the page-templates reference.
 
 ### Common patterns:
 - Loading spinner: `border-2 border-accent/30 border-t-accent rounded-full animate-spin`
@@ -483,7 +336,7 @@ Husky + lint-staged: `eslint --fix` on staged `.ts/.tsx` files. Runs automatical
 - Empty state: EmptyState component or inline centered block with muted icon
 
 ## Dashboard Pages
-65 pages at `src/app/dashboard/*/page.tsx`. Public (no auth) pages: `/terms`, `/risk`, `/privacy`, `/contact`, `/pricing`, `/learn`, `/tools`, `/glossary`, `/congress`, `/articles`, `/w/[token]` (shared watchlist). See § Sub-Navigation Groups below for how they're organized in the sidebar.
+65 pages at `src/app/dashboard/*/page.tsx`. Public (no auth) pages: `/terms`, `/risk`, `/privacy`, `/contact`, `/pricing`, `/learn`, `/tools`, `/glossary`, `/congress`, `/articles`, `/w/[token]` (shared watchlist). See § Sub-Navigation Groups below for how they're organized in the top-bar dropdowns.
 
 ### API Routes
 Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed` — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
@@ -491,7 +344,7 @@ Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/st
 ## Migrations
 Browse `drizzle/*.sql` for the full list (46 migrations as of `0045_optimization_test_metrics.sql`). All idempotent (`IF NOT EXISTS`).
 
-> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015_education_review_and_tax_status`. Migrations 0016–0045 (`0041`–`0044` applied 2026-05-28, `0045_optimization_test_metrics` applied 2026-05-29) + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` per the multi-phase remediation pattern; the journal is intentionally not regenerated because prod's `__drizzle_migrations` tracking table wasn't built up from `drizzle-kit migrate`. Fresh-DB rebuilds run the SQL files in numeric order via `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
+> **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015`; migrations 0016–0045 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` (prod's `__drizzle_migrations` table wasn't built via `drizzle-kit migrate`, so the journal is intentionally not regenerated). Fresh-DB rebuild: `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 
 ## Education Section
 
@@ -513,21 +366,21 @@ Live in `src/components/education/calculators/*.tsx`. Registered in:
 Adding a calculator: drop the component, then add to all three places.
 
 ### Cross-feature integrations
-- **Tax Center** (`/dashboard/tax-center`) — `PersonalizedTaxEducation` ranks education links based on user data (harvestable losses, trade count, estimated tax, mixed gains). `TaxStatusCard` lets users self-attest §475(f) MTM via `/api/tax-status`.
-- **Trader page** (`/dashboard/trader`) — `TraderTaxCallouts` reads `/api/portfolio/summary` + `/api/tax-status` to surface harvestable unrealized losses with MTM-aware messaging (no wash-sale concern under MTM).
-- **AI Chat** (`/api/chat`) — `gatherChatContext()` calls `searchGuides(query, 3)` to inject relevant guide snippets into the system prompt with citation links (`/dashboard/education/guides/<slug>#<sectionId>`).
-- **Dashboard widgets** — `NetWorthWidget` (aggregates portfolios + broker cache), `ContinueReadingWidget` (next education action via `useEducationProgress()`). Both registered in `src/lib/widget-registry.ts`.
-- **Guide bodies** — `<GlossaryAwareText>` auto-wraps known terms in tooltip definitions inside paragraph/list/callout text. Multi-word terms match first; per-paragraph dedup.
+- **Tax Center** — `PersonalizedTaxEducation` ranks education links by user data; `TaxStatusCard` self-attests §475(f) MTM via `/api/tax-status`.
+- **Trader page** — `TraderTaxCallouts` reads `/api/portfolio/summary` + `/api/tax-status` for MTM-aware harvestable-loss messaging.
+- **AI Chat** (`/api/chat`) — `gatherChatContext()` calls `searchGuides(query, 3)` to inject guide snippets + citation links into the system prompt.
+- **Dashboard widgets** — `NetWorthWidget`, `ContinueReadingWidget` (via `useEducationProgress()`), both in `src/lib/widget-registry.ts`.
+- **Guide bodies** — `<GlossaryAwareText>` auto-wraps known terms in tooltip definitions (multi-word first, per-paragraph dedup).
 
 ### Database & Disclaimers
-Schema in `src/lib/db/schema/education.ts` — `education_guide_views` (view count + bookmark + quiz state, slug is text since guides live in TS), `glossary_review_state` (SM-2 per `(user_id, term_id)`, `ease_factor` as integer ×100), `user_tax_status` (self-attested TTS + MTM election year). `glossary_terms` + `education_progress` are legacy/unused but kept for FK stability. `<EducationalDisclaimer />` (full + compact) renders on every guide, calculator, hub page, and the Tax Status modal — tagged `data-print-disclaimer` for PDF output.
+Schema in `src/lib/db/schema/education.ts` — `education_guide_views` (views + bookmark + quiz state, text slug), `glossary_review_state` (SM-2 per `(user_id, term_id)`, `ease_factor` integer ×100), `user_tax_status` (TTS + MTM year). `glossary_terms` + `education_progress` are legacy/unused (kept for FK stability). `<EducationalDisclaimer />` renders on every guide/calculator/hub/Tax-Status modal, tagged `data-print-disclaimer` for PDF.
 
 ### Backtest Page
 - **Strategy presets** are filtered to the 6 engine-runnable base modes (`conservative`, `moderate`, `aggressive`, `optimized`, `tactical`, `tactical-smart`) plus `adaptive` (7th, regime-driven), `custom`, and `auto`. The live-trader mode picker is filtered further to `USER_FACING_MODES` (optimized / tactical / tactical-smart / adaptive); the others remain in the backtest preset list for offline research.
 - **Date-range mode**: `/api/backtest/[symbol]` accepts `startDate`/`endDate` (`YYYY-MM-DD`) in addition to `days`. Provider `fetchBars()` accepts an optional `endDate`; historical fetches (>24h in the past) bypass the disk cache. Daily bars only — Yahoo retains ~60 days of intraday history, so multi-year 5m backtests aren't possible without a paid feed.
 
 ### Sub-Navigation Groups
-Pages are organized under sidebar nav items via `SUB_NAV` in `nav-config.ts`:
+Pages are organized under top-bar nav items via `SUB_NAV` in `nav-config.ts`. Each section's sub-pages render in a hover-opened dropdown from the desktop top bar (`TopNavShell` in `src/components/layout/top-nav-shell.tsx`) and indented under the section name in the mobile drawer:
 - **Analysis:** Analysis, Multi-TF, Heatmap, Breadth, Correlation, Risk, Relative Strength, Sector Rotation, Unusual Activity
 - **Trader:** Live Trader, Strategies, Builder, Backtest, Replay, Optimizer, Alerts, Watchlists, Risk Sim, Calculator
 - **Journal:** Journal, Performance, Reports, Drawdown, P&L Calendar, Tax Center, Tax Report
@@ -539,29 +392,23 @@ Pages are organized under sidebar nav items via `SUB_NAV` in `nav-config.ts`:
 
 ## Changelog
 
-Dated retrospectives of major rollouts (2026-05-12 through 2026-05-28) — covering multi-watchlist, manual trading, broker switching, support/DMs/ToS, journal v2, Reddit feed, tier enforcement + Stripe billing, public free-tier signup, brand rebrand to Beacontry, the 6-phase marathon, beginner-friendliness audit, the 2026-05-16 6-batch security/a11y/theming hardening pass (incl. CSP nonce strategy + sanitize-html removal), the 2026-05-17 public-source security marathon, and the 2026-05-28 six-round defensive bug hunt (31 fixes — itemized in `docs/bug-hunt-report-2026-05-28.html`) — live in `docs/changelog.md`. Read it when investigating "when did X land" or "what changed in batch Y"; day-to-day work uses `git log`.
+Dated retrospectives of major rollouts (2026-05-12 → 2026-05-28) live in `docs/changelog.md` — multi-watchlist, manual trading, broker switching, support/DMs/ToS, journal v2, Reddit feed, tier enforcement + Stripe billing, public free-tier signup, brand rebrand to Beacontry, the security/a11y/theming hardening passes, and the 2026-05-28 six-round defensive bug hunt (31 fixes, itemized in `docs/bug-hunt-report-2026-05-28.html`). Read it for "when did X land" / "what changed in batch Y"; day-to-day work uses `git log`.
 
 ### CSP — current state (post-hotfix)
 
-CSP is set per-request in `src/middleware.ts` (not `next.config.ts` `headers()`). The middleware generates a per-request nonce attached as `x-nonce` for Next.js's dynamic-route auto-stamping. **However**, `script-src` retains `'unsafe-inline'` because Next.js does NOT auto-stamp nonces on statically-rendered pages (landing, /pricing, /login, /register, /terms — anything flagged `○` in the build output). CSP Level 3 ignores `'unsafe-inline'` when a nonce or hash is present, so the two cannot coexist — and removing `'unsafe-inline'` broke prod twice (commits `5c8bc28`, `f5377b0`). The nonce is still generated for forward compatibility (a future build-time hash-injection step would let us drop `'unsafe-inline'` cleanly). `'unsafe-eval'` is dev-only for HMR. See the comment block in `src/middleware.ts` for the full reasoning.
+CSP is set per-request in `src/middleware.ts` (not `next.config.ts`), with a per-request nonce on `x-nonce` for Next.js dynamic-route auto-stamping. `script-src` still keeps `'unsafe-inline'` because Next.js doesn't stamp nonces on statically-rendered pages, and CSP L3 ignores `'unsafe-inline'` once a nonce/hash is present — removing it broke prod twice (`5c8bc28`, `f5377b0`). Nonce kept for forward compat; `'unsafe-eval'` is dev-only (HMR). Full reasoning in the `src/middleware.ts` comment block.
 
 ---
 
 ## Static HTML docs (served by Next.js public/)
 
-User-facing HTML documentation lives in **`public/docs/`** (not the repo-root `docs/` folder which holds markdown):
+User-facing HTML docs live in **`public/docs/`** (served at `/docs/*.html`; the repo-root `docs/` folder holds markdown source):
+- `engine-ruleset.html` — engine internals (mirrors `docs/ENGINE_RULESET.md`)
+- `beacontry-features.html` — per-feature user training reference
+- `tiers.html` — tier breakdown + feature matrix + pricing FAQ
+- `usage-slides.html` — onboarding slides
 
-- `public/docs/engine-ruleset.html` — trading engine internals (kept in sync with `docs/ENGINE_RULESET.md`)
-- `public/docs/beacontry-features.html` — per-page/per-feature user training reference
-- `public/docs/tiers.html` — full tier breakdown + feature matrix (~60 rows × 5 columns) + pricing FAQ
-- `public/docs/usage-slides.html` — onboarding slides
-
-These render as static assets at `/docs/*.html` on any deployment (Next.js auto-serves everything under `public/`). The repo-root `docs/` folder holds markdown source: `docs/ENGINE_RULESET.md`, `docs/future-ideas.md`, `docs/legal/licensing-and-acquisition.md`. **When editing the engine ruleset, change both `docs/ENGINE_RULESET.md` AND `public/docs/engine-ruleset.html` in the same commit** — they're intentionally mirrored.
+**When editing the engine ruleset, change both `docs/ENGINE_RULESET.md` AND `public/docs/engine-ruleset.html` in the same commit** — they're intentionally mirrored.
 
 ## Detailed Design Reference
-For exhaustive design tokens, component APIs, and page templates, see `.claude/skills/sentinel-redesign/references/`:
-- `design-tokens.md` — every color, font, spacing, shadow, animation value
-- `component-patterns.md` — all component usage with code examples
-- `page-templates.md` — 5 page templates, all 46 pages, responsive checklist
-
-Invoke `/sentinel-redesign` to activate the full redesign workflow.
+For exhaustive design tokens, component APIs, and page templates, see `.claude/skills/sentinel-redesign/references/` (`design-tokens.md`, `component-patterns.md`, `page-templates.md`). Invoke `/sentinel-redesign` for the full redesign workflow.

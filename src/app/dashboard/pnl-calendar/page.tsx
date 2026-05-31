@@ -10,8 +10,6 @@ import { SymbolLink } from "@/components/ui/symbol-link";
 import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 import { PnlCalendarGrid } from "@/components/dashboard/pnl-calendar-grid";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import {
   CalendarDays,
   TrendingUp,
@@ -116,7 +114,6 @@ export default function PnlCalendarPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.journal} />
       <PaywallBanner minTier="trader" featureName="P&L Calendar" description="Heatmap of daily P&L with day-drilldown." />
       <PageIntro
         eyebrow="Record"

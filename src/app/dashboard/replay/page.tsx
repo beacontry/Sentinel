@@ -7,8 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { Play, BarChart3, Maximize2, Minimize2 } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -194,7 +192,6 @@ export default function ReplayPage() {
   if (loading) {
     return (
       <div className="p-4 lg:p-6 space-y-6">
-        <SubNav tabs={SUB_NAV.trader} />
       <PaywallBanner minTier="trader" featureName="Replay" />
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-[450px] rounded-xl" />
@@ -205,7 +202,6 @@ export default function ReplayPage() {
   if (trades.length === 0) {
     return (
       <div className="p-4 lg:p-6 space-y-6">
-        <SubNav tabs={SUB_NAV.trader} />
         <PageIntro eyebrow="Trade Review" title="Replay" description="Review past trade execution on price charts." />
         <EmptyState
           icon={<Play className="w-10 h-10" />}
@@ -218,7 +214,6 @@ export default function ReplayPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.trader} />
       <PageIntro
         eyebrow="Trade Review"
         title="Replay"

@@ -17,8 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import {
   Landmark,
   TrendingUp,
@@ -188,7 +186,6 @@ export default function CongressPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.research} />
       <PageIntro
         eyebrow="Disclosure"
         title="Congressional Trades"

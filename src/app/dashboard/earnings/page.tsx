@@ -8,8 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { Calendar, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 
@@ -189,7 +187,6 @@ export default function EarningsPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.macro} />
       <PageIntro
         eyebrow="Macro & Events"
         title="Earnings Calendar"

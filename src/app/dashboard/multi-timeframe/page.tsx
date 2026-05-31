@@ -7,8 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SignalBadge } from "@/components/ui/signal-badge";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { Layers, Search } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -77,7 +75,6 @@ export default function MultiTimeframePage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.analysis} />
       <PaywallBanner minTier="trader" featureName="Multi-Timeframe" />
       <PageIntro
         eyebrow="Market Analysis"

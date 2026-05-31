@@ -3,8 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { ChevronLeft, ChevronRight, CalendarDays, Globe, X } from "lucide-react";
 import type { EconomicEvent } from "@/types";
 
@@ -140,8 +138,6 @@ export default function CalendarPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.macro} />
-
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Economic Calendar</h1>
         <p className="mt-1 text-sm text-text-secondary">

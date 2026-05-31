@@ -5,8 +5,6 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { BarChart3, TrendingUp, TrendingDown } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -47,7 +45,6 @@ export default function BreadthPage() {
   if (loading) {
     return (
       <div className="p-4 lg:p-6 space-y-6">
-        <SubNav tabs={SUB_NAV.analysis} />
       <PaywallBanner minTier="trader" featureName="Market Breadth" />
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -60,7 +57,6 @@ export default function BreadthPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.analysis} />
       <PageIntro
         eyebrow="Market Analysis"
         title="Market Breadth"

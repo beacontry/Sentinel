@@ -38,8 +38,6 @@ import {
 } from "@/components/dashboard/cockpit-watchlist";
 import { PageIntro } from "@/components/layout/page-intro";
 import { Button } from "@/components/ui/button";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { useRecentlyViewed } from "@/hooks/use-recently-viewed";
 import {
   Activity,
@@ -440,7 +438,6 @@ function AnalysisCockpit() {
 
   return (
     <div className="flex min-h-full flex-col gap-6 p-4 lg:p-6">
-      <SubNav tabs={SUB_NAV.analysis} />
       <PaywallBanner minTier="trader" featureName="Analysis cockpit" description="Charts, hybrid signals, signal history. Free users see public data only; engine + Finnhub layers unlock with Trader." />
       <PageIntro
         eyebrow="Research Desk"

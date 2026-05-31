@@ -6,8 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { Plus, X, Play, FlaskConical } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -167,7 +165,6 @@ export default function StrategyBuilderPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.trader} />
       <PaywallBanner minTier="trader" featureName="Strategy Builder" description="Visual strategy builder with backtest + tunable risk profile." />
       <PageIntro
         eyebrow="Strategy Lab"

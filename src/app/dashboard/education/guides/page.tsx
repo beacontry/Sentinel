@@ -12,8 +12,6 @@ import {
   Trophy,
 } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SearchInput } from "@/components/ui/search-input";
@@ -94,8 +92,6 @@ export default function EducationGuidesIndex() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.research} />
-
       <PageIntro
         eyebrow="Education / Guides"
         title="Financial Guides"

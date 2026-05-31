@@ -5,8 +5,6 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { RefreshCw } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -53,7 +51,6 @@ export default function SectorRotationPage() {
   if (loading) {
     return (
       <div className="p-4 lg:p-6 space-y-6">
-        <SubNav tabs={SUB_NAV.analysis} />
       <PaywallBanner minTier="trader" featureName="Sector Rotation" />
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-2 gap-4">
@@ -68,7 +65,6 @@ export default function SectorRotationPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.analysis} />
       <PageIntro
         eyebrow="Market Analysis"
         title="Sector Rotation"

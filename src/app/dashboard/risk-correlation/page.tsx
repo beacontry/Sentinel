@@ -7,8 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { ShieldAlert, AlertTriangle } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -94,7 +92,6 @@ export default function RiskCorrelationPage() {
   if (loading) {
     return (
       <div className="p-4 lg:p-6 space-y-6">
-        <SubNav tabs={SUB_NAV.analysis} />
       <PaywallBanner minTier="trader" featureName="Risk Correlation" />
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -107,7 +104,6 @@ export default function RiskCorrelationPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.analysis} />
       <PageIntro
         eyebrow="Risk Management"
         title="Correlation Risk"

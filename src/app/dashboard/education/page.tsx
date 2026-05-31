@@ -15,8 +15,6 @@ import {
   Trophy,
 } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { SearchInput } from "@/components/ui/search-input";
 import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
@@ -126,8 +124,6 @@ export default function EducationPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.research} />
-
       <PageIntro
         eyebrow="Research"
         title="Education"

@@ -7,8 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { SymbolLink } from "@/components/ui/symbol-link";
 import { BarChart3, Target, TrendingUp, TrendingDown, PieChart } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { usePolling } from "@/hooks/usePolling";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
@@ -97,7 +95,6 @@ export default function PerformancePage() {
   if (!data || data.overall.totalSignals === 0) {
     return (
       <div className="p-4 lg:p-6 space-y-6">
-        <SubNav tabs={SUB_NAV.journal} />
       <PaywallBanner minTier="trader" featureName="Performance & Attribution" description="Per-symbol realized P&L breakdown + signal accuracy + total return." />
         <PageIntro
           eyebrow="Record"
@@ -129,7 +126,6 @@ export default function PerformancePage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.journal} />
       <PageIntro
         eyebrow="Record"
         title="Performance"

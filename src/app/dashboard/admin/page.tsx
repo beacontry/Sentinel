@@ -14,8 +14,6 @@ import {
   ModalFooter,
 } from "@/components/ui/modal";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import Link from "next/link";
 import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw, AlertTriangle, BarChart3, Key, ArrowRight, MessagesSquare } from "lucide-react";
 import { RedditSubredditsCard } from "@/components/admin/reddit-subreddits-card";
@@ -448,7 +446,6 @@ export default function AdminPage() {
   if (error && users.length === 0) {
     return (
       <div className="p-4 lg:p-6">
-        <SubNav tabs={SUB_NAV.admin} />
         <div className="flex flex-col items-center justify-center py-20">
           <Shield className="w-10 h-10 text-text-muted mb-3" />
           <p className="text-sm text-bearish">{error}</p>
@@ -459,8 +456,6 @@ export default function AdminPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.admin} />
-
       <PageIntro
         eyebrow="Administration"
         title="User Management"

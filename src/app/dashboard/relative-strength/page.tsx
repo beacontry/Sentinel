@@ -14,8 +14,6 @@ import {
   BarChart3,
 } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -182,7 +180,6 @@ export default function RelativeStrengthPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.analysis} />
       <PaywallBanner minTier="trader" featureName="Relative Strength" />
       <PageIntro
         eyebrow="Market Analysis"

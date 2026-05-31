@@ -5,8 +5,6 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { TrendingDown } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -131,7 +129,6 @@ export default function DrawdownPage() {
   if (loading) {
     return (
       <div className="p-4 lg:p-6 space-y-6">
-        <SubNav tabs={SUB_NAV.journal} />
       <PaywallBanner minTier="trader" featureName="Drawdown Analytics" />
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-48 rounded-xl" />
@@ -143,7 +140,6 @@ export default function DrawdownPage() {
   if (pnlDays.length === 0) {
     return (
       <div className="p-4 lg:p-6 space-y-6">
-        <SubNav tabs={SUB_NAV.journal} />
         <PageIntro eyebrow="Risk Analytics" title="Drawdown Analyzer" description="Visualize underwater periods and recovery patterns." />
         <EmptyState
           icon={<TrendingDown className="w-10 h-10" />}
@@ -161,7 +157,6 @@ export default function DrawdownPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.journal} />
       <PageIntro
         eyebrow="Risk Analytics"
         title="Drawdown Analyzer"

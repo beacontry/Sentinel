@@ -21,8 +21,6 @@ import {
   Info,
 } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import type {
   Form8949Line,
   ScheduleDSummary,
@@ -143,7 +141,6 @@ export default function TaxReportPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.journal} />
       <PaywallBanner minTier="trader" featureName="Tax Reports" description="Form 8949 generator from engine fills." />
       <PageIntro
         eyebrow="Record"

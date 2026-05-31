@@ -9,8 +9,6 @@ import { Select } from "@/components/ui/select";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { FlaskConical, TrendingUp, TrendingDown, Target, BarChart3, Save, FolderOpen, X, Trash2, Shield, Zap, Maximize2, Minimize2 } from "lucide-react";
 import type { BacktestResult } from "@/lib/backtester";
 import type { SavedStrategy } from "@/types";
@@ -366,7 +364,6 @@ export default function BacktestPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.trader} />
       <PaywallBanner minTier="trader" featureName="Backtest Lab" description="Strategy backtesting + mode-compare + Sharpe/Sortino/Calmar/MAR metrics." />
       <PageIntro
         eyebrow="Strategy Lab"

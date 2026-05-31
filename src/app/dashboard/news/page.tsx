@@ -9,8 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import {
   Newspaper,
   ExternalLink,
@@ -85,7 +83,6 @@ export default function NewsPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.research} />
       <PaywallBanner minTier="trader" featureName="Per-symbol news" description="Headlines per ticker (Finnhub) with sentiment badges. General market news is free." />
       <PageIntro
         eyebrow="Research"

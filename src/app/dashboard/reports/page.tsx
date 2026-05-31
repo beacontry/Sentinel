@@ -6,8 +6,6 @@ import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { FileBarChart } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -113,7 +111,6 @@ export default function ReportsPage() {
   if (loading) {
     return (
       <div className="p-4 lg:p-6 space-y-6">
-        <SubNav tabs={SUB_NAV.journal} />
       <PaywallBanner minTier="trader" featureName="Reports" />
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -126,7 +123,6 @@ export default function ReportsPage() {
   if (!perf && !analytics) {
     return (
       <div className="p-4 lg:p-6 space-y-6">
-        <SubNav tabs={SUB_NAV.journal} />
         <PageIntro eyebrow="Analytics" title="Performance Reports" description="Deep analytics on your trading performance." />
         <EmptyState
           icon={<FileBarChart className="w-10 h-10" />}
@@ -139,7 +135,6 @@ export default function ReportsPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.journal} />
       <PageIntro
         eyebrow="Analytics"
         title="Performance Reports"

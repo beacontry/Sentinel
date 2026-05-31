@@ -20,8 +20,6 @@ import {
   BookOpen,
 } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { TaxStatusCard } from "@/components/education/tax-status-card";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -126,7 +124,6 @@ export default function TaxCenterPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.journal} />
       <PaywallBanner minTier="trader" featureName="Tax Center" description="Realized gains + harvesting candidates merged from manual + engine trades." />
       <PageIntro
         eyebrow="Record"

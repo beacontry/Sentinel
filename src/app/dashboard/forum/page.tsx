@@ -31,8 +31,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/modal";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { ThreadPreview } from "@/components/social/thread-preview";
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -253,8 +251,6 @@ export default function ForumPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.community} />
-
       {activeCategory ? (
         /* ─── Category Thread Listing ──────────────────────────── */
         <CategoryView

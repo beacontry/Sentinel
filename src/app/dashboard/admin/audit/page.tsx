@@ -9,8 +9,6 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { Shield, ShieldCheck, ShieldAlert, RefreshCw, Filter, Download } from "lucide-react";
 
 interface AuditRow {
@@ -176,7 +174,6 @@ export default function AuditLogPage() {
         title="Audit Log"
         description="Append-only, hash-chained record of every privileged action. Tamper-evident — verify the chain to detect modification."
       />
-      <SubNav tabs={SUB_NAV.admin} />
 
       {/* Chain integrity card */}
       <Card className="p-4">

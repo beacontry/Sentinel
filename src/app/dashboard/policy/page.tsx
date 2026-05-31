@@ -7,8 +7,6 @@ import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import { Scale, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 
 interface PolicyItem {
@@ -88,7 +86,6 @@ export default function PolicyPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.macro} />
       <PageIntro
         eyebrow="Regulatory Watch"
         title="Policy Tracker"

@@ -20,8 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { PageIntro } from "@/components/layout/page-intro";
-import { SubNav } from "@/components/layout/sub-nav";
-import { SUB_NAV } from "@/components/layout/nav-config";
 import {
   Plus,
   X,
@@ -309,7 +307,6 @@ export default function WatchlistsPage() {
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
-      <SubNav tabs={SUB_NAV.trader} />
       <PageIntro
         eyebrow="Portfolio Tools"
         title="Watchlists"
