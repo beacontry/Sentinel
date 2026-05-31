@@ -19,6 +19,12 @@ export function SubNav({ tabs }: SubNavProps) {
 
   if (visibleTabs.length <= 1) return null;
 
+  // Hidden while the top-nav trial is active — sub-tabs are now reached
+  // via each section's top-bar dropdown (desktop) or indented under the
+  // section in the mobile drawer. Revert this return to restore in-page tabs.
+  return null;
+
+   
   return (
     <div className="mb-6 flex flex-wrap gap-1 overflow-x-auto">
       {visibleTabs.map((tab) => {
