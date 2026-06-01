@@ -64,6 +64,68 @@ async function fetchLiveTape(): Promise<ChatContext["liveTape"]> {
   return { spy, qqq, fetchedAt };
 }
 
+/**
+ * Words that look like tickers but virtually never are in a chat context.
+ * Conservative list — we'd rather pass a real-but-ambiguous symbol through
+ * and let Yahoo return null than hide a legitimate ticker question.
+ *
+ * Tickers that intentionally are NOT stopworded even though they're
+ * common words: AI (C3.ai), ON (ON Semi), IT (was Gartner), HE
+ * (Helmerich & Payne — actually HP), F (Ford), T (AT&T). If the user
+ * asks "is IT going up" the worst case is we fetch C3.ai too — they
+ * see one extra data point, not less.
+ */
+const TICKER_STOPWORDS = new Set([
+  // Articles / pronouns / prepositions
+  "I", "A", "AN", "THE", "MY", "WE", "US", "YOU", "HIS", "HER", "OUR",
+  "HE", "SHE", "IT", "ITS",
+  "OF", "TO", "IS", "AM", "PM", "BE", "DO", "GO", "IF", "OR", "SO", "AS",
+  "AT", "BY", "IN", "ON", "UP", "NO", "NOT", "ARE", "WAS", "WERE",
+  "AND", "BUT", "FOR", "WITH", "THIS", "THAT", "THEY", "WHO", "CAN",
+  "GET", "HAS", "HAVE", "HAD", "WILL", "WOULD", "COULD", "SHOULD",
+  // Question words
+  "HOW", "WHY", "WHEN", "WHAT", "WHERE", "WHICH",
+  // Common acknowledgments
+  "OK", "OKAY", "YES", "YEP", "NOPE", "MAYBE", "SURE", "NICE", "COOL",
+  // Time / unit acronyms that are not tickers
+  "ET", "EST", "PST", "EDT", "UTC", "USD", "EUR", "GBP", "JPY",
+  // Generic finance/tech acronyms
+  "AI", "API", "APR", "ATH", "ATM", "AUM", "AVG", "CEO", "CFO", "CTO",
+  "EOD", "EOM", "EOY", "ETF", "EPS", "FAQ", "FDA", "FED", "FOMC", "GDP",
+  "IPO", "IRS", "MAX", "MIN", "MOM", "NOW", "NYSE", "OTC", "PE", "PEG",
+  "QQQ", "ROI", "RSS", "SEC", "SPY", "TBD", "TLDR", "TTM", "URL", "USA",
+  "YOLO", "YOY", "YTD",
+]);
+
+/**
+ * Extract candidate ticker symbols from a chat question. Pure function so
+ * it's testable in isolation. Returns unique uppercase symbols of length
+ * 1–5, filtered against the stopword list, capped at `maxSymbols`.
+ *
+ * The cap exists because user can paste a list of 20 tickers and we'd
+ * otherwise fan out 20 quote fetches per chat message. 5 covers the
+ * realistic case where someone asks about 2–3 names.
+ */
+export function extractSymbolsFromQuestion(
+  question: string,
+  maxSymbols = 5
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  // Match strictly all-caps tokens 1–5 chars. Lowercase ticker mentions
+  // (e.g. "what about aapl") are intentionally ignored — too ambiguous.
+  const tokenRegex = /\b[A-Z]{1,5}\b/g;
+  for (const match of question.matchAll(tokenRegex)) {
+    const sym = match[0];
+    if (TICKER_STOPWORDS.has(sym)) continue;
+    if (seen.has(sym)) continue;
+    seen.add(sym);
+    out.push(sym);
+    if (out.length >= maxSymbols) break;
+  }
+  return out;
+}
+
 async function fetchQuoteWithChange(
   provider: ReturnType<typeof getMarketDataProvider>,
   symbol: string
@@ -191,9 +253,20 @@ export async function gatherChatContext(question: string): Promise<ChatContext> 
   const currentServerTime = now.toISOString();
   const marketSession = classifyMarketSession(now);
   const moversFetchedAt = currentServerTime;
+  const mentionedSymbols = extractSymbolsFromQuestion(question);
 
   // Gather data in parallel. Live tape is its own call so SPY/QQQ "right
   // now" prices land alongside the slower daily-bar movers list.
+  // Per-symbol mentioned quotes piggyback on the same Yahoo provider —
+  // capped at 5 symbols by the extractor, so worst case is 5 extra fetches.
+  const provider = getMarketDataProvider();
+  const symbolQuotesPromise = Promise.allSettled(
+    mentionedSymbols.map(async (sym) => {
+      const q = await fetchQuoteWithChange(provider, sym);
+      return q ? { symbol: sym, ...q } : null;
+    })
+  );
+
   const [newsResult, moversResult, signalsResult, digestResult, liveTapeResult] =
     await Promise.allSettled([
       getFinnhubClient().isConfigured
@@ -262,6 +335,18 @@ export async function gatherChatContext(question: string): Promise<ChatContext> 
 
   const liveTape = liveTapeResult.status === "fulfilled" ? liveTapeResult.value : null;
 
+  // Collect successful per-symbol quote fetches. Stamp asOf at receive
+  // time so the chat block can render "as of HH:MM" consistently.
+  const symbolQuotesSettled = await symbolQuotesPromise;
+  const symbolFetchedAt = new Date().toISOString();
+  const mentionedSymbolQuotes = symbolQuotesSettled
+    .map((r) =>
+      r.status === "fulfilled" && r.value
+        ? { ...r.value, asOf: symbolFetchedAt }
+        : null
+    )
+    .filter((x): x is { symbol: string; price: number; changePct: number; asOf: string } => x !== null);
+
   // If question mentions a specific symbol, add its signals to the front
   const symbolMatch = question.toUpperCase().match(/\b([A-Z]{1,5})\b/);
   if (symbolMatch) {
@@ -323,6 +408,7 @@ export async function gatherChatContext(question: string): Promise<ChatContext> 
     recentDigest,
     topMovers,
     relevantSignals,
+    mentionedSymbolQuotes,
     educationGuides,
   };
 }

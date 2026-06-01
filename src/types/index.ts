@@ -287,6 +287,18 @@ export interface ChatContext {
     /** ISO timestamp of signal creation; null when not available. */
     createdAt: string | null;
   }[];
+  /**
+   * Live quotes for tickers extracted from the user's current question.
+   * Authoritative for "right now" per-symbol pricing — same code path as
+   * the SPY/QQQ Live Tape. Empty array when no symbols matched or all
+   * fetches failed.
+   */
+  mentionedSymbolQuotes: {
+    symbol: string;
+    price: number;
+    changePct: number;
+    asOf: string;
+  }[];
   /** Top-K relevant Sentinel education guide snippets for the current query. */
   educationGuides?: {
     slug: string;

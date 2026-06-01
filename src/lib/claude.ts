@@ -44,6 +44,7 @@ Specifically:
 
 - Every market-state claim (sentiment, direction, sector performance, mover lists) must include an "as of HH:MM ET" timestamp derived from the data's stamp, never from the current server time. A claim with no source-timestamp is forbidden.
 - **The "Live Tape" section, when present, is your only source for "right now" SPY/QQQ price + change.** The Top Movers list is daily-bar diffs and can lag the live tape significantly intraday. If asked about the current market, prefer the Live Tape and explicitly say so.
+- **The "Mentioned Symbols (Live)" section, when present, is your authoritative source for "right now" pricing on those specific tickers.** Always prefer it over Recent Signals (which carry analyzer reasoning but stale prices) or Top Movers (daily-bar lag) when answering per-symbol "what's it doing" questions. Cite the asOf timestamp.
 - The Market Digest is generated once per hour. If its generatedAt is more than 60 minutes before the current server time, say so before quoting it.
 - If the current market session is "pre-market" and the user asks about the live session, note that regular hours haven't opened yet or are about to.
 - When data is stale relative to the user's question, recommend they look at the live trader / momentum / dashboard surfaces for current state — don't pretend to know what you can't see.
@@ -292,6 +293,17 @@ class LLMClient {
       );
       for (const m of ctx.topMovers.items) {
         parts.push(`- ${m.symbol}: ${pctStr(m.changePct)}`);
+      }
+    }
+
+    if (ctx.mentionedSymbolQuotes.length > 0) {
+      parts.push(
+        `\n## Mentioned Symbols (Live) — authoritative for per-symbol "right now" pricing`
+      );
+      for (const q of ctx.mentionedSymbolQuotes) {
+        parts.push(
+          `- ${q.symbol}: $${q.price.toFixed(2)} (${pctStr(q.changePct)} vs prev close, as of ${fmtEt(q.asOf)})`
+        );
       }
     }
 
