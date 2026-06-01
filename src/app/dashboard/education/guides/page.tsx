@@ -33,6 +33,7 @@ const TOPIC_TABS: { id: "all" | GuideTopic; label: string }[] = [
   { id: "insurance", label: "Insurance" },
   { id: "tax", label: "Tax" },
   { id: "estate", label: "Estate" },
+  { id: "day-trading", label: "Day Trading" },
 ];
 
 const DIFFICULTY_VARIANT: Record<

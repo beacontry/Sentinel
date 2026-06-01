@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageIntro } from "@/components/layout/page-intro";
 import { TraderTierRequired } from "@/components/tiers/trader-tier-required";
+import { PostMortemButton } from "@/components/trader/post-mortem-button";
 import {
   Bot,
   Wifi,
@@ -1174,6 +1175,7 @@ export default function TraderPage() {
                     >
                       {summarizing.has(t.id) ? "..." : (summaryByTradeId[t.id] || t.aiSummary) ? "↻" : "AI ✨"}
                     </button>
+                    <PostMortemButton tradeId={t.id} action={t.action} />
                   </div>
                   {(summaryByTradeId[t.id] || t.aiSummary) && (
                     <div className="px-3 pb-2 text-xs text-text-secondary leading-relaxed border-t border-border/30 pt-2">

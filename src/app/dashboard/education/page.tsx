@@ -9,10 +9,16 @@ import {
   Brain,
   Calculator as CalculatorIcon,
   Check,
+  CheckCircle2,
   ChevronDown,
   Clock,
   GraduationCap,
+  Layers,
+  PiggyBank,
+  Receipt,
   Trophy,
+  Zap,
+  type LucideIcon,
 } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
 import { SearchInput } from "@/components/ui/search-input";
@@ -36,14 +42,45 @@ import {
   TOPIC_META,
   type GuideDifficulty,
 } from "@/lib/education/guides-data";
+import {
+  PATHS,
+  getPathProgress,
+  getPathReadingMinutes,
+  type LearningPath,
+  type PathDifficulty,
+} from "@/lib/education/learning-paths-data";
 
 // ─── Top-level hub tabs ───────────────────────────────────────────────────
 
 const HUB_TABS = [
+  { id: "paths", label: "Paths" },
   { id: "glossary", label: "Glossary" },
   { id: "guides", label: "Guides" },
   { id: "calculators", label: "Calculators" },
 ];
+
+// Path icon registry — paths declare icons by string so the data file
+// stays serializable; we resolve to real Lucide components here.
+const PATH_ICONS: Record<string, LucideIcon> = {
+  Receipt,
+  PiggyBank,
+  Zap,
+  GraduationCap,
+  Layers,
+};
+
+function pathIconFor(name: string): LucideIcon {
+  return PATH_ICONS[name] ?? Layers;
+}
+
+const PATH_DIFFICULTY_VARIANT: Record<
+  PathDifficulty,
+  "default" | "bullish" | "warning" | "bearish"
+> = {
+  beginner: "bullish",
+  intermediate: "warning",
+  advanced: "bearish",
+};
 
 // ─── Glossary categories ──────────────────────────────────────────────────
 
@@ -71,7 +108,7 @@ const DIFFICULTY_VARIANT: Record<
 };
 
 export default function EducationPage() {
-  const [hubTab, setHubTab] = useState("glossary");
+  const [hubTab, setHubTab] = useState("paths");
   const { progress, readCount, passedQuizCount } = useEducationProgress();
 
   const progressBySlug = useMemo(() => {
@@ -140,6 +177,35 @@ export default function EducationPage() {
 
       {/* Hub-level tabs */}
       <Tabs tabs={HUB_TABS} activeTab={hubTab} onChange={setHubTab} />
+
+      {/* ─── Paths ─────────────────────────────────────────────────── */}
+      <TabPanel active={hubTab === "paths"}>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-text-secondary max-w-2xl">
+              Curated, ordered guide sequences. Each path walks a topic from
+              foundations to applied detail. Progress carries over from
+              individual guides.
+            </p>
+            <Link
+              href="/dashboard/education/paths"
+              className="text-sm text-accent hover:underline whitespace-nowrap"
+            >
+              View all →
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {PATHS.map((path) => (
+              <PathTabCard
+                key={path.slug}
+                path={path}
+                progressBySlug={progressBySlug}
+              />
+            ))}
+          </div>
+        </div>
+      </TabPanel>
 
       {/* ─── Glossary ──────────────────────────────────────────────── */}
       <TabPanel active={hubTab === "glossary"}>
@@ -369,6 +435,91 @@ const CALCULATOR_REGISTRY: CalculatorRegistryEntry[] = [
     Component: QuarterlyTaxEstimatorCalculator,
   },
 ];
+
+// ─── Path tab card ─────────────────────────────────────────────────────────
+
+interface PathTabCardProps {
+  path: LearningPath;
+  progressBySlug: Map<
+    string,
+    { viewed: boolean; bookmarked: boolean; quizPassed: boolean }
+  >;
+}
+
+function PathTabCard({ path, progressBySlug }: PathTabCardProps) {
+  const Icon = pathIconFor(path.icon);
+  const readingMinutes = getPathReadingMinutes(path);
+  const state = getPathProgress(path, progressBySlug);
+  const isComplete = state.fraction >= 1;
+  const totalGuides = path.guideSlugs.length;
+  const pct = Math.round(state.fraction * 100);
+
+  return (
+    <Link href={`/dashboard/education/paths/${path.slug}`} className="group">
+      <Card hover className="h-full flex flex-col gap-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-accent/10 p-2 shrink-0">
+            <Icon className="h-5 w-5 text-accent" aria-hidden="true" />
+          </div>
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant={PATH_DIFFICULTY_VARIANT[path.difficulty]}>
+                {path.difficulty}
+              </Badge>
+              {isComplete && (
+                <span
+                  className="inline-flex items-center gap-1 text-xs text-bullish"
+                  title="Path complete"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Complete
+                </span>
+              )}
+            </div>
+            <h3 className="text-base font-semibold text-text-primary leading-snug">
+              {path.title}
+            </h3>
+          </div>
+          <ArrowRight className="h-4 w-4 text-text-muted group-hover:text-accent transition-colors shrink-0 mt-1" />
+        </div>
+
+        <p className="text-sm text-text-secondary leading-relaxed">
+          {path.tagline}
+        </p>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-text-muted">
+              {state.viewed} / {totalGuides} viewed
+              {state.quizPassed > 0 && (
+                <span className="text-bullish"> · {state.quizPassed} passed</span>
+              )}
+            </span>
+            <span className="font-mono text-text-secondary">{pct}%</span>
+          </div>
+          <div className="h-1.5 w-full rounded-full bg-bg-elevated overflow-hidden">
+            <div
+              className="h-full bg-accent transition-all"
+              style={{ width: `${pct}%` }}
+              aria-hidden="true"
+            />
+          </div>
+        </div>
+
+        <div className="mt-auto pt-1 flex items-center gap-3 text-xs text-text-muted">
+          <span className="flex items-center gap-1">
+            <Layers className="h-3.5 w-3.5" aria-hidden="true" />
+            {totalGuides} {totalGuides === 1 ? "guide" : "guides"}
+          </span>
+          <span className="flex items-center gap-1">
+            <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+            {readingMinutes} min
+          </span>
+        </div>
+      </Card>
+    </Link>
+  );
+}
 
 function CalculatorAccordion({ items }: { items: CalculatorRegistryEntry[] }) {
   const [openId, setOpenId] = useState<string | null>(null);

@@ -16,7 +16,8 @@ export type GuideTopic =
   | "education-funding"
   | "insurance"
   | "tax"
-  | "estate";
+  | "estate"
+  | "day-trading";
 
 export type GuideDifficulty = "intro" | "intermediate" | "advanced";
 
@@ -143,6 +144,10 @@ export const TOPIC_META: Record<GuideTopic, { label: string; description: string
   estate: {
     label: "Estate Planning",
     description: "Step-up basis, beneficiary designations, trusts, transfer.",
+  },
+  "day-trading": {
+    label: "Day Trading",
+    description: "Small-cap momentum, gappers, bull flags, risk-per-trade sizing.",
   },
 };
 
@@ -4510,6 +4515,881 @@ const fersRefundVsDefer: Guide = {
   ],
 };
 
+// ─── Day Trading: Small-Cap Momentum ─────────────────────────────────────
+
+const anatomyOfAGapper: Guide = {
+  slug: "anatomy-of-a-gapper",
+  title: "Anatomy of a Gapper",
+  topic: "day-trading",
+  difficulty: "intro",
+  summary:
+    "What a small-cap gapper is, the four filters that separate real setups from noise, and the catalyst hunt that tells you whether the gap will hold.",
+  readingMinutes: 6,
+  lastReviewed: "2026-06-01",
+  keyFacts: [
+    { label: "Price range", value: "$1 – $20" },
+    { label: "Float", value: "< 20M shares" },
+    { label: "Premarket gap", value: "≥ 5% from prev close" },
+    { label: "Relative volume", value: "≥ 5× (intraday) / ≥ 0.5× (premarket)" },
+    { label: "Catalyst window", value: "News within last 12 hours" },
+    { label: "Best window", value: "09:30 – 11:30 ET" },
+  ],
+  sections: [
+    {
+      id: "what-it-is",
+      heading: "What a gapper is (and isn't)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "A 'gapper' is a stock trading meaningfully higher (or lower, but momentum traders focus on the upside) before the regular session opens. The gap is the price difference between yesterday's close and today's premarket print. A 5% gap on a $5 stock is $0.25 of overnight enthusiasm — usually driven by a catalyst.",
+        },
+        {
+          type: "paragraph",
+          text: "Gappers are the playing field for small-cap momentum trading. Large-caps gap too (earnings, FDA news), but their floats are too big and their volatility too constrained for the explosive intraday moves that make the strategy work. The setup lives in the $1–$20, sub-20M-float corner of the market.",
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Gappers go down too",
+          body: "This guide covers long-side momentum. Short-side gappers — failed pumps, offerings — are a separate strategy with very different risk characteristics (borrow availability, hard-to-borrow fees, locate risk). Don't conflate them.",
+        },
+      ],
+    },
+    {
+      id: "the-four-filters",
+      heading: "The four filters",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Sentinel's gapper scanner applies four hard filters before a symbol becomes a candidate. Every Ross-style trader applies them too, even if implicitly. Remove one and your hit rate drops.",
+        },
+        {
+          type: "table",
+          headers: ["Filter", "Threshold", "Why"],
+          rows: [
+            ["Price", "$1 – $20", "Below $1 = OTC/sub-penny chop. Above $20 = float too big to squeeze."],
+            ["Float", "< 20M shares", "Low float = supply constraint = explosive moves when buyers show up."],
+            ["Gap %", "≥ 5%", "Below 5% isn't a 'gap' — it's normal overnight drift."],
+            ["RVOL", "≥ 5× (intraday)", "Volume is the only honest signal that buyers actually arrived."],
+          ],
+          align: ["left", "right", "left"],
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "Premarket vs. intraday RVOL",
+          body: "Pre-9:30 ET, RVOL of 0.3–0.5× yesterday's full-day volume is already unusual — the day is only 2 hours old. After the open, you want 5×+ to confirm institutional participation.",
+        },
+      ],
+    },
+    {
+      id: "catalyst-hunt",
+      heading: "The catalyst hunt",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "A gap without a catalyst is a setup waiting to fade. Before risking a dollar, find out why the stock moved overnight. Five legitimate catalyst types:",
+        },
+        {
+          type: "list",
+          items: [
+            "Earnings beat (revenue, EPS, or guidance) — usually announced after-hours or pre-market.",
+            "Drug/FDA news — Phase 2/3 results, approvals, breakthrough designations. Biotech-specific.",
+            "Contract win or partnership — large customer announcement, government contract.",
+            "Sector sympathy — peer announces a catalyst, the whole sub-sector gaps.",
+            "Macro / news headlines — tariff exemption, regulatory change, M&A speculation.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "The fake catalyst",
+          body: "A stock-offering announcement causes a gap-down, not a gap-up. If you see a gap-up but the catalyst is 'company announces offering at $X' — that's dilution, the stock is heading down to the offering price. Skip.",
+        },
+        {
+          type: "paragraph",
+          text: "If you can't find a catalyst in 30 seconds (Benzinga, the company's IR page, Twitter cashtag, SEC EDGAR 8-K), the gap is probably technical/random and won't hold. Move on.",
+        },
+      ],
+    },
+    {
+      id: "common-mistakes",
+      heading: "Common mistakes",
+      blocks: [
+        {
+          type: "list",
+          items: [
+            "Buying premarket at the high — premarket liquidity is thin, spreads are wide, you get filled at the worst possible price.",
+            "Ignoring float — a 'cheap' stock at $4 with a 200M float won't move like a $4 stock with 8M float, no matter the catalyst.",
+            "Chasing after the first 30 minutes — most small-cap momentum trades happen in the opening 30–60 minutes. Mid-day fades are not the same setup.",
+            "Trading the second gap-up of the day — the first push has already drained the fast money. Second pushes fail more often than they extend.",
+            "Holding overnight — a gapper is a same-day trade. Holding turns a momentum trade into a guess about tomorrow's news flow.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "What Sentinel does for you",
+          body: "The gapper scanner (visible on the Momentum tab when POLYGON_API_KEY is configured) applies these four filters in real time. Catalyst classification is still a manual step — that's where your edge as a human comes in.",
+        },
+      ],
+    },
+  ],
+  quiz: [
+    {
+      question: "What is the upper price bound Sentinel's gapper scanner uses by default?",
+      options: ["$5", "$10", "$20", "$50"],
+      correctIndex: 2,
+      explanation:
+        "$20. Above that, floats are too large and the stock doesn't move with the explosive volatility small-cap momentum trading depends on.",
+    },
+    {
+      question: "A gap-up announcement of 'company prices secondary offering at $4.50' on a $5 stock is most likely:",
+      options: [
+        "A bullish catalyst — they raised capital",
+        "A neutral event — wait and see",
+        "A dilution event — the stock will head toward the offering price",
+        "An M&A signal — could lead to a buyout",
+      ],
+      correctIndex: 2,
+      explanation:
+        "Offerings dilute existing shareholders. The stock typically drifts toward the offering price as the new shares hit the market. This is a fake catalyst — skip the trade.",
+    },
+    {
+      question: "Which RVOL threshold is appropriate during regular intraday hours?",
+      options: ["≥ 0.3×", "≥ 1×", "≥ 5×", "≥ 50×"],
+      correctIndex: 2,
+      explanation:
+        "5× is the working intraday threshold for confirming a real momentum setup. 0.3–0.5× is the premarket equivalent (the day is only a few hours old).",
+    },
+    {
+      question: "What window does the strategy primarily target?",
+      options: [
+        "Overnight to next morning",
+        "09:30 – 11:30 ET",
+        "11:30 – 16:00 ET",
+        "After-hours only",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Most small-cap momentum action concentrates in the first two hours. Mid-day fades behave differently and aren't the same setup. The strategy's hard cutoff is typically 11:30 ET.",
+    },
+    {
+      question: "Why does float matter even more than price for this strategy?",
+      options: [
+        "Lower float = lower commissions",
+        "Lower float = supply constraint = bigger moves on buying pressure",
+        "Lower float means the company is older",
+        "Float doesn't actually matter",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Float is the supply side of the equation. A small float with a real catalyst creates a setup where buyers can't all get filled — that's what produces the explosive moves momentum traders look for.",
+    },
+  ],
+};
+
+const bullFlagBreakout: Guide = {
+  slug: "bull-flag-breakout",
+  title: "The Bull Flag Breakout",
+  topic: "day-trading",
+  difficulty: "intro",
+  summary:
+    "The single most-used small-cap momentum setup: impulse, consolidation, breakout. How to read it, where to enter, where the stop goes, and when the pattern lies.",
+  readingMinutes: 7,
+  lastReviewed: "2026-06-01",
+  keyFacts: [
+    { label: "Chart timeframe", value: "1-minute" },
+    { label: "Consolidation length", value: "3 – 8 bars" },
+    { label: "Tightness (range / impulse)", value: "< 0.5" },
+    { label: "Breakout volume", value: "≥ 1.5× consolidation avg" },
+    { label: "Entry trigger", value: "Close above flag high" },
+    { label: "Stop placement", value: "Consolidation low" },
+    { label: "RSI sweet spot", value: "50 – 80 (not exhausted)" },
+  ],
+  sections: [
+    {
+      id: "anatomy",
+      heading: "The three phases",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "A bull flag is three things in sequence on a 1-minute chart: an impulse, a consolidation, and a breakout. Pattern recognition is mostly geometry — does what you're looking at have those three phases?",
+        },
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "Impulse: a strong upward move. Multiple green bars in a row, each closing near its high. The 'pole' of the flag. A clean impulse is ≥ 2% on a $5 stock — or roughly 1 ATR of movement in a few minutes.",
+            "Consolidation: 3–8 bars of sideways action just below the impulse high. The 'flag' itself. Bars overlap heavily. Volume drops sharply versus the impulse — that's the tell that supply isn't flooding in.",
+            "Breakout: a bar that closes above the highest high of the consolidation, accompanied by a volume surge.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "Tightness is the quality signal",
+          body: "Measure the consolidation range (high − low) and divide by the impulse range. Below 0.5 is a tight flag (high quality). Above 0.5 is a sloppy flag (low quality, often fails). Sentinel's momentum analyzer rejects setups with tightness > 0.5 by default.",
+        },
+      ],
+    },
+    {
+      id: "entry-and-stop",
+      heading: "Entry, stop, and risk per share",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "The trigger is the close of a bar above the consolidation high. Aggressive traders buy the break of the high intra-bar; conservative traders wait for the close to confirm. Either is defensible — pick one and stay consistent.",
+        },
+        {
+          type: "paragraph",
+          text: "The stop is the consolidation low. Not a percentage. Not an ATR multiple. The low. If the stock breaks back into the flag and below its lower bound, the pattern failed — there's nothing to be patient about.",
+        },
+        {
+          type: "key-value",
+          caption: "Risk-per-share is what determines position size",
+          pairs: [
+            { label: "Entry", value: "Breakout close (e.g. $5.25)" },
+            { label: "Stop", value: "Consolidation low (e.g. $5.05)" },
+            { label: "Risk / share", value: "Entry − Stop = $0.20" },
+            { label: "Max loss budget", value: "User-defined (e.g. $50)" },
+            { label: "Position size", value: "Max loss ÷ risk per share = 250 shares" },
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Why this beats %-equity sizing",
+          body: "On a swing trade, sizing by %-of-equity is fine — losses are bounded by your %-stop. On a small-cap momentum trade, the stop distance varies bar-to-bar with the consolidation shape. Risk-per-share sizing keeps the dollar loss constant regardless of how wide the flag is.",
+        },
+      ],
+    },
+    {
+      id: "volume-confirmation",
+      heading: "Volume is non-negotiable",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Without a volume surge on the breakout bar, the pattern is a fake-out waiting to happen. Sentinel's threshold is 1.5× the average consolidation volume — anything below that is unconfirmed and the analyzer returns HOLD even if the geometry is perfect.",
+        },
+        {
+          type: "paragraph",
+          text: "The reason is intuitive: a breakout without volume means no new buyers showed up. The few aggressive traders who bought are now trapped, holding longs above resistance with no one behind them. Within a few minutes the price falls back into the flag and stops them out.",
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "Algorithmic shakeouts",
+          body: "High-frequency algos hunt these exact patterns. A common shakeout: price pokes above the flag high on no volume → trapped traders chase → algo sells into the chase → flush back into the flag → stops triggered. Volume confirmation is your defense.",
+        },
+      ],
+    },
+    {
+      id: "when-it-fails",
+      heading: "When the pattern lies",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Even a clean setup with confirmed volume fails. Three failure modes to know:",
+        },
+        {
+          type: "list",
+          items: [
+            "Trend exhaustion: RSI above 80 going into the breakout means the easy money has already been made. Sentinel's analyzer refuses these (RSI > 80 = exhausted; don't chase).",
+            "Below VWAP: a bull flag below the session VWAP is a downtrend pattern wearing a bull flag's clothes. The analyzer requires price above VWAP as a precondition.",
+            "Wrong tape: in a broad-market sell-off, every small-cap setup fails more often. Check SPY/QQQ direction before risking a position. Risk-on regime is the implicit assumption.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Sentinel's three preconditions",
+          body: "Before the analyzer even looks for the flag pattern, it gates on (a) price above VWAP, (b) price above 9 EMA, (c) RSI between 50 and 80. Fail any one and the setup is HOLD regardless of geometry.",
+        },
+      ],
+    },
+  ],
+  quiz: [
+    {
+      question: "What defines the entry trigger on a bull flag breakout?",
+      options: [
+        "The fastest you can click buy",
+        "Price closing above the consolidation high",
+        "RSI crossing above 70",
+        "MACD crossover",
+      ],
+      correctIndex: 1,
+      explanation:
+        "The trigger is the close above the consolidation high. Aggressive traders may buy intra-bar; conservative traders wait for the close to confirm. RSI/MACD are confirmations, not triggers.",
+    },
+    {
+      question: "Where does the stop go on a bull flag entry?",
+      options: [
+        "10% below entry",
+        "2 ATR below entry",
+        "The consolidation low",
+        "The 50-day SMA",
+      ],
+      correctIndex: 2,
+      explanation:
+        "The consolidation low. If price breaks back into and below the flag, the pattern failed — exit. The stop is a function of the structure, not a fixed percent.",
+    },
+    {
+      question: "Why does volume on the breakout bar matter so much?",
+      options: [
+        "It looks more bullish on the chart",
+        "Without it, no new buyers actually arrived; the breakout is likely to fail",
+        "It increases your commissions, proving you're committed",
+        "Volume is mostly decorative",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Volume is the only honest signal that real buyers showed up. A breakout without volume traps the few aggressive buyers and gets faded by algos within minutes.",
+    },
+    {
+      question: "If you risk $50 max per trade, entry is $5.25, and stop is $5.05, how many shares?",
+      options: ["100", "200", "250", "500"],
+      correctIndex: 2,
+      explanation:
+        "$50 ÷ ($5.25 − $5.05) = $50 / $0.20 = 250 shares. This is the risk-per-trade sizing formula and it's why the strategy doesn't use %-of-equity sizing.",
+    },
+    {
+      question: "What does an RSI reading above 80 going into a breakout signal?",
+      options: [
+        "Maximum strength — buy with size",
+        "Exhaustion — the move is likely over",
+        "Volume is about to surge",
+        "Nothing — RSI is a lagging indicator",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Above 80 means the move has already been made; you'd be chasing exhausted strength. Sentinel's momentum analyzer rejects these setups even when the geometry is otherwise clean.",
+    },
+  ],
+};
+
+const riskPerTradeSizing: Guide = {
+  slug: "risk-per-trade-sizing",
+  title: "Risk per Trade: Sizing for Small Caps",
+  topic: "day-trading",
+  difficulty: "intro",
+  summary:
+    "Why %-of-equity sizing breaks on small-cap momentum and how to size by dollar risk instead. The formula, worked examples, and the 1% rule's actual purpose.",
+  readingMinutes: 6,
+  lastReviewed: "2026-06-01",
+  keyFacts: [
+    { label: "Sizing formula", value: "Max loss ÷ risk per share" },
+    { label: "Risk per share", value: "Entry − stop price" },
+    { label: "1% rule starting point", value: "$50 risk on a $5K account" },
+    { label: "Sentinel risk-profile field", value: "maxSingleTradeLoss" },
+    { label: "When this differs from %-equity", value: "Always — stops vary by setup, not equity" },
+  ],
+  sections: [
+    {
+      id: "the-formula",
+      heading: "The formula",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Small-cap momentum trading sizes by dollar risk, not %-of-equity. The formula is one line:",
+        },
+        {
+          type: "key-value",
+          caption: "Position sizing",
+          pairs: [
+            { label: "Max dollar loss", value: "Set by you (e.g. $50)" },
+            { label: "Risk per share", value: "Entry − stop price" },
+            { label: "Position size", value: "Max loss ÷ risk per share" },
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "Three inputs, one output: how many shares you can hold without exceeding your dollar-loss cap if the stop fires. The math doesn't change with account size — only the max-loss number does.",
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "What Sentinel does with this",
+          body: "The engine's momentum mode reads maxSingleTradeLoss from your risk profile and computes share count for every signal. The hard stop is the bull-flag consolidation low (see the bull-flag-breakout guide).",
+        },
+      ],
+    },
+    {
+      id: "worked-examples",
+      heading: "Worked examples",
+      blocks: [
+        {
+          type: "table",
+          caption: "Same $50 max loss, three different setups → three different sizes",
+          headers: ["Setup", "Entry", "Stop", "Risk/share", "Shares"],
+          rows: [
+            ["Tight bull flag", "$5.25", "$5.05", "$0.20", "250"],
+            ["Wide flag (volatile)", "$5.25", "$4.85", "$0.40", "125"],
+            ["Higher-priced gapper", "$15.10", "$14.70", "$0.40", "125"],
+            ["Tighter, lower-priced", "$2.50", "$2.42", "$0.08", "625"],
+          ],
+          align: ["left", "right", "right", "right", "right"],
+        },
+        {
+          type: "paragraph",
+          text: "Notice that share count varies by a factor of 5 across these setups, but the dollar loss if the stop hits is identical. That's the property %-equity sizing can't give you — under %-equity, the wide-stop trade would carry the same 250 shares as the tight one and lose $100 instead of $50 on the stop.",
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Don't override the math",
+          body: "If the formula says 125 shares and your gut says 500, the gut is wrong. The formula encodes your loss cap; ignoring it means you're now risking a different amount than you decided when you were calm.",
+        },
+      ],
+    },
+    {
+      id: "why-not-percent-equity",
+      heading: "Why %-equity sizing breaks here",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "%-of-equity sizing (\"put 5% of my account in each trade\") works fine for swing trading because the stop is typically a fixed % below entry, so the dollar loss scales with position size in a predictable way. Small-cap momentum violates that assumption: the stop is structural (consolidation low), and structure varies bar-to-bar.",
+        },
+        {
+          type: "list",
+          items: [
+            "Wide flag = stop is far from entry = the same %-equity bet loses more dollars if stopped.",
+            "Tight flag = stop is close to entry = the same %-equity bet loses fewer dollars but also has a smaller R if the setup works.",
+            "Result: %-equity makes wide setups quietly riskier than tight ones for the same nominal position size. Dollar-risk sizing makes the two equivalent on the loss side.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "the-1-percent-rule",
+      heading: "The 1% rule (and why it's a starting point, not a law)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "The trader's 1% rule says: never risk more than 1% of your account on a single trade. On a $5K account that's $50; on a $25K account it's $250. The actual point of the rule isn't the number — it's that the number is small enough that 10 consecutive losses (a drawdown most traders eventually see) costs ~10% of equity, not 50%.",
+        },
+        {
+          type: "key-value",
+          caption: "1% rule at different account sizes",
+          pairs: [
+            { label: "$1,000 account", value: "$10 / trade" },
+            { label: "$5,000 account", value: "$50 / trade" },
+            { label: "$10,000 account", value: "$100 / trade" },
+            { label: "$25,000 (PDT minimum)", value: "$250 / trade" },
+            { label: "$100,000 account", value: "$1,000 / trade" },
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Scale down when you're losing, not up",
+          body: "Aggressive traders bump risk to 1.5-2% per trade. Fine — until you hit a losing streak and the math compounds against you. Sentinel's risk profile lets you set maxConsecutiveLosses to auto-halt the engine; pair that with a smaller dollar risk when you're cold.",
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "What blows accounts",
+          body: "Not the strategy, not the markets — the absence of risk-per-trade discipline. Two traders running the same strategy where one risks 1% / trade and the other risks 10% will see the 10% trader blow up within a normal losing streak. The math isn't optional.",
+        },
+      ],
+    },
+  ],
+  quiz: [
+    {
+      question: "Entry is $4.20, stop is $4.00, max loss budget is $40. How many shares?",
+      options: ["100", "150", "200", "400"],
+      correctIndex: 2,
+      explanation:
+        "$40 ÷ ($4.20 − $4.00) = $40 / $0.20 = 200 shares. The formula doesn't care about account size — only your max-loss number and the risk per share.",
+    },
+    {
+      question: "Why does %-of-equity sizing under-perform on small-cap momentum?",
+      options: [
+        "It's mathematically the same thing",
+        "Stops are structural (vary with setup), so the same %-equity bet has different dollar risk across setups",
+        "Small caps are too cheap for %-equity to apply",
+        "It only works for options",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Because the stop is the consolidation low, not a fixed % below entry. A wide flag and a tight flag have different risk-per-share, so identical %-equity sizing produces different dollar losses on the stop.",
+    },
+    {
+      question: "What's the real point of the '1% rule'?",
+      options: [
+        "1% is the optimal Sharpe-maximizing risk",
+        "It survives a normal 10-trade losing streak — drawdown stays around 10%, not 50%",
+        "It minimizes commissions",
+        "It satisfies a FINRA requirement",
+      ],
+      correctIndex: 1,
+      explanation:
+        "The rule is a drawdown-survival heuristic. Risk too much per trade and a normal losing streak takes you out of the game; the 1% baseline keeps a 10-loss streak survivable.",
+    },
+    {
+      question: "On a $5K account, the 1% rule suggests roughly:",
+      options: ["$5 per trade", "$50 per trade", "$500 per trade", "$1,500 per trade"],
+      correctIndex: 1,
+      explanation:
+        "1% of $5,000 = $50. That's the dollar-risk cap per trade; share count varies with risk-per-share.",
+    },
+    {
+      question: "Which Sentinel risk-profile field does the momentum engine use for sizing?",
+      options: ["maxPositionPct", "maxSingleTradeLoss", "maxDrawdownPct", "accountSize"],
+      correctIndex: 1,
+      explanation:
+        "maxSingleTradeLoss is the dollar cap the formula uses. The other fields gate different protections (position concentration, daily drawdown halt, base equity).",
+    },
+  ],
+};
+
+const haltsAndResumes: Guide = {
+  slug: "halts-and-resumes",
+  title: "Halts, Resumes, and the LULD Bands",
+  topic: "day-trading",
+  difficulty: "intermediate",
+  summary:
+    "How Limit Up Limit Down halts actually work, the band widths by tier, what to do when a position you hold halts, and the resume-trade most small-cap traders fumble.",
+  readingMinutes: 7,
+  lastReviewed: "2026-06-01",
+  keyFacts: [
+    { label: "Tier 1 (S&P 500, R1000)", value: "±5% bands (±10% near open/close)" },
+    { label: "Tier 2 (everything else)", value: "±10% bands (±20% near open/close)" },
+    { label: "Sub-$3 stocks", value: "±20% / ±40% bands (wider)" },
+    { label: "Standard halt duration", value: "5 minutes" },
+    { label: "Reference price", value: "5-min rolling average of last sale" },
+    { label: "Most small caps", value: "Tier 2 + sub-$3 wider bands" },
+  ],
+  sections: [
+    {
+      id: "what-luld-is",
+      heading: "What LULD actually is",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "LULD (Limit Up Limit Down) is the SEC-mandated mechanism that halts a stock when its price moves outside a band around a 5-minute rolling average. It exists to absorb fat-finger errors and short-burst manipulation. For small-cap momentum traders, halts are routine — a $4 stock running on a catalyst will hit the LULD band repeatedly through the morning.",
+        },
+        {
+          type: "paragraph",
+          text: "The mechanic: when the National Best Bid or Offer (NBBO) tries to print outside the band, the exchange triggers a 'limit state.' If price doesn't return to the band within 15 seconds, a 5-minute trading halt fires. Trading resumes when the primary listing exchange (NYSE / Nasdaq) reopens the auction.",
+        },
+      ],
+    },
+    {
+      id: "bands-by-tier",
+      heading: "Bands by tier",
+      blocks: [
+        {
+          type: "table",
+          caption: "Regular hours (9:45 ET – 15:35 ET) — opens / closes use 2× these",
+          headers: ["Tier", "Universe", "Band", "Near open/close"],
+          rows: [
+            ["Tier 1", "S&P 500, Russell 1000, select ETPs", "±5%", "±10%"],
+            ["Tier 2", "Everything else (most stocks)", "±10%", "±20%"],
+            ["Sub-$3 Tier 1", "T1 stocks under $3", "±20%", "±40%"],
+            ["Sub-$3 Tier 2", "T2 stocks under $3", "±20%", "±40%"],
+            ["Sub-$0.75", "All", "Greater of 75% or $0.15", "Same"],
+          ],
+          align: ["left", "left", "right", "right"],
+        },
+        {
+          type: "paragraph",
+          text: "Small-cap momentum lives almost entirely in Tier 2 sub-$3 territory. A $2.50 stock has effectively ±20% bands during normal hours — that's a $0.50 move before a halt triggers. Bigger price levels = tighter bands relative to the dollar move, so a $15 stock can only run $1.50 before halting.",
+        },
+        {
+          type: "callout",
+          tone: "warning",
+          title: "Bands are dynamic, not absolute",
+          body: "The reference price is the 5-minute rolling average — so successive halts let the band 'climb the ladder' as the average updates. That's how a stock can have ten halts in an hour without violating the rule.",
+        },
+      ],
+    },
+    {
+      id: "what-to-do-when-you-hold-a-halted-position",
+      heading: "What to do when your position halts",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "First: don't panic. Halts on momentum stocks are normal. You can't trade while halted — your orders sit in queue and execute on the auction reopen. The strategic question is whether to cancel pending exits before the reopen, since the auction can fill at significantly different prices than the pre-halt last print.",
+        },
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "Identify the halt direction: up = momentum; down = problem (offering, bad news, manipulation).",
+            "Check the catalyst feed (Benzinga, Twitter cashtag, EDGAR) — has anything changed during the halt?",
+            "If halted up and you're holding: typically let the auction reopen, watch the first 1-minute bar, decide on the resume.",
+            "If halted down: assume the worst — auction usually reopens lower; consider canceling stops since the market sell at reopen could fill far below your stop price.",
+            "Never place new market buys in the queue during a halt — the auction reopen is the most algorithmically-exploited print of the day.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "The auction-reopen trap",
+          body: "Auction reopens can gap 5-20% in either direction. A buy-stop placed during the halt at a price just above the pre-halt high will execute on the auction at whatever the auction prints — sometimes 10% above where you intended. Cancel stops on halted positions if the auction direction is uncertain.",
+        },
+      ],
+    },
+    {
+      id: "the-resume-trade",
+      heading: "The resume trade",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Halt-resumes are a sub-strategy of their own. The pattern: stock halts up, reopens, then either continues running (momentum intact) or fades hard (the halt absorbed all the buying). Reading the first 1-2 minutes after reopen is the entire skill.",
+        },
+        {
+          type: "list",
+          items: [
+            "Strong resume: opens higher than pre-halt, sustains the first 1-min bar above the open. Momentum is intact; bull-flag setups can fire on the next consolidation.",
+            "Weak resume: opens higher but the first 1-min bar closes red. The halt drained buyers; expect a fade.",
+            "Failed resume: opens flat or lower than pre-halt. Sellers won the auction; the easy money is gone. Step aside.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "Don't be the chase",
+          body: "The single most common loss in small-cap trading is buying the resume bar at the top because the chart 'looks strong.' Wait for the first 1-min bar to close, then look for a bull-flag setup on the second bar at the earliest. The chase is the trade behind algorithms eat.",
+        },
+      ],
+    },
+  ],
+  quiz: [
+    {
+      question: "What's the regular-hours LULD band for a Tier 2 stock priced at $5?",
+      options: ["±2%", "±5%", "±10%", "±20%"],
+      correctIndex: 2,
+      explanation:
+        "Tier 2 above $3 gets ±10% bands during regular hours (9:45 ET – 15:35 ET). Near the open/close those bands double to ±20%.",
+    },
+    {
+      question: "Standard LULD halt duration is:",
+      options: ["30 seconds", "5 minutes", "15 minutes", "End of session"],
+      correctIndex: 1,
+      explanation:
+        "5 minutes is the standard. Auction-reopen by the primary listing exchange then resumes trading. Extended halts (T1/T2 news halts) are a separate mechanism.",
+    },
+    {
+      question: "You're holding a $2 small-cap that just halted up after a strong impulse. The auction reopens in 5 minutes. Best move:",
+      options: [
+        "Cancel all stops to avoid a bad auction print",
+        "Place a market buy in the queue to add more",
+        "Wait for the first 1-minute bar after reopen to close before deciding next move",
+        "Sell at any price immediately when trading resumes",
+      ],
+      correctIndex: 2,
+      explanation:
+        "Reading the resume bar is the skill. Don't chase, don't panic-sell, don't add. Watch the first 1-minute bar after reopen — its close tells you whether momentum survived or the halt drained buyers.",
+    },
+    {
+      question: "A stock has had four halts in 30 minutes during the morning push. Is this a bug or a feature of the rule?",
+      options: [
+        "It's a bug — the SEC will pause trading after 3 halts",
+        "It's a feature — bands are dynamic, so the rolling reference climbs with each halt and successive bands are valid",
+        "It means the stock will be delisted",
+        "It triggers an automatic SSR (short sale restriction)",
+      ],
+      correctIndex: 1,
+      explanation:
+        "LULD references a 5-min rolling average, so each halt lets the reference climb. Multiple halts in a session are routine on momentum stocks and not a regulatory problem on their own.",
+    },
+    {
+      question: "Which kind of resume should you avoid trading from the long side?",
+      options: [
+        "Strong resume — opens higher and the first 1-min bar holds the open",
+        "Weak resume — opens higher but the first 1-min bar closes red",
+        "Pre-market resume after a halt",
+        "Late-day resume",
+      ],
+      correctIndex: 1,
+      explanation:
+        "A weak resume — open higher, first bar closes red — signals the halt absorbed all the buying. Expect a fade, not a continuation. Strong resumes (close above open on the first bar) are the trade-worthy setup.",
+    },
+  ],
+};
+
+const elevenThirtyCutoff: Guide = {
+  slug: "eleven-thirty-cutoff",
+  title: "The 11:30 ET Cutoff",
+  topic: "day-trading",
+  difficulty: "intro",
+  summary:
+    "Why small-cap momentum dies mid-day, what the intraday volume profile actually looks like, and the discipline of stopping when the tape changes — including the revenge-trade trap.",
+  readingMinutes: 6,
+  lastReviewed: "2026-06-01",
+  keyFacts: [
+    { label: "Volume in first 30 min", value: "30-40% of full-day total" },
+    { label: "High-liquidity window", value: "09:30 – 10:30 ET" },
+    { label: "Soft cutoff", value: "11:30 ET — Ross's hard stop" },
+    { label: "Lunch chop", value: "11:30 – 14:00 ET" },
+    { label: "Power hour", value: "15:00 – 16:00 ET (different setup)" },
+    { label: "Common exception", value: "Catalyst-driven afternoon runs" },
+  ],
+  sections: [
+    {
+      id: "the-volume-profile",
+      heading: "The intraday volume profile",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "U.S. equity volume is famously U-shaped: a heavy burst at the open, a long sag through mid-day, and a closing burst into 16:00. For small-cap momentum, the asymmetry is even sharper because the strategy needs both volume *and* directional conviction, and afternoons usually have neither.",
+        },
+        {
+          type: "table",
+          caption: "Approximate share of full-day volume by window",
+          headers: ["Window", "Share of volume", "Tradeable?"],
+          rows: [
+            ["09:30 – 10:00 ET", "20-30%", "Yes — primary window"],
+            ["10:00 – 11:30 ET", "15-20%", "Yes — continuation setups"],
+            ["11:30 – 14:00 ET", "10-15%", "Mostly no — chop"],
+            ["14:00 – 15:00 ET", "10-15%", "Selective — needs catalyst"],
+            ["15:00 – 16:00 ET", "20-25%", "Different game (power hour)"],
+          ],
+          align: ["left", "right", "left"],
+        },
+        {
+          type: "callout",
+          tone: "info",
+          title: "Why this matters",
+          body: "Bull-flag setups require volume confirmation (1.5×+ consolidation volume on the breakout — see the bull-flag-breakout guide). Mid-day volume is so low that the multiple is meaningless, and breakouts on thin volume fail at >70% rates.",
+        },
+      ],
+    },
+    {
+      id: "why-momentum-dies-midday",
+      heading: "Why momentum dies mid-day",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Three things change at roughly 11:00-11:30 ET that collectively kill the small-cap momentum setup:",
+        },
+        {
+          type: "list",
+          ordered: true,
+          items: [
+            "Volume drops. Institutional desks reduce activity during European close and U.S. lunch. Day-trader retail follows suit.",
+            "Liquidity providers widen spreads. Market makers compensate for lower flow by quoting wider; spreads on $5 small-caps that were $0.01 in the morning become $0.03-0.05.",
+            "Algorithmic shakeouts increase relative to organic flow. With less directional volume, the share of price action driven by HFT becomes dominant — fake breakouts proliferate.",
+          ],
+        },
+        {
+          type: "paragraph",
+          text: "Net effect: setups that 'look like' bull flags between 11:30 and 14:00 are typically traps. The same geometry that worked at 10:00 ET fails at 12:30 ET because the volume confirmation is structurally absent.",
+        },
+      ],
+    },
+    {
+      id: "the-discipline-of-stopping",
+      heading: "The discipline of stopping",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Ross's 11:30 cutoff isn't a market rule, it's a personal-discipline rule. The point is to stop trading while you're still mentally fresh and emotionally neutral — *before* you've taken a loss in the dead zone and started chasing it. Most blown-up accounts in this strategy die in the afternoon, not the morning.",
+        },
+        {
+          type: "callout",
+          tone: "danger",
+          title: "The revenge trade",
+          body: "After a morning loss, the urge to 'make it back' before EOD is strong and structurally wrong. Mid-day setups fail more often, so the revenge trade adds a second loss to the first. The cutoff exists to remove the choice — when you're done at 11:30, you can't revenge-trade by definition.",
+        },
+        {
+          type: "list",
+          items: [
+            "If green by 11:00 ET: you've won the day. Stop. Take your winnings.",
+            "If red by 11:00 ET: you've lost the day. Stop. The afternoon won't fix it.",
+            "If flat at 11:00 ET: you're still focused — finish out to 11:30 and then stop.",
+            "Don't trade after 11:30 'just because you have an hour.' Time pressure is not a setup.",
+          ],
+        },
+      ],
+    },
+    {
+      id: "the-exception",
+      heading: "The exception (and how to know it's real)",
+      blocks: [
+        {
+          type: "paragraph",
+          text: "Sometimes the 11:30 cutoff is wrong — afternoon catalysts (FDA approval prints, 2 PM earnings updates, breaking M&A news) can reignite legitimate setups in stocks that were dead at 11:00. The discipline isn't to ignore these; it's to require that they meet a higher bar than morning setups.",
+        },
+        {
+          type: "list",
+          items: [
+            "There must be a fresh catalyst dated after 11:00 ET (not the same morning catalyst).",
+            "Volume on the catalyst bar must be ≥ 5× the prior 30-min average — the afternoon volume bar to clear is much higher than the morning one.",
+            "The setup must satisfy the same bull-flag rules (impulse, tight consolidation, breakout) — geometry doesn't change.",
+            "Position size cuts in half. Afternoon liquidity is lower, slippage is higher, and you've already used your morning attention budget.",
+          ],
+        },
+        {
+          type: "callout",
+          tone: "tip",
+          title: "When in doubt, default off",
+          body: "The 11:30 cutoff exists because the median afternoon trade loses money. The exception rule (afternoon catalyst, size cut in half, harder volume bar) is an opt-in, not the default. If you're not certain the catalyst is genuine and the volume is real, the answer is no.",
+        },
+      ],
+    },
+  ],
+  quiz: [
+    {
+      question: "Roughly what share of a U.S. equity's full-day volume occurs in the first 30 minutes?",
+      options: ["5-10%", "20-30%", "50-60%", "75%+"],
+      correctIndex: 1,
+      explanation:
+        "20-30% in the opening 30 minutes is typical. This is why small-cap momentum concentrates so heavily in the 09:30–10:30 window — that's where the liquidity is.",
+    },
+    {
+      question: "Why do bull-flag setups fail more often in the 11:30-14:00 ET window?",
+      options: [
+        "Algorithms switch off at lunch",
+        "Volume drops so the volume-confirmation requirement becomes meaningless and HFT noise dominates",
+        "The exchanges widen LULD bands at lunch",
+        "Tax-loss harvesting pressure spikes mid-day",
+      ],
+      correctIndex: 1,
+      explanation:
+        "Mid-day volume is structurally low, which makes the volume-multiple on a breakout statistically meaningless, while algorithmic shakeouts become a larger share of price action. The same geometry fails far more often.",
+    },
+    {
+      question: "You're up nicely at 10:45 ET. What does the discipline rule say?",
+      options: [
+        "Add size to capture more upside",
+        "Hold the position past 11:30 to maximize gains",
+        "Take the win and stop for the day before the dead zone arrives",
+        "Switch to short-side setups",
+      ],
+      correctIndex: 2,
+      explanation:
+        "Stopping while green is harder than stopping while red, but it's the same discipline. Most morning gains evaporate in the afternoon because the trader gives them back chasing mid-day setups.",
+    },
+    {
+      question: "What's the 'revenge trade' and why is it dangerous?",
+      options: [
+        "A short trade on a stock that wronged you — totally fine",
+        "Trading after a morning loss to make it back before EOD; dangerous because mid-day setups fail more often, compounding the loss",
+        "Re-entering a trade after the same setup repeats — actually a good practice",
+        "Selling at a loss when you should have held — a common beginner mistake but unrelated to time-of-day",
+      ],
+      correctIndex: 1,
+      explanation:
+        "The revenge trade is the urge to recover a morning loss in the afternoon. Mid-day failure rates are higher, so the revenge trade typically adds a second loss to the first — the exact opposite of what was intended.",
+    },
+    {
+      question: "When IS it acceptable to take a setup after 11:30 ET?",
+      options: [
+        "Whenever the chart looks clean",
+        "Only when there's a fresh post-11:00 ET catalyst, volume is 5×+ the prior 30-min average, and you cut size in half",
+        "Never — no exceptions",
+        "Only on the last trading day of the month",
+      ],
+      correctIndex: 1,
+      explanation:
+        "The 11:30 cutoff has a documented opt-in exception: fresh afternoon catalyst, much higher volume bar than morning setups, geometry still has to be a clean flag, and position size cuts in half. Without all four, default off.",
+    },
+  ],
+};
+
 // ─── Registry ────────────────────────────────────────────────────────────
 
 export const GUIDES: Guide[] = [
@@ -4532,6 +5412,11 @@ export const GUIDES: Guide[] = [
   coverdellEsa,
   kiddieTax,
   fersRefundVsDefer,
+  anatomyOfAGapper,
+  bullFlagBreakout,
+  riskPerTradeSizing,
+  haltsAndResumes,
+  elevenThirtyCutoff,
 ];
 
 export function getGuideBySlug(slug: string): Guide | undefined {

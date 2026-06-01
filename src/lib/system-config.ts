@@ -64,6 +64,11 @@ export const KNOWN_KEYS = [
   // it whenever you re-create the webhook in Stripe Dashboard.
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
+  // Polygon.io — real-time + historical 1m bars for the small-cap
+  // momentum engine mode. Yahoo's 15-min delay is fatal for gapper
+  // entries; Finnhub's free tier doesn't cover the OTC/small-cap
+  // universe. Personal-use Developer tier ($79/mo) is the floor.
+  "POLYGON_API_KEY",
 ] as const;
 
 export type KnownKey = (typeof KNOWN_KEYS)[number];
@@ -383,6 +388,25 @@ export async function testConfig(
         }
         return { ok: true };
       }
+      case "POLYGON_API_KEY": {
+        // /v3/reference/tickers/AAPL is in the free tier and proves
+        // the key authorizes against the API. 401/403 = bad key.
+        const res = await fetch(
+          `https://api.polygon.io/v3/reference/tickers/AAPL?apiKey=${encodeURIComponent(value)}`,
+          { signal: controller.signal }
+        );
+        if (res.status === 401 || res.status === 403) {
+          return { ok: false, error: "Polygon rejected key (401/403)" };
+        }
+        if (!res.ok) {
+          return { ok: false, error: `Polygon ${res.status}` };
+        }
+        const data = (await res.json().catch(() => null)) as
+          | { results?: { ticker?: string } }
+          | null;
+        if (data?.results?.ticker === "AAPL") return { ok: true };
+        return { ok: false, error: "Polygon returned unexpected payload" };
+      }
       case "REDDIT_CLIENT_ID":
       case "REDDIT_CLIENT_SECRET": {
         // Reddit credentials come as a pair — neither half tests on its
@@ -438,6 +462,11 @@ export function getStripeSecretKey(): Promise<string | null> {
 /** Convenience: resolve the Stripe webhook signing secret. */
 export function getStripeWebhookSecret(): Promise<string | null> {
   return getConfig("STRIPE_WEBHOOK_SECRET");
+}
+
+/** Convenience: resolve the Polygon.io API key for momentum data. */
+export function getPolygonApiKey(): Promise<string | null> {
+  return getConfig("POLYGON_API_KEY");
 }
 
 /**
