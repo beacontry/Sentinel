@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -106,11 +106,10 @@ export default function MomentumPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
-  // Initial scan on mount.
-  useEffect(() => {
-    void runScan();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // No auto-scan on mount — would race CsrfInit's fetch-patch useEffect
+  // (React fires child effects before parent ones, so the POST goes out
+  // before the x-csrf-token header injector is installed → "Invalid or
+  // missing CSRF token"). User-triggered via the Scan button instead.
 
   async function runScan() {
     setScanning(true);
