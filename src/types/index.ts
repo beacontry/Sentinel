@@ -247,10 +247,46 @@ export interface MarketContext {
 }
 
 export interface ChatContext {
-  news: { headline: string; summary: string }[];
-  recentDigest: string | null;
-  topMovers: { symbol: string; changePct: number }[];
-  relevantSignals: { symbol: string; signal: string; plainEnglish: string }[];
+  /**
+   * Server time when this context was assembled. The LLM treats this as
+   * "right now" — every freshness check compares against it.
+   */
+  currentServerTime: string;
+  /** Current US equity market session — gives the LLM a hint about what to expect. */
+  marketSession: "pre-market" | "regular" | "post-market" | "closed";
+  /**
+   * Live SPY + QQQ snapshot for "what is the tape doing right now."
+   * Single quote fetch — much fresher than the daily-bar movers list.
+   * `null` for either symbol when the provider failed.
+   */
+  liveTape: {
+    spy: { price: number; changePct: number; asOf: string } | null;
+    qqq: { price: number; changePct: number; asOf: string } | null;
+    fetchedAt: string;
+  } | null;
+  news: {
+    headline: string;
+    summary: string;
+    /** ISO timestamp; falls back to fetchedAt when source has no per-article time. */
+    publishedAt: string;
+  }[];
+  /** Cached digest with its generation timestamp so the LLM can age-check it. */
+  recentDigest: { summary: string; generatedAt: string } | null;
+  /**
+   * Movers from daily-bar diffs. Inherently end-of-prior-day vs.
+   * last-close-or-current — use liveTape for "right now" SPY/QQQ instead.
+   */
+  topMovers: {
+    fetchedAt: string;
+    items: { symbol: string; changePct: number }[];
+  };
+  relevantSignals: {
+    symbol: string;
+    signal: string;
+    plainEnglish: string;
+    /** ISO timestamp of signal creation; null when not available. */
+    createdAt: string | null;
+  }[];
   /** Top-K relevant Sentinel education guide snippets for the current query. */
   educationGuides?: {
     slug: string;

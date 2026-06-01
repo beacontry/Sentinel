@@ -38,7 +38,17 @@ Rules:
 
 const CHAT_SYSTEM_PROMPT = `You are an AI market analyst assistant integrated into Beacontry, a trading intelligence platform.
 
-You answer questions about the stock market using the provided context data (news, signals, sector performance, market digests). When answering:
+Data freshness is the most important rule. The context block tells you the current server time and stamps every data point with when it was captured. **Never characterize "current" or "right now" market state using data more than 30 minutes old.** If the user asks about the market's state *right now* and the data you have is older than that, lead with the staleness — name the timestamps, then describe what the latest data showed, then say conditions may have shifted.
+
+Specifically:
+
+- Every market-state claim (sentiment, direction, sector performance, mover lists) must include an "as of HH:MM ET" timestamp derived from the data's stamp, never from the current server time. A claim with no source-timestamp is forbidden.
+- **The "Live Tape" section, when present, is your only source for "right now" SPY/QQQ price + change.** The Top Movers list is daily-bar diffs and can lag the live tape significantly intraday. If asked about the current market, prefer the Live Tape and explicitly say so.
+- The Market Digest is generated once per hour. If its generatedAt is more than 60 minutes before the current server time, say so before quoting it.
+- If the current market session is "pre-market" and the user asks about the live session, note that regular hours haven't opened yet or are about to.
+- When data is stale relative to the user's question, recommend they look at the live trader / momentum / dashboard surfaces for current state — don't pretend to know what you can't see.
+
+When answering:
 
 - Cite specific data points from the context (prices, percentages, signal types)
 - If the context doesn't contain enough info to answer, say so honestly
@@ -50,6 +60,30 @@ You answer questions about the stock market using the provided context data (new
 interface GroqMessage {
   role: "system" | "user" | "assistant";
   content: string;
+}
+
+/**
+ * Format an ISO timestamp as "HH:MM ET" for prompt context. The LLM needs
+ * a human-readable per-piece timestamp to enforce the "as of HH:MM" rule
+ * — embedding raw ISO strings is unreliable across model versions.
+ */
+function fmtEt(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "2-digit",
+      minute: "2-digit",
+      month: "short",
+      day: "numeric",
+      hourCycle: "h23",
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+function pctStr(pct: number): string {
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
 }
 
 interface GroqResponse {
@@ -136,10 +170,13 @@ class LLMClient {
   async chatCompletion(history: ChatHistoryMessage[], context: ChatContext): Promise<ChatResult> {
     const contextBlock = this.buildChatContext(context);
 
+    // Note: no priming "I've reviewed the current market context" assistant
+    // turn — that wording made the model treat the context as live regardless
+    // of timestamps. Context goes in as a system-level brief and the model
+    // makes the first turn directly in response to the user.
     const messages: GroqMessage[] = [
       { role: "system", content: CHAT_SYSTEM_PROMPT },
-      { role: "user", content: `[Market Context]\n${contextBlock}\n\n[End Context]` },
-      { role: "assistant", content: "I've reviewed the current market context. What would you like to know?" },
+      { role: "system", content: `[Market Context]\n${contextBlock}\n\n[End Context]` },
       ...history.slice(-(CLAUDE_CONFIG.chatHistoryLimit)),
     ];
 
@@ -198,28 +235,73 @@ class LLMClient {
   private buildChatContext(ctx: ChatContext): string {
     const parts: string[] = [];
 
+    // Lead with current time + session so every claim that follows can be
+    // age-checked against it.
+    const nowEt = fmtEt(ctx.currentServerTime);
+    parts.push(`## Current Server Time`);
+    parts.push(
+      `- Now: ${nowEt} (UTC ISO: ${ctx.currentServerTime})`
+    );
+    parts.push(`- US equity session: **${ctx.marketSession}**`);
+
+    if (ctx.liveTape && (ctx.liveTape.spy || ctx.liveTape.qqq)) {
+      parts.push(
+        `\n## Live Tape (as of ${fmtEt(ctx.liveTape.fetchedAt)}) — use this for "right now" market state`
+      );
+      if (ctx.liveTape.spy) {
+        parts.push(
+          `- SPY: $${ctx.liveTape.spy.price.toFixed(2)} (${pctStr(ctx.liveTape.spy.changePct)} vs prev close)`
+        );
+      }
+      if (ctx.liveTape.qqq) {
+        parts.push(
+          `- QQQ: $${ctx.liveTape.qqq.price.toFixed(2)} (${pctStr(ctx.liveTape.qqq.changePct)} vs prev close)`
+        );
+      }
+    } else {
+      parts.push(
+        `\n## Live Tape: unavailable — provider failed. Do NOT characterize "right now" SPY/QQQ levels.`
+      );
+    }
+
     if (ctx.recentDigest) {
-      parts.push(`## Today's Market Recap\n${ctx.recentDigest}`);
+      const digestEt = fmtEt(ctx.recentDigest.generatedAt);
+      const ageMin = Math.floor(
+        (new Date(ctx.currentServerTime).getTime() -
+          new Date(ctx.recentDigest.generatedAt).getTime()) /
+          60000
+      );
+      parts.push(
+        `\n## Market Digest (generated ${digestEt}, ${ageMin} min ago)`
+      );
+      parts.push(ctx.recentDigest.summary);
     }
 
     if (ctx.news.length > 0) {
-      parts.push("\n## Recent News");
+      parts.push("\n## Recent News (per-article timestamps in [brackets])");
       for (const a of ctx.news.slice(0, 10)) {
-        parts.push(`- ${a.headline}: ${a.summary.slice(0, 150)}`);
+        parts.push(
+          `- [${fmtEt(a.publishedAt)}] ${a.headline}: ${a.summary.slice(0, 150)}`
+        );
       }
     }
 
-    if (ctx.topMovers.length > 0) {
-      parts.push("\n## Top Movers");
-      for (const m of ctx.topMovers) {
-        parts.push(`- ${m.symbol}: ${m.changePct >= 0 ? "+" : ""}${m.changePct.toFixed(2)}%`);
+    if (ctx.topMovers.items.length > 0) {
+      parts.push(
+        `\n## Top Movers — daily-bar diffs (fetched ${fmtEt(ctx.topMovers.fetchedAt)}; can lag intraday — prefer Live Tape for SPY/QQQ)`
+      );
+      for (const m of ctx.topMovers.items) {
+        parts.push(`- ${m.symbol}: ${pctStr(m.changePct)}`);
       }
     }
 
     if (ctx.relevantSignals.length > 0) {
       parts.push("\n## Recent Signals");
       for (const s of ctx.relevantSignals) {
-        parts.push(`- ${s.symbol} [${s.signal}]: ${s.plainEnglish.slice(0, 150)}`);
+        const stamp = s.createdAt ? ` [${fmtEt(s.createdAt)}]` : "";
+        parts.push(
+          `-${stamp} ${s.symbol} [${s.signal}]: ${s.plainEnglish.slice(0, 150)}`
+        );
       }
     }
 
