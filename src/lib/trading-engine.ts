@@ -2168,7 +2168,12 @@ async function resolveStrategy(
 
 async function runExitCheck(engineUserId?: string): Promise<void> {
   const engine = getEngine(engineUserId);
-  if (!engine.userId || !engine.running || engine.halted) return;
+  // Halt intentionally does NOT gate this path. The 1-min poll only places
+  // protective sells (stop-loss / trailing-stop / take-profit on graduation),
+  // never opens positions, so it remains active while halted — otherwise the
+  // safeguard that fired to limit losses would simultaneously strip the
+  // protection that limits further losses on the open positions.
+  if (!engine.userId || !engine.running) return;
   if (!isMarketOpen()) return;
 
   const resolved = await resolveBrokerClient(engine.userId);
@@ -5297,7 +5302,10 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   let exitCheckInFlight = false;
   let exitCheckInFlightSince = 0;
   engine.exitCheckId = setInterval(() => {
-    if (!engine.running || engine.halted) return;
+    // Halt does NOT gate the exit-check tick — see the runExitCheck
+    // implementation for the rationale (protective-only path, must keep
+    // running while halted to honor stops on existing positions).
+    if (!engine.running) return;
     if (exitCheckInFlight) {
       const ageMs = Date.now() - exitCheckInFlightSince;
       if (ageMs < STALE_SCAN_MS) {
@@ -6359,7 +6367,13 @@ export async function syncBrokerStopsForUser(
   const engine = g.__tradingEngines?.get(userId);
   if (!engine) return { ran: false, reason: "no_engine" };
   if (!engine.running) return { ran: false, reason: "engine_stopped" };
-  if (engine.halted) return { ran: false, reason: "engine_halted" };
+  // Halt does NOT gate this path. syncBrokerStops only places/replaces
+  // sell-side GTC stop orders (it never opens positions), so it remains
+  // active while halted. Without this, the 5-min standalone scheduler
+  // (stop-sync-scheduler.ts) stops refreshing broker stops for halted
+  // engines — peak-price ratchets and breakeven promotions cached on
+  // pos.stopLoss by runExitCheck never reach Alpaca, leaving positions
+  // protected by a stop that's stale relative to current peak.
   const positionMap = g2.__enginePositionMaps?.get(userId);
   if (!positionMap || positionMap.size === 0) {
     return { ran: false, reason: "no_positions" };

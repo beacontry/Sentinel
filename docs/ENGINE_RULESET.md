@@ -190,7 +190,7 @@ The dashboard's Stop column shows `max(broker, in-memory)` so users always see t
 A standalone `stop-sync-scheduler.ts` now runs every 5 minutes **independent of scan health**, iterates every running engine, and pushes any in-memory ratchets to the broker. Mirrors the shape of `engine-watchdog.ts`.
 
 - **Cadence**: 5 min — tight enough that a fresh breakeven promotion reaches the broker within 5 min; loose enough to avoid 12× the `replaceOrder` calls per hour vs the previous per-scan cadence
-- **Per-user gates** in `syncBrokerStopsForUser()`: engine exists + `running` + `!halted` + has positions + *no scan in flight*. The last gate prevents racing the in-scan sync at the scan tail when scans *are* healthy
+- **Per-user gates** in `syncBrokerStopsForUser()`: engine exists + `running` + has positions + *no scan in flight*. The last gate prevents racing the in-scan sync at the scan tail when scans *are* healthy. Halt **intentionally does not gate this path** — the helper only places/replaces sell-side GTC stops (it never opens positions), and halting it would freeze broker stops at their last value the moment the engine halts, which is the exact scenario where keeping stops fresh matters most
 - **Mode-agnostic** — runs for tactical / tactical-smart / optimized / conservative / moderate / aggressive / adaptive identically. The in-scan `syncBrokerStops()` calls at scan tails remain as redundant backup
 - **Bootstrap** — fires one immediate cycle at container start so a fresh deploy picks up where the previous container left off
 
@@ -415,8 +415,24 @@ Reference list of all gates a main-scan BUY traverses:
 - SIGTERM and SIGINT handlers in `instrumentation.ts` call `shutdownAllEngines()` — for each running engine: clear scan/exit-check intervals, then run `placeSafetyStops()` so every position has a tighter GTC stop on Alpaca before the process exits
 - Hard 8s budget (under podman's 10s grace period) — if the broker is slow, force-exit rather than block the rebuild
 
+### Halt Semantics — What Halt Blocks And What It Doesn't
+Halt (`engine.halted = true`) is a **buy-side circuit breaker, not a global engine freeze**. The intent is "stop digging deeper" — block new positions while continuing to manage the ones already open. A halt that simultaneously stripped exit protection from losing positions would be the inverse of safe.
+
+**Halt blocks (BUY-side):**
+- `runScan` (15-min main scan) — early-return; no entries, no swap-sells, no add-to-position
+- `runTacticalSmartScan` — early-return; same
+- Main scan's `setInterval` callback — early-return so the scan body never starts
+- `pushExternalSignal` / `broadcastExternalSignal` — refuses new screener signals (they only matter for the next scan's BUYs anyway)
+
+**Halt does NOT block (protective / SELL-side):**
+- `runExitCheck` (1-min poll) — keeps honoring trailing-stop / stop-loss / take-profit on existing positions; updates `pos.peakPrice`; promotes breakeven; places market-sell exits
+- `syncBrokerStopsForUser` (5-min standalone scheduler) — keeps pushing ratcheted `pos.stopLoss` to Alpaca as GTC orders, so the broker side stays in lockstep with the in-memory side
+- Existing GTC broker stops at Alpaca — `tripSafeguardHalt()` never calls `cancelOrder`; whatever stops are at the broker stay there and continue to fire on price triggers
+
+**Why this asymmetry matters:** the most dangerous moment for an unmanaged position is right after a halt — that's the exact window where conditions are deteriorating and stops need to be tightening, not freezing. The pre-2026-06-04 design halted everything, which meant a halted engine that subsequently lost its broker stops (e.g., from a `placeDisasterStops`-then-halt-re-trip restart sequence) would orphan every position with no protection at all until manual intervention. The current design keeps the protective layer alive so existing positions self-resolve through normal exit triggers regardless of halt state.
+
 ### Daily-Loss Halt & Auto-Recovery
-- When daily realized losses exceed `dailyLossPct` of equity, the engine sets `halted=true` and stops opening new positions
+- When daily realized losses exceed `dailyLossPct` of equity, the engine sets `halted=true` and stops opening new positions (protective paths above stay live)
 - On the next trading day's first scan, the date-rollover block clears the halt automatically and prunes the daily-loss error from `engine.errors` — no manual restart needed
 - Applies to all three scan functions: `runScan`, `runTacticalScan`, `runTacticalSmartScan`
 
