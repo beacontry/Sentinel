@@ -181,6 +181,18 @@ export const GLOSSARY_TERMS: GlossaryTerm[] = [
     ],
   },
   {
+    id: "pdt-rule",
+    term: "Pattern Day Trader (PDT) Rule",
+    definition:
+      "Historical FINRA rule retired on June 4, 2026. Before that date, an account flagged as a Pattern Day Trader (4+ day trades in any 5-business-day window) had to maintain at least $25,000 in equity, or new day trades were blocked until equity was restored. Brokers also tracked the rolling 5-day day-trade count and capped same-day buying power based on the prior session's closing values. After the FINRA Rule 4210 amendments took effect, the PDT designation was eliminated entirely: the minimum equity for any margin account dropped to the standard $2,000, day trades are no longer counted, and brokers now apply real-time intraday margin checks (Alpaca calls these Intraday Margin Deficit / IMD calls) that can reject an order which would create or increase an intraday margin deficit.",
+    category: "risk",
+    examples: [
+      "Old rule: a $10,000 margin account placing a 4th day trade in 5 days would be flagged and locked out from further day trades until equity reached $25,000.",
+      "New rule (post-2026-06-04): the same account can day trade freely, but the broker can reject any individual order that would create an intraday margin deficit.",
+      "Cash accounts were never subject to the PDT rule (no margin, so the 5-day counter and $25k floor did not apply); their settlement-cycle rules are unchanged by the 2026 amendment.",
+    ],
+  },
+  {
     id: "limit-order",
     term: "Limit Order",
     definition:

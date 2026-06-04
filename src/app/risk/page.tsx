@@ -83,13 +83,17 @@ export default function RiskPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base font-semibold text-text-primary">Pattern Day Trader (PDT) Rule</h2>
+          <h2 className="text-base font-semibold text-text-primary">Pattern Day Trader (PDT) Rule — retired June 4, 2026</h2>
           <p>
-            If your account equity falls below $25,000 and you execute four or more
-            day-trades within five business days, your broker may classify you as a
-            Pattern Day Trader and restrict your account. Beacontry includes PDT
-            protection that blocks new BUYs when this risk is high, but the broker
-            ultimately decides classification.
+            FINRA Rule 4210 was amended and the Pattern Day Trader designation
+            was retired on June 4, 2026. The $25,000 minimum equity for active
+            traders no longer applies (the standard $2,000 margin minimum is
+            back), and brokers no longer count day trades against a 5-day
+            window. Brokers now apply real-time intraday margin checks
+            instead — an order that would create or increase an intraday
+            margin deficit can still be rejected. Beacontry&apos;s preemptive
+            PDT block was removed alongside the rule; the engine still surfaces
+            any broker rejection (margin or otherwise) on the Trader page.
           </p>
         </section>
 

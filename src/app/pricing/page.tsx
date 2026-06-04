@@ -198,7 +198,6 @@ export default function PricingPage() {
       rows: [
         { label: "Per-user risk profile",        free: false, trader: true,  premium: true, selfHosted: true  },
         { label: "Trailing-stop sync to broker", free: false, trader: true,  premium: true, selfHosted: true  },
-        { label: "PDT detection (sub-$25K)",     free: false, trader: true,  premium: true, selfHosted: true  },
         { label: "Wash-sale protection / MTM",   free: false, trader: true,  premium: true, selfHosted: true  },
         { label: "Account-switch detection",     free: false, trader: true,  premium: true, selfHosted: true  },
         { label: "Daily notional cap",           free: false, trader: true,  premium: true, selfHosted: true  },

@@ -299,7 +299,7 @@ Re-entry occurs when SPY recovers above the 50-day SMA (or above 20-SMA with RSI
 
 Every buy signal passes through a layered gate sequence before an order is placed.
 
-> **Two stages, two scopes.** `runScan()` calls `passesSmartFilters()` (RS + bearish sentiment) BEFORE `canPlaceBuyOrder()`. Tactical and tactical-smart skip the smart-filter step (they have their own scoring) and call `canPlaceBuyOrder()` directly. Both paths run the same risk-side gates inside `canPlaceBuyOrder()`: **earnings blackout → sector exposure → wash-sale → PDT → daily notional cap → order rate limit**. First failing gate is what the audit log records.
+> **Two stages, two scopes.** `runScan()` calls `passesSmartFilters()` (RS + bearish sentiment) BEFORE `canPlaceBuyOrder()`. Tactical and tactical-smart skip the smart-filter step (they have their own scoring) and call `canPlaceBuyOrder()` directly. Both paths run the same risk-side gates inside `canPlaceBuyOrder()`: **earnings blackout → sector exposure → wash-sale → daily notional cap → order rate limit**. First failing gate is what the audit log records. (PDT block was retired 2026-06-04 — see § Tax & PDT Protections below.)
 
 Reference list of all gates a main-scan BUY traverses:
 
@@ -683,7 +683,7 @@ The engine code is **100% identical between paper and live**. The only environme
 
 When both gates pass, every live boot fires a warn-level log, captures `metadata.environment="live"` on the `engine.started` audit row, and the Trader UI shows a persistent red **LIVE** banner with last-4 of the broker account number.
 
-**Paper vs live outcomes.** Same code, different broker reality. Live will have lower fill rates on limit BUYs (paper fills aggressively), real slippage on market sells (paper compresses to zero), partial fills on larger orders, more rejections (PDT, buying-power strictness, wash-sale flags, halted symbols), T+1 settlement timing, real 18% stop slippage on volatile names, and PDT lock risk on accounts under $25k. Paper trading is a faithful test of signal quality and risk-profile sizing; it is **not** a test of fill quality, slippage, or PDT survival.
+**Paper vs live outcomes.** Same code, different broker reality. Live will have lower fill rates on limit BUYs (paper fills aggressively), real slippage on market sells (paper compresses to zero), partial fills on larger orders, more rejections (buying-power strictness, intraday-margin-deficit checks, halted symbols), T+1 settlement timing, and real 18% stop slippage on volatile names. Paper trading is a faithful test of signal quality and risk-profile sizing; it is **not** a test of fill quality or slippage. (PDT lock risk on sub-$25k accounts no longer applies — see § Tax & PDT Protections.)
 
 ## Capital Circuit Breakers (Phase 3)
 
@@ -697,21 +697,29 @@ Five auto-halt or auto-block conditions layered on top of the existing safety sy
 | 4 | **Account-switch detection** | Different `account_number` OR equity drop > 50% from boot snapshot | Halt engine | `engine.halted` reason=`account_mismatch` or `equity_collapse` |
 | 5 | **Consecutive-loss halt** | N losing trades in a row (default 5, configurable) | Halt engine | `engine.halted` reason=`consecutive_losses` |
 
-**Gate ordering inside `canPlaceBuyOrder()`**: wash-sale → PDT → daily notional → rate limit. Cheapest checks fire first; the first reason found is what's logged. **SELLs (exits) are never blocked** — exiting a position takes priority over any safeguard.
+**Gate ordering inside `canPlaceBuyOrder()`**: wash-sale → daily notional → rate limit. Cheapest checks fire first; the first reason found is what's logged. **SELLs (exits) are never blocked** — exiting a position takes priority over any safeguard.
 
 ## Tax & PDT Protections (Phase 5)
 
-Three personalized protections that vary by account state and user election.
+Two personalized protections that vary by account state and user election. (A third, PDT, was retired with the rule itself — see below.)
 
 **§475(f) MTM toggle** — Trader page renders a "Tax election" card with a single checkbox. Writes to `user_tax_status` table via `PUT /api/tax-status`. Engine reads at `startEngine()` via `loadTaxStatus(userId)`. Unchecked = wash-sale protection ON. Checked = OFF (MTM traders are exempt from §1091). Self-attestation only — Sentinel does not file or validate with the IRS.
 
 **Wash-sale protection** — When MTM is unchecked, the engine blocks BUYs on any symbol with a losing exit (`action IN ('SELL','manual_close') AND pnl < 0`) in the last **31 calendar days** (one day past IRS for safety). One batched DISTINCT query per scan, cached on engine state for 5 min, O(1) lookup per BUY. Symbol-level (not lot-level) — partial losing close blocks the whole ticker for 31 days. Does NOT catch: manual buys via Alpaca's UI (not visible at order time), "substantially identical" ETFs (SPY ↔ IVV), different share classes. Audit reason: `wash_sale_protection`.
 
-**PDT protection** — Auto-detected from `account.equity < $25,000`. Three behaviors:
+**PDT protection — retired 2026-06-04.** FINRA Rule 4210 was amended; the Pattern Day Trader designation was eliminated, the $25,000 minimum equity requirement for active traders was dropped to the standard $2,000 margin minimum, the 5-day day-trade counter was abolished, and brokers moved from end-of-prior-day buying-power calculations to real-time intraday margin checks. Alpaca aligned the same day (`pattern_day_trader` returns `false`, `daytrade_count` returns `0`, both fields removed from the broker API on 2026-07-06; "Day Trade Buying Power" replaced by "Intraday Buying Power"; orders that would create or increase an Intraday Margin Deficit / IMD are rejected pre-trade).
 
-1. **Boot mode-refusal**: previously refused `intraday` mode when PDT-vulnerable. Intraday mode has since been removed entirely (v3.1); the boot refusal is gone with it.
-2. **Mid-session re-evaluation**: every scan calls `evaluatePdtState()` against live equity + `daytradeCount`. Transition not-vulnerable → vulnerable emits one `engine.pdt_vulnerable` informational audit row (no halt) and flips the UI warning.
-3. **Buy-block**: `pdtVulnerable && daytradeCount >= 3` (one shy of the 4-trade flag) blocks all new BUYs. SELLs always allowed.
+Sentinel's preemptive PDT block was removed in the same change:
+
+- `PDT_EQUITY_THRESHOLD` (was `$25,000`) and `PDT_DAYTRADE_BUY_BLOCK` (was `3`) constants deleted
+- `evaluatePdtState()` and `isPdtVulnerable()` helpers deleted
+- `canPlaceBuyOrder()` no longer takes `account` and no longer evaluates a PDT branch
+- `pdtVulnerable` / `pdtDayTradeCount` / `pdtPatternFlagged` removed from `EngineState`
+- `engine.pdt_vulnerable` audit transitions no longer fired (the `ENGINE_PDT_VULNERABLE` enum value is preserved so historical rows still resolve)
+- `daytradeCount` / `daytradeBuyingPower` / `patternDayTrader` removed from the `BrokerAccount` mapping in `brokers.ts` and from the `/api/broker/account` response payload
+- Trader page no longer renders the PDT warning banner; unprotected-position banner no longer cites PDT as the reason
+
+**Reactive** handling of Alpaca's legacy PDT rejection code is kept until we observe the code retired in sandbox: `isPdtRejection()` matches error `40310100` in the exit path, `recordExitRejection()` increments `exitRejectionCount[symbol]`, `EXIT_REJECTION_THRESHOLD` consecutive rejections write `exitSuppressedUntil[symbol]` for a 30-min cool-down and the unprotected-position banner surfaces it on the Trader page. These paths fire on any matching broker error — not specific to PDT — and cost nothing to leave in.
 
 ## Audit Log (Phase 2)
 
@@ -767,8 +775,8 @@ Post-launch hardening pass. Items here augment the relevant sections above; cros
 
 ### Phase 1 — Money bugs from UI-lie audit
 
-- **`canPlaceBuyOrder()` is async + takes a fresh `account` snapshot.** Refreshes the wash-sale symbol set (`maybeRefreshWashSaleSet()`) before the wash-sale check; re-runs `evaluatePdtState(engine, account)` before the PDT check. A 2nd day-trade in a 15-min window or a same-scan losing-close-then-re-entry now correctly evaluates against live state instead of scan-boundary state.
-- **Gate ordering inside `canPlaceBuyOrder()`:** wash-sale → PDT → sector exposure → earnings blackout → notional → rate-limit. Cheapest checks first; the first reason found is what gets logged.
+- **`canPlaceBuyOrder()` is async + refreshes cached state on entry.** Refreshes the wash-sale symbol set (`maybeRefreshWashSaleSet()`) before the wash-sale check. A same-scan losing-close-then-re-entry now correctly evaluates against live state instead of scan-boundary state. (Pre-2026-06-04 this also re-ran `evaluatePdtState(engine, account)` against a fresh `BrokerAccount` snapshot; that path and the `account` parameter were removed when the PDT rule was retired.)
+- **Gate ordering inside `canPlaceBuyOrder()`:** earnings blackout → sector exposure → wash-sale → notional → rate-limit. Cheapest checks first; the first reason found is what gets logged. (Pre-2026-06-04: included a PDT gate between wash-sale and notional.)
 - **`bootEquity` re-snapshots at every new trading day** across all 3 scan paths (intraday, tactical, main). The 50% equity-collapse tripwire stays calibrated as the account grows organically.
 - **`tripSafeguardHalt()` writes `halted=true` to `trader_daily_pnl` immediately** (fire-and-forget) so the dashboard reflects halts on the next fetch instead of waiting for the next scan boundary.
 - **Dashboard `todayPnl` response carries `source` + `staleSeconds`** (`"broker_intraday" | "broker_total" | "db_snapshot"`) so the UI can render staleness honestly instead of silently mixing broker intraday with DB snapshot.

@@ -456,10 +456,10 @@ export async function GET() {
       positionsStale,
       positionsAgeSeconds,
       // Symbols whose protective broker stop is missing because the broker
-      // rejected the place call (typically Alpaca PDT — same-day stops on
-      // same-day buys count as potential day trades when daytradeCount >=
-      // threshold). These positions are protected only by the 1-min
-      // in-process exit poll; surfaced as a banner on the trader page.
+      // rejected the place call (legacy PDT path is the historical reason;
+      // rare post-2026-06-04 but still possible on transient broker errors).
+      // These positions are protected only by the 1-min in-process exit
+      // poll; surfaced as a banner on the trader page.
       unprotectedSymbols: getUnprotectedSymbols(session.userId),
       openOrders: brokerOpenOrders,
       trades: trades.map((t) => ({

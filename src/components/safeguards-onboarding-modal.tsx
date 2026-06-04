@@ -79,8 +79,8 @@ export function SafeguardsOnboardingModal() {
             body="N losing trades in a row → halt. 30+ orders in 60s → blocked. SELLs are never blocked — exits always go through." />
           <Item icon={<Lock className="w-4 h-4 text-warning" />} title="Account-switch + broker-disconnect detection"
             body="Account number changes mid-session, equity drops > 50%, or 5 consecutive broker failures → engine halts. Requires manual restart to clear." />
-          <Item icon={<AlertTriangle className="w-4 h-4 text-warning" />} title="Wash-sale + PDT protections"
-            body="Engine blocks BUYs on any symbol with a losing exit in the last 31 days. Toggle §475(f) MTM on the Trader page to disable. On accounts under $25k, intraday mode is refused to prevent PDT lockout." />
+          <Item icon={<AlertTriangle className="w-4 h-4 text-warning" />} title="Wash-sale protection"
+            body="Engine blocks BUYs on any symbol with a losing exit in the last 31 days. Toggle §475(f) MTM on the Trader page to disable. (The Pattern Day Trader rule was retired by FINRA on June 4, 2026 — no preemptive PDT block runs anymore.)" />
           <Item icon={<FileText className="w-4 h-4 text-warning" />} title="Tamper-evident audit log"
             body="Every privileged action — login, broker connection change, engine start/stop, order placed or rejected — is recorded in a hash-chained log scoped to your user id." />
         </div>

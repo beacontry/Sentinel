@@ -531,7 +531,7 @@
   <header class="hero">
     <div class="hero-badge">Beacontry Engine</div>
     <h1>The trading engine, documented</h1>
-    <p>Beacontry runs your strategy on real-money brokerage accounts. Every signal traces back to indicators you can audit. Every order leaves a hash-chained record. Per-symbol params come from a GA tuned against your training window — not a vendor's secret model. Tax and PDT rules are enforced before the order leaves the engine, not after a 1099. This page is the full rulebook.</p>
+    <p>Beacontry runs your strategy on real-money brokerage accounts. Every signal traces back to indicators you can audit. Every order leaves a hash-chained record. Per-symbol params come from a GA tuned against your training window — not a vendor's secret model. Tax rules are enforced before the order leaves the engine, not after a 1099. This page is the full rulebook.</p>
   </header>
 
   <!-- ===== DIFFERENTIATORS ===== -->
@@ -564,9 +564,9 @@
       </div>
       <div class="mode-card" style="border-color:var(--accent)">
         <span class="mode-tag tag-signal">Pre-trade</span>
-        <div class="mode-name">Tax + PDT enforced</div>
+        <div class="mode-name">Tax + wash-sale enforced</div>
         <div class="mode-params" style="grid-template-columns:1fr">
-          <span class="mode-param-label" style="text-align:left">Wash-sale tracker. §475(f) MTM election. PDT day-trade counter. The engine refuses orders that violate these rules before the broker sees them.</span>
+          <span class="mode-param-label" style="text-align:left">Wash-sale tracker. §475(f) MTM election. The engine refuses orders that violate these rules before the broker sees them. (The PDT day-trade counter was retired by FINRA on 2026-06-04 — see §18.)</span>
         </div>
       </div>
     </div>
@@ -599,7 +599,7 @@
             <td class="mono">$0 / $20 / $40</td>
             <td>Per-symbol GA</td>
             <td>Hash-chained</td>
-            <td>Wash + MTM + PDT</td>
+            <td>Wash + MTM</td>
             <td>Yes</td>
           </tr>
           <tr>
@@ -660,7 +660,7 @@
         <span class="mode-tag tag-tactical">Pre-trade</span>
         <div class="mode-name">Six gates before order placement</div>
         <div class="mode-params" style="grid-template-columns:1fr">
-          <span class="mode-param-label" style="text-align:left">Earnings blackout, sector exposure cap, wash-sale (or MTM-exempt), PDT day-trade count, daily notional cap, order rate limit. First failing gate is logged. <a href="#filters" style="color:var(--accent)">See §06</a>.</span>
+          <span class="mode-param-label" style="text-align:left">Earnings blackout, sector exposure cap, wash-sale (or MTM-exempt), daily notional cap, order rate limit. First failing gate is logged. <a href="#filters" style="color:var(--accent)">See §06</a>. (PDT day-trade gate retired 2026-06-04 — see §18.)</span>
         </div>
       </div>
       <div class="mode-card">
@@ -672,9 +672,9 @@
       </div>
       <div class="mode-card">
         <span class="mode-tag tag-tactical">Tax &amp; reg</span>
-        <div class="mode-name">Wash-sale + PDT enforcement</div>
+        <div class="mode-name">Wash-sale enforcement</div>
         <div class="mode-params" style="grid-template-columns:1fr">
-          <span class="mode-param-label" style="text-align:left">Symbol-level wash-sale tracker (31-day window, MTM-exempt when elected). PDT day-trade counter blocks BUYs when vulnerable. <a href="#tax-pdt" style="color:var(--accent)">See §18</a>.</span>
+          <span class="mode-param-label" style="text-align:left">Symbol-level wash-sale tracker (31-day window, MTM-exempt when elected). <a href="#tax-pdt" style="color:var(--accent)">See §18</a>. (PDT day-trade counter retired 2026-06-04.)</span>
         </div>
       </div>
       <div class="mode-card">
@@ -708,7 +708,7 @@
       <a href="#data" data-num="15">Data Sources</a>
       <a href="#live-mode" data-num="16">Live Trading Mode</a>
       <a href="#circuit-breakers" data-num="17">Capital Circuit Breakers</a>
-      <a href="#tax-pdt" data-num="18">Tax &amp; PDT Protections</a>
+      <a href="#tax-pdt" data-num="18">Tax Protections (Wash-Sale + MTM)</a>
       <a href="#audit-log" data-num="19">Audit Log</a>
       <a href="#going-live" data-num="20">Going Live &amp; Rollback</a>
       <a href="#ai-provider" data-num="21">AI Provider &amp; System Config</a>
@@ -1666,7 +1666,7 @@
 
     <div class="callout warn">
       <span class="callout-icon">&#9888;</span>
-      <span><strong>What carries over from paper:</strong> signals, strategy, risk-profile sizing, all engine safeguards. <strong>What does NOT carry over:</strong> fill rate, slippage, partial fills, order rejection patterns, settlement timing, PDT lock, wash sales. Outcomes are at the broker/market layer, not the engine.</span>
+      <span><strong>What carries over from paper:</strong> signals, strategy, risk-profile sizing, all engine safeguards. <strong>What does NOT carry over:</strong> fill rate, slippage, partial fills, order rejection patterns, settlement timing, wash sales. Outcomes are at the broker/market layer, not the engine. (PDT lock no longer applies post-2026-06-04 &mdash; see §18.)</span>
     </div>
 
     <h3>Boot Gate</h3>
@@ -1685,10 +1685,10 @@
         <tr><td><strong>Limit BUY fills</strong> at <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">price &times; 1.001</code></td><td>Aggressive &mdash; almost always fills</td><td>Fills only if book reaches the limit. Many will miss when market moves through.</td></tr>
         <tr><td><strong>Slippage on market sells</strong></td><td>Zero</td><td>Real bid; measurable drag on stop-loss exits</td></tr>
         <tr><td><strong>Partial fills</strong></td><td>Rare</td><td>Common on &gt;100 shares or thin names. Reconciled on next scan via <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">syncPositionMapFromBroker</code></td></tr>
-        <tr><td><strong>Order rejection</strong></td><td>Almost never</td><td>PDT, buying-power strictness w/ maintenance margin, wash-sale flags, halted symbols, IPO restrictions. Each becomes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.rejected</code> audit row; engine continues</td></tr>
+        <tr><td><strong>Order rejection</strong></td><td>Almost never</td><td>Buying-power strictness w/ maintenance margin, intraday-margin-deficit (IMD) checks, wash-sale flags, halted symbols, IPO restrictions. Each becomes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.rejected</code> audit row; engine continues</td></tr>
         <tr><td><strong>Settlement</strong></td><td>Instant</td><td>T+1 on stock proceeds. Account-switch detector's 50% drop tripwire absorbs normal swings; brutal days may legitimately fire</td></tr>
         <tr><td><strong>Disaster stops (18%)</strong></td><td>Fills at trigger</td><td>Executes at next available print after trigger. On volatile/illiquid names: can realize &gt;18%</td></tr>
-        <tr><td><strong>Day-trade count / PDT</strong></td><td>N/A in paper</td><td>4 round-trips in 5 business days &amp; equity &lt; $25k &rarr; 90-day flag. Engine blocks new BUYs at 3+ daytrades when PDT-vulnerable (section 18)</td></tr>
+        <tr><td><strong>Day-trade count / PDT</strong></td><td>N/A in paper</td><td>Retired by FINRA on 2026-06-04. Brokers no longer count day trades or apply the $25k minimum &mdash; real-time intraday-margin-deficit checks replace it. Engine preemptive block removed (section 18).</td></tr>
         <tr><td><strong>Wash sales (&sect;1091)</strong></td><td>Irrelevant</td><td>Tracked unless &sect;475(f) MTM elected. Engine's wash-sale protection (section 18) blocks re-entries for 31 days after a losing close</td></tr>
       </tbody>
     </table>
@@ -1760,7 +1760,7 @@
 
     <div class="callout safe">
       <span class="callout-icon">&#10003;</span>
-      <span><strong>Gate ordering inside <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder()</code>:</strong> earnings blackout &rarr; sector exposure &rarr; wash-sale &rarr; PDT &rarr; daily notional &rarr; rate limit. Cheapest / most-likely-to-fire checks first; the first reason found is what gets logged. Sells (exits) are <em>never</em> blocked by these gates &mdash; exiting a position takes priority over any safeguard.</span>
+      <span><strong>Gate ordering inside <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder()</code>:</strong> earnings blackout &rarr; sector exposure &rarr; wash-sale &rarr; daily notional &rarr; rate limit. Cheapest / most-likely-to-fire checks first; the first reason found is what gets logged. Sells (exits) are <em>never</em> blocked by these gates &mdash; exiting a position takes priority over any safeguard. (Pre-2026-06-04: included a PDT gate between wash-sale and daily notional.)</span>
     </div>
   </section>
 
@@ -1768,10 +1768,10 @@
   <section class="section" id="tax-pdt">
     <div class="section-header">
       <div class="section-num">18</div>
-      <h2>Tax &amp; PDT Protections</h2>
+      <h2>Tax Protections (Wash-Sale + MTM)</h2>
     </div>
 
-    <p>Three personalized protections that vary by account state and user election. All can be observed/toggled from the Trader page.</p>
+    <p>Two personalized protections that vary by account state and user election. Both can be observed/toggled from the Trader page. (A third, PDT, was retired alongside the FINRA rule itself on 2026-06-04 &mdash; see below.)</p>
 
     <h3>&sect;475(f) MTM Toggle</h3>
     <p>Trader page renders a "Tax election" card with a single checkbox: <em>"I have elected &sect;475(f) Mark-to-Market"</em>. Writes to the existing <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">user_tax_status</code> table via <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">PUT /api/tax-status</code>. The engine reads this at <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">startEngine()</code> via <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">loadTaxStatus(userId)</code>.</p>
@@ -1802,19 +1802,27 @@
       </div>
     </div>
 
-    <h3>PDT Protection (Pattern Day Trader)</h3>
-    <p>Auto-detected from <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">account.equity &lt; $25,000</code>. Reads broker-reported <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytrade_count</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pattern_day_trader</code> fields from <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getAccount()</code> on every scan, evaluated by <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">evaluatePdtState(engine, account)</code>.</p>
+    <h3>PDT Protection (Pattern Day Trader) &mdash; retired 2026-06-04</h3>
+    <p>FINRA Rule 4210 was amended and the Pattern Day Trader designation was retired on June 4, 2026. Sentinel's preemptive PDT block was removed in the same change.</p>
 
-    <h4 style="margin-top:16px;color:var(--text-secondary);font-size:0.95rem;">Three behaviors:</h4>
+    <h4 style="margin-top:16px;color:var(--text-secondary);font-size:0.95rem;">How it used to work (pre-2026-06-04):</h4>
     <ol>
-      <li style="margin-bottom:10px"><strong>Boot mode-refusal.</strong> <em>Removed in v3.1</em> &mdash; this once refused to start the engine in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">intraday</code> mode when PDT-vulnerable, but intraday mode itself was deleted in v3.1, so the gate is gone with it. Day-trades on the remaining swing modes are still blocked by step 3 below.</li>
-      <li style="margin-bottom:10px"><strong>Mid-session re-evaluation.</strong> Every scan, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">evaluatePdtState()</code> reads live <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">equity</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytradeCount</code>. Transition <em>not-vulnerable &rarr; vulnerable</em> emits one <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.pdt_vulnerable</code> audit event (informational, no halt) and flips the Trader page warning panel.</li>
-      <li><strong>Buy-block.</strong> When <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdtVulnerable AND daytradeCount &gt;= 3</code> (one shy of the 4-trade PDT flag), all new BUYs blocked. Audit reason <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdt_protection</code>. <strong>SELLs always allowed</strong> &mdash; exits override PDT, since losing a position to a lock is worse than the lock itself.</li>
+      <li style="margin-bottom:10px"><strong>Auto-detection.</strong> Read <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">account.equity &lt; $25,000</code>, the broker-reported <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytrade_count</code>, and the <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pattern_day_trader</code> flag from <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">getAccount()</code> on every scan. <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">evaluatePdtState(engine, account)</code> reconciled engine state with the live snapshot.</li>
+      <li style="margin-bottom:10px"><strong>Mid-session re-evaluation.</strong> Transition <em>not-vulnerable &rarr; vulnerable</em> emitted one <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.pdt_vulnerable</code> audit event and flipped the Trader-page warning panel.</li>
+      <li><strong>Buy-block.</strong> When <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdtVulnerable AND daytradeCount &gt;= 3</code> (one shy of the 4-trade flag), new BUYs were blocked with audit reason <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdt_protection</code>. SELLs were never blocked.</li>
     </ol>
+
+    <h4 style="margin-top:16px;color:var(--text-secondary);font-size:0.95rem;">How it works now (post-2026-06-04):</h4>
+    <ul>
+      <li style="margin-bottom:10px"><strong>FINRA Rule 4210 amendments:</strong> the PDT designation is eliminated, the $25,000 minimum equity drops to the standard $2,000 margin floor, the 5-day day-trade counter is abolished, and brokers move to real-time intraday margin checks instead of end-of-prior-day buying-power calculations.</li>
+      <li style="margin-bottom:10px"><strong>Alpaca aligned the same day:</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pattern_day_trader</code> now returns <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">false</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytrade_count</code> returns <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">0</code>, and both fields are scheduled for full removal from the API on 2026-07-06. "Day Trade Buying Power" is replaced by "Intraday Buying Power"; orders that would create or increase an Intraday Margin Deficit (IMD) are rejected pre-trade.</li>
+      <li style="margin-bottom:10px"><strong>Sentinel changes:</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">PDT_EQUITY_THRESHOLD</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">PDT_DAYTRADE_BUY_BLOCK</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">evaluatePdtState()</code>, the <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder()</code> PDT branch, the <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdtVulnerable</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdtDayTradeCount</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdtPatternFlagged</code> engine state, the <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.pdt_vulnerable</code> audit transition, and the corresponding Trader-page warning banner are all gone. The <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytradeCount</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytradeBuyingPower</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">patternDayTrader</code> fields are no longer mapped from the broker.</li>
+      <li><strong>Reactive handling preserved:</strong> Alpaca's legacy PDT rejection code <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">40310100</code> may still appear during the API-removal transition. <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">isPdtRejection()</code> still matches it; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">recordExitRejection()</code> still increments a per-symbol counter; <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">EXIT_REJECTION_THRESHOLD</code> consecutive rejections still suppress retries for 30 min and surface the symbol on the unprotected-positions banner. Audit enum <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">ENGINE_PDT_VULNERABLE</code> is preserved (no longer emitted) so historical rows still resolve.</li>
+    </ul>
 
     <div class="callout info">
       <span class="callout-icon">&#8505;</span>
-      <span><strong>Note:</strong> Alpaca uses <em>previous business day's closing equity</em> for the actual PDT flag, not real-time. Beacontry treats <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">equity &lt; $25k</code> as vulnerable in real-time, which is intentionally more conservative.</span>
+      <span><strong>Cash accounts</strong> were never subject to the PDT rule (no margin, so the 5-day counter and $25k floor did not apply); their settlement-cycle rules are unchanged by the 2026 amendment.</span>
     </div>
   </section>
 
@@ -1866,7 +1874,7 @@ action (text)               resource_type (text)
         <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">broker.connection.created</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.updated</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.deleted</code></td><td>Broker connection lifecycle (rotated secrets flagged in metadata, never logged in plaintext)</td></tr>
         <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.started</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.stopped</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.halted</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">.mode_switched</code></td><td>Engine state changes (user-driven AND automatic halts from section 17)</td></tr>
         <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.live_blocked</code></td><td>Refused start on live broker without <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">ALLOW_LIVE_TRADING=1</code></td></tr>
-        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.pdt_vulnerable</code></td><td>Mid-session transition into PDT-vulnerable state</td></tr>
+        <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.pdt_vulnerable</code></td><td>Mid-session transition into PDT-vulnerable state &mdash; no longer emitted post-2026-06-04 (enum value preserved so historical rows resolve)</td></tr>
         <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.placed</code></td><td>Every successful broker order (manual UI, engine entries, engine exits, manual flatten)</td></tr>
         <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.rejected</code></td><td>Broker error OR safeguard block (reason field distinguishes: <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">wash_sale_protection</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pdt_protection</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daily_notional_cap_exceeded</code>, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order_rate_limit_exceeded</code>)</td></tr>
         <tr><td><code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">risk_profile.updated</code></td><td>Risk-limit change with field-level diff in metadata</td></tr>
@@ -1925,7 +1933,7 @@ sudo podman run -d --name sentinel-app --network=host \
     <h3>What to Watch in the First Hour</h3>
     <ul>
       <li><strong>Red LIVE banner missing.</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.environment</code> not captured at boot. Stop engine, check the <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.started</code> audit row metadata; restart engine.</li>
-      <li><strong>PDT panel missing at &lt;$25k.</strong> Alpaca didn't return <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytrade_count</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pattern_day_trader</code>. Check live <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">account.equity</code> matches what you expect.</li>
+      <li><strong>PDT panel missing.</strong> Expected post-2026-06-04 &mdash; the FINRA Pattern Day Trader rule was retired and the Trader-page banner was removed alongside it. Alpaca's <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daytrade_count</code> / <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">pattern_day_trader</code> fields will be deleted from the API on 2026-07-06.</li>
       <li><strong>Many <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">order.rejected</code> rows with <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">insufficient_buying_power</code>.</strong> Live broker margin/cash strictness. Tighten <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">positionPct</code> if persistent.</li>
       <li><strong>Chain verify reports a break.</strong> <em>Stop immediately. Do not trade.</em> Investigate before resuming &mdash; this is the critical evidence trail.</li>
       <li><strong>First buys filling at unexpected prices.</strong> Real slippage between paper assumption and live execution. Document the delta &mdash; that's your paper-to-live tax.</li>
@@ -2015,7 +2023,7 @@ sudo podman run -d --name sentinel-app --network=host \
   <!-- ===== FOOTER ===== -->
   <footer class="footer">
     <p><span class="brand">Beacontry</span> &mdash; Trading Intelligence Platform &middot; v3.1 Live Trading + Adaptive Mode + Journal v2</p>
-    <p style="margin-top:4px">All rules enforced programmatically. Hash-chained audit on every privileged action. Five capital circuit breakers. Tax + PDT protections layered on every BUY. Scan re-entrancy guarded. AI: Groq-only.</p>
+    <p style="margin-top:4px">All rules enforced programmatically. Hash-chained audit on every privileged action. Five capital circuit breakers. Tax + wash-sale protections layered on every BUY. Scan re-entrancy guarded. AI: Groq-only.</p>
     <p style="margin-top:4px;color:var(--text-muted);font-size:0.85rem">Full change history at <a href="/docs/changelog.html" style="color:var(--accent)">/docs/changelog.html</a>.</p>
   </footer>
 

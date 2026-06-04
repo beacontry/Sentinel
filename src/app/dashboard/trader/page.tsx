@@ -197,9 +197,6 @@ interface EngineStatus {
   mtmElected?: boolean;
   washSaleProtectionEnabled?: boolean;
   washSaleBlockedCount?: number;
-  pdtVulnerable?: boolean;
-  pdtDayTradeCount?: number;
-  pdtPatternFlagged?: boolean;
   // Adaptive mode — populated only when mode === "adaptive"
   effectiveMode?: string | null;
   adaptiveRegime?: {
@@ -470,10 +467,11 @@ export default function TraderPage() {
       )}
 
       {/* Unprotected-position banner — broker rejected the protective stop
-          (typically Alpaca PDT 40310100 on a same-day buy when daytradeCount
-          is at threshold). The position is held WITHOUT a broker-side stop;
-          the in-process 1-min poll is its only protection. If the container
-          dies for more than a minute, the position is fully exposed. */}
+          (legacy PDT rejection path; rare post-2026-06-04 but still possible
+          on transient broker issues). The position is held WITHOUT a
+          broker-side stop; the in-process 1-min poll is its only protection.
+          If the container dies for more than a minute, the position is
+          fully exposed. */}
       {data?.unprotectedSymbols && data.unprotectedSymbols.length > 0 && (
         <div
           role="alert"
@@ -486,9 +484,8 @@ export default function TraderPage() {
                 {data.unprotectedSymbols.length} position{data.unprotectedSymbols.length === 1 ? "" : "s"} without a broker-side stop
               </div>
               <div className="text-text-secondary mt-0.5">
-                Broker rejected the protective stop (pattern-day-trader rule).
-                These are guarded only by the in-process 1-min exit poll —
-                consider exiting manually:{" "}
+                Broker rejected the protective stop. These are guarded only
+                by the in-process 1-min exit poll — consider exiting manually:{" "}
                 <span className="font-mono text-text-primary">
                   {data.unprotectedSymbols.join(", ")}
                 </span>
@@ -522,34 +519,6 @@ export default function TraderPage() {
               acct ••••{engine.bootAccountNumber.slice(-4)}
             </div>
           )}
-        </div>
-      )}
-
-      {/* PDT warning — engine is running on a sub-$25k account */}
-      {engine?.running && engine?.pdtVulnerable && (
-        <div
-          role="alert"
-          className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
-        >
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
-            <div className="text-sm">
-              <div className="font-semibold text-warning">
-                PDT-vulnerable account
-                {engine.pdtPatternFlagged && " · flagged"}
-              </div>
-              <div className="text-text-secondary mt-0.5">
-                Equity is below $25,000. {engine.pdtDayTradeCount ?? 0} day-trade{(engine.pdtDayTradeCount ?? 0) === 1 ? "" : "s"} in the last 5 business days.
-                {(engine.pdtDayTradeCount ?? 0) >= 3 && " New BUYs are blocked until count rolls off."}
-              </div>
-              <div className="text-text-muted text-xs mt-1">
-                Intraday mode is refused at boot when vulnerable. Sells (exits) remain unrestricted.
-              </div>
-            </div>
-          </div>
-          <div className="text-[11px] font-mono text-text-muted whitespace-nowrap">
-            {engine.pdtDayTradeCount ?? 0} / 4 limit
-          </div>
         </div>
       )}
 

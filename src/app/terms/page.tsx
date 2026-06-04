@@ -95,8 +95,9 @@ export default function TermsPage() {
           <p>
             The trading engine places real orders on your broker when enabled in Live
             mode. Beacontry implements multiple safeguards (position limits, daily-loss
-            halts, broker-disconnect detection, wash-sale checks, PDT protection), but
-            these safeguards are best-effort and not guaranteed.
+            halts, broker-disconnect detection, wash-sale checks, broker-side margin
+            and intraday-deficit checks), but these safeguards are best-effort and
+            not guaranteed.
           </p>
           <p>
             Software bugs, broker outages, market dislocations, exchange halts, or

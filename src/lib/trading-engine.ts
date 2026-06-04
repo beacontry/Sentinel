@@ -201,12 +201,6 @@ export interface EngineState {
   washSaleBlockedSymbols: Set<string>;
   /** Last refresh time for washSaleBlockedSymbols (ms epoch). */
   washSaleLastRefreshAt: number;
-  /** True when account is below the PDT equity threshold ($25k) — re-evaluated every scan. */
-  pdtVulnerable: boolean;
-  /** Broker-reported day-trade count over the last 5 business days. Refreshed every scan. */
-  pdtDayTradeCount: number;
-  /** Broker-reported PDT flag — true once Alpaca has actually flagged the account. */
-  pdtPatternFlagged: boolean;
   // ── Adaptive mode ──
   /**
    * When `mode === "adaptive"`, this is the actual mode being executed
@@ -315,9 +309,6 @@ function createDefaultEngine(): EngineState {
     washSaleProtectionEnabled: true, // default conservative — disabled only when MTM elected
     washSaleBlockedSymbols: new Set(),
     washSaleLastRefreshAt: 0,
-    pdtVulnerable: false,
-    pdtDayTradeCount: 0,
-    pdtPatternFlagged: false,
     effectiveMode: null,
     adaptiveRegime: null,
     userTier: null,
@@ -629,8 +620,11 @@ const BROKER_FAILURE_HALT_THRESHOLD = 5;          // consecutive failures → en
 // Phase 5: personalized live-trading protections
 const WASH_SALE_WINDOW_DAYS = 31;                 // calendar days; one day past IRS 30-day rule for safety
 const WASH_SALE_REFRESH_MS = 5 * 60 * 1000;       // re-query trader_trades at most every 5 min
-const PDT_EQUITY_THRESHOLD = 25_000;              // account < this AND not margin → PDT-vulnerable
-const PDT_DAYTRADE_BUY_BLOCK = 3;                 // block new buys when count reaches this (4 = flag)
+// PDT preemptive block removed 2026-06-04 — FINRA retired the PDT designation
+// (Rule 4210 amendments) and Alpaca's pattern_day_trader / daytrade_count
+// fields are scheduled for full removal from the broker API on 2026-07-06.
+// Reactive handling of legacy 40310100 rejections (isPdtRejection +
+// exit-suppression) is kept until we confirm the error code is also retired.
 const BARS_FOR_ANALYSIS = 90;
 const MAX_ERROR_LOG = 50;
 
@@ -744,18 +738,14 @@ function buildSectorExposureContext(
 /**
  * Gate every BUY before it's submitted. Checks (in order, cheapest first):
  *  - wash-sale: symbol has a losing exit within 31 days AND MTM not elected
- *  - PDT: account < $25k AND daytrade count ≥ 3 (one shy of the PDT-flag threshold)
  *  - daily notional cap (gross BUY notional vs equity)
  *  - global order rate limit (sliding 60s window, 30 orders max)
  *
  * Phase 1 (UI-lie audit fix):
- * Before the wash-sale + PDT checks, refresh the relevant state if it's
- * stale. Previously these were updated only at scan boundaries (~15 min
- * apart), so a fresh losing close + immediate re-entry could slip past
- * wash-sale protection, and a 2nd day-trade in a 15-min window could
- * slip past the PDT block. Pass `account` to enable the live PDT refresh
- * — callers who don't have a fresh account snapshot can omit it (the
- * existing in-memory state is used as fallback).
+ * Before the wash-sale check, refresh the cached state if it's stale.
+ * Previously this was updated only at scan boundaries (~15 min apart), so
+ * a fresh losing close + immediate re-entry could slip past wash-sale
+ * protection.
  *
  * Returns { ok: false, reason } if blocked, { ok: true } otherwise.
  * Caller must call recordOrderPlacement() AFTER a successful placeOrder.
@@ -766,18 +756,12 @@ async function canPlaceBuyOrder(
   notionalUsd: number,
   riskLimits: RiskLimits,
   bootEquity: number,
-  account?: BrokerAccount,
   /** Phase 4 — sector cap needs the live position map (symbol → market value) to sum exposure */
   sectorExposureContext?: { positionMarketValues: Map<string, number>; equity: number }
 ): Promise<{ ok: true } | { ok: false; reason: string; details: Record<string, unknown> }> {
   // Refresh wash-sale set if stale. The helper has its own age check
   // (WASH_SALE_REFRESH_MS) so this is cheap when the cache is hot.
   await maybeRefreshWashSaleSet(engine);
-
-  // Re-evaluate PDT state from the live account snapshot if provided.
-  if (account) {
-    evaluatePdtState(engine, account);
-  }
 
   // Phase 4 — earnings blackout. Refuses BUYs if this symbol has an
   // earnings release within `earningsBlackoutDays` calendar days.
@@ -843,19 +827,6 @@ async function canPlaceBuyOrder(
         symbol,
         windowDays: WASH_SALE_WINDOW_DAYS,
         mtmElected: engine.mtmElected,
-      },
-    };
-  }
-
-  // PDT: when account is vulnerable AND day-trade count is at the danger line
-  if (engine.pdtVulnerable && engine.pdtDayTradeCount >= PDT_DAYTRADE_BUY_BLOCK) {
-    return {
-      ok: false,
-      reason: "pdt_protection",
-      details: {
-        daytradeCount: engine.pdtDayTradeCount,
-        threshold: PDT_DAYTRADE_BUY_BLOCK,
-        patternFlagged: engine.pdtPatternFlagged,
       },
     };
   }
@@ -1110,7 +1081,9 @@ async function placeEngineOrder(
   });
 }
 
-// ─── Phase 5: MTM / Wash-Sale / PDT helpers ───────────────────────────────────
+// ─── Phase 5: MTM / Wash-Sale helpers ─────────────────────────────────────────
+// PDT helpers (evaluatePdtState, isPdtVulnerable) removed 2026-06-04 — see
+// the PDT comment block above the BARS_FOR_ANALYSIS constant for context.
 
 /**
  * Read the user's self-attested §475(f) MTM election from user_tax_status.
@@ -1193,50 +1166,6 @@ async function maybeRefreshWashSaleSet(engine: EngineState): Promise<void> {
     );
     // INTENTIONAL: do NOT bump washSaleLastRefreshAt, do NOT clear
     // washSaleBlockedSymbols. Next scan retries.
-  }
-}
-
-/** Pure PDT-vulnerability check from a broker account snapshot. */
-function isPdtVulnerable(account: BrokerAccount): boolean {
-  return account.equity < PDT_EQUITY_THRESHOLD;
-}
-
-/**
- * Re-evaluate PDT state from a live account snapshot. Called every scan after
- * a successful getAccount(). Detects transitions (was not vulnerable → became
- * vulnerable) and emits one informational audit event per transition so the
- * UI banner can flip without spamming the log.
- */
-function evaluatePdtState(engine: EngineState, account: BrokerAccount): void {
-  const wasVulnerable = engine.pdtVulnerable;
-  const nowVulnerable = isPdtVulnerable(account);
-  engine.pdtVulnerable = nowVulnerable;
-  engine.pdtDayTradeCount = account.daytradeCount ?? 0;
-  engine.pdtPatternFlagged = account.patternDayTrader === true;
-
-  if (!wasVulnerable && nowVulnerable) {
-    log.warn(
-      {
-        userId: engine.userId,
-        equity: account.equity,
-        threshold: PDT_EQUITY_THRESHOLD,
-        daytradeCount: engine.pdtDayTradeCount,
-      },
-      "Engine entered PDT-vulnerable state (equity dropped below threshold mid-session)"
-    );
-    void writeAudit({
-      actor: { userId: engine.userId, email: null, role: null },
-      action: AuditAction.ENGINE_PDT_VULNERABLE,
-      resourceType: "engine",
-      resourceId: engine.userId,
-      metadata: {
-        equity: account.equity,
-        threshold: PDT_EQUITY_THRESHOLD,
-        daytradeCount: engine.pdtDayTradeCount,
-        patternFlagged: engine.pdtPatternFlagged,
-        mode: engine.mode,
-      },
-    });
   }
 }
 
@@ -3307,7 +3236,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
         }
         const limitPrice = (quote.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, account);
+        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
         if (!gate.ok) {
           log.warn({ symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Tactical BUY blocked");
           void writeAudit({
@@ -3637,7 +3566,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       try {
         const limitPrice = (price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, account);
+        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
         if (!gate.ok) {
           log.warn({ symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Smart BUY blocked");
           void writeAudit({
@@ -3811,7 +3740,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       try {
         const limitPrice = (replacement.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = await canPlaceBuyOrder(engine, replacement.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, account);
+        const gate = await canPlaceBuyOrder(engine, replacement.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
         if (!gate.ok) {
           log.warn({ symbol: replacement.symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Swap BUY blocked");
           void writeAudit({
@@ -3870,7 +3799,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = await canPlaceBuyOrder(engine, cand.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, account);
+        const gate = await canPlaceBuyOrder(engine, cand.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
         if (!gate.ok) {
           log.warn({ symbol: cand.symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Add BUY blocked");
           void writeAudit({
@@ -4122,9 +4051,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
     }
   }
 
-  // Account-switch detection + PDT re-evaluation: compare current account to
-  // boot snapshot AND refresh live PDT state (equity / daytradeCount can change
-  // intra-session — see evaluatePdtState).
+  // Account-switch detection: compare current account to boot snapshot.
   if (engine.boot && engine.brokerConnected) {
     try {
       const currentAccount = await client.getAccount();
@@ -4151,9 +4078,6 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         });
         return;
       }
-      // Phase 5: refresh PDT state from live account (equity + daytradeCount).
-      // Transitions get one audit event each via evaluatePdtState.
-      evaluatePdtState(engine, currentAccount);
     } catch {
       // Account fetch failure — already counted as a broker failure above; don't double-count.
     }
@@ -4679,7 +4603,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           log.info({ symbol }, "Main-scan BUY skipped — active buy already pending on broker");
           continue;
         }
-        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity, account, scanSectorCtx ?? undefined);
+        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity, scanSectorCtx ?? undefined);
         if (!gate.ok) {
           log.warn(
             { symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details },
@@ -4866,7 +4790,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         }
         const gate = await canPlaceBuyOrder(
           engine, candFull.symbol, orderCost, riskLimits,
-          engine.boot?.equity ?? equity, account, scanSectorCtx ?? undefined
+          engine.boot?.equity ?? equity, scanSectorCtx ?? undefined
         );
         if (!gate.ok) {
           log.warn(
@@ -5075,10 +4999,8 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   engine.lastBrokerContact = new Date();
   engine.consecutiveBrokerFailures = 0;
 
-  // Intraday mode startup PDT-refusal removed alongside the intraday
-  // mode itself. PDT state is still evaluated per-scan by
-  // evaluatePdtState — that path now applies uniformly to all modes
-  // (blocking BUYs when PDT-vulnerable and day-trade-count >= 3).
+  // PDT preemptive block fully removed 2026-06-04 (FINRA Rule 4210 amended,
+  // PDT designation retired). Intraday mode itself was removed earlier.
 
   // Replace old safety stops with wide disaster stops (engine manages tighter exits dynamically).
   // placeDisasterStops cancels existing orders and waits for shares to release before placing.
@@ -5125,9 +5047,6 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     engine.washSaleBlockedSymbols = await refreshWashSaleBlockedSymbols(userId);
     engine.washSaleLastRefreshAt = Date.now();
   }
-  engine.pdtVulnerable = isPdtVulnerable(bootAccount);
-  engine.pdtDayTradeCount = bootAccount.daytradeCount ?? 0;
-  engine.pdtPatternFlagged = bootAccount.patternDayTrader === true;
 
   // Clear halted flag in database so UI stops showing "Trading Halted"
   const today = getETDateString();
@@ -6343,9 +6262,6 @@ export function getEngineStatus(userId?: string): {
   mtmElected: boolean;
   washSaleProtectionEnabled: boolean;
   washSaleBlockedCount: number;
-  pdtVulnerable: boolean;
-  pdtDayTradeCount: number;
-  pdtPatternFlagged: boolean;
   effectiveMode: EngineMode | null;
   adaptiveRegime: EngineState["adaptiveRegime"];
 } {
@@ -6372,9 +6288,6 @@ export function getEngineStatus(userId?: string): {
     mtmElected: engine.mtmElected,
     washSaleProtectionEnabled: engine.washSaleProtectionEnabled,
     washSaleBlockedCount: engine.washSaleBlockedSymbols.size,
-    pdtVulnerable: engine.pdtVulnerable,
-    pdtDayTradeCount: engine.pdtDayTradeCount,
-    pdtPatternFlagged: engine.pdtPatternFlagged,
     effectiveMode: engine.effectiveMode,
     adaptiveRegime: engine.adaptiveRegime,
   };

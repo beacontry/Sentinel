@@ -4975,7 +4975,7 @@ const riskPerTradeSizing: Guide = {
             { label: "$1,000 account", value: "$10 / trade" },
             { label: "$5,000 account", value: "$50 / trade" },
             { label: "$10,000 account", value: "$100 / trade" },
-            { label: "$25,000 (PDT minimum)", value: "$250 / trade" },
+            { label: "$25,000 account", value: "$250 / trade" },
             { label: "$100,000 account", value: "$1,000 / trade" },
           ],
         },

@@ -91,9 +91,6 @@ export async function GET() {
         cash: account.cash,
         portfolioValue: account.portfolioValue,
         lastEquity: account.lastEquity,
-        daytradeCount: account.daytradeCount,
-        daytradeLimit: account.daytradeBuyingPower,
-        patternDayTrader: account.patternDayTrader,
       },
       positions: positions.map((p) => ({
         symbol: p.symbol,

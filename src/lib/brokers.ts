@@ -38,9 +38,11 @@ export interface BrokerAccount {
    */
   longMarketValue?: number;
   lastEquity?: number;
-  daytradeCount?: number;
-  daytradeBuyingPower?: number;
-  patternDayTrader?: boolean;
+  // daytradeCount / daytradeBuyingPower / patternDayTrader removed 2026-06-04:
+  // FINRA retired the PDT designation (Rule 4210 amendments). Alpaca
+  // announced these fields will be fully removed from the API by 2026-07-06;
+  // the broker mapping is no longer reading them so we no longer depend on
+  // their presence.
 }
 
 export interface BrokerPosition {
@@ -250,9 +252,6 @@ export class AlpacaClient implements BrokerClient {
       portfolioValue: toNumber(data.portfolio_value),
       longMarketValue: toNumber(data.long_market_value),
       lastEquity: toNumber(data.last_equity),
-      daytradeCount: toNumber(data.daytrade_count),
-      daytradeBuyingPower: toNumber(data.daytrading_buying_power),
-      patternDayTrader: data.pattern_day_trader === true,
     };
   }
 

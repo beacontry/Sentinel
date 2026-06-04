@@ -21,16 +21,15 @@ interface MinimalEngine {
   // Phase 5 fields
   washSaleProtectionEnabled: boolean;
   washSaleBlockedSymbols: Set<string>;
-  pdtVulnerable: boolean;
-  pdtDayTradeCount: number;
 }
 
 const ORDER_RATE_LIMIT_PER_MIN = 30;
 const ORDER_RATE_LIMIT_WINDOW_MS = 60_000;
-const PDT_DAYTRADE_BUY_BLOCK = 3;
-const PDT_EQUITY_THRESHOLD = 25_000;
 
 // Phase 5 mirror: same gate order as src/lib/trading-engine.ts canPlaceBuyOrder.
+// Pre-2026-06-04 this mirror also enforced a PDT gate between wash-sale and
+// notional; the PDT designation was retired (FINRA Rule 4210 amendments) and
+// the gate was removed from the production engine.
 function canPlaceBuyOrder(
   engine: MinimalEngine,
   symbol: string,
@@ -41,10 +40,6 @@ function canPlaceBuyOrder(
   // wash-sale
   if (engine.washSaleProtectionEnabled && engine.washSaleBlockedSymbols.has(symbol)) {
     return { ok: false, reason: "wash_sale_protection" };
-  }
-  // PDT
-  if (engine.pdtVulnerable && engine.pdtDayTradeCount >= PDT_DAYTRADE_BUY_BLOCK) {
-    return { ok: false, reason: "pdt_protection" };
   }
   // notional
   const cap = bootEquity * maxDailyNotionalPct;
@@ -74,11 +69,6 @@ function recordTradeResult(engine: MinimalEngine, pnl: number, threshold: number
   return engine.consecutiveLosses >= threshold;
 }
 
-// Mirror of engine's isPdtVulnerable(account)
-function isPdtVulnerable(equity: number): boolean {
-  return equity < PDT_EQUITY_THRESHOLD;
-}
-
 function newEngine(overrides: Partial<MinimalEngine> = {}): MinimalEngine {
   return {
     dailyNotional: 0,
@@ -86,8 +76,6 @@ function newEngine(overrides: Partial<MinimalEngine> = {}): MinimalEngine {
     consecutiveLosses: 0,
     washSaleProtectionEnabled: false,
     washSaleBlockedSymbols: new Set(),
-    pdtVulnerable: false,
-    pdtDayTradeCount: 0,
     ...overrides,
   };
 }
@@ -299,68 +287,35 @@ describe("live-trading safeguards", () => {
     });
   });
 
-  describe("PDT protection (Phase 5)", () => {
-    it("isPdtVulnerable returns true below $25k", () => {
-      expect(isPdtVulnerable(24_999)).toBe(true);
-      expect(isPdtVulnerable(5_000)).toBe(true);
-      expect(isPdtVulnerable(0)).toBe(true);
-    });
+  describe("PDT protection — retired 2026-06-04 (FINRA Rule 4210)", () => {
+    // The preemptive PDT block was removed when FINRA retired the Pattern Day
+    // Trader designation. These tests pin the absence of the gate: a sub-$25k
+    // engine running its 4th day trade no longer gets blocked by the engine,
+    // and the wash-sale → notional → rate-limit gate order has no PDT slot
+    // between wash-sale and notional anymore. Reactive handling of Alpaca's
+    // legacy 40310100 rejection code is covered in pdt-rejection-detection.test.ts.
 
-    it("isPdtVulnerable returns false at or above $25k", () => {
-      expect(isPdtVulnerable(25_000)).toBe(false);
-      expect(isPdtVulnerable(100_000)).toBe(false);
-    });
-
-    it("blocks BUY when pdtVulnerable AND daytradeCount >= 3", () => {
-      const e = newEngine({ pdtVulnerable: true, pdtDayTradeCount: 3 });
-      const result = canPlaceBuyOrder(e, "AAPL", 100, 1.0, 10_000);
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.reason).toBe("pdt_protection");
-    });
-
-    it("allows BUY when pdtVulnerable but daytradeCount < 3", () => {
-      const e = newEngine({ pdtVulnerable: true, pdtDayTradeCount: 2 });
+    it("BUY is no longer blocked on a sub-$25k engine, regardless of historical day-trade count", () => {
+      const e = newEngine();
       const result = canPlaceBuyOrder(e, "AAPL", 100, 1.0, 10_000);
       expect(result.ok).toBe(true);
     });
 
-    it("allows BUY when NOT pdtVulnerable, regardless of daytradeCount", () => {
-      // Account is over $25k → PDT rule doesn't apply, day-trade count free.
-      const e = newEngine({ pdtVulnerable: false, pdtDayTradeCount: 10 });
-      const result = canPlaceBuyOrder(e, "AAPL", 100, 1.0, 100_000);
-      expect(result.ok).toBe(true);
-    });
-
-    it("PDT gate fires AFTER wash-sale (gate ordering)", () => {
-      // Both gates would trip; wash-sale fires first by design.
+    it("wash-sale on a sub-$25k engine still blocks (wash-sale outlived PDT)", () => {
       const e = newEngine({
         washSaleProtectionEnabled: true,
         washSaleBlockedSymbols: new Set(["NVDA"]),
-        pdtVulnerable: true,
-        pdtDayTradeCount: 3,
       });
       const result = canPlaceBuyOrder(e, "NVDA", 100, 1.0, 10_000);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe("wash_sale_protection");
     });
 
-    it("PDT gate fires BEFORE notional cap (gate ordering)", () => {
-      const e = newEngine({
-        pdtVulnerable: true,
-        pdtDayTradeCount: 4,
-        dailyNotional: 99_999,
-      });
+    it("notional cap fires next after wash-sale (no PDT slot between them anymore)", () => {
+      const e = newEngine({ dailyNotional: 99_999 });
       const result = canPlaceBuyOrder(e, "AAPL", 10_000, 1.0, 100_000);
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.reason).toBe("pdt_protection");
-    });
-
-    it("daytradeCount exactly at threshold (3) blocks; one below (2) allows", () => {
-      // Boundary check — the threshold is "block at 3" (one shy of PDT-flag at 4).
-      const at_2 = newEngine({ pdtVulnerable: true, pdtDayTradeCount: 2 });
-      const at_3 = newEngine({ pdtVulnerable: true, pdtDayTradeCount: 3 });
-      expect(canPlaceBuyOrder(at_2, "X", 100, 1.0, 10_000).ok).toBe(true);
-      expect(canPlaceBuyOrder(at_3, "X", 100, 1.0, 10_000).ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe("daily_notional_cap_exceeded");
     });
   });
 
