@@ -899,6 +899,36 @@ function recordTradeResult(engine: EngineState, pnl: number, threshold: number):
  * consecutive-loss threshold. Engine.halted = true blocks new orders; the
  * user must explicitly Stop+Start to clear.
  */
+/**
+ * Date-rollover housekeeping: reset daily-only counters when a new ET trading
+ * day starts. Also clears a daily_loss halt so the engine resumes the next
+ * session — the documented "auto-resume next trading day" behavior.
+ * Safeguard halts (account_mismatch, equity_collapse, consecutive_losses,
+ * broker_unreachable, user_emergency_halt) persist across the rollover and
+ * require explicit user acknowledgment via startEngine.
+ *
+ * P1 #2 (2026-06-09 audit) — pre-Phase-2 each scan wrapper returned at
+ * `engine.halted` BEFORE this clear could run, so the date-rollover block
+ * was dead code for halted engines. Calling this helper from the wrapper
+ * before the halted early-return fixes that; the inner-block guards (kept
+ * as defense-in-depth) also now gate on haltReason === "daily_loss".
+ */
+function maybeClearDailyLossHaltOnDateRollover(engine: EngineState, today: string): void {
+  if (engine.dailyLossDate === today) return;
+  engine.dailyLoss = 0;
+  engine.dailyNotional = 0;
+  engine.dailyLossDate = today;
+  if (engine.halted && engine.haltReason === "daily_loss") {
+    log.info(
+      { userId: engine.userId },
+      "New trading day — clearing daily_loss halt (safeguard halts, if any, would persist)"
+    );
+    engine.halted = false;
+    engine.haltReason = null;
+    engine.errors = engine.errors.filter(e => !e.startsWith("Daily loss limit hit"));
+  }
+}
+
 function tripSafeguardHalt(engine: EngineState, reason: string, details: Record<string, unknown>): void {
   if (engine.halted) return;
   engine.halted = true;
@@ -3028,7 +3058,11 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
 
 async function runTacticalScan(engineUserId?: string): Promise<void> {
   const engine = getEngine(engineUserId);
-  if (!engine.userId || !engine.running || engine.halted) return;
+  if (!engine.userId || !engine.running) return;
+  // Run date-rollover clear BEFORE the halted check so a daily_loss halt from
+  // yesterday actually resumes today (P1 #2). Safeguard halts stay set.
+  maybeClearDailyLossHaltOnDateRollover(engine, getETDateString());
+  if (engine.halted) return;
   if (!isMarketOpen()) return;
   // PR 21c — generation capture for cooperative cancellation
   const myGeneration = ++engine.scanGeneration;
@@ -3053,17 +3087,9 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
   // No-op when engine.mode !== "adaptive".
   await refreshAdaptiveMode(engine);
 
+  // Date-rollover housekeeping happened in the runTacticalScan wrapper before
+  // the halted check; engine.dailyLossDate is already today here.
   const today = getETDateString();
-  if (engine.dailyLossDate !== today) {
-    engine.dailyLoss = 0;
-    engine.dailyNotional = 0; // reset daily notional cap window in lockstep
-    engine.dailyLossDate = today;
-    if (engine.halted) {
-      log.info({ userId: engine.userId }, "New trading day — clearing daily-loss halt");
-      engine.halted = false;
-      engine.errors = engine.errors.filter(e => !e.startsWith("Daily loss limit hit"));
-    }
-  }
 
   let client: BrokerClient;
   let account: BrokerAccount;
@@ -3234,6 +3260,10 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
 
     for (const symbol of SCAN_UNIVERSE) {
       if (positionMap.size >= riskLimits.maxPositions) break;
+      // PR 21c / P1 #1 (2026-06-09 audit) — cooperative cancellation. An
+      // override-fired stale tactical scan exits cleanly here instead of
+      // placing orders against the newer scan's state.
+      throwIfScanCancelled(engine, myGeneration);
 
       try {
         const quote = await provider.fetchQuote(symbol);
@@ -3303,7 +3333,11 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
 
 async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   const engine = getEngine(engineUserId);
-  if (!engine.userId || !engine.running || engine.halted) return;
+  if (!engine.userId || !engine.running) return;
+  // Run date-rollover clear BEFORE the halted check so a daily_loss halt from
+  // yesterday actually resumes today (P1 #2). Safeguard halts stay set.
+  maybeClearDailyLossHaltOnDateRollover(engine, getETDateString());
+  if (engine.halted) return;
   if (!isMarketOpen()) return;
   // PR 21c — generation capture for cooperative cancellation
   const myGeneration = ++engine.scanGeneration;
@@ -3333,17 +3367,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
   const phases: Record<string, number> = {};
   const phase = (name: string) => { phases[name] = Date.now() - scanStartedAt; };
 
+  // Date-rollover housekeeping happened in the runTacticalSmartScan wrapper
+  // before the halted check; engine.dailyLossDate is already today here.
   const today = getETDateString();
-  if (engine.dailyLossDate !== today) {
-    engine.dailyLoss = 0;
-    engine.dailyNotional = 0; // reset daily notional cap window in lockstep
-    engine.dailyLossDate = today;
-    if (engine.halted) {
-      log.info({ userId: engine.userId }, "New trading day — clearing daily-loss halt");
-      engine.halted = false;
-      engine.errors = engine.errors.filter(e => !e.startsWith("Daily loss limit hit"));
-    }
-  }
 
   let client: BrokerClient;
   let account: BrokerAccount;
@@ -3509,6 +3535,11 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         symbolsAbortedForBudget = allSymbols.length - allSymbols.indexOf(symbol);
         break;
       }
+      // PR 21c / P1 #1 (2026-06-09 audit) — cooperative cancellation. The
+      // active-management loop below already had this; the buy-in loop did
+      // not, so an override-fired stale scan could keep placing orders here
+      // while a newer scan ran concurrently.
+      throwIfScanCancelled(engine, myGeneration);
       try {
         const bars = await Promise.race([
           provider.fetchBars(symbol, 90, "1d"),
@@ -3908,6 +3939,9 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
   // Refresh S&P 500 universe (auto-updates daily from Wikipedia)
   try { SCAN_UNIVERSE = await getSP500Symbols(); } catch { /* keep current */ }
 
+  // Run date-rollover clear BEFORE the halted check so a daily_loss halt from
+  // yesterday actually resumes today (P1 #2). Safeguard halts stay set.
+  maybeClearDailyLossHaltOnDateRollover(engine, getETDateString());
   if (engine.halted) {
     log.info("Engine halted, skipping scan");
     return;
@@ -3933,20 +3967,9 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
   // itself. All remaining modes hold across the session and exit via
   // stops, trail, take-profit, or SPY regime.
 
-  // Reset daily loss tracking if date changed — and clear any halt that came
-  // from yesterday's daily-loss limit, so a halted engine resumes on the next
-  // trading day without needing a manual restart.
+  // Date-rollover housekeeping ran at the top of runScanInner before the
+  // halted check; engine.dailyLossDate is already today here.
   const today = getETDateString();
-  if (engine.dailyLossDate !== today) {
-    engine.dailyLoss = 0;
-    engine.dailyNotional = 0; // reset daily notional cap window in lockstep
-    engine.dailyLossDate = today;
-    if (engine.halted) {
-      log.info({ userId: engine.userId }, "New trading day — clearing daily-loss halt");
-      engine.halted = false;
-      engine.errors = engine.errors.filter(e => !e.startsWith("Daily loss limit hit"));
-    }
-  }
 
   log.info({ scan: engine.scanCount + 1 }, "Starting scan cycle");
 
@@ -6071,24 +6094,38 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
       .orderBy(desc(traderDailyPnl.date))
       .limit(1);
     if (latest?.halted) {
-      log.warn(
-        { userId, haltReason: latest.haltReason, haltDate: latest.date },
-        "Auto-start suppressed — persisted halt state in trader_daily_pnl. Explicit user start required."
-      );
-      void writeAudit({
-        actor: { userId, email: null, role: null },
-        action: AuditAction.ENGINE_AUTOSTART_FAILED,
-        resourceType: "engine",
-        resourceId: userId,
-        metadata: {
-          suppressed: true,
-          reason: "persisted_halt_state",
-          haltReason: latest.haltReason,
-          haltDate: latest.date,
-          note: "Engine was halted on prior session (safeguard or daily-loss). Silent auto-resume after restart would bypass the safety control. User must explicitly Start to acknowledge.",
-        },
-      });
-      return;
+      // Differentiate by reason. daily_loss halts auto-resume the next
+      // trading day (the documented behavior); safeguard halts persist
+      // and require an explicit user Start to acknowledge.
+      const todayET = getETDateString();
+      const isStaleDailyLoss = latest.haltReason === "daily_loss" && latest.date < todayET;
+      if (isStaleDailyLoss) {
+        log.info(
+          { userId, haltDate: latest.date, todayET },
+          "Auto-start proceeding — yesterday's daily_loss halt will clear on first scan via date-rollover"
+        );
+        // Fall through to the broker/positions retry loop. The first scan's
+        // maybeClearDailyLossHaltOnDateRollover() flips engine.halted=false.
+      } else {
+        log.warn(
+          { userId, haltReason: latest.haltReason, haltDate: latest.date },
+          "Auto-start suppressed — safeguard halt persists across restart. Explicit user Start required."
+        );
+        void writeAudit({
+          actor: { userId, email: null, role: null },
+          action: AuditAction.ENGINE_AUTOSTART_FAILED,
+          resourceType: "engine",
+          resourceId: userId,
+          metadata: {
+            suppressed: true,
+            reason: "persisted_safeguard_halt",
+            haltReason: latest.haltReason,
+            haltDate: latest.date,
+            note: "Engine was safeguard-halted on prior session. Silent auto-resume after restart would bypass the safety control. User must explicitly Start to acknowledge.",
+          },
+        });
+        return;
+      }
     }
   } catch (err) {
     // Don't block auto-start on a transient DB read failure — that would
