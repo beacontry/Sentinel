@@ -152,6 +152,11 @@ export interface EngineState {
    *  passing the `running` check and orphaning a duplicate interval loop. */
   starting: boolean;
   halted: boolean;
+  /** Reason the engine is halted. Set by every halt site (tripSafeguardHalt,
+   *  enforceDailyLossHalt, haltEngine); cleared by startEngine alongside
+   *  halted=false. Used by autoStartIfNeeded to differentiate safeguard halts
+   *  (which must require explicit user acknowledgment) from a clean state. */
+  haltReason: string | null;
   mode: EngineMode;
   intervalId: ReturnType<typeof setInterval> | null;
   exitCheckId: ReturnType<typeof setInterval> | null;
@@ -277,6 +282,7 @@ function createDefaultEngine(): EngineState {
     running: false,
     starting: false,
     halted: false,
+    haltReason: null,
     mode: "optimized",
     intervalId: null,
     exitCheckId: null,
@@ -896,6 +902,7 @@ function recordTradeResult(engine: EngineState, pnl: number, threshold: number):
 function tripSafeguardHalt(engine: EngineState, reason: string, details: Record<string, unknown>): void {
   if (engine.halted) return;
   engine.halted = true;
+  engine.haltReason = reason;
   log.error({ userId: engine.userId, reason, ...details }, `Engine auto-halted: ${reason}`);
   pushError(engine, `Auto-halted: ${reason}`);
   // Fire-and-forget audit (no request context for engine-internal events)
@@ -1022,6 +1029,7 @@ async function enforceDailyLossHalt(
     "Daily loss limit exceeded — halting engine"
   );
   engine.halted = true;
+  engine.haltReason = "daily_loss";
   pushError(engine, `Daily loss limit hit: $${engine.dailyLoss.toFixed(2)}`);
 
   if (client.cancelAllOrders) {
@@ -5019,6 +5027,11 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   engine.running = true;
   engine.starting = false; // boot done — the `running` guard now blocks re-entry
   engine.halted = false;
+  // Explicit user start = user is acknowledging any prior halt. autoStartIfNeeded
+  // (silent restart-after-deploy) MUST gate on the persisted halt state in
+  // trader_daily_pnl BEFORE reaching here, so a safeguard halt never gets
+  // auto-cleared by a process restart.
+  engine.haltReason = null;
   engine.mode = mode;
   engine.userId = userId;
   // Capture tier at boot so the hybrid pipeline knows which layers to
@@ -5049,8 +5062,25 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   engine.washSaleLastRefreshAt = 0;
   if (engine.washSaleProtectionEnabled) {
     // Prime the set so the first scan's first buy is gated correctly.
-    engine.washSaleBlockedSymbols = await refreshWashSaleBlockedSymbols(userId);
-    engine.washSaleLastRefreshAt = Date.now();
+    //
+    // P1 #3 (2026-06-09 audit) — must not throw out of startEngine. The
+    // refreshWashSaleBlockedSymbols helper deliberately throws on DB error
+    // per the "Transient-Error Refresh Semantics" rule (return-empty would
+    // leave protection silently off). Without this catch, an unhandled throw
+    // here leaves the engine wedged at running=true / starting=false / no
+    // intervals installed — every subsequent startEngine returns "already
+    // running" and only a process restart clears it. Fail open: keep the
+    // empty Set + lastRefreshAt=0 already assigned above, let canPlaceBuyOrder's
+    // per-BUY refresh repopulate on the first decision.
+    try {
+      engine.washSaleBlockedSymbols = await refreshWashSaleBlockedSymbols(userId);
+      engine.washSaleLastRefreshAt = Date.now();
+    } catch (err) {
+      log.warn(
+        { userId, err: err instanceof Error ? err.message : "unknown" },
+        "Wash-sale prime failed at engine start — continuing with empty set; per-BUY refresh will retry"
+      );
+    }
   }
 
   // Clear halted flag in database so UI stops showing "Trading Halted"
@@ -5862,6 +5892,7 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
 
   engine.running = false;
   engine.halted = true;
+  engine.haltReason = "user_emergency_halt";
 
   // Close all tracked positions
   if (engine.userId) {
@@ -6023,6 +6054,52 @@ export function broadcastExternalSignal(signal: ExternalSignal): number {
 export async function autoStartIfNeeded(userId: string): Promise<void> {
   const engine = getEngine(userId);
   if (engine.running) return;
+
+  // P1 #4 (2026-06-09 audit) — refuse silent auto-start into a persisted halt.
+  // Safeguard halts (account_mismatch, equity_collapse, consecutive_losses,
+  // broker_unreachable) are written to trader_daily_pnl by tripSafeguardHalt
+  // + enforceDailyLossHalt with halted=true + halt_reason. Without this gate,
+  // a container restart silently resumes trading on an account that just
+  // tripped a safety control — the exact scenario auto-resume is meant to
+  // prevent. Explicit startEngine (user pushes "Start") clears the halt;
+  // autoStartIfNeeded never should.
+  try {
+    const [latest] = await db
+      .select({ halted: traderDailyPnl.halted, haltReason: traderDailyPnl.haltReason, date: traderDailyPnl.date })
+      .from(traderDailyPnl)
+      .where(eq(traderDailyPnl.userId, userId))
+      .orderBy(desc(traderDailyPnl.date))
+      .limit(1);
+    if (latest?.halted) {
+      log.warn(
+        { userId, haltReason: latest.haltReason, haltDate: latest.date },
+        "Auto-start suppressed — persisted halt state in trader_daily_pnl. Explicit user start required."
+      );
+      void writeAudit({
+        actor: { userId, email: null, role: null },
+        action: AuditAction.ENGINE_AUTOSTART_FAILED,
+        resourceType: "engine",
+        resourceId: userId,
+        metadata: {
+          suppressed: true,
+          reason: "persisted_halt_state",
+          haltReason: latest.haltReason,
+          haltDate: latest.date,
+          note: "Engine was halted on prior session (safeguard or daily-loss). Silent auto-resume after restart would bypass the safety control. User must explicitly Start to acknowledge.",
+        },
+      });
+      return;
+    }
+  } catch (err) {
+    // Don't block auto-start on a transient DB read failure — that would
+    // hide the engine on a hiccup. Log and continue; the existing safeguards
+    // (broker watchdog, equity tripwire, daily-loss enforcement) will catch
+    // a halt condition on the first scan if it's still present.
+    log.warn(
+      { userId, err: err instanceof Error ? err.message : "unknown" },
+      "Auto-start halt-state check failed — proceeding with auto-start"
+    );
+  }
 
   const maxAttempts = 3;
   let lastErr: unknown = null;
