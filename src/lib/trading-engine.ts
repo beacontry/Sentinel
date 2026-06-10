@@ -1062,6 +1062,28 @@ async function enforceDailyLossHalt(
   engine.haltReason = "daily_loss";
   pushError(engine, `Daily loss limit hit: $${engine.dailyLoss.toFixed(2)}`);
 
+  // P2 audit (2026-06-09) — write a hash-chained ENGINE_HALTED audit row.
+  // tripSafeguardHalt does this for the other safeguard reasons (broker_
+  // unreachable, account_mismatch, equity_collapse, consecutive_losses);
+  // daily_loss is the most common trip and was the only one without a
+  // durable audit trail. Same shape as tripSafeguardHalt for consistency
+  // in the admin audit viewer.
+  void writeAudit({
+    actor: { userId: engine.userId, email: null, role: null },
+    action: AuditAction.ENGINE_HALTED,
+    resourceType: "engine",
+    resourceId: engine.userId,
+    metadata: {
+      reason: "daily_loss",
+      automatic: true,
+      dailyLoss: engine.dailyLoss,
+      threshold: dailyLossThreshold,
+      equity,
+      mode: engine.mode,
+      effectiveMode: engine.effectiveMode,
+    },
+  });
+
   if (client.cancelAllOrders) {
     try {
       await client.cancelAllOrders();
@@ -5995,6 +6017,14 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
   if (engine.intervalId) {
     clearInterval(engine.intervalId);
     engine.intervalId = null;
+  }
+  // P2 audit (2026-06-09) — stopEngine clears all three intervals;
+  // haltEngine was missing exitCheckId. The 1-min exit-check interval
+  // would keep firing after halt (callbacks no-op via the engine.running
+  // gate, but the interval handle never released).
+  if (engine.exitCheckId) {
+    clearInterval(engine.exitCheckId);
+    engine.exitCheckId = null;
   }
   if (engine.marketOpenTimeoutId) {
     clearTimeout(engine.marketOpenTimeoutId);
