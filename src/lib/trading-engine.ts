@@ -1972,7 +1972,7 @@ function tradingDaysBetween(from: Date, to: Date): number {
  */
 export async function resolveBrokerClient(
   userId: string
-): Promise<{ client: BrokerClient; connectionId: string; environment: "paper" | "live" } | null> {
+): Promise<{ client: BrokerClient; connectionId: string; environment: "paper" | "live"; broker: string } | null> {
   const connections = await db
     .select()
     .from(brokerConnections)
@@ -2060,7 +2060,7 @@ export async function resolveBrokerClient(
 
   const client = createBrokerClient(conn.broker, apiKey, apiSecret, conn.environment);
 
-  return { client, connectionId: conn.id, environment: conn.environment as "paper" | "live" };
+  return { client, connectionId: conn.id, environment: conn.environment as "paper" | "live", broker: conn.broker };
 }
 
 // ─── Latest Optimizer Results ────────────────────────────────────────────────
@@ -5013,6 +5013,44 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     return {
       ok: false,
       error: "No active broker connection found. Add a paper or live broker in Settings.",
+    };
+  }
+
+  // P1 #5 (2026-06-09 audit) — Engine is Alpaca-only until the IBKR/Tradier
+  // abstractions get the missing pieces:
+  //   - pending-order status normalization (Alpaca's lowercase set is hard-
+  //     coded into duplicate-order protection; IBKR returns "Submitted",
+  //     Tradier returns "open"/"pending" → filter matches nothing → re-buy
+  //     every scan)
+  //   - signed-qty handling for shorts (Tradier returns Math.abs(qty), so
+  //     the long-only filter `bp.qty <= 0` can't see shorts and would
+  //     "manage" them with sell-to-close exits, doubling the short)
+  //   - broker-side replaceOrder for stop ratcheting (syncBrokerStops bails
+  //     when absent; the documented "broker-side protection if the server
+  //     dies" only exists on Alpaca)
+  // Non-Alpaca connections still work for the Portfolio summary view (which
+  // calls resolveBrokerClient directly, not via this engine path).
+  if (resolved.broker !== "alpaca") {
+    engine.starting = false;
+    log.error(
+      { userId, broker: resolved.broker, connectionId: resolved.connectionId },
+      "Refusing to start engine on non-Alpaca broker — IBKR/Tradier engine support is incomplete"
+    );
+    void writeAudit({
+      actor: { userId, email: null, role: null },
+      action: AuditAction.ENGINE_LIVE_BLOCKED,
+      resourceType: "broker_connection",
+      resourceId: resolved.connectionId,
+      metadata: {
+        reason: "non_alpaca_engine_broker",
+        broker: resolved.broker,
+        environment: resolved.environment,
+        note: "IBKR/Tradier engine support requires status normalization + signed-qty + broker-side stop replacement (audit P1 #5, 2026-06-09).",
+      },
+    });
+    return {
+      ok: false,
+      error: `Engine currently supports Alpaca only. ${resolved.broker.toUpperCase()} connections work for Portfolio viewing but cannot run the automated trading engine. Add an Alpaca connection to start the engine.`,
     };
   }
 

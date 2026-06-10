@@ -18,7 +18,7 @@ uncomment the line below.
 ## What it does (5-bullet pitch)
 
 1. **Hybrid signal pipeline** — technical + sentiment + options flow + analyst consensus + AI scoring + Reddit chatter, all feeding one confidence-scored decision per symbol. Inspect every layer.
-2. **Two ways to trade** — let the **automated engine** scan + place orders on a schedule, OR use the **manual order ticket** (market / limit / stop / bracket, share-count or dollar-based) for trade-by-trade discretion. Both modes hit your own Alpaca, Tradier, or IBKR account.
+2. **Two ways to trade** — let the **automated engine** scan + place orders on a schedule, OR use the **manual order ticket** (market / limit / stop / bracket, share-count or dollar-based) for trade-by-trade discretion. Manual ordering + Portfolio viewing hit any connected broker (Alpaca / Tradier / IBKR); **the automated engine currently runs on Alpaca only** — IBKR/Tradier engine support is incomplete (status normalization, signed-qty handling, broker-side stop replacement still pending).
 3. **Hash-chained audit log** — every privileged action (orders, halts, mode switches, config changes) recorded with `prev_hash → hash` linkage. Tamper-evident, one-click verifiable at `/dashboard/admin/audit`.
 4. **Tax tooling built in** — wash-sale tracking, §475(f) MTM elections, lot-level cost basis, harvestable-loss surfacing. Form 8949 export. Tax Center merges manual portfolios + live broker positions in one view.
 5. **Full journal + 14-guide education library + 8 calculators** — auto-stubs an entry on every fill, daily pre/post-market prompts, AI weekly review. Education + glossary + spaced-repetition review wired into the chat for contextual citations.
@@ -108,7 +108,7 @@ Dashboard → monitors positions, P&L, risk in real-time
 | Frontend | React 19, Tailwind CSS 4, Lucide Icons |
 | Database | PostgreSQL + Drizzle ORM |
 | Charting | Lightweight Charts (TradingView) |
-| Broker | Alpaca (paper + live), IBKR, Tradier |
+| Broker | Alpaca (paper + live — only broker the engine runs against), IBKR, Tradier (Portfolio + manual-order only) |
 | Market Data | Yahoo Finance (primary), Finnhub (fallback) |
 | AI | Groq (`llama-3.3-70b-versatile`) — Insights, Quick Insight, hybrid AI scoring, sentiment, filings chat, market digest, AI chat, Recent Trades AI summaries. Rotate via `/dashboard/admin/system-config` (encrypted at rest) |
 | Deployment | Docker/Podman, GitHub Actions CI/CD |
@@ -400,15 +400,15 @@ Migrations: `0013_education_guide_views.sql`, `0014_education_guide_quiz.sql`, `
 
 ## Broker Integration
 
-Three brokers supported via unified `BrokerClient` interface:
+Three brokers connected via unified `BrokerClient` interface. Engine support is currently Alpaca-only; IBKR/Tradier work for connection management, Portfolio viewing, and manual order placement, but `startEngine` refuses non-Alpaca connections until the underlying abstractions ship the missing pieces (status-string normalization for pending-order dedup, signed-qty handling for shorts, broker-side `replaceOrder` for stop ratcheting).
 
-| Broker | Type | Status |
-|--------|------|--------|
-| **Alpaca** | Cloud API, commission-free | Primary — fully integrated |
-| IBKR | Local gateway (Client Portal API) | Supported — requires local gateway |
-| Tradier | Cloud API | Supported |
+| Broker | Type | Engine | Portfolio + Manual orders |
+|--------|------|--------|--------------------------|
+| **Alpaca** | Cloud API, commission-free | ✅ Supported | ✅ Supported |
+| IBKR | Local gateway (Client Portal API) | ❌ Refused at `startEngine` | ✅ Supported |
+| Tradier | Cloud API | ❌ Refused at `startEngine` | ✅ Supported |
 
-All brokers support: `getAccount()`, `getPositions()`, `getOrders()`, `placeOrder()`, `cancelAllOrders()`
+Common methods across all clients: `getAccount()`, `getPositions()`, `getOrders()`, `placeOrder()`. `cancelAllOrders()` and `replaceOrder()` are Alpaca-only — engine paths fall back gracefully when absent (e.g. `syncBrokerStops` no-ops when `replaceOrder` is missing).
 
 ## Dashboard Pages
 
