@@ -1,5 +1,6 @@
 import type { Bar } from "@/types";
 import { MARKET_DATA_CONFIG } from "./config";
+import { isMarketOpen } from "./market-hours";
 import { writeFile, readFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
@@ -24,7 +25,13 @@ const BAR_CACHE_DIR = join(
   process.env.CACHE_DIR ?? (process.env.NODE_ENV === "production" ? "/app/cache" : join(process.cwd(), "data")),
   "bar-cache"
 );
-const BAR_CACHE_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours for daily bars
+// P2 audit (2026-06-09) — pre-fix the 1d cache was 4h regardless of session.
+// During market hours that meant entry/exit decisions in runScan (15-min
+// cadence) could read prices up to 4h stale. Now the 1d cache uses a
+// 15-min TTL during market hours (matches scan cadence) and 4h after
+// close (daily bars don't move overnight, so the long TTL is fine then).
+const BAR_CACHE_MAX_AGE_OPEN_MS = 15 * 60 * 1000;  // 15 min during market hours
+const BAR_CACHE_MAX_AGE_CLOSED_MS = 4 * 60 * 60 * 1000; // 4 hours after close
 const BAR_CACHE_5M_MAX_AGE_MS = 11 * 60 * 1000;  // 11 min — slightly past the 5-min scan interval so the next scan fully hits cache even if the prior scan straddled the boundary
 
 let barCacheDirReady = false;
@@ -56,7 +63,10 @@ async function getCachedBars(symbol: string, resolution: string, requestedDays: 
     await ensureBarCacheDir();
     const raw = await readFile(barCacheKey(symbol, resolution), "utf-8");
     const cached: CachedBars = JSON.parse(raw);
-    const maxAge = resolution === "1d" ? BAR_CACHE_MAX_AGE_MS : BAR_CACHE_5M_MAX_AGE_MS;
+    const maxAge =
+      resolution === "1d"
+        ? (isMarketOpen() ? BAR_CACHE_MAX_AGE_OPEN_MS : BAR_CACHE_MAX_AGE_CLOSED_MS)
+        : BAR_CACHE_5M_MAX_AGE_MS;
     if (Date.now() - cached.fetchedAt > maxAge) return null; // stale
     if (cached.bars.length < 20) return null; // too few
     // Only serve cache if it covers at least as many days as requested
