@@ -332,9 +332,21 @@ function getEngine(userId?: string): EngineState {
     }
     return g.__tradingEngines.get(userId)!;
   }
-  // Legacy fallback: return first running engine or create a temp one
+  // P2 audit (2026-06-09) — legacy fallback. Returns the first running
+  // engine when no userId is supplied. This is a CROSS-TENANT LEAK RISK:
+  // an internal caller that forgets to pass userId gets *some other
+  // user's* engine and may write rows scoped to the wrong user. Every
+  // documented call site uses the userId ? getEngine(userId) : getEngine()
+  // pattern, so this path is reached only when userId is explicitly null/
+  // undefined — log so we can find the offending caller. A proper fix
+  // would remove the fallback entirely; out of scope for this pass.
   for (const engine of g.__tradingEngines.values()) {
-    if (engine.running) return engine;
+    if (engine.running) {
+      console.warn(
+        `[trading-engine] getEngine() called with no userId — falling back to first running engine (${engine.userId ?? "<null>"}). This risks cross-tenant scoping; pass userId at the callsite.`
+      );
+      return engine;
+    }
   }
   return createDefaultEngine();
 }
@@ -534,18 +546,45 @@ async function isInEarningsBlackout(symbol: string): Promise<boolean> {
 }
 
 /**
- * #2: Relative strength filter — only buy stocks outperforming SPY
+ * #2: Relative strength filter — only buy stocks outperforming SPY.
+ *
+ * P2 audit (2026-06-09) — pre-fix this returned the raw 60-day stock
+ * return and called it RS. That meant a stock up 8% in a market up
+ * 15% looked "strong" by RS and passed the filter, while a stock up
+ * 2% in a market down 10% (genuinely outperforming) might fail the
+ * RS threshold simply because its raw return was small. Now actually
+ * subtracts SPY's 60-day return so the result is comparable to the
+ * `rsThreshold` semantics in passesSmartFilters (positive = beating
+ * SPY). SPY return is cached for 15 min (matches the swing-scan
+ * cadence) to avoid per-symbol provider calls.
  */
+const SPY_RS_CACHE_TTL_MS = 15 * 60 * 1000;
+let cachedSpyReturn: { value: number; computedAt: number } | null = null;
+
 async function getRelativeStrength(symbol: string, bars: Bar[]): Promise<number> {
   if (bars.length < 60) return 0;
 
   // Calculate stock's 60-day return
   const stockReturn = (bars[bars.length - 1].close - bars[bars.length - 60].close) / bars[bars.length - 60].close;
 
-  // We already have SPY data from the market health check
-  // RS = stock return - SPY return (positive = outperforming)
-  // SPY return is roughly the benchmark; approximate from the stock universe average
-  return stockReturn; // raw momentum serves as RS proxy
+  // Cached SPY 60-day return for the same period.
+  const now = Date.now();
+  if (!cachedSpyReturn || now - cachedSpyReturn.computedAt > SPY_RS_CACHE_TTL_MS) {
+    try {
+      const spyBars = await getMarketDataProvider().fetchBars("SPY", 90, "1d");
+      if (spyBars.length >= 60) {
+        const spyReturn = (spyBars[spyBars.length - 1].close - spyBars[spyBars.length - 60].close) / spyBars[spyBars.length - 60].close;
+        cachedSpyReturn = { value: spyReturn, computedAt: now };
+      }
+    } catch {
+      // Degraded mode: SPY fetch failed, fall back to raw stock return rather
+      // than failing the filter. Matches the pre-fix behavior for this scan
+      // only — next scan retries SPY.
+      return stockReturn;
+    }
+  }
+
+  return cachedSpyReturn ? stockReturn - cachedSpyReturn.value : stockReturn;
 }
 
 /**
@@ -2504,7 +2543,13 @@ async function logTrade(
 
 async function updateHeartbeat(watchlist: string[], userId?: string | null): Promise<void> {
   const engine = userId ? getEngine(userId) : getEngine();
-  const modeStr = `paper:${engine.mode}`; // persist engine mode for auto-restart
+  // P2 audit (2026-06-09) — was hardcoded "paper:" regardless of engine
+  // environment, so live-engine heartbeats stored a misleading prefix.
+  // autoStartIfNeeded parses this prefix to recover the saved mode;
+  // emitting the real environment keeps the persisted record honest and
+  // future-proofs the parse path if it ever needs to differentiate.
+  const envPrefix = engine.environment ?? "paper";
+  const modeStr = `${envPrefix}:${engine.mode}`; // persist engine env+mode for auto-restart
   try {
     const rows = engine.userId
       ? await db.select().from(traderStatus).where(eq(traderStatus.userId, engine.userId))
@@ -6272,7 +6317,10 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
       let lastMode: EngineMode = "optimized";
       try {
         const [status] = await db.select().from(traderStatus).where(eq(traderStatus.userId, userId)).limit(1);
-        if (status?.mode?.startsWith("paper:")) {
+        // P2 audit (2026-06-09) — accept either "paper:" or "live:" prefix.
+        // updateHeartbeat now writes the actual environment; historical rows
+        // written by older builds all start with "paper:" — both shapes parse.
+        if (status?.mode?.startsWith("paper:") || status?.mode?.startsWith("live:")) {
           const parts = status.mode.split(":");
           const savedMode = parts.length > 1 ? (parts[1] as EngineMode) : null;
           const validModes: EngineMode[] = ["conservative", "moderate", "optimized", "aggressive", "tactical", "tactical-smart", "adaptive"];
