@@ -165,7 +165,6 @@ src/
 │   └── layout/                 # Shell, nav, broker-switcher, keyboard-shortcuts
 ├── lib/
 │   ├── trading-engine.ts       # Automated trading engine
-│   ├── signal-eval.ts          # Shared signal evaluator (optimizer + mode comparison)
 │   ├── optimizer.ts            # Genetic algorithm optimizer
 │   ├── brokers.ts              # Alpaca/IBKR/Tradier broker clients (qty + notional)
 │   ├── backtester.ts           # Strategy backtesting + Sortino/Calmar/MAR
@@ -176,10 +175,10 @@ src/
 │   ├── headline-sentiment.ts   # Keyword-based per-headline sentiment
 │   ├── audit.ts                # Hash-chained audit log
 │   ├── terms-version.ts        # ToS version (bumping re-prompts users)
-│   ├── indicators/             # 10+ technical indicators
+│   ├── indicators/             # 10+ technical indicators, plus the shared `analyzer.ts`
 │   ├── strategy-presets.ts     # 9 preset strategies
 │   ├── sp500.ts                # S&P 500 universe (auto-updates from Wikipedia)
-│   ├── db/                     # Drizzle schema (44 migrations) + connection
+│   ├── db/                     # Drizzle schema (48 migration files — see CLAUDE.md § Migrations for journal note) + connection
 │   └── ...
 ├── hooks/
 │   ├── usePolling.ts           # Shared polling with Page Visibility pause
@@ -244,7 +243,7 @@ Screener signals (any stock from market scan)
    Place limit order on Alpaca (with bracket stop-loss)
 ```
 
-Signal evaluation uses a shared tunable evaluator (`src/lib/signal-eval.ts`) across the entire system. The live engine, optimizer, and mode comparison all use `evaluateBarSignal` with optimizer-tuned EMA periods and RSI thresholds. The engine loads tuned params from the latest optimizer run on each scan cycle, falling back to defaults if unavailable. `analyzeBars()` is still called for price/volume/indicator data used in logging and display.
+Signal evaluation goes through the shared `analyzeBars()` helper in `src/lib/indicators/analyzer.ts`, with optimizer-tuned `SignalParams` (EMA periods, RSI thresholds) threaded through `HybridPipelineOptions.signalParams`. The engine reads tuned params from the latest optimizer run on each scan cycle and falls back to defaults if unavailable — see CLAUDE.md § "Signal Pipeline (Unified)" for the per-component breakdown.
 
 ### Dynamic Trailing Stops
 
@@ -273,8 +272,8 @@ trail = 2% + (base - 2%) × e^(-3 × profitPct)
 - **Sector exposure cap** (Phase 4) — refuses BUYs that would push any sector over `maxSectorExposurePct × equity`. Reads live position market values from broker; in-memory check, no extra DB hit
 - **Earnings blackout** (Phase 4) — skips BUYs within N trading days of a symbol's earnings release when `earningsBlackoutDays` is set on the risk profile
 - **MTM-aware wash-sale protection** — blocks BUYs on symbols with a losing exit within 31 calendar days (turned off when user attests §475(f) MTM via Trader page). Refresh runs inside every BUY decision, not just at scan start (Phase 1)
-- **PDT protection** — auto-detects equity < $25k; blocks new BUYs at 3+ daytrades. Live `daytradeCount` re-evaluated inside every BUY decision (Phase 1)
 - **bootEquity day-boundary re-snapshot** (Phase 1) — the 50% equity-collapse tripwire stays calibrated as the account grows; all 3 scan paths refresh at trading-day boundary
+- **Engine gated to Alpaca** — startEngine refuses non-Alpaca connections until status normalization + signed-qty + broker-side stop replacement land for IBKR/Tradier. Portfolio + manual ordering still work on any broker.
 - **Engine-gated manual operations** — manual orders + broker switching refused while engine runs (UI banner + API 409 `ENGINE_RUNNING`) to prevent position-map drift
 - **SPY trend filter** — blocks all buys when SPY below 20-day SMA
 - **Signal cooldown** — 2.5 hours between same-symbol buys
@@ -319,7 +318,7 @@ The genetic algorithm optimizer (`src/lib/optimizer.ts`) finds optimal strategy 
 
 The optimizer page includes a **Compare Modes** feature that backtests the user-selectable comparable modes (`optimized`, `tactical`, `adaptive`) + SPY buy-and-hold against 5 years of real data. `tactical-smart`'s active-management logic doesn't translate to backtesting and is excluded. Shows return, final value, max drawdown, Sharpe ratio, trades, and time in market.
 
-Mode Comparison loads all 11 optimizer parameters from the latest completed run. The Optimized (GA) row uses the shared signal evaluator (`src/lib/signal-eval.ts`) with the full optimizer param set. Other mode rows use `analyzeBars()` from the standard indicator module.
+Mode Comparison loads all 11 optimizer parameters from the latest completed run. The Optimized (GA) row passes the full optimizer param set through `analyzeBars()` (via `HybridPipelineOptions.signalParams`); other mode rows use the same `analyzeBars()` with default params.
 
 **Save as Optimized** button on any completed run makes it the active preset. The engine picks up new params within 5 minutes. Compare Modes auto-refreshes when saving.
 
@@ -489,9 +488,9 @@ RESEND_API_KEY=
 EMAIL_FROM=
 
 # Push notifications (web-push protocol)
-NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
-VAPID_SUBJECT=mailto:admin@example.com
+VAPID_EMAIL=mailto:admin@example.com
 ```
 
 > **Registration:** public signup is **toggle-controlled** (default open). The `REGISTRATION_OPEN` flag in `app_settings` defaults to `"true"`; admins can pause public signups from `/dashboard/admin/system-config` → App Settings without a redeploy. While paused, invite-token signups still work so admins can let specific people in during an incident. The legacy `/dashboard/admin` → invites surface still creates pre-addressed invite emails via Resend; that path coexists with public signup.
@@ -502,7 +501,13 @@ VAPID_SUBJECT=mailto:admin@example.com
 
 ```bash
 npm install
-npx drizzle-kit migrate    # Run database migrations
+
+# Apply migrations. The Drizzle journal is intentionally reconciled only
+# through 0015 — migrations 0016+ are applied as raw .sql against prod
+# (see CLAUDE.md § Migrations for context). On a fresh DB, load every
+# .sql file in order:
+for f in drizzle/*.sql; do psql "$DATABASE_URL" -f "$f"; done
+
 npm run dev                 # Start development server (localhost:3000)
 ```
 
@@ -533,7 +538,7 @@ sudo -u sn-deploy -i bash -c '
 - **Smooth trailing stops** — exponential decay from base toward 2% floor. Locks in progressively more gain without sudden threshold jumps.
 - **Incremental data caching** — first run downloads full 5Y, subsequent runs only fetch new days. Optimizer runs start in <1s after first run.
 - **Dynamic everything** — strategy presets read from latest optimizer run in DB. Risk limits read from user profile. S&P 500 list auto-updates from Wikipedia. No hardcoded values that require deploys.
-- **Safety-first** — defaults to paper trading; live trading is gated behind `ALLOW_LIVE_TRADING=1` env + a per-user `live_trading_enabled` DB flag (both required). On top of that: broker-side stops on engine shutdown, auto-restart with position sync on deploy, SPY health filter, daily loss halt, account-switch detector, consecutive-loss halt, order rate limit, daily notional cap, MTM-aware wash-sale gate, PDT protection, STRONG_BUY overflow cap. Multiple layers of protection. (Full safeguard list in `docs/ENGINE_RULESET.md` § 17–20.)
+- **Safety-first** — defaults to paper trading; live trading is gated behind `ALLOW_LIVE_TRADING=1` env + a per-user `live_trading_enabled` DB flag (both required). On top of that: broker-side stops on engine shutdown, auto-restart with position sync on deploy (but never into a persisted safeguard halt), SPY health filter, daily loss halt, account-switch detector, consecutive-loss halt, order rate limit, daily notional cap, MTM-aware wash-sale gate, STRONG_BUY overflow cap. Multiple layers of protection. (Full safeguard list in `docs/ENGINE_RULESET.md` § 17–20.)
 - **Risk overrides, not risk settings** — all risk profile fields are optional. Empty = engine decides using code defaults. Only user-set values impose limits, so the engine works sensibly out of the box.
 - **Broker data always live** — dashboard account balance and positions always fetched from Alpaca regardless of engine state. Positions prefer live broker data over stale DB records.
 - **Yahoo Finance primary** — free, no API key, handles 5Y daily data in single requests. Finnhub as fallback.

@@ -3,10 +3,12 @@ import type { NextConfig } from "next";
 const useHttps = process.env.FORCE_HTTPS === "true";
 
 // Content-Security-Policy moved to src/middleware.ts so each request
-// can carry its own nonce. The static CSP that used to live here would
-// have needed 'unsafe-inline' for Next.js's framework-emitted inline
-// scripts; middleware-set CSP with a per-request nonce drops that
-// requirement.
+// can carry its own nonce. The middleware-set CSP still keeps
+// 'unsafe-inline' under script-src because Next.js doesn't stamp
+// nonces on statically-rendered pages (removing it broke prod twice —
+// see CLAUDE.md § "CSP — current state"); the nonce is forward-compat.
+// CSP L3 ignores 'unsafe-inline' once a nonce/hash is present on
+// dynamically-rendered pages.
 
 const nextConfig: NextConfig = {
   output: "standalone",
