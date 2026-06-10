@@ -194,6 +194,37 @@ export interface TaxCalcOptions {
  * Generate Form 8949 lot-level detail with wash sale detection.
  * Uses FIFO matching. Detects wash sales when the same symbol is
  * repurchased within 30 days before or after a loss sale.
+ *
+ * KNOWN LIMITATIONS (P1 #7 audit, 2026-06-09) — deferred to a focused
+ * IRC §1091 rewrite, tracked separately:
+ *
+ *   1. Disallowance is NOT proportional to replacement shares. Selling
+ *      100 shares at a loss with only 30 replacement shares within ±30
+ *      days disallows the entire loss instead of the 30/100 portion.
+ *      Today's behavior overstates the user's taxable income (lost
+ *      losses are never recovered).
+ *
+ *   2. Replacement lot's cost basis is NOT adjusted upward by the
+ *      disallowed amount. Subsequent sales of replacement shares
+ *      therefore overstate gains (or understate losses) by the
+ *      disallowed amount — same dollar amount appears to be taxed
+ *      twice (lost on the original sale, taxed again on the
+ *      replacement sale).
+ *
+ *   3. Holding period is NOT tacked onto the replacement lot. The
+ *      replacement's dateAcquired stays at its own purchase date for
+ *      long-term/short-term determination, when per §1223(3) it should
+ *      inherit the original lot's holding-period start.
+ *
+ *   4. Self-exclusion at the "buyTime === lot.date && buy.price ===
+ *      lot.price" check misfires when two distinct fills happen at the
+ *      same timestamp and price (rare; bunched scan fills).
+ *
+ * Net direction: bug overstates user's tax liability. The IRS isn't
+ * shorted; the user pays more than they owe. Fix prioritized below
+ * the engine-safety items in the audit. Until the rewrite lands,
+ * surface the limitation in the Tax Center UI footnote so users
+ * who actually wash-sale know to file a manual §1091 adjustment.
  */
 export function generateForm8949(
   trades: TaxTrade[],

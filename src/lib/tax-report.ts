@@ -168,8 +168,16 @@ export function computeFifoClosedLots(events: TaxTradeEvent[]): ClosedLot[] {
 
   // Second pass: flag wash sales. For each LOSING closed lot, check whether
   // ANY BUY of the same symbol happened within ±30 days of the sale date.
-  // The disallowed loss = the entire loss (we don't pro-rate by replacement
-  // qty for v1; that's an enhancement).
+  //
+  // KNOWN LIMITATIONS (P1 #7 audit, 2026-06-09) — deferred to a focused
+  // IRC §1091 rewrite, tracked separately. Same scope as tax-engine.ts
+  // generateForm8949:
+  //   1. Disallowed loss = the entire loss, not pro-rated to replacement qty.
+  //   2. Replacement lot's basis is NOT adjusted upward by the disallowed
+  //      amount, so its later sale overstates gains.
+  //   3. Holding period is NOT tacked onto the replacement lot.
+  // Net direction: user overpays tax. The IRS isn't shorted. Fix
+  // prioritized below the engine-safety items in the audit.
   const buysBySymbol = new Map<string, TaxTradeEvent[]>();
   for (const e of events) {
     if (e.action !== "BUY") continue;
