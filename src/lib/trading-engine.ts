@@ -3327,6 +3327,29 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
   // does. Without this, tactical stops only ever get set once by placeDisasterStops
   // at engine start and never move (and mid-run positions get none).
   await syncBrokerStops(engine.userId);
+
+  // P2 audit (2026-06-09) — parity with runScan tail: drop expired in-memory
+  // state and persist snapshot. Pre-fix, tactical engines got NO state
+  // persistence at all (dailyLoss, cooldowns, rate-limit window all reset on
+  // restart), and the cooldowns/externalSignals maps grew unbounded.
+  const tacticalNow = Date.now();
+  engine.externalSignals = engine.externalSignals.filter(
+    (s) => tacticalNow - s.receivedAt < 30 * 60 * 1000
+  );
+  for (const [sym, ts] of engine.cooldowns) {
+    if (tacticalNow - ts > 150 * 60 * 1000) engine.cooldowns.delete(sym);
+  }
+  if (engine.userId) {
+    try {
+      const payload = serializeEngineState(engine, positionMap);
+      await saveEngineSnapshot(engine.userId, payload);
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : "unknown" },
+        "Tactical engine snapshot save failed (non-fatal)"
+      );
+    }
+  }
 }
 
 // ─── Tactical Smart: SPY trend + screener-weighted entries ──────────────────
@@ -3898,6 +3921,29 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
   // got set once by placeDisasterStops at engine start: they never ratcheted up,
   // and positions opened mid-run got no broker stop at all.
   await syncBrokerStops(engine.userId);
+
+  // P2 audit (2026-06-09) — parity with runScan tail: drop expired in-memory
+  // state and persist snapshot. Pre-fix, tactical-smart engines got NO state
+  // persistence at all on restart and the cooldowns/externalSignals maps grew
+  // unbounded.
+  const tsNow = Date.now();
+  engine.externalSignals = engine.externalSignals.filter(
+    (s) => tsNow - s.receivedAt < 30 * 60 * 1000
+  );
+  for (const [sym, ts] of engine.cooldowns) {
+    if (tsNow - ts > 150 * 60 * 1000) engine.cooldowns.delete(sym);
+  }
+  if (engine.userId) {
+    try {
+      const payload = serializeEngineState(engine, positionMap);
+      await saveEngineSnapshot(engine.userId, payload);
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : "unknown" },
+        "Tactical-smart engine snapshot save failed (non-fatal)"
+      );
+    }
+  }
 
   // Phase 14 — emit total scan duration. If totalMs >> 60s, the scan is at
   // risk of crossing market-close boundary on a 15-min cadence. Log warn so
@@ -5167,7 +5213,11 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
       .where(
         and(
           eq(traderTrades.userId, userId),
-          eq(traderTrades.action, "buy"),
+          // P2 audit (2026-06-09) — logTrade writes uppercase "BUY"; this
+          // filter was lowercase, so the query matched zero rows. Post-restart
+          // re-buy protection was silently off beyond the snapshot's 60-min
+          // window. Fixed to match the canonical casing.
+          eq(traderTrades.action, "BUY"),
           gt(traderTrades.createdAt, new Date(sinceMs))
         )
       );
