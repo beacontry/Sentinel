@@ -30,6 +30,13 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# P2 audit (2026-06-09) — create writable cache dir for bar cache + optimizer.
+# Default CACHE_DIR in market-data.ts + optimizer.ts is /app/cache; the dir
+# must be owned by nextjs so first-write mkdir doesn't EACCES under the
+# non-root user. Operators wanting persistence across restarts mount a
+# volume at /app/cache.
+RUN mkdir -p /app/cache && chown nextjs:nodejs /app/cache
+
 USER nextjs
 EXPOSE 3000
 

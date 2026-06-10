@@ -140,8 +140,12 @@ const IMMIGRANT_RATE = 0.05;       // 5% of pop replaced with random each gen
 const STAGNATION_GENS = 8;         // gens without improvement before restart
 const STAGNATION_IMMIGRANT_RATE = 0.15; // 15% replacement on stagnation
 
+// P2 audit (2026-06-09) — same fix as market-data.ts: prod container runs
+// as non-root nextjs without /data, so the previous default silently
+// disabled the incremental cache. Default is now /app/cache (chowned by
+// Dockerfile). One-shot warning emitted on mkdir failure.
 const CACHE_DIR = join(
-  process.env.CACHE_DIR ?? (process.env.NODE_ENV === "production" ? "/data/cache" : join(process.cwd(), "data")),
+  process.env.CACHE_DIR ?? (process.env.NODE_ENV === "production" ? "/app/cache" : join(process.cwd(), "data")),
   "optimizer-cache"
 );
 
@@ -158,9 +162,21 @@ export function getJobProgress(runId: string): OptimizationProgress | null {
 
 // ── Data fetching & caching ─────────────────────────────────────────
 
+let cacheDirWarned = false;
 async function ensureCacheDir() {
-  if (!existsSync(CACHE_DIR)) {
-    await mkdir(CACHE_DIR, { recursive: true });
+  try {
+    if (!existsSync(CACHE_DIR)) {
+      await mkdir(CACHE_DIR, { recursive: true });
+    }
+  } catch (err) {
+    if (!cacheDirWarned) {
+      cacheDirWarned = true;
+      logger.warn(
+        { dir: CACHE_DIR, err: (err as Error).message },
+        "Optimizer cache disabled — incremental fetch falls back to full refetch every run until CACHE_DIR points at a writable path"
+      );
+    }
+    throw err;
   }
 }
 

@@ -13,18 +13,36 @@ interface MarketDataProvider {
 
 // ─── Persistent bar cache ──────────────────────────────────────────
 
+// P2 audit (2026-06-09) — pre-fix default was `/data/cache`, but the
+// production container runs as the non-root `nextjs` user with no `/data`
+// mount → mkdir EACCES → every scan re-fetched from Yahoo. Default is now
+// `/app/cache` (matches the dir Dockerfile chowns to nextjs:nodejs), and
+// the mkdir failure logs a one-shot warning so the silent fallback is
+// at least visible in journald. Operators wanting persistence across
+// container restarts mount a volume at /app/cache.
 const BAR_CACHE_DIR = join(
-  process.env.CACHE_DIR ?? (process.env.NODE_ENV === "production" ? "/data/cache" : join(process.cwd(), "data")),
+  process.env.CACHE_DIR ?? (process.env.NODE_ENV === "production" ? "/app/cache" : join(process.cwd(), "data")),
   "bar-cache"
 );
 const BAR_CACHE_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours for daily bars
 const BAR_CACHE_5M_MAX_AGE_MS = 11 * 60 * 1000;  // 11 min — slightly past the 5-min scan interval so the next scan fully hits cache even if the prior scan straddled the boundary
 
 let barCacheDirReady = false;
+let barCacheDirWarned = false;
 async function ensureBarCacheDir() {
   if (barCacheDirReady) return;
-  if (!existsSync(BAR_CACHE_DIR)) await mkdir(BAR_CACHE_DIR, { recursive: true });
-  barCacheDirReady = true;
+  try {
+    if (!existsSync(BAR_CACHE_DIR)) await mkdir(BAR_CACHE_DIR, { recursive: true });
+    barCacheDirReady = true;
+  } catch (err) {
+    if (!barCacheDirWarned) {
+      barCacheDirWarned = true;
+      console.warn(
+        `[market-data] Bar cache disabled — could not create ${BAR_CACHE_DIR}: ${(err as Error).message}. Every scan will re-fetch from the upstream provider until CACHE_DIR points at a writable path.`
+      );
+    }
+    throw err;
+  }
 }
 
 function barCacheKey(symbol: string, resolution: string): string {
