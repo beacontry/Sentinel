@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { verifyPassword, createToken, setSessionCookie } from "@/lib/auth";
+import { writeAudit, AuditAction } from "@/lib/audit";
 import { rateLimit } from "@/lib/rate-limiter";
 import { getRateLimitIp } from "@/lib/rate-limit-ip";
 import { createRouteLogger } from "@/lib/logger";
@@ -66,13 +67,30 @@ export async function POST(request: Request) {
     .where(eq(users.email, emailKey))
     .limit(1);
 
+  // P2 audit (2026-06-09) — write the same AUTH_LOGIN_* audit rows the
+  // password-login route writes so PIN auth leaves a durable trail.
+  // Pre-fix, every PIN login was invisible to the hash-chained audit log;
+  // a compromised PIN could be used to access the account with no record
+  // beyond pino logs (which rotate).
   if (!user || !user.pinHash) {
+    await writeAudit({
+      actor: { userId: user?.id ?? null, email, role: (user?.role as "admin" | "user" | undefined) ?? null },
+      action: AuditAction.AUTH_LOGIN_FAILED,
+      metadata: { email, method: "pin", reason: !user ? "user_not_found" : "no_pin_set" },
+      request,
+    });
     return NextResponse.json({ error: "Invalid PIN" }, { status: 401 });
   }
 
   const valid = await verifyPassword(pin, user.pinHash);
   if (!valid) {
     log.warn({ email }, "Failed PIN login attempt");
+    await writeAudit({
+      actor: { userId: user.id, email: user.email, role: user.role as "admin" | "user" },
+      action: AuditAction.AUTH_LOGIN_FAILED,
+      metadata: { email: user.email, method: "pin", reason: "wrong_pin" },
+      request,
+    });
     return NextResponse.json({ error: "Invalid PIN" }, { status: 401 });
   }
 
@@ -81,6 +99,13 @@ export async function POST(request: Request) {
     email: user.email,
     name: user.name,
     role: user.role as "admin" | "user",
+  });
+
+  await writeAudit({
+    actor: { userId: user.id, email: user.email, role: user.role as "admin" | "user" },
+    action: AuditAction.AUTH_LOGIN_SUCCESS,
+    metadata: { email: user.email, method: "pin" },
+    request,
   });
 
   const cookie = setSessionCookie(token);

@@ -177,7 +177,16 @@ export function CsrfInit() {
         }
       }
 
-      let response = await originalFetch.call(window, input, initWithCsrf);
+      // P2 audit (2026-06-09) — for Request inputs, use a fresh clone on
+      // every fetch call. Reusing the same Request after its body has been
+      // consumed throws "body already used". Cloning before the first call
+      // also preserves the caller's original Request for any downstream
+      // reads they may attempt (rare but legal). String/URL inputs pass
+      // through unchanged.
+      const makeFetchInput = (): typeof input =>
+        input instanceof Request ? input.clone() : input;
+
+      let response = await originalFetch.call(window, makeFetchInput(), initWithCsrf);
 
       // Self-heal on CSRF mismatch (403). Only retries once; if the retry
       // ALSO fails, surface the 403 to the caller.
@@ -200,7 +209,10 @@ export function CsrfInit() {
           if (freshToken) {
             const headers = new Headers(init?.headers);
             headers.set("x-csrf-token", freshToken);
-            response = await originalFetch.call(window, input, {
+            // makeFetchInput() returns a fresh clone for Request inputs —
+            // the first call consumed the prior clone's body, this one
+            // gets its own body for the retry.
+            response = await originalFetch.call(window, makeFetchInput(), {
               ...init,
               headers,
             });
@@ -217,7 +229,15 @@ export function CsrfInit() {
           sessionExpiredFired = true;
           window.dispatchEvent(new CustomEvent("session-expired"));
           setTimeout(() => {
-            window.location.href = "/login";
+            // P2 audit (2026-06-09) — preserve the current location so the
+            // login page can bounce the user back after sign-in (matches
+            // middleware's redirect behavior). Skip on /login itself to
+            // avoid an infinite redirect chain.
+            const currentPath = window.location.pathname + window.location.search;
+            const onLogin = currentPath === "/login" || currentPath.startsWith("/login?");
+            window.location.href = onLogin
+              ? "/login"
+              : `/login?redirect=${encodeURIComponent(currentPath)}`;
           }, 2000);
         }
       }
