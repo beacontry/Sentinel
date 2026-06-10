@@ -332,52 +332,66 @@ export function runBacktest(
           shares: position.shares,
         });
 
-        equityCurve.push({ date: bar.date, value: cash });
         position = null;
       }
+    } else {
+      // ── Not in position: evaluate signals on step boundaries ──
+      // P1 #6 (2026-06-09 audit) — restructured from continue-style early-outs
+      // to nested ifs so the end-of-bar mark-to-market push below always runs.
+      if ((i - windowSize) % stepSize === 0) {
+        const windowBars = bars.slice(i - windowSize, i);
+        if (windowBars.length >= 30) {
+          const result = analyzeBars(symbol, windowBars);
 
-      continue;
+          // Long-only: only open on BUY/STRONG_BUY
+          if (result.signal === "BUY" || result.signal === "STRONG_BUY") {
+            // Buys fill above the close (slippage); entryPrice is the cost basis,
+            // so stop/TP levels and returns all derive from the real fill.
+            const entryPrice = bar.close * (1 + SLIP);
+
+            // Risk-based position sizing: max_single_trade_loss / stop_distance.
+            // activeCfg honors adaptive's per-bar regime swap.
+            const stopDistance = entryPrice * activeCfg.stopLossPct;
+            if (stopDistance > 0) {
+              const riskBasedShares = Math.floor(activeCfg.maxSingleTradeLoss / stopDistance);
+              const affordableShares = Math.floor(cash / entryPrice);
+              const shares = Math.min(riskBasedShares, activeCfg.maxPositionSize, affordableShares);
+
+              if (shares > 0) {
+                cash -= shares * entryPrice + COMMISSION;
+                position = {
+                  entryPrice,
+                  entryDate: bar.date,
+                  entryIdx: i,
+                  signal: result.signal,
+                  shares,
+                  peakPrice: entryPrice,
+                  stopLoss: entryPrice * (1 - activeCfg.stopLossPct),
+                };
+              }
+            }
+          }
+        }
+      }
     }
 
-    // ── Not in position: evaluate signals on step boundaries ──
-    if ((i - windowSize) % stepSize !== 0) continue;
-
-    const windowBars = bars.slice(i - windowSize, i);
-    if (windowBars.length < 30) continue;
-
-    const result = analyzeBars(symbol, windowBars);
-
-    // Long-only: only open on BUY/STRONG_BUY
-    if (result.signal !== "BUY" && result.signal !== "STRONG_BUY") continue;
-
-    // Buys fill above the close (slippage); entryPrice is the cost basis, so
-    // stop/TP levels and returns all derive from the real fill.
-    const entryPrice = bar.close * (1 + SLIP);
-
-    // Risk-based position sizing: max_single_trade_loss / stop_distance.
-    // activeCfg honors adaptive's per-bar regime swap.
-    const stopDistance = entryPrice * activeCfg.stopLossPct;
-    if (stopDistance <= 0) continue;
-    const riskBasedShares = Math.floor(activeCfg.maxSingleTradeLoss / stopDistance);
-    const affordableShares = Math.floor(cash / entryPrice);
-    const shares = Math.min(riskBasedShares, activeCfg.maxPositionSize, affordableShares);
-
-    if (shares <= 0) continue;
-
-    cash -= shares * entryPrice + COMMISSION;
-    position = {
-      entryPrice,
-      entryDate: bar.date,
-      entryIdx: i,
-      signal: result.signal,
-      shares,
-      peakPrice: entryPrice,
-      stopLoss: entryPrice * (1 - activeCfg.stopLossPct),
-    };
+    // P1 #6 (2026-06-09 audit) — daily mark-to-market equity curve. Pre-fix
+    // equityCurve only recorded points at trade exits, so Sharpe/Sortino
+    // annualized per-trade returns with √252 as if they were daily, max
+    // drawdown ignored intra-trade drawdowns, and Calmar's
+    // Math.pow(cash/initialCash, 252/numTrades) annualization was absurd for
+    // sparse trade counts. Pushing one entry per bar (matching optimizer.ts's
+    // portfolioBacktest) makes the daily-return assumption real.
+    const equity = cash + (position ? position.shares * bar.close : 0);
+    equityCurve.push({ date: bar.date, value: equity });
   }
 
   // Close any remaining position at end of data (liquidate at the last close,
-  // net of exit slippage + commission, same as any other exit).
+  // net of exit slippage + commission, same as any other exit). The last-bar
+  // mark-to-market was already pushed inside the loop; we update `cash` and
+  // record the trade but DON'T push another equityCurve entry (would duplicate
+  // the lastBar date — and the realized cash here is mark-to-market modulo a
+  // few bps of slippage/commission, immaterial to risk metrics).
   if (position) {
     const lastBar = bars[bars.length - 1];
     const exitFill = lastBar.close * (1 - SLIP);
@@ -395,8 +409,6 @@ export function runBacktest(
       exitReason: "end_of_data",
       shares: position.shares,
     });
-
-    equityCurve.push({ date: lastBar.date, value: cash });
   }
 
   const winCount = trades.filter((t) => t.wasCorrect).length;
