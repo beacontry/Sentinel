@@ -173,3 +173,38 @@ export async function requireAuthWithCsrf(
 
   return session;
 }
+
+/**
+ * GET-route equivalent of requireAuthWithCsrf: auth + optional DB role
+ * re-check, no CSRF (GETs don't need it). Returns JWTPayload on success
+ * or a Response (401/403) on failure.
+ *
+ * P2 audit (2026-06-09) — created to close the "admin GET trusts stale
+ * JWT role claim" gap. A demoted/deleted admin previously kept read
+ * access to all-user audit/users/api-usage/etc. data for up to the JWT
+ * lifetime (7 days). Use this on every admin GET that doesn't already
+ * go through requireAuthWithCsrf.
+ *
+ * Usage:
+ *   const auth = await requireAuthForRead(["admin"]);
+ *   if (auth instanceof Response) return auth;
+ *   // auth is JWTPayload with live role
+ */
+export async function requireAuthForRead(
+  roles?: UserRole[]
+): Promise<JWTPayload | Response> {
+  const session = await getSession();
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (roles) {
+    const currentRole = await getCurrentRole(session.userId);
+    if (!currentRole || !roles.includes(currentRole)) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+    session.role = currentRole;
+  }
+
+  return session;
+}

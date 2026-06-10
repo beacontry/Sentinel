@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { getSession, requireAuthWithCsrf, hashPassword } from "@/lib/auth";
+import { requireAuthForRead, requireAuthWithCsrf, hashPassword } from "@/lib/auth";
 import {
   adminCreateUserSchema,
   adminUpdateUserSchema,
@@ -13,20 +13,11 @@ import { eq } from "drizzle-orm";
 
 const logger = createRouteLogger("admin/users");
 
-function forbidden() {
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-}
-
 // ─── GET: List all users ─────────────────────────────────────────
 
 export async function GET() {
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (session.role !== "admin") {
-    return forbidden();
-  }
+  const session = await requireAuthForRead(["admin"]);
+  if (session instanceof Response) return session;
 
   try {
     const result = await withTimeout(3000, async (tx) => {

@@ -22,7 +22,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthForRead } from "@/lib/auth";
 import { withTimeout, isStatementTimeout } from "@/lib/db";
 import {
   users,
@@ -41,10 +41,8 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAuthForRead(["admin"]);
+  if (session instanceof Response) return session;
 
   const { id: userId } = await params;
   if (!userId) {

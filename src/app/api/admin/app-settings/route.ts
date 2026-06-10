@@ -6,7 +6,7 @@
 // PATCH → set { key, value } — admin role required
 
 import { NextResponse, type NextRequest } from "next/server";
-import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { requireAuthForRead, requireAuthWithCsrf } from "@/lib/auth";
 import {
   listAppSettings,
   setAppSetting,
@@ -19,10 +19,8 @@ import { z } from "zod";
 const log = createRouteLogger("admin/app-settings");
 
 export async function GET() {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAuthForRead(["admin"]);
+  if (session instanceof Response) return session;
 
   try {
     const settings = await listAppSettings();

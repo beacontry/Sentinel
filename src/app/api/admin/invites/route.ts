@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { invites, users } from "@/lib/db/schema";
-import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { requireAuthForRead, requireAuthWithCsrf } from "@/lib/auth";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
 import { eq, desc } from "drizzle-orm";
@@ -17,10 +17,8 @@ const inviteSchema = z.object({
 // ─── GET: List all invites ──────────────────────────────────────
 
 export async function GET() {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAuthForRead(["admin"]);
+  if (session instanceof Response) return session;
 
   try {
     const rows = await withTimeout(3000, async (tx) => {

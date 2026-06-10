@@ -11,7 +11,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { requireAuthForRead, requireAuthWithCsrf } from "@/lib/auth";
 import { listConfig, setConfig, isKnownKey, KNOWN_KEYS } from "@/lib/system-config";
 import { createRouteLogger } from "@/lib/logger";
 import { z } from "zod";
@@ -26,10 +26,8 @@ const writeSchema = z.object({
 // ─── GET: list all keys (masked) ──────────────────────────────────
 
 export async function GET() {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAuthForRead(["admin"]);
+  if (session instanceof Response) return session;
   try {
     const entries = await listConfig();
     return NextResponse.json({ entries, knownKeys: KNOWN_KEYS });

@@ -12,7 +12,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { redditSubreddits } from "@/lib/db/schema/reddit";
-import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { requireAuthForRead, requireAuthWithCsrf } from "@/lib/auth";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { clearRedditCache } from "@/lib/reddit";
 import { createRouteLogger } from "@/lib/logger";
@@ -43,10 +43,8 @@ const updateSchema = z.object({
 // ─── GET — list all subs (enabled + disabled) ─────────────────────────────
 
 export async function GET() {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAuthForRead(["admin"]);
+  if (session instanceof Response) return session;
 
   try {
     const rows = await withTimeout(3000, async (tx) => {

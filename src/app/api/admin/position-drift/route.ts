@@ -26,7 +26,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthForRead } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { users, brokerConnections, traderTrades } from "@/lib/db/schema";
 import { decrypt } from "@/lib/crypto";
@@ -55,10 +55,8 @@ interface UserDrift {
 }
 
 export async function GET() {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAuthForRead(["admin"]);
+  if (session instanceof Response) return session;
 
   try {
     // Pull users with active broker connections (these are the only ones with positions)

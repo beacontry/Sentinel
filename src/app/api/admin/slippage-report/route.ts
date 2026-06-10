@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
+import { requireAuthForRead } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { users, traderTrades } from "@/lib/db/schema";
 import { eq, and, gte, isNotNull, sql } from "drizzle-orm";
@@ -47,10 +47,8 @@ function slippageCost(action: string, placeholder: number, actual: number, qty: 
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAuthForRead(["admin"]);
+  if (session instanceof Response) return session;
 
   const url = new URL(request.url);
   const daysStr = url.searchParams.get("days");

@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSession, requireAuthWithCsrf } from "@/lib/auth";
+import { requireAuthForRead, requireAuthWithCsrf } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { users, brokerConnections } from "@/lib/db/schema";
 import {
@@ -43,10 +43,8 @@ const adminEngineSchema = z.object({
 // ─── GET — Engine status across every user ──────────────────────────────────
 
 export async function GET() {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const session = await requireAuthForRead(["admin"]);
+  if (session instanceof Response) return session;
 
   try {
     // Load every user + their active broker connection (left join via two queries).
