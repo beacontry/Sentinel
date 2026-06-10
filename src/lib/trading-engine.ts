@@ -484,9 +484,18 @@ function isFilterCacheStale(cacheDate: string | undefined, cacheTimestamp: numbe
 }
 
 /**
- * #1: Earnings blackout — don't buy within 5 trading days of earnings
+ * #1: Earnings blackout — don't buy within `blackoutDays` calendar days of
+ * earnings. Pre-fix this hardcoded a 5-day blackout regardless of the
+ * user's `earningsBlackoutDays` risk-profile setting (where 0 = disabled).
+ * Now driven by the parameter; the second check inside canPlaceBuyOrder
+ * already respected the setting, but passesSmartFilters did not — so the
+ * filter fired before the canPlaceBuyOrder gate could see the user's
+ * 0-disabled choice (P2 audit, 2026-06-09).
+ *
+ * Passing `blackoutDays === 0` short-circuits to allowed.
  */
-async function isInEarningsBlackout(symbol: string): Promise<boolean> {
+async function isInEarningsBlackout(symbol: string, blackoutDays: number = 5): Promise<boolean> {
+  if (blackoutDays <= 0) return false;
   const today = new Date().toISOString().slice(0, 10);
 
   // Refresh cache daily OR every 6h (whichever first) — see FILTER_CACHE_TTL_MS
@@ -535,12 +544,13 @@ async function isInEarningsBlackout(symbol: string): Promise<boolean> {
   const dates = gFilters.__earningsCache?.get(symbol);
   if (!dates || dates.length === 0) return false;
 
-  // Check if any earnings date is within 5 trading days
+  // Blackout window driven by user setting. Window opens 1 day before the
+  // earnings date (`>= -1`) and stays open `blackoutDays` forward.
   const now = Date.now();
   for (const dateStr of dates) {
     const earningsDate = new Date(dateStr + "T16:00:00").getTime();
     const daysUntil = (earningsDate - now) / 86400000;
-    if (daysUntil >= -1 && daysUntil <= 5) return true; // blackout window
+    if (daysUntil >= -1 && daysUntil <= blackoutDays) return true; // blackout window
   }
   return false;
 }
@@ -621,11 +631,20 @@ async function getSentimentScore(symbol: string): Promise<number> {
  * Run all three filters on a symbol before buying.
  * Returns: { allowed: boolean, reason?: string }
  */
-async function passesSmartFilters(symbol: string, bars: Bar[]): Promise<{ allowed: boolean; reason?: string }> {
-  // #1: Earnings blackout
-  const inBlackout = await isInEarningsBlackout(symbol);
-  if (inBlackout) {
-    return { allowed: false, reason: "earnings_blackout" };
+async function passesSmartFilters(
+  symbol: string,
+  bars: Bar[],
+  opts?: { earningsBlackoutDays?: number },
+): Promise<{ allowed: boolean; reason?: string }> {
+  // #1: Earnings blackout — driven by user setting; opts.earningsBlackoutDays
+  // === 0 disables. Default 5 keeps the historical behavior for any caller
+  // that hasn't been updated yet.
+  const earningsBlackoutDays = opts?.earningsBlackoutDays ?? 5;
+  if (earningsBlackoutDays > 0) {
+    const inBlackout = await isInEarningsBlackout(symbol, earningsBlackoutDays);
+    if (inBlackout) {
+      return { allowed: false, reason: "earnings_blackout" };
+    }
   }
 
   // #2: Relative strength — skip stocks underperforming (negative momentum)
@@ -4671,8 +4690,13 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           continue;
         }
 
-        // Smart filters: earnings blackout, relative strength, sentiment
-        const filterResult = await passesSmartFilters(symbol, bars);
+        // Smart filters: earnings blackout, relative strength, sentiment.
+        // P2 audit (2026-06-09) — pass user's earningsBlackoutDays so the
+        // setting (incl. 0=disabled) actually applies here too, not only
+        // inside the later canPlaceBuyOrder gate.
+        const filterResult = await passesSmartFilters(symbol, bars, {
+          earningsBlackoutDays: riskLimits.earningsBlackoutDays,
+        });
         if (!filterResult.allowed) {
           if (isStrongSignal) log.info({ symbol, reason: filterResult.reason }, "STRONG_BUY blocked by smart filter");
           else log.debug({ symbol, reason: filterResult.reason }, "Blocked by smart filter");
@@ -4932,7 +4956,9 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         // Filters that need I/O (smart filters, canPlaceBuyOrder with sector
         // context) run here — outside the planner because they require DB +
         // async work. Mirrors the in-loop entry path's gate order.
-        const filterResult = await passesSmartFilters(candFull.symbol, candFull.bars);
+        const filterResult = await passesSmartFilters(candFull.symbol, candFull.bars, {
+          earningsBlackoutDays: riskLimits.earningsBlackoutDays,
+        });
         if (!filterResult.allowed) {
           log.info({ symbol: candFull.symbol, reason: filterResult.reason }, "Swap-sell candidate blocked by smart filter");
           continue;
@@ -5795,10 +5821,14 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
   try {
     // Get only open stop orders (avoids old filled/cancelled orders eating the limit)
     const openOrders = await client.getOrders(100, "open");
-    const stopOrders = new Map<string, { id: string; stopPrice: number }>();
+    // P2 audit (2026-06-09) — capture qty too. Pre-fix syncBrokerStops only
+    // replaced stopPrice; after a partial manual sell the broker-side stop
+    // still carried the original (larger) qty, so a trigger would try to
+    // sell more shares than held (broker rejects or shorts).
+    const stopOrders = new Map<string, { id: string; stopPrice: number; qty: number }>();
     for (const o of openOrders) {
       if (o.type === "stop" && o.side === "sell" && o.stopPrice) {
-        stopOrders.set(o.symbol, { id: o.id, stopPrice: parseFloat(o.stopPrice) });
+        stopOrders.set(o.symbol, { id: o.id, stopPrice: parseFloat(o.stopPrice), qty: o.qty });
       }
     }
 
@@ -5893,36 +5923,52 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
         pos.stopLoss = existing.stopPrice;
       }
 
-      // Only ratchet UP — never lower the stop
-      if (targetStop <= existing.stopPrice) {
-        log.debug(
-          { symbol, targetStop: targetStop.toFixed(2), existingStop: existing.stopPrice.toFixed(2), peakPrice: pos.peakPrice.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
-          "Stop sync skipped — target not higher than existing"
-        );
-        continue;
-      }
+      // P2 audit (2026-06-09) — track qty drift independently of price
+      // ratchet so partial manual sells get the broker stop right-sized
+      // even when the price doesn't need to move (or shouldn't move down).
+      const qtyChanged = existing.qty !== pos.qty;
+      const priceRatchet = targetStop > existing.stopPrice && (targetStop - existing.stopPrice) >= 0.10;
 
-      // Don't update if difference is less than $0.10 (avoid excessive API calls)
-      if (targetStop - existing.stopPrice < 0.10) {
-        log.debug(
-          { symbol, targetStop: targetStop.toFixed(2), existingStop: existing.stopPrice.toFixed(2), diff: (targetStop - existing.stopPrice).toFixed(2) },
-          "Stop sync skipped — difference < $0.10"
-        );
+      if (!qtyChanged && !priceRatchet) {
+        // Either target isn't higher, diff is too small, AND qty matches — skip.
+        if (targetStop <= existing.stopPrice) {
+          log.debug(
+            { symbol, targetStop: targetStop.toFixed(2), existingStop: existing.stopPrice.toFixed(2), peakPrice: pos.peakPrice.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
+            "Stop sync skipped — target not higher than existing"
+          );
+        } else {
+          log.debug(
+            { symbol, targetStop: targetStop.toFixed(2), existingStop: existing.stopPrice.toFixed(2), diff: (targetStop - existing.stopPrice).toFixed(2) },
+            "Stop sync skipped — price diff < $0.10 and qty unchanged"
+          );
+        }
         continue;
       }
 
       try {
-        await client.replaceOrder!(existing.id, { stopPrice: targetStop.toFixed(2) });
+        const updates: { stopPrice?: string; qty?: string } = {};
+        if (priceRatchet) updates.stopPrice = targetStop.toFixed(2);
+        if (qtyChanged) updates.qty = String(pos.qty);
+        await client.replaceOrder!(existing.id, updates);
         // Sync in-memory after a successful broker update
-        pos.stopLoss = targetStop;
+        if (priceRatchet) pos.stopLoss = targetStop;
         updated++;
         // Successful replace means broker has a stop → no longer unprotected.
         // (Unprotected is the "no stop at all" condition, not the "stop is
         // stale" condition; a stale-but-present stop is still protection.)
         engine.unprotectedSymbols.delete(symbol);
         log.info(
-          { symbol, oldStop: existing.stopPrice.toFixed(2), newStop: targetStop.toFixed(2), trailPct: (dynTrailPct * 100).toFixed(1) },
-          "Broker stop updated to match dynamic trail"
+          {
+            symbol,
+            oldStop: existing.stopPrice.toFixed(2),
+            newStop: priceRatchet ? targetStop.toFixed(2) : existing.stopPrice.toFixed(2),
+            oldQty: existing.qty,
+            newQty: pos.qty,
+            qtyChanged,
+            priceRatchet,
+            trailPct: (dynTrailPct * 100).toFixed(1),
+          },
+          "Broker stop updated"
         );
       } catch (err) {
         // Replace can fail if order was already triggered — not critical.

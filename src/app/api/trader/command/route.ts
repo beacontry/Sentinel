@@ -80,10 +80,37 @@ export async function POST(request: NextRequest) {
           }, { status: 404 });
         }
 
-        // Cancel all open orders first — stop orders block market sells
-        // (disaster stops get re-placed on the next engine scan)
+        // Cancel open orders that would block the market sells. Stop / stop-limit
+        // sells against these positions are the actual blockers.
+        //
+        // P2 audit (2026-06-09) — pre-fix this called cancelAllOrders even on a
+        // single-symbol flatten, killing unrelated manual GTC orders the user
+        // had placed on other symbols. Now: single-symbol flatten cancels only
+        // blocking orders for THAT symbol via cancelOrder(id); flatten-all
+        // keeps cancelAllOrders (consistent with closing every position).
         try {
-          if (client.cancelAllOrders) {
+          if (symbol && client.cancelOrder) {
+            const openOrders = await client.getOrders(100, "open");
+            const toCancel = openOrders.filter(
+              (o) =>
+                o.symbol === symbol &&
+                o.side === "sell" &&
+                (o.type === "stop" || o.type === "stop_limit"),
+            );
+            for (const o of toCancel) {
+              try {
+                await client.cancelOrder(o.id);
+              } catch (err) {
+                log.warn(
+                  { orderId: o.id, symbol, err: err instanceof Error ? err.message : "unknown" },
+                  "Failed to cancel blocking order before flatten",
+                );
+              }
+            }
+            if (toCancel.length > 0) {
+              await new Promise(r => setTimeout(r, 500)); // settle time
+            }
+          } else if (client.cancelAllOrders) {
             await client.cancelAllOrders();
             await new Promise(r => setTimeout(r, 500)); // settle time
           }
