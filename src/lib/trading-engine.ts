@@ -2611,31 +2611,17 @@ async function upsertDailyPnl(
 ): Promise<void> {
   const engine = userId ? getEngine(userId) : getEngine();
   const effectiveUserId = userId ?? engine.userId;
+  // P2 audit (2026-06-09) — pre-fix this was select-then-(insert|update),
+  // so concurrent runScan + runExitCheck + flatten could BOTH see "no row"
+  // and BOTH attempt INSERT — one succeeds, the other's delta is dropped
+  // (caught at the unique constraint trader_daily_pnl_date_user_idx, then
+  // logged + swallowed). Use Postgres ON CONFLICT DO UPDATE with arithmetic
+  // expressions so realizedPnl / tradesCount accumulate atomically and no
+  // delta is lost regardless of caller ordering.
   try {
-    const conditions = [eq(traderDailyPnl.date, date)];
-    if (effectiveUserId) conditions.push(eq(traderDailyPnl.userId, effectiveUserId));
-
-    const existing = await db
-      .select()
-      .from(traderDailyPnl)
-      .where(and(...conditions));
-
-    if (existing.length > 0) {
-      const row = existing[0];
-      await db
-        .update(traderDailyPnl)
-        .set({
-          realizedPnl: (row.realizedPnl ?? 0) + realizedDelta,
-          // null = preserve existing (used by per-trade updates that don't have fresh unrealized snapshot)
-          ...(unrealizedPnl !== null ? { unrealizedPnl } : {}),
-          tradesCount: (row.tradesCount ?? 0) + tradesCountDelta,
-          halted,
-          ...(haltReason ? { haltReason } : {}),
-          engineMode: engine.mode,
-        })
-        .where(eq(traderDailyPnl.id, row.id));
-    } else {
-      await db.insert(traderDailyPnl).values({
+    await db
+      .insert(traderDailyPnl)
+      .values({
         userId: effectiveUserId,
         date,
         realizedPnl: realizedDelta,
@@ -2644,8 +2630,20 @@ async function upsertDailyPnl(
         halted,
         haltReason: haltReason ?? null,
         engineMode: engine.mode,
+      })
+      .onConflictDoUpdate({
+        target: [traderDailyPnl.date, traderDailyPnl.userId],
+        set: {
+          realizedPnl: sql`${traderDailyPnl.realizedPnl} + ${realizedDelta}`,
+          // null unrealizedPnl = preserve existing (per-trade updates without
+          // a fresh broker snapshot pass null); otherwise overwrite.
+          ...(unrealizedPnl !== null ? { unrealizedPnl } : {}),
+          tradesCount: sql`${traderDailyPnl.tradesCount} + ${tradesCountDelta}`,
+          halted,
+          ...(haltReason ? { haltReason } : {}),
+          engineMode: engine.mode,
+        },
       });
-    }
   } catch (err) {
     log.error(
       { err: err instanceof Error ? err.message : "unknown" },
@@ -4557,6 +4555,10 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
               await new Promise((resolve) => setTimeout(resolve, 500));
             }
 
+            // P2 audit (2026-06-09) — use broker-reported qty for both the
+            // sell order AND P&L math + trade log. Pre-fix, the order used
+            // brokerPos.qty but pnl/log used heldPosition.qty — mismatched
+            // by however many shares the user manually sold between scans.
             const sellQty = brokerPos
               ? brokerPos.qty
               : heldPosition.qty;
@@ -4570,7 +4572,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
             });
 
             const pnl =
-              (currentPrice - heldPosition.entryPrice) * heldPosition.qty;
+              (currentPrice - heldPosition.entryPrice) * sellQty;
             realizedPnlThisScan += pnl;
             engine.dailyLoss += pnl < 0 ? pnl : 0;
             recordOrderPlacement(engine, "sell", 0);
@@ -4587,7 +4589,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
               symbol,
               signal,
               "SELL",
-              heldPosition.qty,
+              sellQty,
               currentPrice,
               "PENDING",
               pnl,
