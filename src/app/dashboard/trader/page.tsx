@@ -253,6 +253,8 @@ export default function TraderPage() {
     maxPositionSize: "",
     maxSingleTradeLoss: "",
     maxExposureMultiplier: "",
+    trailActivationProfitPct: "",
+    trailActivationBars: "",
   });
   const [riskSaving, setRiskSaving] = useState(false);
   const [riskSaved, setRiskSaved] = useState(false);
@@ -342,6 +344,14 @@ export default function TraderPage() {
             maxPositionSize: profile.maxPositionSize != null ? String(profile.maxPositionSize) : "",
             maxSingleTradeLoss: profile.maxSingleTradeLoss != null ? String(profile.maxSingleTradeLoss) : "",
             maxExposureMultiplier: profile.maxExposureMultiplier != null ? String(profile.maxExposureMultiplier) : "",
+            // The risk profile stores the gate as a fraction (0.05 = 5%); the form
+            // surfaces it as a percent for readability — display × 100, save / 100.
+            trailActivationProfitPct: profile.trailActivationProfitPct != null
+              ? String(profile.trailActivationProfitPct * 100)
+              : "",
+            trailActivationBars: profile.trailActivationBars != null
+              ? String(profile.trailActivationBars)
+              : "",
           });
         }
       } catch {
@@ -1325,6 +1335,20 @@ export default function TraderPage() {
                   step: "0.1",
                   help: "Sum of all open positions as a multiple of equity. 1.0× = no leverage, 1.5× = mild margin use. Stay ≤1.0× on a cash account.",
                 },
+                {
+                  key: "trailActivationProfitPct",
+                  label: "Trail activation (peak % above entry)",
+                  placeholder: "Off (recommended: 5)",
+                  step: "0.5",
+                  help: "Trailing stop stays dormant until peak rises this far above entry. Fixed disaster stop still active from day 0. Robustness sweep recommends 5%: positive Δreturn on the loser universe in 4/5 periods, on random S&P in 5/5. Leave blank to keep the trail always-active.",
+                },
+                {
+                  key: "trailActivationBars",
+                  label: "Trail activation (delay, days)",
+                  placeholder: "Off (skip unless tuning)",
+                  step: "1",
+                  help: "Trailing stop stays dormant for this many trading days after entry. Less robust than the profit gate per the sweep — surfaced for opt-in tuning only. Leave blank or 0 for default.",
+                },
               ] as const).map(({ key, label, placeholder, step, help }) => (
                 <div key={key}>
                   <Input
@@ -1352,14 +1376,18 @@ export default function TraderPage() {
                   setRiskSaving(true);
                   setRiskSaved(false);
                   try {
-                    // Build payload: null for empty fields, number for set fields
+                    // Build payload: null for empty fields, number for set fields.
+                    // trailActivationProfitPct is rendered as a percent (5 = 5%) but
+                    // the DB stores the fraction (0.05), so divide on the way out.
                     const payload: Record<string, number | null> = {};
                     for (const [k, v] of Object.entries(riskForm)) {
                       if (v === "") {
                         payload[k] = null;
                       } else {
                         const num = parseFloat(v);
-                        if (!isNaN(num)) payload[k] = num;
+                        if (!isNaN(num)) {
+                          payload[k] = k === "trailActivationProfitPct" ? num / 100 : num;
+                        }
                       }
                     }
 

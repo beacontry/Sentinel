@@ -191,6 +191,11 @@ export const updateRiskProfileSchema = z.object({
   // Live-trading safeguards: stored as fraction 0..1 (e.g. 0.5 = 50% of equity / day)
   maxDailyNotionalPct: z.number().min(0).max(10).nullable().optional(),
   maxConsecutiveLosses: z.number().int().min(1).max(50).nullable().optional(),
+  // Delayed-trail activation (post-2026-06-11). Stored as fraction (0.05 = 5%).
+  // Recommended starting value 0.05 per the robustness sweep; cap at 0.30 since
+  // sweep showed diminishing/negative returns above that threshold.
+  trailActivationProfitPct: z.number().min(0).max(0.30).nullable().optional(),
+  trailActivationBars: z.number().int().min(0).max(30).nullable().optional(),
 });
 
 // ─── Forum ────────────────────────────────────────────────────────

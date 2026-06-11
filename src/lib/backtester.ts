@@ -13,7 +13,12 @@ import {
   getGraduationMode,
   shouldGraduateExit,
   promoteToGraduationFloor,
+  isTrailActive,
 } from "./trading-engine";
+
+// Re-export so existing test imports (`import { isTrailActive } from "@/lib/backtester"`)
+// keep working after the canonical home moved to trading-engine.ts.
+export { isTrailActive };
 
 export interface BacktestTrade {
   entryDate: string;
@@ -121,24 +126,6 @@ const DEFAULT_CONFIG: BacktestConfig = {
   trailActivationProfitPct: 0,
 };
 
-/**
- * Whether the trailing stop should be ACTIVE this bar. Pure function so
- * the backtester's exit-logic gate and the future engine-side gate can
- * share semantics. When false, exit logic uses only the fixed disaster
- * stop. Always returns true when both knobs are 0 (the default).
- */
-export function isTrailActive(opts: {
-  positionAgeBars: number;
-  peakProfitPct: number;
-  trailActivationBars?: number;
-  trailActivationProfitPct?: number;
-}): boolean {
-  const minBars = opts.trailActivationBars ?? 0;
-  const minProfit = opts.trailActivationProfitPct ?? 0;
-  if (minBars > 0 && opts.positionAgeBars < minBars) return false;
-  if (minProfit > 0 && opts.peakProfitPct < minProfit) return false;
-  return true;
-}
 
 /**
  * Run a backtest that mirrors the live trader's risk rules:

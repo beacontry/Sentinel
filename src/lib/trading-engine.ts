@@ -734,6 +734,13 @@ interface RiskLimits {
   adaptiveModeEnabled: boolean;
   /** Block BUYs within N trading days of earnings. 0 = disabled. */
   earningsBlackoutDays: number;
+  // Delayed-trail activation (post-2026-06-11 review). Both 0 = legacy
+  // always-active trail. Fixed disaster stop + breakeven ladder are
+  // unaffected; only the trailing-stop calculation is gated.
+  /** Peak must rise this fraction above entry before trail engages. 0 = always-on. */
+  trailActivationProfitPct: number;
+  /** Position must age this many bars (trading days on daily feed) before trail engages. 0 = always-on. */
+  trailActivationBars: number;
 }
 
 async function loadRiskLimits(userId: string): Promise<RiskLimits> {
@@ -748,6 +755,8 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
     maxSectorExposurePct: 0, // 0 = disabled
     adaptiveModeEnabled: false,
     earningsBlackoutDays: 0, // 0 = disabled
+    trailActivationProfitPct: 0, // 0 = legacy always-on trail
+    trailActivationBars: 0, // 0 = legacy always-on trail
   };
 
   try {
@@ -771,6 +780,8 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
       const maxSectorExposurePct = profile.maxSectorExposurePct ?? defaults.maxSectorExposurePct;
       const adaptiveModeEnabled = profile.adaptiveModeEnabled ?? defaults.adaptiveModeEnabled;
       const earningsBlackoutDays = profile.earningsBlackoutDays ?? defaults.earningsBlackoutDays;
+      const trailActivationProfitPct = profile.trailActivationProfitPct ?? defaults.trailActivationProfitPct;
+      const trailActivationBars = profile.trailActivationBars ?? defaults.trailActivationBars;
 
       // maxExposure: use multiplier if set, else fallback to accountSize × drawdown, else 0 (engine uses 1.5× equity default)
       let maxExposure = defaults.maxExposure;
@@ -792,6 +803,8 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
         maxSectorExposurePct,
         adaptiveModeEnabled,
         earningsBlackoutDays,
+        trailActivationProfitPct,
+        trailActivationBars,
       };
     }
   } catch (err) {
@@ -2154,6 +2167,35 @@ function getDynamicTrailingPct(
   return Math.max(floor, trail);
 }
 
+/**
+ * Whether the trailing stop should be ACTIVE on a position right now.
+ *
+ * Shared by the live engine's exit checks (runExitCheck + runScan exit
+ * logic) and the backtester so the gate semantics stay in lockstep. When
+ * this returns false, the caller skips the trail calculation entirely;
+ * effective stop falls back to the fixed disaster stop (pos.stopLoss),
+ * which can still include any breakeven-ladder promotions.
+ *
+ * Both knobs default to 0 = always-active (legacy behavior). The
+ * post-2026-06-11 review's robustness sweep found a profit gate of ~5%
+ * the most stable opt-in setting: positive Δreturn on admin's loser
+ * universe in 4/5 period slices and on random S&P in 5/5 (small but
+ * consistent). The bars gate is offered for users who want to delay
+ * activation in calendar-day terms (the sweep showed it less robust).
+ */
+export function isTrailActive(opts: {
+  positionAgeBars: number;
+  peakProfitPct: number;
+  trailActivationBars?: number;
+  trailActivationProfitPct?: number;
+}): boolean {
+  const minBars = opts.trailActivationBars ?? 0;
+  const minProfit = opts.trailActivationProfitPct ?? 0;
+  if (minBars > 0 && opts.positionAgeBars < minBars) return false;
+  if (minProfit > 0 && opts.peakProfitPct < minProfit) return false;
+  return true;
+}
+
 // Exposed for unit tests + ad-hoc spreadsheets
 export const trailInternals = {
   TRAIL_FLOOR,
@@ -2494,6 +2536,11 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
 
   const provider = getMarketDataProvider();
 
+  // Load risk limits once for the whole per-position loop. The
+  // delayed-trail knobs (trailActivationProfitPct / trailActivationBars)
+  // gate the trail computation below; both 0 = legacy always-on.
+  const riskLimits = engine.userId ? await loadRiskLimits(engine.userId) : null;
+
   for (const [symbol, pos] of positionMap) {
     try {
       // Skip if the main scan has an exit in flight for this symbol — prevents double-sell.
@@ -2549,7 +2596,20 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
           currentPrice,
         }
       );
-      const trailStop = pos.peakPrice * (1 - dynTrailPct);
+      // Delayed-trail activation gate (post-2026-06-11). Trail is disabled
+      // until conditions are met — fixed disaster stop + breakeven ladder
+      // still protect from bar 0. Both knobs default to 0 = legacy always-on.
+      const positionAgeBars = tradingDaysBetween(pos.entryDate, new Date());
+      const peakProfitPct = pos.entryPrice > 0
+        ? (pos.peakPrice - pos.entryPrice) / pos.entryPrice
+        : 0;
+      const trailActive = isTrailActive({
+        positionAgeBars,
+        peakProfitPct,
+        trailActivationBars: riskLimits?.trailActivationBars,
+        trailActivationProfitPct: riskLimits?.trailActivationProfitPct,
+      });
+      const trailStop = trailActive ? pos.peakPrice * (1 - dynTrailPct) : 0;
       const effectiveStop = Math.max(fixedStop, trailStop);
 
       if (currentPrice <= effectiveStop) {
@@ -4704,9 +4764,23 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
             currentPrice,
           }
         );
-        const trailingStopPrice =
-          heldPosition.peakPrice * (1 - dynTrail);
+        // Delayed-trail activation gate (post-2026-06-11). Trail is dormant
+        // until conditions are met; fixed stop + breakeven ladder still
+        // protect from bar 0. tradingDays is reused below for the hold-period
+        // check so we compute it once before the gate.
         const tradingDays = tradingDaysBetween(heldPosition.entryDate, new Date());
+        const peakProfitPctScan = heldPosition.entryPrice > 0
+          ? (heldPosition.peakPrice - heldPosition.entryPrice) / heldPosition.entryPrice
+          : 0;
+        const trailActiveScan = isTrailActive({
+          positionAgeBars: tradingDays,
+          peakProfitPct: peakProfitPctScan,
+          trailActivationBars: riskLimits.trailActivationBars,
+          trailActivationProfitPct: riskLimits.trailActivationProfitPct,
+        });
+        const trailingStopPrice = trailActiveScan
+          ? heldPosition.peakPrice * (1 - dynTrail)
+          : 0;
 
         let shouldExit = false;
         let exitReason = "";

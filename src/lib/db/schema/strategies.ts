@@ -65,6 +65,16 @@ export const userRiskProfiles = pgTable("user_risk_profiles", {
   adaptiveModeEnabled: boolean("adaptive_mode_enabled").notNull().default(false),
   /** Block BUYs within N trading days of a symbol's earnings release. NULL = disabled. */
   earningsBlackoutDays: integer("earnings_blackout_days"),
+  // Delayed-trail activation (post-2026-06-11 review). NULL/0 = legacy
+  // always-active trail. Recommended starting value 0.05 (5%) per the
+  // robustness sweep — beats baseline on admin's loser universe in 4/5
+  // period slices and on random S&P in 5/5 (small but positive). Fixed
+  // disaster stop + breakeven ladder are unaffected; only the trailing
+  // stop activation is delayed.
+  /** Peak price must rise this fraction above entry before the trail engages. NULL = 0 = always-on. */
+  trailActivationProfitPct: real("trail_activation_profit_pct"),
+  /** Position must age this many trading days before the trail engages. NULL = 0 = always-on. */
+  trailActivationBars: integer("trail_activation_bars"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
