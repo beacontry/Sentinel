@@ -206,6 +206,15 @@ export interface EngineState {
   washSaleBlockedSymbols: Set<string>;
   /** Last refresh time for washSaleBlockedSymbols (ms epoch). */
   washSaleLastRefreshAt: number;
+  // ── Losing-reentry cooldown (strategy gate; runs alongside wash-sale) ──
+  /** True when the engine should block re-entry on symbols with a losing exit
+   *  in the last LOSING_REENTRY_WINDOW_DAYS days. Independent of mtmElected —
+   *  this is trading discipline, not a tax rule. Off in `tactical` mode. */
+  losingReentryCooldownEnabled: boolean;
+  /** Symbols with a losing SELL or manual_close within the last LOSING_REENTRY_WINDOW_DAYS days. Refreshed at most every LOSING_REENTRY_REFRESH_MS. */
+  losingReentryBlockedSymbols: Set<string>;
+  /** Last refresh time for losingReentryBlockedSymbols (ms epoch). */
+  losingReentryLastRefreshAt: number;
   // ── Adaptive mode ──
   /**
    * When `mode === "adaptive"`, this is the actual mode being executed
@@ -315,6 +324,9 @@ function createDefaultEngine(): EngineState {
     washSaleProtectionEnabled: true, // default conservative — disabled only when MTM elected
     washSaleBlockedSymbols: new Set(),
     washSaleLastRefreshAt: 0,
+    losingReentryCooldownEnabled: true, // re-enabled per-start based on mode (off for tactical)
+    losingReentryBlockedSymbols: new Set(),
+    losingReentryLastRefreshAt: 0,
     effectiveMode: null,
     adaptiveRegime: null,
     userTier: null,
@@ -684,6 +696,14 @@ const BROKER_FAILURE_HALT_THRESHOLD = 5;          // consecutive failures → en
 // Phase 5: personalized live-trading protections
 const WASH_SALE_WINDOW_DAYS = 31;                 // calendar days; one day past IRS 30-day rule for safety
 const WASH_SALE_REFRESH_MS = 5 * 60 * 1000;       // re-query trader_trades at most every 5 min
+// Losing-reentry cooldown — strategy gate (trading discipline), independent of
+// the tax-driven wash-sale gate. Blocks tactical_smart_add / runScan BUYs on
+// symbols with a losing exit in the recent window so the engine doesn't
+// repeatedly buy back the same falling knife (COHR/GLW/AKAM pattern observed
+// in the 2026-06-04..09 review). Off in `tactical` mode (intentionally
+// all-in/all-out — cooldown would suppress the next signal entirely).
+const LOSING_REENTRY_WINDOW_DAYS = 3;             // calendar days; ~1 trading day of cooldown after a losing exit
+const LOSING_REENTRY_REFRESH_MS = 5 * 60 * 1000;  // same cadence as wash-sale
 // PDT preemptive block removed 2026-06-04 — FINRA retired the PDT designation
 // (Rule 4210 amendments) and Alpaca's pattern_day_trader / daytrade_count
 // fields are scheduled for full removal from the broker API on 2026-07-06.
@@ -801,7 +821,14 @@ function buildSectorExposureContext(
 
 /**
  * Gate every BUY before it's submitted. Checks (in order, cheapest first):
+ *  - earnings blackout (if enabled in risk profile)
+ *  - sector exposure cap (if enabled)
+ *  - losing-reentry cooldown: symbol has a losing exit within the last
+ *    LOSING_REENTRY_WINDOW_DAYS days AND cooldown enabled for this mode
+ *    (strategy gate; runs regardless of MTM election)
  *  - wash-sale: symbol has a losing exit within 31 days AND MTM not elected
+ *    (tax-driven gate; redundant with cooldown for non-MTM but kept separate
+ *    so each gate has a single clear purpose)
  *  - daily notional cap (gross BUY notional vs equity)
  *  - global order rate limit (sliding 60s window, 30 orders max)
  *
@@ -826,6 +853,8 @@ async function canPlaceBuyOrder(
   // Refresh wash-sale set if stale. The helper has its own age check
   // (WASH_SALE_REFRESH_MS) so this is cheap when the cache is hot.
   await maybeRefreshWashSaleSet(engine);
+  // Same for the (shorter-window) losing-reentry cooldown set.
+  await maybeRefreshLosingReentrySet(engine);
 
   // Phase 4 — earnings blackout. Refuses BUYs if this symbol has an
   // earnings release within `earningsBlackoutDays` calendar days.
@@ -880,6 +909,22 @@ async function canPlaceBuyOrder(
         },
       };
     }
+  }
+
+  // Losing-reentry cooldown — strategy gate that blocks re-entry on symbols
+  // with a losing exit in the last LOSING_REENTRY_WINDOW_DAYS days. Runs
+  // before wash-sale because its window is a subset of wash-sale's, and
+  // because it applies to MTM-elected engines too (wash-sale doesn't).
+  if (engine.losingReentryCooldownEnabled && engine.losingReentryBlockedSymbols.has(symbol)) {
+    return {
+      ok: false,
+      reason: "losing_reentry_cooldown",
+      details: {
+        symbol,
+        windowDays: LOSING_REENTRY_WINDOW_DAYS,
+        mode: engine.mode,
+      },
+    };
   }
 
   // Wash-sale: block re-entry on symbols with a losing close in the last 31 days
@@ -1284,6 +1329,53 @@ async function maybeRefreshWashSaleSet(engine: EngineState): Promise<void> {
     );
     // INTENTIONAL: do NOT bump washSaleLastRefreshAt, do NOT clear
     // washSaleBlockedSymbols. Next scan retries.
+  }
+}
+
+/**
+ * Same shape as refreshWashSaleBlockedSymbols, but with a much shorter window
+ * (LOSING_REENTRY_WINDOW_DAYS). The cooldown is a strategy gate independent
+ * of MTM/§475(f) status — it prevents the engine from buying back a symbol
+ * it just stopped out of at a loss while the downtrend is likely still in
+ * progress (the COHR pattern: 5 trades, 0 wins, −$1,466 over a week).
+ */
+async function refreshLosingReentryBlockedSymbols(userId: string): Promise<Set<string>> {
+  const cutoff = new Date(Date.now() - LOSING_REENTRY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const rows = await db
+    .selectDistinct({ symbol: traderTrades.symbol })
+    .from(traderTrades)
+    .where(
+      and(
+        eq(traderTrades.userId, userId),
+        inArray(traderTrades.action, ["SELL", "manual_close"]),
+        gt(
+          sql`COALESCE(${traderTrades.fillTime}, ${traderTrades.createdAt})`,
+          cutoff
+        ),
+        lt(traderTrades.pnl, 0)
+      )
+    );
+  return new Set(rows.map((r) => r.symbol));
+}
+
+/**
+ * Refresh `engine.losingReentryBlockedSymbols` if stale. Same fail-soft
+ * semantics as maybeRefreshWashSaleSet: throw → keep previous set, do NOT
+ * bump lastRefreshAt → next scan retries.
+ */
+async function maybeRefreshLosingReentrySet(engine: EngineState): Promise<void> {
+  if (!engine.losingReentryCooldownEnabled || !engine.userId) return;
+  const age = Date.now() - engine.losingReentryLastRefreshAt;
+  if (engine.losingReentryLastRefreshAt > 0 && age < LOSING_REENTRY_REFRESH_MS) return;
+  try {
+    const next = await refreshLosingReentryBlockedSymbols(engine.userId);
+    engine.losingReentryBlockedSymbols = next;
+    engine.losingReentryLastRefreshAt = Date.now();
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown", userId: engine.userId },
+      "Losing-reentry refresh failed — keeping previous set and retrying next scan"
+    );
   }
 }
 
@@ -5285,6 +5377,24 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     }
   }
 
+  // Losing-reentry cooldown — on for every mode except `tactical`
+  // (intentionally all-in/all-out; cooldown would suppress the next signal).
+  // Strategy gate, independent of mtmElected.
+  engine.losingReentryCooldownEnabled = mode !== "tactical";
+  engine.losingReentryBlockedSymbols = new Set();
+  engine.losingReentryLastRefreshAt = 0;
+  if (engine.losingReentryCooldownEnabled) {
+    try {
+      engine.losingReentryBlockedSymbols = await refreshLosingReentryBlockedSymbols(userId);
+      engine.losingReentryLastRefreshAt = Date.now();
+    } catch (err) {
+      log.warn(
+        { userId, err: err instanceof Error ? err.message : "unknown" },
+        "Losing-reentry prime failed at engine start — continuing with empty set; per-BUY refresh will retry"
+      );
+    }
+  }
+
   // Clear halted flag in database so UI stops showing "Trading Halted"
   const today = getETDateString();
   try {
@@ -6598,6 +6708,8 @@ export function getEngineStatus(userId?: string): {
   mtmElected: boolean;
   washSaleProtectionEnabled: boolean;
   washSaleBlockedCount: number;
+  losingReentryCooldownEnabled: boolean;
+  losingReentryBlockedCount: number;
   effectiveMode: EngineMode | null;
   adaptiveRegime: EngineState["adaptiveRegime"];
 } {
@@ -6624,6 +6736,8 @@ export function getEngineStatus(userId?: string): {
     mtmElected: engine.mtmElected,
     washSaleProtectionEnabled: engine.washSaleProtectionEnabled,
     washSaleBlockedCount: engine.washSaleBlockedSymbols.size,
+    losingReentryCooldownEnabled: engine.losingReentryCooldownEnabled,
+    losingReentryBlockedCount: engine.losingReentryBlockedSymbols.size,
     effectiveMode: engine.effectiveMode,
     adaptiveRegime: engine.adaptiveRegime,
   };

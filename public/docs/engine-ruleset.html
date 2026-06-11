@@ -1777,7 +1777,7 @@
 
     <div class="callout safe">
       <span class="callout-icon">&#10003;</span>
-      <span><strong>Gate ordering inside <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder()</code>:</strong> earnings blackout &rarr; sector exposure &rarr; wash-sale &rarr; daily notional &rarr; rate limit. Cheapest / most-likely-to-fire checks first; the first reason found is what gets logged. Sells (exits) are <em>never</em> blocked by these gates &mdash; exiting a position takes priority over any safeguard. (Pre-2026-06-04: included a PDT gate between wash-sale and daily notional.)</span>
+      <span><strong>Gate ordering inside <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">canPlaceBuyOrder()</code>:</strong> earnings blackout &rarr; sector exposure &rarr; losing-reentry cooldown &rarr; wash-sale &rarr; daily notional &rarr; rate limit. Cheapest / most-likely-to-fire checks first; the first reason found is what gets logged. Sells (exits) are <em>never</em> blocked by these gates &mdash; exiting a position takes priority over any safeguard. (Pre-2026-06-04: included a PDT gate between wash-sale and daily notional. 2026-06-10: cooldown gate added between sector and wash-sale.)</span>
     </div>
   </section>
 
@@ -1815,6 +1815,23 @@
       <div class="gate-body">
         <div class="gate-name">Symbol in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">washSaleBlockedSymbols</code> &amp; protection enabled</div>
         <div class="gate-rule">Audit reason <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">wash_sale_protection</code>; metadata includes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">windowDays=31</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">mtmElected=false</code></div>
+        <div class="gate-action">BUY skipped; engine moves to next symbol</div>
+      </div>
+    </div>
+
+    <h3>Losing-Reentry Cooldown (post-2026-06-10 review)</h3>
+    <p>Strategy gate that blocks BUYs on any symbol with a losing exit in the last <strong>3 calendar days</strong> (&asymp; 1 trading day of cooldown). Same query shape as wash-sale, shorter window. Independent of MTM &mdash; this is trading discipline, not a tax rule.</p>
+    <ul>
+      <li><strong>Why it exists:</strong> a 2026-06-10 review of admin's paper history found COHR re-bought 5 times after losing stops (0W/5L, &minus;$1,466 net), with GLW, AKAM, and CIEN following the same pattern. Wash-sale would have caught all of them but was disabled because admin has MTM elected. The original gate conflated &ldquo;don&rsquo;t claim a tax loss&rdquo; with &ldquo;don&rsquo;t re-buy the falling knife&rdquo;; this split closes that leak.</li>
+      <li><strong>Off in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">tactical</code> mode</strong> &mdash; intentionally all-in/all-out; the cooldown would suppress the next signal entirely.</li>
+      <li><strong>Runs before wash-sale.</strong> Cooldown's 3-day window is a subset of wash-sale's 31-day window. When both would block, the cooldown reason wins so the more specific signal surfaces.</li>
+      <li><strong>Cached for 5 min</strong> on engine state as <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">losingReentryBlockedSymbols: Set&lt;string&gt;</code>. Failed refresh keeps the previous set and does NOT bump the timestamp &mdash; next scan retries.</li>
+    </ul>
+    <div class="filter-gate">
+      <div class="gate-num">LR</div>
+      <div class="gate-body">
+        <div class="gate-name">Symbol in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">losingReentryBlockedSymbols</code> &amp; cooldown enabled</div>
+        <div class="gate-rule">Audit reason <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">losing_reentry_cooldown</code>; metadata includes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">windowDays=3</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">mode</code></div>
         <div class="gate-action">BUY skipped; engine moves to next symbol</div>
       </div>
     </div>

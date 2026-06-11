@@ -713,7 +713,17 @@ Five auto-halt or auto-block conditions layered on top of the existing safety sy
 | 4 | **Account-switch detection** | Different `account_number` OR equity drop > 50% from boot snapshot | Halt engine | `engine.halted` reason=`account_mismatch` or `equity_collapse` |
 | 5 | **Consecutive-loss halt** | N losing trades in a row (default 5, configurable) | Halt engine | `engine.halted` reason=`consecutive_losses` |
 
-**Gate ordering inside `canPlaceBuyOrder()`**: wash-sale → daily notional → rate limit. Cheapest checks fire first; the first reason found is what's logged. **SELLs (exits) are never blocked** — exiting a position takes priority over any safeguard.
+**Gate ordering inside `canPlaceBuyOrder()`**: earnings blackout → sector exposure → losing-reentry cooldown → wash-sale → daily notional → rate limit. Cheapest checks fire first; the first reason found is what's logged. **SELLs (exits) are never blocked** — exiting a position takes priority over any safeguard.
+
+## Losing-Reentry Cooldown (post-2026-06-10 review)
+
+Strategy gate that blocks BUYs on any symbol with a losing exit (`SELL`/`manual_close`, `pnl < 0`) in the last **3 calendar days** (~1 trading day of cooldown). Same query shape as wash-sale, shorter window. Independent of MTM/§475(f) — applies to every mode except `tactical` (which is intentionally all-in/all-out; the cooldown would suppress the next signal entirely). Audit reason: `losing_reentry_cooldown`.
+
+**Why this exists.** Admin's 2026-04-23..06-09 paper history showed five COHR re-entries after losing stops (0W/5L, −$1,466 net), with GLW (−$897), AKAM (−$520), and CIEN (−$387) following the same pattern. Wash-sale protection would have caught all of them but was disabled because admin has MTM elected — the gate conflated "don't claim a tax loss" with "don't re-buy the falling knife." Splitting them lets the trading-discipline gate apply to MTM-elected engines too.
+
+**Fires before wash-sale.** Cooldown's window is a subset of wash-sale's (3 vs 31 days). When both would block, the cooldown reason wins so the more specific signal is what surfaces in the audit log. For non-MTM engines the cooldown is effectively redundant — wash-sale already covers the window — but both run cheaply (one DISTINCT query, cached 5 min).
+
+**State carries on engine state, not DB.** `engine.losingReentryBlockedSymbols: Set<string>` + `losingReentryLastRefreshAt: number`, refreshed at most every 5 min (`LOSING_REENTRY_REFRESH_MS`). Failed refresh keeps the previous set + does NOT bump `lastRefreshAt` (same fail-soft semantics as wash-sale).
 
 ## Tax & PDT Protections (Phase 5)
 
@@ -792,7 +802,7 @@ Post-launch hardening pass. Items here augment the relevant sections above; cros
 ### Phase 1 — Money bugs from UI-lie audit
 
 - **`canPlaceBuyOrder()` is async + refreshes cached state on entry.** Refreshes the wash-sale symbol set (`maybeRefreshWashSaleSet()`) before the wash-sale check. A same-scan losing-close-then-re-entry now correctly evaluates against live state instead of scan-boundary state. (Pre-2026-06-04 this also re-ran `evaluatePdtState(engine, account)` against a fresh `BrokerAccount` snapshot; that path and the `account` parameter were removed when the PDT rule was retired.)
-- **Gate ordering inside `canPlaceBuyOrder()`:** earnings blackout → sector exposure → wash-sale → notional → rate-limit. Cheapest checks first; the first reason found is what gets logged. (Pre-2026-06-04: included a PDT gate between wash-sale and notional.)
+- **Gate ordering inside `canPlaceBuyOrder()`:** earnings blackout → sector exposure → losing-reentry cooldown → wash-sale → notional → rate-limit. Cheapest checks first; the first reason found is what gets logged. (Pre-2026-06-04: included a PDT gate between wash-sale and notional. 2026-06-10: cooldown added between sector and wash-sale to close the MTM re-entry leak.)
 - **`bootEquity` re-snapshots at every new trading day** across all 3 scan paths (intraday, tactical, main). The 50% equity-collapse tripwire stays calibrated as the account grows organically.
 - **`tripSafeguardHalt()` writes `halted=true` to `trader_daily_pnl` immediately** (fire-and-forget) so the dashboard reflects halts on the next fetch instead of waiting for the next scan boundary.
 - **Dashboard `todayPnl` response carries `source` + `staleSeconds`** (`"broker_intraday" | "broker_total" | "db_snapshot"`) so the UI can render staleness honestly instead of silently mixing broker intraday with DB snapshot.

@@ -21,6 +21,9 @@ interface MinimalEngine {
   // Phase 5 fields
   washSaleProtectionEnabled: boolean;
   washSaleBlockedSymbols: Set<string>;
+  // Losing-reentry cooldown (post-2026-06-10 review of admin's bad days)
+  losingReentryCooldownEnabled: boolean;
+  losingReentryBlockedSymbols: Set<string>;
 }
 
 const ORDER_RATE_LIMIT_PER_MIN = 30;
@@ -37,6 +40,10 @@ function canPlaceBuyOrder(
   maxDailyNotionalPct: number,
   bootEquity: number
 ): { ok: true } | { ok: false; reason: string } {
+  // losing-reentry cooldown (runs BEFORE wash-sale; subset window, broader applicability)
+  if (engine.losingReentryCooldownEnabled && engine.losingReentryBlockedSymbols.has(symbol)) {
+    return { ok: false, reason: "losing_reentry_cooldown" };
+  }
   // wash-sale
   if (engine.washSaleProtectionEnabled && engine.washSaleBlockedSymbols.has(symbol)) {
     return { ok: false, reason: "wash_sale_protection" };
@@ -76,6 +83,8 @@ function newEngine(overrides: Partial<MinimalEngine> = {}): MinimalEngine {
     consecutiveLosses: 0,
     washSaleProtectionEnabled: false,
     washSaleBlockedSymbols: new Set(),
+    losingReentryCooldownEnabled: false,
+    losingReentryBlockedSymbols: new Set(),
     ...overrides,
   };
 }
@@ -281,6 +290,94 @@ describe("live-trading safeguards", () => {
       const e = newEngine({
         washSaleProtectionEnabled: true,
         washSaleBlockedSymbols: new Set(),
+      });
+      const ok = canPlaceBuyOrder(e, "TSLA", 1_000, 1.0, 100_000);
+      expect(ok.ok).toBe(true);
+    });
+  });
+
+  describe("losing-reentry cooldown (strategy gate, post-2026-06-10 review)", () => {
+    // Strategy gate that blocks re-entry on symbols with a losing exit in the
+    // last LOSING_REENTRY_WINDOW_DAYS days. Independent of wash-sale /
+    // §475(f) — MTM-elected engines still run it. Off in tactical mode.
+    //
+    // Motivation: admin's 2026-04-23..06-09 history showed COHR re-bought 5
+    // times after losing stops (0W/5L, −$1,466 net); GLW (−$897), AKAM (−$520),
+    // CIEN (−$387) followed the same pattern. Wash-sale would have caught all
+    // of them but was disabled because admin has MTM elected. This gate runs
+    // regardless of MTM and closes that leak.
+
+    it("blocks BUY when symbol is in cooldown set AND cooldown enabled", () => {
+      const e = newEngine({
+        losingReentryCooldownEnabled: true,
+        losingReentryBlockedSymbols: new Set(["COHR"]),
+      });
+      const blocked = canPlaceBuyOrder(e, "COHR", 1_000, 1.0, 100_000);
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) expect(blocked.reason).toBe("losing_reentry_cooldown");
+    });
+
+    it("allows BUY on a different symbol", () => {
+      const e = newEngine({
+        losingReentryCooldownEnabled: true,
+        losingReentryBlockedSymbols: new Set(["COHR"]),
+      });
+      const ok = canPlaceBuyOrder(e, "AAPL", 1_000, 1.0, 100_000);
+      expect(ok.ok).toBe(true);
+    });
+
+    it("disabled cooldown (tactical mode) bypasses the block entirely", () => {
+      const e = newEngine({
+        losingReentryCooldownEnabled: false, // tactical mode
+        losingReentryBlockedSymbols: new Set(["COHR"]),
+      });
+      const ok = canPlaceBuyOrder(e, "COHR", 1_000, 1.0, 100_000);
+      expect(ok.ok).toBe(true);
+    });
+
+    it("fires INDEPENDENT of wash-sale — MTM elected (wash-sale OFF) still gets cooldown", () => {
+      const e = newEngine({
+        // MTM elected → wash-sale disabled
+        washSaleProtectionEnabled: false,
+        washSaleBlockedSymbols: new Set(),
+        // …but cooldown still applies
+        losingReentryCooldownEnabled: true,
+        losingReentryBlockedSymbols: new Set(["COHR"]),
+      });
+      const blocked = canPlaceBuyOrder(e, "COHR", 1_000, 1.0, 100_000);
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) expect(blocked.reason).toBe("losing_reentry_cooldown");
+    });
+
+    it("cooldown fires BEFORE wash-sale (cooldown reason wins when both would block)", () => {
+      // Both gates would block. Cooldown is cheaper (smaller window) and we
+      // want the more specific reason surfaced.
+      const e = newEngine({
+        washSaleProtectionEnabled: true,
+        washSaleBlockedSymbols: new Set(["COHR"]),
+        losingReentryCooldownEnabled: true,
+        losingReentryBlockedSymbols: new Set(["COHR"]),
+      });
+      const result = canPlaceBuyOrder(e, "COHR", 1_000, 1.0, 100_000);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe("losing_reentry_cooldown");
+    });
+
+    it("cooldown fires BEFORE notional and rate-limit gates", () => {
+      const e = newEngine({
+        losingReentryCooldownEnabled: true,
+        losingReentryBlockedSymbols: new Set(["COHR"]),
+        dailyNotional: 99_999,
+      });
+      const result = canPlaceBuyOrder(e, "COHR", 10_000, 1.0, 100_000);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe("losing_reentry_cooldown");
+    });
+
+    it("empty cooldown set never blocks anything", () => {
+      const e = newEngine({
+        losingReentryCooldownEnabled: true,
+        losingReentryBlockedSymbols: new Set(),
       });
       const ok = canPlaceBuyOrder(e, "TSLA", 1_000, 1.0, 100_000);
       expect(ok.ok).toBe(true);
