@@ -392,6 +392,7 @@ export async function GET() {
             startEquity: startEquityFor(realized + unrealizedToday),
             tradesCount,
             halted: todayPnl?.halted ?? false,
+            haltReason: todayPnl?.haltReason ?? null,
             // "broker_intraday" — Alpaca, real intraday change.
             // "broker_intraday_flat" — Alpaca-like, no movement yet
             //   (pre-market, or genuinely 0 change during RTH).
@@ -413,6 +414,7 @@ export async function GET() {
             startEquity: startEquityFor(realized + todayPnl.unrealizedPnl),
             tradesCount,
             halted: todayPnl.halted,
+            haltReason: todayPnl.haltReason ?? null,
             source: "db_snapshot",
             staleSeconds,
           };
@@ -427,6 +429,7 @@ export async function GET() {
             startEquity: startEquityFor(realized),
             tradesCount,
             halted: false,
+            haltReason: null,
             source: "trades_only",
             staleSeconds: 0,
           };

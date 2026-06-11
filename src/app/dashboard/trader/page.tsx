@@ -78,6 +78,7 @@ interface TraderData {
     totalPnl: number;
     tradesCount: number;
     halted: boolean;
+    haltReason: string | null;
   } | null;
   lifetimePnl: {
     realizedPnl: number;
@@ -707,6 +708,98 @@ export default function TraderPage() {
           </div>
         )}
       </div>
+
+      {/* After-halt bleed surface (post-2026-06-11) — when the engine is
+          halted, the only thing standing between the user and further
+          losses is whatever broker-side protective stops are still active.
+          Surface the open-position bleed (worst-bleeding first) and a
+          one-click Flatten All so the user can manually exit without
+          digging through Alpaca's UI. */}
+      {todayPnl?.halted && positions && positions.length > 0 && (() => {
+        const openUnrealized = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
+        const losers = positions.filter((p) => p.unrealizedPnl < 0).sort((a, b) => a.unrealizedPnl - b.unrealizedPnl);
+        return (
+          <Card className="border-bearish/40 bg-bearish/5">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-bearish flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-semibold text-text-primary">Engine halted with open positions</div>
+                  {todayPnl.haltReason && (
+                    <div className="text-xs text-text-secondary mt-0.5 font-mono">{todayPnl.haltReason}</div>
+                  )}
+                  <div className="text-xs text-text-muted mt-1">
+                    Halt blocks new BUYs but does NOT flatten. Existing broker stops still fire — but mark-to-market keeps moving. Review or flatten manually below.
+                  </div>
+                </div>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                loading={cmdLoading === "flatten_all_from_halt"}
+                onClick={async () => {
+                  if (!confirm(`Flatten all ${positions.length} positions at market? This will market-sell every open position.`)) return;
+                  setCmdLoading("flatten_all_from_halt");
+                  const result = await sendCommand("flatten");
+                  setCmdLoading(null);
+                  if (result.error) {
+                    alert(`Failed: ${result.error}`);
+                    return;
+                  }
+                  try {
+                    const res = await fetch("/api/trader/dashboard");
+                    if (res.ok) setData(await res.json());
+                  } catch {
+                    // Refresh failure is non-fatal
+                  }
+                }}
+              >
+                Flatten All
+              </Button>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mb-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-text-muted">Open positions</div>
+                <div className="font-mono text-lg font-semibold text-text-primary">{positions.length}</div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-text-muted">Unrealized P&L</div>
+                <div className={`font-mono text-lg font-semibold ${openUnrealized >= 0 ? "text-bullish" : "text-bearish"}`}>
+                  ${openUnrealized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-text-muted">Realized today</div>
+                <div className={`font-mono text-lg font-semibold ${todayPnl.realizedPnl >= 0 ? "text-bullish" : "text-bearish"}`}>
+                  ${todayPnl.realizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+            </div>
+            {losers.length > 0 && (
+              <div className="border-t border-border/50 pt-3">
+                <div className="text-[11px] uppercase tracking-wide text-text-muted mb-2">Worst bleeding ({Math.min(losers.length, 5)} of {losers.length})</div>
+                <div className="space-y-1.5">
+                  {losers.slice(0, 5).map((p) => {
+                    const movePct = p.entryPrice > 0 ? ((p.currentPrice - p.entryPrice) / p.entryPrice) * 100 : 0;
+                    return (
+                      <div key={p.symbol} className="flex items-center justify-between gap-3 text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-mono font-medium text-text-primary truncate">{p.symbol}</span>
+                          <span className="text-xs text-text-muted">{p.quantity} sh @ ${p.entryPrice.toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center gap-3 font-mono text-xs">
+                          <span className="text-bearish">{movePct.toFixed(2)}%</span>
+                          <span className="text-bearish min-w-[80px] text-right">${p.unrealizedPnl.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {/* Account Balance */}
       {data?.brokerAccount && (
