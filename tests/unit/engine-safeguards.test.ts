@@ -560,6 +560,59 @@ describe("live-trading safeguards", () => {
     });
   });
 
+  describe("sticky halted flag in daily PnL upsert (post-2026-06-10 fix)", () => {
+    // Mirror of the ON CONFLICT halted SQL: `halted = old_halted OR new_halted`.
+    // Pre-fix this was an unconditional overwrite, so a halt fire at 10am
+    // (halted=true) followed by a normal scan at 10:15am (engine.halted=false
+    // — typically after a process restart) would clobber halted back to false
+    // while leaving halt_reason populated. That's exactly admin's 2026-06-04
+    // row: halt fired ($-1010 daily loss), then a later scan overwrote
+    // halted=false. autoStartIfNeeded reads `halted` to suppress silent
+    // resumes after a safeguard trip, so the clobber bypasses the gate.
+
+    function upsertHalted(existing: boolean | null, incoming: boolean): boolean {
+      // null existing = INSERT path; just use incoming.
+      if (existing === null) return incoming;
+      // ON CONFLICT path: OR existing with incoming. Sticky-on for the day.
+      return existing || incoming;
+    }
+
+    it("INSERT path (no existing row) uses incoming halted value", () => {
+      expect(upsertHalted(null, false)).toBe(false);
+      expect(upsertHalted(null, true)).toBe(true);
+    });
+
+    it("a halt fire (existing=false, incoming=true) sets halted=true", () => {
+      expect(upsertHalted(false, true)).toBe(true);
+    });
+
+    it("a normal scan after a halt (existing=true, incoming=false) keeps halted=true", () => {
+      // This is the bug fix — pre-fix this returned false.
+      expect(upsertHalted(true, false)).toBe(true);
+    });
+
+    it("two halt fires in the same day (true, true) stay true", () => {
+      expect(upsertHalted(true, true)).toBe(true);
+    });
+
+    it("normal scan with no halt history (false, false) stays false", () => {
+      expect(upsertHalted(false, false)).toBe(false);
+    });
+
+    it("startEngine bypass: an explicit UPDATE can clear halted (not via upsert)", () => {
+      // startEngine path uses db.update().set({ halted: false }) directly,
+      // bypassing the OR. This test pins that the upsert ALONE can't clear —
+      // the bypass via explicit UPDATE is the only "user acknowledges halt"
+      // path. The test for the actual UPDATE is the absence of OR in
+      // startEngine's clear path; if a future change reverts startEngine to
+      // use upsertDailyPnl, this test won't catch it but the prod symptom
+      // would be "user clicks Start but UI still shows Trading Halted".
+      const upsertResult = upsertHalted(true, false);
+      expect(upsertResult).toBe(true); // can't clear via upsert
+      // The actual clear happens via a different code path (explicit UPDATE).
+    });
+  });
+
   describe("duplicate-order prevention (Phase 7)", () => {
     // Phase 7 doesn't change canPlaceBuyOrder — duplicate detection happens at
     // the call-site level using pendingBuySymbols / pendingSellSymbols Sets

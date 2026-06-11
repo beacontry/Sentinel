@@ -2809,6 +2809,19 @@ async function upsertDailyPnl(
   // logged + swallowed). Use Postgres ON CONFLICT DO UPDATE with arithmetic
   // expressions so realizedPnl / tradesCount accumulate atomically and no
   // delta is lost regardless of caller ordering.
+  //
+  // 2026-06-10 follow-up — `halted` is sticky-on for the day. A halt fire
+  // writes halted=true; subsequent normal-scan upserts (which pass
+  // engine.halted, which is false on the next day after restart or after
+  // user Start) used to clobber back to false, leaving the daily row in a
+  // misleading (halted=false, halt_reason="...") state. That's exactly what
+  // admin's 2026-06-04 row showed: halt fired mid-day, then a later scan
+  // overwrote halted but left halt_reason. autoStartIfNeeded reads the
+  // halted column to suppress silent resumes after a safeguard trip;
+  // clobbering it to false defeats that gate. The OR keeps the trip
+  // visible until either (a) the date rolls over (new row, INSERT path,
+  // halted=false fresh) or (b) startEngine explicitly clears via UPDATE
+  // (user pressing Start = acknowledging the halt).
   try {
     await db
       .insert(traderDailyPnl)
@@ -2830,7 +2843,9 @@ async function upsertDailyPnl(
           // a fresh broker snapshot pass null); otherwise overwrite.
           ...(unrealizedPnl !== null ? { unrealizedPnl } : {}),
           tradesCount: sql`${traderDailyPnl.tradesCount} + ${tradesCountDelta}`,
-          halted,
+          // Sticky-on: once true today, stays true until date rollover or
+          // explicit clear in startEngine. See block comment above.
+          halted: sql`${traderDailyPnl.halted} OR ${halted}`,
           ...(haltReason ? { haltReason } : {}),
           engineMode: engine.mode,
         },
@@ -5506,10 +5521,26 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
     }
   }
 
-  // Clear halted flag in database so UI stops showing "Trading Halted"
+  // Clear halted flag in database so UI stops showing "Trading Halted".
+  //
+  // 2026-06-10 — explicit UPDATE, not upsertDailyPnl. The upsert's halted
+  // field is now sticky-on (OR semantics) so normal-scan upserts can't
+  // silently clobber a fired halt. startEngine is the one path that's
+  // semantically "user is acknowledging the halt" — direct UPDATE bypasses
+  // the OR and actually flips halted=false + clears halt_reason. No-op
+  // when today's row doesn't exist yet (fresh-day engine boot); the first
+  // scan's INSERT writes the fresh row.
   const today = getETDateString();
   try {
-    await upsertDailyPnl(today, 0, 0, 0, false, undefined, userId);
+    await db
+      .update(traderDailyPnl)
+      .set({ halted: false, haltReason: null })
+      .where(
+        and(
+          eq(traderDailyPnl.userId, userId),
+          eq(traderDailyPnl.date, today)
+        )
+      );
   } catch (err) {
     log.error(
       { err: err instanceof Error ? err.message : "unknown", userId, today },
