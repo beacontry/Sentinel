@@ -87,6 +87,28 @@ export interface BacktestConfig {
   trailingStopPct: number;
   maxPositionSize: number;
   maxSingleTradeLoss: number;
+  /**
+   * Post-2026-06-11 review: same-day exits (<24h) are 2W/12L in admin's
+   * history; 3+ day holds are 12W/12L. Trail tightening fires too fast on
+   * fresh positions and gets whipsawed by opening-day volatility. These
+   * two knobs gate trail-stop ACTIVATION:
+   *
+   *   trailActivationBars      — keep trail inactive until position is N
+   *                              bars old. With daily bars N=1 means
+   *                              "no trail intraday on entry day"; N=2
+   *                              means "no trail until end of day 2."
+   *
+   *   trailActivationProfitPct — keep trail inactive until peakPrice has
+   *                              risen at least this fraction above entry.
+   *                              0.02 = wait for +2% peak before trailing.
+   *
+   * Both gate conditions must pass for the trail to engage. The fixed
+   * disaster stop (position.stopLoss) stays active from bar 0 regardless,
+   * so catastrophic moves are still cut. Defaults of 0 preserve current
+   * behavior exactly — opt-in via the sweep script.
+   */
+  trailActivationBars?: number;
+  trailActivationProfitPct?: number;
 }
 
 const DEFAULT_CONFIG: BacktestConfig = {
@@ -95,7 +117,28 @@ const DEFAULT_CONFIG: BacktestConfig = {
   trailingStopPct: 0.015,
   maxPositionSize: 100,
   maxSingleTradeLoss: 100,
+  trailActivationBars: 0,
+  trailActivationProfitPct: 0,
 };
+
+/**
+ * Whether the trailing stop should be ACTIVE this bar. Pure function so
+ * the backtester's exit-logic gate and the future engine-side gate can
+ * share semantics. When false, exit logic uses only the fixed disaster
+ * stop. Always returns true when both knobs are 0 (the default).
+ */
+export function isTrailActive(opts: {
+  positionAgeBars: number;
+  peakProfitPct: number;
+  trailActivationBars?: number;
+  trailActivationProfitPct?: number;
+}): boolean {
+  const minBars = opts.trailActivationBars ?? 0;
+  const minProfit = opts.trailActivationProfitPct ?? 0;
+  if (minBars > 0 && opts.positionAgeBars < minBars) return false;
+  if (minProfit > 0 && opts.peakProfitPct < minProfit) return false;
+  return true;
+}
 
 /**
  * Run a backtest that mirrors the live trader's risk rules:
@@ -235,10 +278,21 @@ export function runBacktest(
         ? 0.02 + (activeCfg.trailingStopPct - 0.02) * Math.exp(-3 * profitPct)
         : activeCfg.trailingStopPct;
 
+      // Delayed-trail activation gate (post-2026-06-11). Both knobs default
+      // to 0 (always-active = legacy behavior). When set, the trail stays
+      // dormant until conditions are met; the fixed disaster stop still
+      // catches catastrophic moves from bar 0.
+      const positionAgeBars = i - position.entryIdx;
+      const trailActive = isTrailActive({
+        positionAgeBars,
+        peakProfitPct: profitPct,
+        trailActivationBars: activeCfg.trailActivationBars,
+        trailActivationProfitPct: activeCfg.trailActivationProfitPct,
+      });
       // position.stopLoss can be promoted above the entry-time fixed floor
       // by take-profit graduation (see below). Always uses the higher of
       // (a) the position's current stop and (b) the dynamic trail.
-      const trailingStop = position.peakPrice * (1 - dynTrailPct);
+      const trailingStop = trailActive ? position.peakPrice * (1 - dynTrailPct) : 0;
       const effectiveStop = Math.max(position.stopLoss, trailingStop);
 
       // Resolve which mode's MODE_GRADUATION_DEFAULT applies. For adaptive,
