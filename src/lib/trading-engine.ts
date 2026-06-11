@@ -702,7 +702,14 @@ const WASH_SALE_REFRESH_MS = 5 * 60 * 1000;       // re-query trader_trades at m
 // repeatedly buy back the same falling knife (COHR/GLW/AKAM pattern observed
 // in the 2026-06-04..09 review). Off in `tactical` mode (intentionally
 // all-in/all-out — cooldown would suppress the next signal entirely).
-const LOSING_REENTRY_WINDOW_DAYS = 3;             // calendar days; ~1 trading day of cooldown after a losing exit
+//
+// Window: 5 calendar days (~3 trading days). Initially set to 3 days
+// (2026-06-10 ship) — the 2026-06-10 follow-up review found the 3-day
+// cutoff missed the COHR Jun 5 → Jun 8 re-buy by 0.8 hours (72.8h vs the
+// 72h cutoff) and lost another −$387. 5 days catches that re-buy plus
+// SNDK May 18 (72.6h) without sacrificing any winning re-entries the
+// data showed.
+const LOSING_REENTRY_WINDOW_DAYS = 5;             // calendar days; ~3 trading days of cooldown after a losing exit
 const LOSING_REENTRY_REFRESH_MS = 5 * 60 * 1000;  // same cadence as wash-sale
 // PDT preemptive block removed 2026-06-04 — FINRA retired the PDT designation
 // (Rule 4210 amendments) and Alpaca's pattern_day_trader / daytrade_count

@@ -1830,7 +1830,8 @@
     </div>
 
     <h3>Losing-Reentry Cooldown (post-2026-06-10 review)</h3>
-    <p>Strategy gate that blocks BUYs on any symbol with a losing exit in the last <strong>3 calendar days</strong> (&asymp; 1 trading day of cooldown). Same query shape as wash-sale, shorter window. Independent of MTM &mdash; this is trading discipline, not a tax rule.</p>
+    <p>Strategy gate that blocks BUYs on any symbol with a losing exit in the last <strong>5 calendar days</strong> (&asymp; 3 trading days of cooldown). Same query shape as wash-sale, shorter window. Independent of MTM &mdash; this is trading discipline, not a tax rule.</p>
+    <p style="color:var(--text-secondary);font-size:0.9rem;"><em>Initially shipped at 3 calendar days the same day; the same-day-review follow-up data showed the 3-day cutoff missed the COHR Jun 5 &rarr; Jun 8 re-buy by 0.8 hours (72.8h vs 72h limit) and lost another &minus;$387. Bumped to 5. Re-buy gap distribution in admin's history: 6 same-day, 2 next-morning (~23h), 2 just-over-3-day (~73h), 4 at 120h+. 5 days catches the first 10/14 losing re-buys cleanly.</em></p>
     <ul>
       <li><strong>Why it exists:</strong> a 2026-06-10 review of admin's paper history found COHR re-bought 5 times after losing stops (0W/5L, &minus;$1,466 net), with GLW, AKAM, and CIEN following the same pattern. Wash-sale would have caught all of them but was disabled because admin has MTM elected. The original gate conflated &ldquo;don&rsquo;t claim a tax loss&rdquo; with &ldquo;don&rsquo;t re-buy the falling knife&rdquo;; this split closes that leak.</li>
       <li><strong>Off in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">tactical</code> mode</strong> &mdash; intentionally all-in/all-out; the cooldown would suppress the next signal entirely.</li>
@@ -1841,7 +1842,7 @@
       <div class="gate-num">LR</div>
       <div class="gate-body">
         <div class="gate-name">Symbol in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">losingReentryBlockedSymbols</code> &amp; cooldown enabled</div>
-        <div class="gate-rule">Audit reason <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">losing_reentry_cooldown</code>; metadata includes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">windowDays=3</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">mode</code></div>
+        <div class="gate-rule">Audit reason <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">losing_reentry_cooldown</code>; metadata includes <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">windowDays=5</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">mode</code></div>
         <div class="gate-action">BUY skipped; engine moves to next symbol</div>
       </div>
     </div>

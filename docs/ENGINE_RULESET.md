@@ -728,11 +728,13 @@ Wired into all three scan paths (`runScan`, `runTacticalScan`, `runTacticalSmart
 
 ## Losing-Reentry Cooldown (post-2026-06-10 review)
 
-Strategy gate that blocks BUYs on any symbol with a losing exit (`SELL`/`manual_close`, `pnl < 0`) in the last **3 calendar days** (~1 trading day of cooldown). Same query shape as wash-sale, shorter window. Independent of MTM/§475(f) — applies to every mode except `tactical` (which is intentionally all-in/all-out; the cooldown would suppress the next signal entirely). Audit reason: `losing_reentry_cooldown`.
+Strategy gate that blocks BUYs on any symbol with a losing exit (`SELL`/`manual_close`, `pnl < 0`) in the last **5 calendar days** (~3 trading days of cooldown). Same query shape as wash-sale, shorter window. Independent of MTM/§475(f) — applies to every mode except `tactical` (which is intentionally all-in/all-out; the cooldown would suppress the next signal entirely). Audit reason: `losing_reentry_cooldown`.
 
 **Why this exists.** Admin's 2026-04-23..06-09 paper history showed five COHR re-entries after losing stops (0W/5L, −$1,466 net), with GLW (−$897), AKAM (−$520), and CIEN (−$387) following the same pattern. Wash-sale protection would have caught all of them but was disabled because admin has MTM elected — the gate conflated "don't claim a tax loss" with "don't re-buy the falling knife." Splitting them lets the trading-discipline gate apply to MTM-elected engines too.
 
-**Fires before wash-sale.** Cooldown's window is a subset of wash-sale's (3 vs 31 days). When both would block, the cooldown reason wins so the more specific signal is what surfaces in the audit log. For non-MTM engines the cooldown is effectively redundant — wash-sale already covers the window — but both run cheaply (one DISTINCT query, cached 5 min).
+**Window tuning.** Initially shipped at 3 calendar days; the same-day-review follow-up data showed the 3-day cutoff missed the COHR Jun 5 → Jun 8 re-buy by 0.8 hours (72.8h vs 72h limit) and lost another −$387. Bumped to 5 days the same day. Re-buy gap distribution in admin's history: 6 same-day, 2 next-morning (~23h), 2 just-over-3-day (~73h), 4 at 120h+. 5 days catches the first 10 / 14 losing re-buys cleanly; the 4 longer-gap re-buys would need a wash-sale-length window which is too conservative for the strategy gate.
+
+**Fires before wash-sale.** Cooldown's window is a subset of wash-sale's (5 vs 31 days). When both would block, the cooldown reason wins so the more specific signal is what surfaces in the audit log. For non-MTM engines the cooldown is effectively redundant — wash-sale already covers the window — but both run cheaply (one DISTINCT query, cached 5 min).
 
 **State carries on engine state, not DB.** `engine.losingReentryBlockedSymbols: Set<string>` + `losingReentryLastRefreshAt: number`, refreshed at most every 5 min (`LOSING_REENTRY_REFRESH_MS`). Failed refresh keeps the previous set + does NOT bump `lastRefreshAt` (same fail-soft semantics as wash-sale).
 
