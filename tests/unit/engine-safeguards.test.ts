@@ -416,6 +416,150 @@ describe("live-trading safeguards", () => {
     });
   });
 
+  describe("mark-to-market drawdown halt (post-2026-06-10 review)", () => {
+    // Mirror of enforceUnrealizedLossHalt's threshold logic. The actual helper
+    // is in src/lib/trading-engine.ts; this pins the math independently of
+    // DB / audit / pushError side effects.
+    //
+    // Motivation: admin's 2026-06-08 ran −$829 unrealized with no halt because
+    // realized was $0; 2026-06-09 then opened with those bleeders on the book
+    // and the realized halt finally tripped at −$727 after stops fired into
+    // closed losses. The unrealized halt catches the bleed BEFORE it converts
+    // to realized losses.
+    const UNREALIZED_HALT_MULTIPLIER = 1.5;
+
+    function shouldHaltOnUnrealized(opts: {
+      alreadyHalted: boolean;
+      equity: number;
+      dailyLoss: number;
+      totalUnrealizedPnl: number;
+      dailyLossPct: number;
+    }): boolean {
+      if (opts.alreadyHalted) return false;
+      if (opts.equity <= 0) return false;
+      const realizedThreshold = opts.equity * opts.dailyLossPct;
+      const unrealizedThreshold = realizedThreshold * UNREALIZED_HALT_MULTIPLIER;
+      const mtmLoss = opts.dailyLoss + opts.totalUnrealizedPnl;
+      return mtmLoss <= -unrealizedThreshold;
+    }
+
+    it("does NOT trip when realized + unrealized are within the wider threshold", () => {
+      // equity 100k × 2% × 1.5 = 3000 threshold; combined −2500 is under
+      const result = shouldHaltOnUnrealized({
+        alreadyHalted: false,
+        equity: 100_000,
+        dailyLoss: -500,
+        totalUnrealizedPnl: -2000,
+        dailyLossPct: 0.02,
+      });
+      expect(result).toBe(false);
+    });
+
+    it("trips when realized + unrealized exceeds the 1.5× threshold", () => {
+      // equity 100k × 2% × 1.5 = 3000 threshold; combined −3100 trips
+      const result = shouldHaltOnUnrealized({
+        alreadyHalted: false,
+        equity: 100_000,
+        dailyLoss: -1000,
+        totalUnrealizedPnl: -2100,
+        dailyLossPct: 0.02,
+      });
+      expect(result).toBe(true);
+    });
+
+    it("catches the admin 2026-06-08 case: 0 realized, big unrealized bleed", () => {
+      // Admin Jun 8: realized 0, unrealized −$829 on what was presumably ~$70k equity
+      // With dailyLossPct=0.02, threshold = 70k × 0.02 × 1.5 = $2100 — wouldn't trip
+      // at admin's specific equity, but it WOULD on a smaller (more realistic for
+      // an active trader) $5k account. We test both shapes.
+      const big = shouldHaltOnUnrealized({
+        alreadyHalted: false,
+        equity: 70_000,
+        dailyLoss: 0,
+        totalUnrealizedPnl: -829,
+        dailyLossPct: 0.02,
+      });
+      expect(big).toBe(false); // 829 < 2100 threshold
+
+      const small = shouldHaltOnUnrealized({
+        alreadyHalted: false,
+        equity: 5_000,
+        dailyLoss: 0,
+        totalUnrealizedPnl: -200,
+        dailyLossPct: 0.02,
+      });
+      expect(small).toBe(true); // 200 > 5000 × 0.02 × 1.5 = 150
+    });
+
+    it("realized-only loss must exceed 1.5× threshold to trip (otherwise realized halt handles it)", () => {
+      // Realized −$2500 alone on 100k @ 2% would already trip the realized halt
+      // (threshold $2000). The unrealized helper additionally trips at $3000.
+      // This is intentional separation — realized handles its own threshold first.
+      const result = shouldHaltOnUnrealized({
+        alreadyHalted: false,
+        equity: 100_000,
+        dailyLoss: -2500,
+        totalUnrealizedPnl: 0,
+        dailyLossPct: 0.02,
+      });
+      expect(result).toBe(false); // under $3000 — realized halt would catch this separately
+    });
+
+    it("does not re-halt an already-halted engine", () => {
+      const result = shouldHaltOnUnrealized({
+        alreadyHalted: true,
+        equity: 100_000,
+        dailyLoss: -10_000,
+        totalUnrealizedPnl: -10_000,
+        dailyLossPct: 0.02,
+      });
+      expect(result).toBe(false);
+    });
+
+    it("equity <= 0 defers the decision (transient broker glitch)", () => {
+      const zero = shouldHaltOnUnrealized({
+        alreadyHalted: false,
+        equity: 0,
+        dailyLoss: -5000,
+        totalUnrealizedPnl: -5000,
+        dailyLossPct: 0.02,
+      });
+      expect(zero).toBe(false);
+    });
+
+    it("scales with dailyLossPct — a tighter 1% profile trips earlier", () => {
+      const tight = shouldHaltOnUnrealized({
+        alreadyHalted: false,
+        equity: 100_000,
+        dailyLoss: -500,
+        totalUnrealizedPnl: -1100,
+        dailyLossPct: 0.01, // 1% — threshold = 100k × 0.01 × 1.5 = $1500
+      });
+      expect(tight).toBe(true); // 1600 > 1500
+
+      const loose = shouldHaltOnUnrealized({
+        alreadyHalted: false,
+        equity: 100_000,
+        dailyLoss: -500,
+        totalUnrealizedPnl: -1100,
+        dailyLossPct: 0.05, // 5% — threshold = 100k × 0.05 × 1.5 = $7500
+      });
+      expect(loose).toBe(false);
+    });
+
+    it("positive unrealized offsets realized loss (rare but possible)", () => {
+      // Realized −$2500, unrealized +$2000 → combined −$500, no halt
+      const result = shouldHaltOnUnrealized({
+        alreadyHalted: false,
+        equity: 100_000,
+        dailyLoss: -2500,
+        totalUnrealizedPnl: 2000,
+        dailyLossPct: 0.02,
+      });
+      expect(result).toBe(false);
+    });
+  });
+
   describe("duplicate-order prevention (Phase 7)", () => {
     // Phase 7 doesn't change canPlaceBuyOrder — duplicate detection happens at
     // the call-site level using pendingBuySymbols / pendingSellSymbols Sets

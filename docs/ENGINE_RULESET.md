@@ -712,8 +712,19 @@ Five auto-halt or auto-block conditions layered on top of the existing safety sy
 | 3 | **Broker auto-halt** | 5 consecutive `getPositions()` failures | Halt engine (Stop+Start to clear) | `engine.halted` reason=`broker_unreachable` |
 | 4 | **Account-switch detection** | Different `account_number` OR equity drop > 50% from boot snapshot | Halt engine | `engine.halted` reason=`account_mismatch` or `equity_collapse` |
 | 5 | **Consecutive-loss halt** | N losing trades in a row (default 5, configurable) | Halt engine | `engine.halted` reason=`consecutive_losses` |
+| 6 | **Mark-to-market drawdown halt** | `realized + unrealized < -1.5 × dailyLossThreshold` at scan end | Halt engine (does NOT cancel pending orders) | `engine.halted` reason=`daily_loss`, audit metadata `daily_loss_unrealized` |
 
 **Gate ordering inside `canPlaceBuyOrder()`**: earnings blackout → sector exposure → losing-reentry cooldown → wash-sale → daily notional → rate limit. Cheapest checks fire first; the first reason found is what's logged. **SELLs (exits) are never blocked** — exiting a position takes priority over any safeguard.
+
+### Mark-to-Market Drawdown Halt (post-2026-06-10 review)
+
+The realized-only daily-loss halt misses days where positions are bleeding heavily on paper but the user hasn't taken the loss yet. Admin's 2026-06-08 ran −$829 unrealized with no halt because realized was $0; 2026-06-09 then opened with those bleeders on the book and the realized halt tripped at −$727 *after* stops fired into closed losses (~$660 more bled past the halt because the halt blocks BUYs but doesn't flatten).
+
+The MTM halt fires at scan-end when `engine.dailyLoss + totalUnrealizedPnl < -1.5 × dailyLossThreshold` (wider multiplier to absorb normal intraday volatility — only genuinely-bad days trip it). Uses `haltReason="daily_loss"` so the date-rollover clear (`maybeClearDailyLossHaltOnDateRollover`) catches both; audit metadata `reason="daily_loss_unrealized"` distinguishes in the log.
+
+**Does NOT call `cancelAllOrders`.** The bleed-out scenario typically has protective stops sitting in the broker queue — cancelling them while positions are bleeding would strip the protection that's actively limiting further losses. `engine.halted` blocks new BUYs from the next scan onward; existing stops keep firing.
+
+Wired into all three scan paths (`runScan`, `runTacticalScan`, `runTacticalSmartScan`) after `totalUnrealizedPnl` is computed, before `upsertDailyPnl`.
 
 ## Losing-Reentry Cooldown (post-2026-06-10 review)
 

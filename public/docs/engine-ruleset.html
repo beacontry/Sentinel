@@ -1723,7 +1723,7 @@
       <h2>Capital Circuit Breakers</h2>
     </div>
 
-    <p>Five auto-halt or auto-block conditions layered on top of the existing safety systems (section 08). All operate identically in paper and live. Each emits a distinct audit reason so the audit viewer can filter cause.</p>
+    <p>Six auto-halt or auto-block conditions layered on top of the existing safety systems (section 08). All operate identically in paper and live. Each emits a distinct audit reason so the audit viewer can filter cause. (The sixth, mark-to-market drawdown, was added 2026-06-10 to catch unrealized bleed before it converts to realized losses.)</p>
 
     <h3>1. Daily Notional Cap</h3>
     <div class="filter-gate">
@@ -1772,6 +1772,16 @@
         <div class="gate-name">N losing trades in a row &rarr; halt</div>
         <div class="gate-rule">After every closed trade, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">recordTradeResult(engine, pnl)</code> increments <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">engine.consecutiveLosses</code> on losses, resets on any winner (zero P&amp;L doesn't reset &mdash; rare exact-even close). Default threshold 5, configurable in risk profile (suggest 3 for small live accounts).</div>
         <div class="gate-action">Halt; audit reason=<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">consecutive_losses</code> with count + threshold</div>
+      </div>
+    </div>
+
+    <h3>6. Mark-to-Market Drawdown Halt (post-2026-06-10 review)</h3>
+    <div class="filter-gate">
+      <div class="gate-num">06</div>
+      <div class="gate-body">
+        <div class="gate-name"><code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">realized + unrealized &lt; -1.5 &times; dailyLossThreshold</code> at scan end</div>
+        <div class="gate-rule">The realized-only halt (Breaker 1's sibling, <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">enforceDailyLossHalt</code>) misses days where positions bleed heavily on paper but the user hasn't taken the loss yet. Admin's 2026-06-08 ran &minus;$829 unrealized with no halt (realized $0); 2026-06-09 then opened with those bleeders on the book and the realized halt tripped at &minus;$727 <em>after</em> stops fired into closed losses (~$660 more bled past the halt because halt blocks BUYs but doesn't flatten). MTM halt fires at scan end after <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">totalUnrealizedPnl</code> is computed; 1.5&times; multiplier (wider than realized) absorbs normal intraday volatility so only genuinely-bad days trip it.</div>
+        <div class="gate-action">Halt engine; audit reason=<code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">daily_loss</code> with metadata <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">reason=daily_loss_unrealized</code>; <strong>does NOT cancel pending orders</strong> (existing protective stops keep firing). Cleared by date-rollover same as realized halt.</div>
       </div>
     </div>
 

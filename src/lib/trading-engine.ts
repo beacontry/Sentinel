@@ -1211,6 +1211,98 @@ async function enforceDailyLossHalt(
   return true;
 }
 
+/**
+ * Mark-to-market drawdown halt — post-2026-06-10 review addition.
+ *
+ * The realized-only `enforceDailyLossHalt` misses days where positions are
+ * bleeding heavily on paper but the user hasn't taken the loss yet. Admin's
+ * 2026-06-08 ran −$829 unrealized with no halt because realized was $0;
+ * 2026-06-09 then opened with those bleeders still on the book and the
+ * realized halt finally tripped at −$727 after stops fired into closed
+ * losses (~$660 more bled after the halt because halt blocks BUYs but
+ * doesn't flatten).
+ *
+ * This helper fires when realized + unrealized < -UNREALIZED_HALT_MULTIPLIER ×
+ * dailyLossThreshold. Wider (1.5×) than the realized threshold to absorb
+ * normal intraday volatility — only the genuinely-bad days trip it.
+ *
+ * Called at scan END (after totalUnrealizedPnl is computed) so the position
+ * data is already in hand. New BUYs are blocked from the next scan onward.
+ *
+ * Critical difference from enforceDailyLossHalt: does NOT call cancelAllOrders.
+ * The unrealized-bleed case typically has protective stops sitting in the
+ * broker queue — cancelling them while positions are bleeding would make the
+ * situation worse, not better. The halt blocks new BUYs; existing stops keep
+ * firing.
+ *
+ * Uses haltReason="daily_loss" (same as realized halt) so the date-rollover
+ * clear at maybeClearDailyLossHaltOnDateRollover() catches both. Audit
+ * metadata.reason="daily_loss_unrealized" distinguishes the two in the log.
+ */
+const UNREALIZED_HALT_MULTIPLIER = 1.5;
+
+async function enforceUnrealizedLossHalt(
+  engine: EngineState,
+  equity: number,
+  totalUnrealizedPnl: number,
+  today: string,
+): Promise<void> {
+  if (!engine.userId || engine.halted) return;
+  if (equity <= 0) return;
+
+  const riskLimits = await loadRiskLimits(engine.userId);
+  const realizedThreshold = equity * riskLimits.dailyLossPct;
+  const unrealizedThreshold = realizedThreshold * UNREALIZED_HALT_MULTIPLIER;
+
+  const mtmLoss = engine.dailyLoss + totalUnrealizedPnl;
+  if (mtmLoss > -unrealizedThreshold) return;
+
+  log.warn(
+    {
+      userId: engine.userId,
+      dailyLoss: engine.dailyLoss,
+      unrealizedPnl: totalUnrealizedPnl,
+      mtmLoss,
+      threshold: unrealizedThreshold,
+      multiplier: UNREALIZED_HALT_MULTIPLIER,
+      mode: engine.mode,
+      effectiveMode: engine.effectiveMode,
+    },
+    "Mark-to-market drawdown limit exceeded — halting engine"
+  );
+  engine.halted = true;
+  engine.haltReason = "daily_loss";
+  pushError(
+    engine,
+    `Mark-to-market drawdown hit: $${mtmLoss.toFixed(2)} (realized $${engine.dailyLoss.toFixed(2)} + unrealized $${totalUnrealizedPnl.toFixed(2)})`
+  );
+
+  void writeAudit({
+    actor: { userId: engine.userId, email: null, role: null },
+    action: AuditAction.ENGINE_HALTED,
+    resourceType: "engine",
+    resourceId: engine.userId,
+    metadata: {
+      reason: "daily_loss_unrealized",
+      automatic: true,
+      dailyLoss: engine.dailyLoss,
+      unrealizedPnl: totalUnrealizedPnl,
+      mtmLoss,
+      threshold: unrealizedThreshold,
+      multiplier: UNREALIZED_HALT_MULTIPLIER,
+      equity,
+      mode: engine.mode,
+      effectiveMode: engine.effectiveMode,
+    },
+  });
+
+  // Intentionally NOT calling cancelAllOrders — the bleed-out scenario
+  // typically has protective stops in the broker queue. Cancelling them
+  // would remove the protection that's actively limiting further losses.
+  // engine.halted blocks new BUYs from the next scan onward, which is the
+  // forward protection we want.
+}
+
 async function placeEngineOrder(
   client: BrokerClient,
   params: Omit<PlaceOrderParams, "positionIntent">
@@ -3491,6 +3583,10 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
       totalUnrealizedPnl += bp.unrealizedPnl;
     }
   } catch { /* use 0 */ }
+  // Mark-to-market drawdown halt (post-2026-06-10) — fires when
+  // realized+unrealized exceeds 1.5× the realized threshold. See
+  // enforceUnrealizedLossHalt() for full rationale.
+  await enforceUnrealizedLossHalt(engine, account.equity, totalUnrealizedPnl, today);
   await upsertDailyPnl(today, 0, totalUnrealizedPnl, 0, engine.halted, undefined, engine.userId);
 
   // Update status — scan completed, clear in-flight marker
@@ -4085,6 +4181,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       totalUnrealizedPnl += bp.unrealizedPnl;
     }
   } catch { /* use 0 */ }
+  // Mark-to-market drawdown halt (post-2026-06-10) — fires when
+  // realized+unrealized exceeds 1.5× the realized threshold.
+  await enforceUnrealizedLossHalt(engine, account.equity, totalUnrealizedPnl, today);
   await upsertDailyPnl(today, realizedPnlThisScan, totalUnrealizedPnl, tradesThisScan, engine.halted, undefined, engine.userId);
 
   engine.lastScanAt = new Date();
@@ -5147,6 +5246,11 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
     const currentPrice = bp ? bp.currentPrice : pos.entryPrice;
     totalUnrealizedPnl += (currentPrice - pos.entryPrice) * pos.qty;
   }
+
+  // Mark-to-market drawdown halt (post-2026-06-10) — fires when
+  // realized+unrealized exceeds 1.5× the realized threshold. See
+  // enforceUnrealizedLossHalt() for full rationale.
+  await enforceUnrealizedLossHalt(engine, equity, totalUnrealizedPnl, today);
 
   // 8. Update daily PnL and heartbeat
   await upsertDailyPnl(
