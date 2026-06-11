@@ -2945,6 +2945,32 @@ function evictEngineState(userId: string): void {
 // ─── Broker Position Sync ───────────────────────────────────────────────────
 
 /**
+ * Defense-in-depth (post-2026-06-11 review): catch the case where the
+ * broker holds a position but the engine's in-memory map doesn't. The
+ * scan-top syncPositionMapFromBroker is supposed to keep these in sync,
+ * but a mid-scan broker-side action (stop fired and replaced, manual UI
+ * trade, partial fill of an existing order) can desynchronize them
+ * between sync and a downstream BUY decision.
+ *
+ * If broker holds the symbol but map doesn't, the engine would treat
+ * the candidate as a fresh entry and BUY MORE — silently doubling
+ * exposure. This guard refuses the BUY and audits the drift; the next
+ * scan's sync reconciles. Cooldown already handles the
+ * losing-exit-then-re-buy case; this handles the rarer mid-scan drift
+ * window the cooldown doesn't cover.
+ *
+ * Returns true when drift is detected and the BUY should be skipped.
+ */
+function detectPositionMapDrift(
+  symbol: string,
+  brokerPositions: { symbol: string; qty: number }[],
+  positionMap: Map<string, TrackedPosition>,
+): boolean {
+  const brokerQty = brokerPositions.find((p) => p.symbol === symbol)?.qty ?? 0;
+  return brokerQty > 0 && !positionMap.has(symbol);
+}
+
+/**
  * Sync the in-memory positionMap with the broker's actual positions.
  * - Removes positions that no longer exist on the broker (manual sells, external closures)
  * - Adds positions that exist on the broker but not in the map (manual buys, fills between scans)
@@ -3567,6 +3593,18 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
           log.info({ symbol }, "Tactical entry skipped — active buy already pending on broker");
           continue;
         }
+        // Position-map drift guard (post-2026-06-11) — broker holds the
+        // symbol but engine map doesn't. Skip rather than double-down.
+        if (detectPositionMapDrift(symbol, currentPositions, positionMap)) {
+          log.warn({ symbol }, "Tactical entry skipped — broker holds position but engine map doesn't (drift). Next scan will reconcile.");
+          void writeAudit({
+            actor: { userId: engine.userId, email: null, role: null },
+            action: AuditAction.ORDER_REJECTED,
+            resourceType: "order",
+            metadata: { symbol, side: "buy", reason: "position_map_drift", source: "engine_tactical" },
+          });
+          continue;
+        }
         const limitPrice = (quote.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
         const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
@@ -3924,6 +3962,17 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         log.info({ symbol }, "Smart entry skipped — active buy already pending on broker");
         continue;
       }
+      // Position-map drift guard (post-2026-06-11)
+      if (detectPositionMapDrift(symbol, currentPositions, positionMap)) {
+        log.warn({ symbol }, "Smart entry skipped — broker holds position but engine map doesn't (drift)");
+        void writeAudit({
+          actor: { userId: engine.userId, email: null, role: null },
+          action: AuditAction.ORDER_REJECTED,
+          resourceType: "order",
+          metadata: { symbol, side: "buy", reason: "position_map_drift", source: "engine_tactical_smart" },
+        });
+        continue;
+      }
       try {
         const limitPrice = (price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
@@ -4077,6 +4126,17 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         });
         continue;
       }
+      // Position-map drift guard (post-2026-06-11)
+      if (detectPositionMapDrift(replacement.symbol, currentPositions, positionMap)) {
+        log.warn({ symbol: replacement.symbol }, "Swap-buy skipped — broker holds position but engine map doesn't (drift)");
+        void writeAudit({
+          actor: { userId: engine.userId, email: null, role: null },
+          action: AuditAction.ORDER_REJECTED,
+          resourceType: "order",
+          metadata: { symbol: replacement.symbol, side: "buy", reason: "position_map_drift", source: "engine_swap_buy" },
+        });
+        continue;
+      }
 
       // Sell the weak position
       try {
@@ -4154,6 +4214,17 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           action: AuditAction.ORDER_REJECTED,
           resourceType: "order",
           metadata: { symbol: cand.symbol, side: "buy", reason: "duplicate_pending_order", source: "engine_add" },
+        });
+        continue;
+      }
+      // Position-map drift guard (post-2026-06-11)
+      if (detectPositionMapDrift(cand.symbol, currentPositions, positionMap)) {
+        log.warn({ symbol: cand.symbol }, "STRONG_BUY add skipped — broker holds position but engine map doesn't (drift)");
+        void writeAudit({
+          actor: { userId: engine.userId, email: null, role: null },
+          action: AuditAction.ORDER_REJECTED,
+          resourceType: "order",
+          metadata: { symbol: cand.symbol, side: "buy", reason: "position_map_drift", source: "engine_add" },
         });
         continue;
       }
@@ -4991,6 +5062,17 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           log.info({ symbol }, "Main-scan BUY skipped — active buy already pending on broker");
           continue;
         }
+        // Position-map drift guard (post-2026-06-11)
+        if (detectPositionMapDrift(symbol, brokerPositions, positionMap)) {
+          log.warn({ symbol }, "Main-scan BUY skipped — broker holds position but engine map doesn't (drift)");
+          void writeAudit({
+            actor: { userId: engine.userId, email: null, role: null },
+            action: AuditAction.ORDER_REJECTED,
+            resourceType: "order",
+            metadata: { symbol, side: "buy", reason: "position_map_drift", source: "engine_scan" },
+          });
+          continue;
+        }
         const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, bootEquity, scanSectorCtx ?? undefined);
         if (!gate.ok) {
           log.warn(
@@ -5168,6 +5250,19 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
       const orderCost = attempt.orderCost!;
 
       try {
+        // Position-map drift guard (post-2026-06-11) — same defense as the
+        // in-loop entry path. Refuse the redeploy BUY if broker holds the
+        // symbol but the map doesn't.
+        if (detectPositionMapDrift(candFull.symbol, brokerPositions, positionMap)) {
+          log.warn({ symbol: candFull.symbol }, "Swap-sell redeploy BUY skipped — broker holds position but engine map doesn't (drift)");
+          void writeAudit({
+            actor: { userId: engine.userId, email: null, role: null },
+            action: AuditAction.ORDER_REJECTED,
+            resourceType: "order",
+            metadata: { symbol: candFull.symbol, side: "buy", reason: "position_map_drift", source: "engine_swap_sell" },
+          });
+          continue;
+        }
         // Filters that need I/O (smart filters, canPlaceBuyOrder with sector
         // context) run here — outside the planner because they require DB +
         // async work. Mirrors the in-loop entry path's gate order.

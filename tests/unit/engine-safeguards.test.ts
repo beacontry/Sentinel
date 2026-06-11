@@ -560,6 +560,77 @@ describe("live-trading safeguards", () => {
     });
   });
 
+  describe("position-map drift detector (post-2026-06-11 review)", () => {
+    // Mirror of detectPositionMapDrift in src/lib/trading-engine.ts. The
+    // engine is supposed to keep its in-memory map in lockstep with the
+    // broker via syncPositionMapFromBroker at scan top — but a mid-scan
+    // broker-side action (stop fired and replaced, manual UI trade, partial
+    // fill) can desynchronize them between sync and a downstream BUY
+    // decision. Without this guard, the engine would treat the candidate
+    // as a fresh entry and BUY MORE, silently doubling exposure.
+
+    function detectPositionMapDrift(
+      symbol: string,
+      brokerPositions: Array<{ symbol: string; qty: number }>,
+      positionMap: Map<string, unknown>,
+    ): boolean {
+      const brokerQty = brokerPositions.find((p) => p.symbol === symbol)?.qty ?? 0;
+      return brokerQty > 0 && !positionMap.has(symbol);
+    }
+
+    it("returns false when both sides agree the symbol is not held", () => {
+      const r = detectPositionMapDrift("NVDA", [], new Map());
+      expect(r).toBe(false);
+    });
+
+    it("returns false when both sides agree the symbol IS held", () => {
+      const r = detectPositionMapDrift(
+        "NVDA",
+        [{ symbol: "NVDA", qty: 10 }],
+        new Map([["NVDA", {}]])
+      );
+      expect(r).toBe(false);
+    });
+
+    it("returns TRUE when broker holds but map doesn't (drift — block the BUY)", () => {
+      const r = detectPositionMapDrift(
+        "NVDA",
+        [{ symbol: "NVDA", qty: 10 }],
+        new Map()
+      );
+      expect(r).toBe(true);
+    });
+
+    it("returns false when map has but broker doesn't (different drift; engine would skip anyway via positionMap check)", () => {
+      // This is the OPPOSITE drift — the engine map says we own NVDA, broker
+      // says we don't. The drift detector intentionally does NOT trigger
+      // here, because the existing positionMap.has() check in BUY paths
+      // would already skip the symbol as "already held." Letting it through
+      // here would suppress legitimate fresh-entry signals; the next sync
+      // reconciles the map and the BUY can fire next scan.
+      const r = detectPositionMapDrift("NVDA", [], new Map([["NVDA", {}]]));
+      expect(r).toBe(false);
+    });
+
+    it("ignores other symbols' holdings", () => {
+      const r = detectPositionMapDrift(
+        "NVDA",
+        [{ symbol: "AAPL", qty: 5 }],
+        new Map([["AAPL", {}]])
+      );
+      expect(r).toBe(false);
+    });
+
+    it("treats qty <= 0 broker rows as not held (defensive against malformed data)", () => {
+      const r = detectPositionMapDrift(
+        "NVDA",
+        [{ symbol: "NVDA", qty: 0 }],
+        new Map()
+      );
+      expect(r).toBe(false);
+    });
+  });
+
   describe("sticky halted flag in daily PnL upsert (post-2026-06-10 fix)", () => {
     // Mirror of the ON CONFLICT halted SQL: `halted = old_halted OR new_halted`.
     // Pre-fix this was an unconditional overwrite, so a halt fire at 10am
