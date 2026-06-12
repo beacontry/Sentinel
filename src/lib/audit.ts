@@ -260,6 +260,14 @@ export const AuditAction = {
   ENGINE_STARTED: "engine.started",
   ENGINE_STOPPED: "engine.stopped",
   ENGINE_HALTED: "engine.halted",
+  // Automatic resume of a consecutive_losses halt within the same trading
+  // day, triggered when SPY intraday drop exceeds the regime threshold AND
+  // the halt cooled down past the minimum window. Distinguishes regime-
+  // driven streaks ("the market dropped, my picks dropped with it") from
+  // strategy failures ("my picks dropped while SPY was flat"). The cross-
+  // day rollover clear (next-trading-day resume of streak halts) is a
+  // separate path and does NOT write this event.
+  ENGINE_HALT_AUTO_RESUMED: "engine.halt_auto_resumed",
   ENGINE_MODE_SWITCHED: "engine.mode_switched",
   ENGINE_LIVE_BLOCKED: "engine.live_blocked",
   ENGINE_PDT_VULNERABLE: "engine.pdt_vulnerable",

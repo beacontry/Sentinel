@@ -280,6 +280,18 @@ export interface EngineState {
    *  superseded it, throws ScanCancelledError and the orphan exits cleanly
    *  instead of placing stale orders or corrupting engine state. */
   scanGeneration: number;
+  /** Context captured when the current safeguard halt fired. Used by the
+   *  same-day regime-gated auto-resume (`maybeClearConsecutiveLossesHaltOnRegime`)
+   *  to enforce a minimum cool-down window before re-engaging. Set in
+   *  `tripSafeguardHalt`, cleared on (a) explicit user Start, (b) cross-day
+   *  rollover clear, (c) regime-gated auto-resume. Null when not halted. */
+  haltContext: { reason: string; haltedAt: number } | null;
+  /** Last time reconcilePendingTrades ran for this engine (ms epoch).
+   *  runScan paths call reconcile every cycle (~15 min) but they're suppressed
+   *  by `engine.halted`. runExitCheck bypasses halt for protective-only
+   *  reasons and now also calls reconcile, throttled to RECONCILE_THROTTLE_MS
+   *  to avoid hitting Alpaca every minute. */
+  lastReconcileAt: number;
 }
 
 const g = globalThis as typeof globalThis & {
@@ -331,6 +343,8 @@ function createDefaultEngine(): EngineState {
     adaptiveRegime: null,
     userTier: null,
     scanGeneration: 0,
+    haltContext: null,
+    lastReconcileAt: 0,
   };
 }
 
@@ -367,6 +381,16 @@ function getEngine(userId?: string): EngineState {
 
 const SWING_SCAN_MS = 15 * 60 * 1000;    // 15 minutes for the signal scan
 const EXIT_CHECK_MS = 60 * 1000;          // 1 minute for the live-quote exit check (every mode)
+/** Lookback for reconcilePendingTrades — how far back PENDING rows can be
+ *  picked up. 7d covers any realistic halted-engine window (admin's 06-09
+ *  → 06-11 incident, where the prior 24h cutoff stranded 3 rows). */
+export const RECONCILE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+/** Minimum spacing between reconcilePendingTrades calls inside runExitCheck.
+ *  The 1-min exit poll is far too frequent to drive reconcile (would slam
+ *  Alpaca every minute); 5 min is short enough that a halt-then-exit window
+ *  resolves within one cycle without spamming. runScan paths reconcile
+ *  unthrottled because they're already on a 15-min cadence. */
+const RECONCILE_THROTTLE_MS = 5 * 60 * 1000;
 /** Tactical mode: always invested, exit on market weakness */
 const TACTICAL_CONFIG = {
   trendSMA: 50,       // SPY above this = safe to be invested
@@ -1041,14 +1065,30 @@ function maybeClearDailyLossHaltOnDateRollover(engine: EngineState, today: strin
   engine.dailyLoss = 0;
   engine.dailyNotional = 0;
   engine.dailyLossDate = today;
-  if (engine.halted && engine.haltReason === "daily_loss") {
+  // Streak halts (daily_loss, consecutive_losses) are intraday-scope signals:
+  // the counter resets at the new trading day, so the halt that derived from
+  // a fully-reset counter should too. Integrity halts (account_mismatch,
+  // equity_collapse, broker_unreachable, user_emergency_halt) are NOT cleared
+  // here — they require explicit user acknowledgment via startEngine.
+  //
+  // consecutive_losses was added to this list 2026-06-12: prior behavior
+  // bucketed it with the integrity halts, so a 5-loss streak Tuesday kept
+  // the engine sidelined Wednesday/Thursday, missing reversal entries. The
+  // counter itself (`engine.consecutiveLosses`) is also zeroed so a snapshot
+  // rehydrate or stale in-memory state can't instantly re-trip the halt on
+  // the first loser of the new day.
+  if (engine.halted && (engine.haltReason === "daily_loss" || engine.haltReason === "consecutive_losses")) {
     log.info(
-      { userId: engine.userId },
-      "New trading day — clearing daily_loss halt (safeguard halts, if any, would persist)"
+      { userId: engine.userId, prevReason: engine.haltReason },
+      "New trading day — clearing streak halt (integrity halts, if any, would persist)"
     );
     engine.halted = false;
     engine.haltReason = null;
-    engine.errors = engine.errors.filter(e => !e.startsWith("Daily loss limit hit"));
+    engine.haltContext = null;
+    engine.consecutiveLosses = 0;
+    engine.errors = engine.errors.filter(
+      (e) => !e.startsWith("Daily loss limit hit") && !e.startsWith("Auto-halted: consecutive_losses")
+    );
   }
 }
 
@@ -1056,6 +1096,11 @@ function tripSafeguardHalt(engine: EngineState, reason: string, details: Record<
   if (engine.halted) return;
   engine.halted = true;
   engine.haltReason = reason;
+  // Capture halt timestamp so the same-day regime auto-resume
+  // (maybeClearConsecutiveLossesHaltOnRegime) can enforce a min cool-down
+  // before re-engaging. Cleared by user Start, cross-day rollover, or
+  // successful auto-resume.
+  engine.haltContext = { reason, haltedAt: Date.now() };
   log.error({ userId: engine.userId, reason, ...details }, `Engine auto-halted: ${reason}`);
   pushError(engine, `Auto-halted: ${reason}`);
   // Fire-and-forget audit (no request context for engine-internal events)
@@ -1076,6 +1121,155 @@ function tripSafeguardHalt(engine: EngineState, reason: string, details: Record<
   void upsertDailyPnl(getETDateString(), 0, 0, 0, true, reason, engine.userId).catch(() => {
     /* DB write failure non-blocking; in-memory halted is already true */
   });
+}
+
+// ─── Same-day regime-gated halt auto-resume (added 2026-06-12) ─────────────
+//
+// A `consecutive_losses` halt is an intraday-scope signal: "five of my picks
+// failed in a row." Sometimes that's a strategy problem (your picks blew up
+// while SPY was flat — keep the halt). Sometimes it's a regime move (SPY
+// dropped 2% and your picks correlated with the tape — the halt's premise
+// no longer holds once you observe the regime). We can distinguish.
+//
+// Trigger conditions (ALL required):
+//   1. Engine is halted with reason "consecutive_losses".
+//   2. >= REGIME_RESUME_COOLDOWN_MS since the halt fired (no instant flap).
+//   3. SPY intraday drop (open → current) > REGIME_RESUME_DROP_THRESHOLD.
+//
+// On trigger: clear halt + zero consecutiveLosses + zero today's daily_pnl
+// halt sticky bits + write ENGINE_HALT_AUTO_RESUMED audit row. The engine's
+// next scan reads engine.halted=false and trades normally.
+//
+// This composes with the cross-day rollover clear in
+// maybeClearDailyLossHaltOnDateRollover: rollover catches anything that
+// survives past midnight; regime-resume catches same-day reversals where
+// the strategy never had a chance.
+
+export const REGIME_RESUME_COOLDOWN_MS = 30 * 60 * 1000; // 30 min
+export const REGIME_RESUME_DROP_THRESHOLD = 0.015; // 1.5% SPY intraday drop
+
+/**
+ * Pure decision — exposed for tests. Returns true iff every gate passes.
+ *
+ * Caller is responsible for fetching SPY (intraday open + current) and
+ * passing realistic timestamps. The pure split lets tests drive every
+ * branch without faking the market data provider.
+ */
+export function shouldRegimeResumeStreakHalt(opts: {
+  halted: boolean;
+  haltReason: string | null;
+  haltedAt: number | null;
+  now: number;
+  spyOpen: number;
+  spyCurrent: number;
+  cooldownMs: number;
+  dropThreshold: number;
+}): boolean {
+  if (!opts.halted) return false;
+  if (opts.haltReason !== "consecutive_losses") return false;
+  if (opts.haltedAt === null) return false;
+  if (opts.now - opts.haltedAt < opts.cooldownMs) return false;
+  // Guard NaN/zero/negative — a bad SPY feed must NOT auto-resume the halt.
+  if (!(opts.spyOpen > 0) || !(opts.spyCurrent > 0)) return false;
+  const drop = (opts.spyOpen - opts.spyCurrent) / opts.spyOpen;
+  return drop > opts.dropThreshold;
+}
+
+async function maybeClearConsecutiveLossesHaltOnRegime(engine: EngineState): Promise<void> {
+  // Cheap gates first — avoid the SPY fetch when we know we won't fire.
+  if (!engine.halted || engine.haltReason !== "consecutive_losses") return;
+  if (!engine.haltContext) return;
+  if (Date.now() - engine.haltContext.haltedAt < REGIME_RESUME_COOLDOWN_MS) return;
+
+  let spyOpen = 0;
+  let spyCurrent = 0;
+  try {
+    const provider = getMarketDataProvider();
+    // One daily bar — the latest one is today's intraday-updating bar.
+    // open = session open, close = last print. Providers cache 1d bars,
+    // so this is effectively a single hot-cache lookup per scan boundary.
+    const bars = await provider.fetchBars("SPY", 1, "1d");
+    if (!bars.length) return;
+    const bar = bars[bars.length - 1];
+    spyOpen = bar.open;
+    spyCurrent = bar.close;
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown", userId: engine.userId },
+      "Regime-resume SPY fetch failed — keeping halt"
+    );
+    return;
+  }
+
+  const haltedAt = engine.haltContext.haltedAt;
+  const now = Date.now();
+  if (
+    !shouldRegimeResumeStreakHalt({
+      halted: engine.halted,
+      haltReason: engine.haltReason,
+      haltedAt,
+      now,
+      spyOpen,
+      spyCurrent,
+      cooldownMs: REGIME_RESUME_COOLDOWN_MS,
+      dropThreshold: REGIME_RESUME_DROP_THRESHOLD,
+    })
+  ) {
+    return;
+  }
+
+  const intradayDropPct = ((spyOpen - spyCurrent) / spyOpen) * 100;
+  log.info(
+    {
+      userId: engine.userId,
+      spyOpen,
+      spyCurrent,
+      intradayDropPct: Number(intradayDropPct.toFixed(2)),
+      haltAgeMin: Math.round((now - haltedAt) / 60_000),
+    },
+    "Auto-resuming consecutive_losses halt — regime-driven SPY drawdown"
+  );
+  engine.halted = false;
+  engine.haltReason = null;
+  engine.haltContext = null;
+  engine.consecutiveLosses = 0;
+  engine.errors = engine.errors.filter((e) => !e.startsWith("Auto-halted: consecutive_losses"));
+
+  // Clear today's daily_pnl halt sticky bits so the dashboard reflects the
+  // resume and autoStartIfNeeded on the next restart doesn't suppress on a
+  // stale halt row. upsertDailyPnl can't do this — its halted column is
+  // sticky-OR, intentionally. We're explicitly de-escalating; bypass it.
+  if (engine.userId) {
+    const todayET = getETDateString();
+    const userIdForAudit = engine.userId;
+    void db
+      .update(traderDailyPnl)
+      .set({ halted: false, haltReason: null })
+      .where(and(eq(traderDailyPnl.userId, userIdForAudit), eq(traderDailyPnl.date, todayET)))
+      .catch((err: unknown) => {
+        log.warn(
+          { err: err instanceof Error ? err.message : "unknown", userId: userIdForAudit },
+          "Failed to clear daily_pnl halt bits on regime-resume — in-memory engine is already resumed"
+        );
+      });
+
+    void writeAudit({
+      actor: { userId: userIdForAudit, email: null, role: null },
+      action: AuditAction.ENGINE_HALT_AUTO_RESUMED,
+      resourceType: "engine",
+      resourceId: userIdForAudit,
+      metadata: {
+        originalReason: "consecutive_losses",
+        regimeTrigger: "spy_intraday_drop",
+        spyOpen: Math.round(spyOpen * 100) / 100,
+        spyCurrent: Math.round(spyCurrent * 100) / 100,
+        intradayDropPct: Math.round(intradayDropPct * 100) / 100,
+        haltAgeMs: now - haltedAt,
+        cooldownMs: REGIME_RESUME_COOLDOWN_MS,
+        dropThreshold: REGIME_RESUME_DROP_THRESHOLD,
+      },
+    });
+  }
 }
 
 /** Live-trading is gated behind ALLOW_LIVE_TRADING=1. Returns true when live is permitted. */
@@ -2531,6 +2725,20 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
   if (!resolved) return;
 
   const { client } = resolved;
+
+  // Throttled reconcile of stale PENDING rows. runScan paths reconcile every
+  // ~15 min but are gated by `engine.halted`; this path bypasses halt for
+  // protective reasons and now also drives reconcile so a long halt window
+  // can't strand exit rows past the lookback. Runs before the positionMap.size
+  // guard because the halt-then-trailing-stop-out scenario ends with an
+  // empty map, and we still need to clean those PENDING rows.
+  if (Date.now() - engine.lastReconcileAt > RECONCILE_THROTTLE_MS) {
+    engine.lastReconcileAt = Date.now();
+    void reconcilePendingTrades(client, engine.userId).catch(() => {
+      /* reconcile already logs internally; non-blocking */
+    });
+  }
+
   const positionMap = getPositionMap(engine?.userId ?? engineUserId);
   if (positionMap.size === 0) return;
 
@@ -3303,8 +3511,16 @@ async function reconcileBrokerSideExit(
  */
 async function reconcilePendingTrades(client: BrokerClient, userId: string): Promise<void> {
   try {
-    // Find PENDING rows from the last 24h that have a broker_order_id to look up
-    const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
+    // Find PENDING rows from the last 7d that have a broker_order_id.
+    //
+    // The window used to be 24h; admin's 2026-06-09 incident proved that
+    // too short: a 5-loss streak halt kept runScan (where this reconcile
+    // runs) suppressed for ~50h, so when the engine restarted on 06-11 the
+    // 06-09 stuck rows had aged out and reconcile silently skipped them.
+    // 7d covers any realistic halted-engine window without flooding the
+    // broker fetch — and getOrders(200) below caps the broker pull
+    // regardless.
+    const sinceMs = Date.now() - RECONCILE_LOOKBACK_MS;
     const pending = await db
       .select()
       .from(traderTrades)
@@ -3321,17 +3537,35 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
     if (pending.length === 0) return;
 
     // One batch fetch of broker orders (both open + closed) to map id → state.
-    // getOrders("all") returns mixed; we read status field per row.
+    // getOrders("all") returns mixed; we read status field per row. For any
+    // pending row whose order id has fallen out of the recent 200 (high-volume
+    // accounts, or rows from a long-ago halt window), fall back to per-id
+    // GET below.
     const recent = await client.getOrders(200);
     const byId = new Map(recent.map((o) => [o.id, o]));
 
     let updated = 0;
     for (const row of pending) {
       if (!row.brokerOrderId) continue;
-      const brokerOrder = byId.get(row.brokerOrderId);
+      let brokerOrder = byId.get(row.brokerOrderId) ?? null;
+      if (!brokerOrder && client.getOrder) {
+        // Row's order id has aged out of the recent 200 batch. Fall back to
+        // a per-id GET so the 7d query window can actually reach orders that
+        // were placed during a long halt and only become reconcilable after
+        // the engine restarts. getOrder returns null on broker 404 — treat
+        // as terminal "purged at broker" and stop scanning this row.
+        try {
+          brokerOrder = await client.getOrder(row.brokerOrderId);
+        } catch (err) {
+          log.warn(
+            { orderId: row.brokerOrderId, err: err instanceof Error ? err.message : "unknown" },
+            "Per-id order fetch failed during reconcile — leaving row for next cycle"
+          );
+          continue;
+        }
+      }
       if (!brokerOrder) {
-        // Not in recent 200 — either too old or got purged. Leave PENDING; next
-        // scan may find it. After 24h the row drops out of our query anyway.
+        // Order purged at broker, or broker has no getOrder support — leave PENDING.
         continue;
       }
 
@@ -3438,6 +3672,9 @@ async function runTacticalScan(engineUserId?: string): Promise<void> {
   // Run date-rollover clear BEFORE the halted check so a daily_loss halt from
   // yesterday actually resumes today (P1 #2). Safeguard halts stay set.
   maybeClearDailyLossHaltOnDateRollover(engine, getETDateString());
+  // Same-day regime-gated auto-resume for consecutive_losses (2026-06-12).
+  // No-op when not halted or wrong reason or cooldown not elapsed.
+  await maybeClearConsecutiveLossesHaltOnRegime(engine);
   if (engine.halted) return;
   if (!isMarketOpen()) return;
   // PR 21c — generation capture for cooperative cancellation
@@ -3752,6 +3989,8 @@ async function runTacticalSmartScan(engineUserId?: string): Promise<void> {
   // Run date-rollover clear BEFORE the halted check so a daily_loss halt from
   // yesterday actually resumes today (P1 #2). Safeguard halts stay set.
   maybeClearDailyLossHaltOnDateRollover(engine, getETDateString());
+  // Same-day regime-gated auto-resume for consecutive_losses (2026-06-12).
+  await maybeClearConsecutiveLossesHaltOnRegime(engine);
   if (engine.halted) return;
   if (!isMarketOpen()) return;
   // PR 21c — generation capture for cooperative cancellation
@@ -4416,6 +4655,8 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
   // Run date-rollover clear BEFORE the halted check so a daily_loss halt from
   // yesterday actually resumes today (P1 #2). Safeguard halts stay set.
   maybeClearDailyLossHaltOnDateRollover(engine, getETDateString());
+  // Same-day regime-gated auto-resume for consecutive_losses (2026-06-12).
+  await maybeClearConsecutiveLossesHaltOnRegime(engine);
   if (engine.halted) {
     log.info("Engine halted, skipping scan");
     return;
@@ -5621,6 +5862,7 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   // trader_daily_pnl BEFORE reaching here, so a safeguard halt never gets
   // auto-cleared by a process restart.
   engine.haltReason = null;
+  engine.haltContext = null;
   engine.mode = mode;
   engine.userId = userId;
   // Capture tier at boot so the hybrid pipeline knows which layers to
@@ -5642,6 +5884,9 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   engine.dailyNotional = 0;
   engine.consecutiveLosses = 0;
   engine.recentOrderTimestamps = [];
+  // Reset so the post-start reconcile sweep below isn't throttled by stale
+  // in-memory state from a previous engine instance on the same process.
+  engine.lastReconcileAt = 0;
 
   // Phase 5 — load tax status (drives wash-sale protection) and prime PDT state.
   const { mtmElected } = await loadTaxStatus(userId);
@@ -5779,7 +6024,15 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
         engine.boot = fields.boot;
         engine.bootEquitySnapshotDate = fields.bootEquitySnapshotDate;
       }
-      engine.consecutiveLosses = fields.consecutiveLosses;
+      // consecutiveLosses is an intraday counter — hydrate only if the
+      // snapshot is from today, else zero. Without this gate, a restart
+      // the morning after a streak halt would re-enter the engine with
+      // counter still at threshold; the first new-day loser would re-trip
+      // the halt immediately, defeating the cross-day rollover clear.
+      // (`dailyLossDate` is the closest snapshot field tagging the snapshot's
+      // trading day — it's set to today on every startEngine and on every
+      // successful runScan's date-rollover.)
+      engine.consecutiveLosses = fields.dailyLossDate === today ? fields.consecutiveLosses : 0;
       // Filter rate-limit timestamps to within the rolling window
       const orderRateWindowMs = 60_000;
       const cutoff = Date.now() - orderRateWindowMs;
@@ -5841,6 +6094,17 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   const barResolution = "1d" as const;
 
   log.info({ userId, mode, scanIntervalMs }, "Trading engine started");
+
+  // Fire-and-forget reconcile sweep. A manual Start commonly follows a
+  // halted window (consecutive_losses, daily_loss, etc.) during which
+  // runScan-driven reconcile was suppressed; this catches up any stranded
+  // PENDING rows from that window before the next scan boundary. Stamps
+  // lastReconcileAt so runExitCheck's throttle waits one window before
+  // re-running.
+  engine.lastReconcileAt = Date.now();
+  void reconcilePendingTrades(resolved.client, userId).catch(() => {
+    /* reconcile already logs internally; non-blocking */
+  });
 
   // Pick the right scan function based on mode — capture userId in closure
   const scanFn = mode === "tactical" ? () => runTacticalScan(userId)
@@ -6726,15 +6990,24 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
       .orderBy(desc(traderDailyPnl.date))
       .limit(1);
     if (latest?.halted) {
-      // Differentiate by reason. daily_loss halts auto-resume the next
-      // trading day (the documented behavior); safeguard halts persist
-      // and require an explicit user Start to acknowledge.
+      // Differentiate by reason. Streak halts (daily_loss, consecutive_losses)
+      // auto-resume the next trading day — their counters are intraday-scope
+      // and reset at the date rollover. Integrity halts (account_mismatch,
+      // equity_collapse, broker_unreachable, user_emergency_halt) persist and
+      // require an explicit user Start to acknowledge.
+      //
+      // consecutive_losses was added to the stale-clearable list 2026-06-12:
+      // prior behavior bucketed it with integrity halts, so a streak halt on
+      // a Tuesday kept the engine sidelined Wednesday/Thursday, missing
+      // reversal entries.
       const todayET = getETDateString();
-      const isStaleDailyLoss = latest.haltReason === "daily_loss" && latest.date < todayET;
-      if (isStaleDailyLoss) {
+      const isStaleStreak =
+        (latest.haltReason === "daily_loss" || latest.haltReason === "consecutive_losses") &&
+        latest.date < todayET;
+      if (isStaleStreak) {
         log.info(
-          { userId, haltDate: latest.date, todayET },
-          "Auto-start proceeding — yesterday's daily_loss halt will clear on first scan via date-rollover"
+          { userId, haltReason: latest.haltReason, haltDate: latest.date, todayET },
+          "Auto-start proceeding — yesterday's streak halt will clear on first scan via date-rollover"
         );
         // Fall through to the broker/positions retry loop. The first scan's
         // maybeClearDailyLossHaltOnDateRollover() flips engine.halted=false.

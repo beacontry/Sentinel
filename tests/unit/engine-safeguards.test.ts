@@ -765,6 +765,243 @@ describe("live-trading safeguards", () => {
   });
 });
 
+// ─── consecutive_losses halt — cross-day + regime-gated resume (2026-06-12) ──
+//
+// Two complementary resume paths:
+//   #1 cross-day rollover — handled inside maybeClearDailyLossHaltOnDateRollover.
+//      Mirror it here (same pattern as other tests in this file).
+//   #4 same-day regime gate — handled by shouldRegimeResumeStreakHalt (pure,
+//      imported directly from the engine module).
+//
+// Motivation: admin's 2026-06-09 → 2026-06-11 incident — consecutive_losses
+// halt fired Tuesday, sticky-persisted through Wed/Thu, missed the afternoon
+// reversal entirely. Both gates close that loop from different directions.
+
+describe("consecutive_losses halt — cross-day rollover clear (#1)", () => {
+  // Mirror of maybeClearDailyLossHaltOnDateRollover. Pins the rule that
+  // streak halts (daily_loss, consecutive_losses) clear on date rollover
+  // while integrity halts (account_mismatch, etc.) persist.
+
+  interface MinimalRolloverEngine {
+    dailyLoss: number;
+    dailyNotional: number;
+    dailyLossDate: string;
+    halted: boolean;
+    haltReason: string | null;
+    haltContext: { reason: string; haltedAt: number } | null;
+    consecutiveLosses: number;
+    errors: string[];
+  }
+
+  function rolloverClear(engine: MinimalRolloverEngine, today: string): void {
+    if (engine.dailyLossDate === today) return;
+    engine.dailyLoss = 0;
+    engine.dailyNotional = 0;
+    engine.dailyLossDate = today;
+    if (engine.halted && (engine.haltReason === "daily_loss" || engine.haltReason === "consecutive_losses")) {
+      engine.halted = false;
+      engine.haltReason = null;
+      engine.haltContext = null;
+      engine.consecutiveLosses = 0;
+      engine.errors = engine.errors.filter(
+        (e) => !e.startsWith("Daily loss limit hit") && !e.startsWith("Auto-halted: consecutive_losses")
+      );
+    }
+  }
+
+  function freshEngine(overrides: Partial<MinimalRolloverEngine> = {}): MinimalRolloverEngine {
+    return {
+      dailyLoss: 0,
+      dailyNotional: 0,
+      dailyLossDate: "2026-06-09",
+      halted: false,
+      haltReason: null,
+      haltContext: null,
+      consecutiveLosses: 0,
+      errors: [],
+      ...overrides,
+    };
+  }
+
+  it("same-day call is a no-op (idempotent)", () => {
+    const e = freshEngine({ dailyLoss: -100, dailyNotional: 5000, dailyLossDate: "2026-06-12" });
+    rolloverClear(e, "2026-06-12");
+    expect(e.dailyLoss).toBe(-100);
+    expect(e.dailyNotional).toBe(5000);
+  });
+
+  it("date change resets counters even when not halted", () => {
+    const e = freshEngine({ dailyLoss: -100, dailyNotional: 5000 });
+    rolloverClear(e, "2026-06-10");
+    expect(e.dailyLoss).toBe(0);
+    expect(e.dailyNotional).toBe(0);
+    expect(e.dailyLossDate).toBe("2026-06-10");
+  });
+
+  it("clears a daily_loss halt on rollover (existing behavior)", () => {
+    const e = freshEngine({
+      halted: true,
+      haltReason: "daily_loss",
+      haltContext: { reason: "daily_loss", haltedAt: 1_700_000_000_000 },
+      errors: ["Daily loss limit hit: $-500.00"],
+    });
+    rolloverClear(e, "2026-06-10");
+    expect(e.halted).toBe(false);
+    expect(e.haltReason).toBeNull();
+    expect(e.haltContext).toBeNull();
+    expect(e.errors).toEqual([]);
+  });
+
+  it("clears a consecutive_losses halt on rollover (new behavior — 2026-06-12 fix)", () => {
+    const e = freshEngine({
+      halted: true,
+      haltReason: "consecutive_losses",
+      haltContext: { reason: "consecutive_losses", haltedAt: 1_700_000_000_000 },
+      consecutiveLosses: 5,
+      errors: ["Auto-halted: consecutive_losses"],
+    });
+    rolloverClear(e, "2026-06-10");
+    expect(e.halted).toBe(false);
+    expect(e.haltReason).toBeNull();
+    expect(e.haltContext).toBeNull();
+    expect(e.consecutiveLosses).toBe(0); // critical — else first new-day loser re-trips
+    expect(e.errors).toEqual([]);
+  });
+
+  it("does NOT clear an integrity halt on rollover (account_mismatch, equity_collapse, etc.)", () => {
+    for (const reason of ["account_mismatch", "equity_collapse", "broker_unreachable", "user_emergency_halt"]) {
+      const e = freshEngine({
+        halted: true,
+        haltReason: reason,
+        haltContext: { reason, haltedAt: 1_700_000_000_000 },
+      });
+      rolloverClear(e, "2026-06-10");
+      expect(e.halted).toBe(true);
+      expect(e.haltReason).toBe(reason);
+      expect(e.haltContext).not.toBeNull();
+    }
+  });
+
+  it("zeros consecutiveLosses on streak-halt clear but leaves it alone for integrity halts", () => {
+    // streak halt → zero
+    const streak = freshEngine({
+      halted: true,
+      haltReason: "consecutive_losses",
+      haltContext: { reason: "consecutive_losses", haltedAt: 0 },
+      consecutiveLosses: 5,
+    });
+    rolloverClear(streak, "2026-06-10");
+    expect(streak.consecutiveLosses).toBe(0);
+
+    // integrity halt → preserved (no early return; counter stays as-is)
+    const integrity = freshEngine({
+      halted: true,
+      haltReason: "equity_collapse",
+      haltContext: { reason: "equity_collapse", haltedAt: 0 },
+      consecutiveLosses: 5,
+    });
+    rolloverClear(integrity, "2026-06-10");
+    expect(integrity.consecutiveLosses).toBe(5); // still halted → counter not touched
+  });
+});
+
+describe("consecutive_losses halt — same-day regime gate (#4)", () => {
+  // Import the actual pure helper from the engine module.
+
+  const NOW = 1_700_000_000_000; // arbitrary fixed ms timestamp
+  const COOLDOWN_MS = 30 * 60 * 1000;
+  const DROP_THRESHOLD = 0.015;
+
+  function baseOpts(overrides: Record<string, unknown> = {}) {
+    return {
+      halted: true,
+      haltReason: "consecutive_losses",
+      haltedAt: NOW - COOLDOWN_MS - 1, // cool-down just expired
+      now: NOW,
+      spyOpen: 100,
+      spyCurrent: 98, // -2% drop — exceeds threshold
+      cooldownMs: COOLDOWN_MS,
+      dropThreshold: DROP_THRESHOLD,
+      ...overrides,
+    };
+  }
+
+  it("returns true when all gates pass (canonical regime-driven case)", async () => {
+    const { shouldRegimeResumeStreakHalt } = await import("@/lib/trading-engine");
+    expect(shouldRegimeResumeStreakHalt(baseOpts())).toBe(true);
+  });
+
+  it("returns false when engine is not halted", async () => {
+    const { shouldRegimeResumeStreakHalt } = await import("@/lib/trading-engine");
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ halted: false }))).toBe(false);
+  });
+
+  it("returns false for halts other than consecutive_losses", async () => {
+    const { shouldRegimeResumeStreakHalt } = await import("@/lib/trading-engine");
+    for (const reason of ["daily_loss", "equity_collapse", "account_mismatch", "broker_unreachable", null]) {
+      expect(shouldRegimeResumeStreakHalt(baseOpts({ haltReason: reason }))).toBe(false);
+    }
+  });
+
+  it("returns false when haltedAt is null (no context captured)", async () => {
+    const { shouldRegimeResumeStreakHalt } = await import("@/lib/trading-engine");
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ haltedAt: null }))).toBe(false);
+  });
+
+  it("returns false inside the cool-down window (prevents instant flap)", async () => {
+    const { shouldRegimeResumeStreakHalt } = await import("@/lib/trading-engine");
+    // Halt fired 10 min ago — under the 30-min cool-down
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ haltedAt: NOW - 10 * 60 * 1000 }))).toBe(false);
+  });
+
+  it("returns true exactly at the cool-down boundary (>=, not >)", async () => {
+    const { shouldRegimeResumeStreakHalt } = await import("@/lib/trading-engine");
+    // The implementation gates on `now - haltedAt < cooldownMs`, so >= cooldown passes.
+    // At exactly the boundary (now - haltedAt === cooldownMs), we expect true.
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ haltedAt: NOW - COOLDOWN_MS }))).toBe(true);
+  });
+
+  it("returns false when SPY drop is at or below threshold", async () => {
+    const { shouldRegimeResumeStreakHalt } = await import("@/lib/trading-engine");
+    // Exactly threshold — strict >
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ spyOpen: 100, spyCurrent: 98.5 }))).toBe(false); // -1.5% exactly
+    // Below threshold
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ spyOpen: 100, spyCurrent: 99 }))).toBe(false); // -1.0%
+  });
+
+  it("returns false on a positive SPY day (drop is negative)", async () => {
+    const { shouldRegimeResumeStreakHalt } = await import("@/lib/trading-engine");
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ spyOpen: 100, spyCurrent: 102 }))).toBe(false);
+  });
+
+  it("rejects NaN / zero / negative SPY feeds (defensive)", async () => {
+    const { shouldRegimeResumeStreakHalt } = await import("@/lib/trading-engine");
+    // A bad feed must NEVER cause an auto-resume — fail closed.
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ spyOpen: 0 }))).toBe(false);
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ spyCurrent: 0 }))).toBe(false);
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ spyOpen: -100 }))).toBe(false);
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ spyCurrent: -98 }))).toBe(false);
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ spyOpen: NaN }))).toBe(false);
+    expect(shouldRegimeResumeStreakHalt(baseOpts({ spyCurrent: NaN }))).toBe(false);
+  });
+
+  it("composes with threshold tuning (caller can pass custom values)", async () => {
+    const { shouldRegimeResumeStreakHalt } = await import("@/lib/trading-engine");
+    // Tighter 0.5% threshold trips on a -1% drop that the default 1.5% wouldn't
+    const tight = baseOpts({ spyOpen: 100, spyCurrent: 99, dropThreshold: 0.005 });
+    expect(shouldRegimeResumeStreakHalt(tight)).toBe(true);
+    // Looser 5% threshold doesn't trip on a -2% drop that the default would
+    const loose = baseOpts({ dropThreshold: 0.05 });
+    expect(shouldRegimeResumeStreakHalt(loose)).toBe(false);
+  });
+
+  it("exports the production constants so callers can reference them", async () => {
+    const { REGIME_RESUME_COOLDOWN_MS, REGIME_RESUME_DROP_THRESHOLD } = await import("@/lib/trading-engine");
+    expect(REGIME_RESUME_COOLDOWN_MS).toBe(30 * 60 * 1000);
+    expect(REGIME_RESUME_DROP_THRESHOLD).toBe(0.015);
+  });
+});
+
 // Vitest needs at least one beforeEach if we use afterEach with env state — keep
 // the structure simple even though we don't need shared state at the top level.
 beforeEach(() => {

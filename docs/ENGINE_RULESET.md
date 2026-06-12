@@ -431,10 +431,32 @@ Halt (`engine.halted = true`) is a **buy-side circuit breaker, not a global engi
 
 **Why this asymmetry matters:** the most dangerous moment for an unmanaged position is right after a halt — that's the exact window where conditions are deteriorating and stops need to be tightening, not freezing. The pre-2026-06-04 design halted everything, which meant a halted engine that subsequently lost its broker stops (e.g., from a `placeDisasterStops`-then-halt-re-trip restart sequence) would orphan every position with no protection at all until manual intervention. The current design keeps the protective layer alive so existing positions self-resolve through normal exit triggers regardless of halt state.
 
-### Daily-Loss Halt & Auto-Recovery
-- When daily realized losses exceed `dailyLossPct` of equity, the engine sets `halted=true` and stops opening new positions (protective paths above stay live)
-- On the next trading day's first scan, the date-rollover block clears the halt automatically and prunes the daily-loss error from `engine.errors` — no manual restart needed
-- Applies to all three scan functions: `runScan`, `runTacticalScan`, `runTacticalSmartScan`
+### Streak-Halt Auto-Recovery (Daily-Loss + Consecutive-Losses)
+
+Two **streak halts** — `daily_loss` (realized losses exceed `dailyLossPct × equity`) and `consecutive_losses` (N losing trades in a row, default 5) — are intraday-scope signals: their counters reset at the new trading day boundary, so the halts that derived from those counters reset too.
+
+**Cross-day auto-recovery (#1, expanded 2026-06-12 to cover `consecutive_losses`):**
+- On the next trading day's first scan, `maybeClearDailyLossHaltOnDateRollover` clears the halt and prunes the matching errors from `engine.errors`.
+- `engine.consecutiveLosses` is also zeroed — without this, a snapshot rehydrate or stale in-memory state would re-trip the halt on the first new-day loser.
+- `autoStartIfNeeded` recognizes both `daily_loss` and `consecutive_losses` as stale-clearable: a process restart finding yesterday's streak halt proceeds, lets the first scan's rollover-clear fire, then engages normally.
+- **Integrity halts** (`account_mismatch`, `equity_collapse`, `broker_unreachable`, `user_emergency_halt`) do NOT clear on rollover — they require explicit user Start.
+- Applies to all three scan functions: `runScan`, `runTacticalScan`, `runTacticalSmartScan`.
+
+**Same-day regime-gated auto-resume (#4, `consecutive_losses` only, 2026-06-12):**
+
+A streak halt can fire early in a regime-driven selloff — five of your picks blow up because SPY dropped 2% with them, not because your strategy broke. When the regime is visibly behind the streak, the halt's premise is invalidated, and an afternoon reversal shouldn't be missed because of a morning halt. The same-day auto-resume distinguishes:
+- **Trigger conditions (ALL required, in `maybeClearConsecutiveLossesHaltOnRegime`):**
+  1. Engine halted with reason `consecutive_losses`.
+  2. `≥ REGIME_RESUME_COOLDOWN_MS` (30 min) since the halt fired — no instant flap.
+  3. SPY intraday drop (`(open - current) / open`) > `REGIME_RESUME_DROP_THRESHOLD` (1.5%).
+- **On trigger:** clears `engine.halted` + `engine.haltReason` + `engine.haltContext`, zeros `engine.consecutiveLosses`, prunes the error, explicit `db.update()` clears today's `trader_daily_pnl.halted` / `.haltReason` (bypasses the sticky-OR in `upsertDailyPnl` — this is a deliberate de-escalation), writes a hash-chained `ENGINE_HALT_AUTO_RESUMED` audit row with regime metadata.
+- **Defensive:** NaN/zero/negative SPY feeds fail closed (no auto-resume). SPY fetch errors fail closed (keep the halt; log a warn).
+- **Does NOT apply to `daily_loss`** — the daily-loss threshold is a hard cumulative cap, not a streak signal. Same-day resumption of a daily-loss halt would let the engine blow through the cap.
+- Wired into all three scan paths between the rollover clear and the `if (engine.halted) return;` early-exit.
+
+**Why both:** the cross-day clear catches anything that survives past midnight; the regime gate catches same-day reversals where waiting until tomorrow misses the opportunity entirely.
+
+> History — pre-2026-06-12 `consecutive_losses` was bucketed with the integrity halts: persisted across days, required manual Start. Admin's 2026-06-09 streak halt (5 trailing-stop hits during a SPY selloff) kept the engine sidelined Wednesday/Thursday morning and missed the Thursday afternoon reversal entirely. Both gates close that loop from opposite directions.
 
 ### Long-Only Enforcement
 - Engine never opens shorts — entry logic only fires on BUY/STRONG_BUY
@@ -711,7 +733,7 @@ Five auto-halt or auto-block conditions layered on top of the existing safety sy
 | 2 | **Order rate limit** | 30 orders within 60s sliding window | Block order | `order_rate_limit_exceeded` |
 | 3 | **Broker auto-halt** | 5 consecutive `getPositions()` failures | Halt engine (Stop+Start to clear) | `engine.halted` reason=`broker_unreachable` |
 | 4 | **Account-switch detection** | Different `account_number` OR equity drop > 50% from boot snapshot | Halt engine | `engine.halted` reason=`account_mismatch` or `equity_collapse` |
-| 5 | **Consecutive-loss halt** | N losing trades in a row (default 5, configurable) | Halt engine | `engine.halted` reason=`consecutive_losses` |
+| 5 | **Consecutive-loss halt** | N losing trades in a row (default 5, configurable) | Halt engine (cross-day rollover clears + same-day regime gate, see § Streak-Halt Auto-Recovery) | `engine.halted` reason=`consecutive_losses` |
 | 6 | **Mark-to-market drawdown halt** | `realized + unrealized < -1.5 × dailyLossThreshold` at scan end | Halt engine (does NOT cancel pending orders) | `engine.halted` reason=`daily_loss`, audit metadata `daily_loss_unrealized` |
 
 **Gate ordering inside `canPlaceBuyOrder()`**: earnings blackout → sector exposure → losing-reentry cooldown → wash-sale → daily notional → rate limit. Cheapest checks fire first; the first reason found is what's logged. **SELLs (exits) are never blocked** — exiting a position takes priority over any safeguard.
@@ -720,7 +742,7 @@ Five auto-halt or auto-block conditions layered on top of the existing safety sy
 
 The realized-only daily-loss halt misses days where positions are bleeding heavily on paper but the user hasn't taken the loss yet. Admin's 2026-06-08 ran −$829 unrealized with no halt because realized was $0; 2026-06-09 then opened with those bleeders on the book and the realized halt tripped at −$727 *after* stops fired into closed losses (~$660 more bled past the halt because the halt blocks BUYs but doesn't flatten).
 
-The MTM halt fires at scan-end when `engine.dailyLoss + totalUnrealizedPnl < -1.5 × dailyLossThreshold` (wider multiplier to absorb normal intraday volatility — only genuinely-bad days trip it). Uses `haltReason="daily_loss"` so the date-rollover clear (`maybeClearDailyLossHaltOnDateRollover`) catches both; audit metadata `reason="daily_loss_unrealized"` distinguishes in the log.
+The MTM halt fires at scan-end when `engine.dailyLoss + totalUnrealizedPnl < -1.5 × dailyLossThreshold` (wider multiplier to absorb normal intraday volatility — only genuinely-bad days trip it). Uses `haltReason="daily_loss"` so the cross-day rollover clear (`maybeClearDailyLossHaltOnDateRollover`, which also covers `consecutive_losses` as of 2026-06-12) catches it; audit metadata `reason="daily_loss_unrealized"` distinguishes in the log.
 
 **Does NOT call `cancelAllOrders`.** The bleed-out scenario typically has protective stops sitting in the broker queue — cancelling them while positions are bleeding would strip the protection that's actively limiting further losses. `engine.halted` blocks new BUYs from the next scan onward; existing stops keep firing.
 
@@ -892,5 +914,20 @@ Previously a silent `try { ... } catch {}` swallowed `getOrders()` errors. The s
 ### Journal v2 hook in reconciler
 
 When `reconcilePendingTrades` transitions a row from PENDING to FILLED, it now also calls `createAutoJournalStub()` (fire-and-forget, never throws). Inserts a journal entry pre-filled with the trade mechanics (symbol, action, fill price, P&L, signal) plus leading questions ("Why am I taking this trade?" for entries, "What's the lesson?" for exits). Idempotent via the `journal_auto_trade_uniq` partial unique index (migration 0032). Blank-canvas friction removed for journaling.
+
+### Reconcile windowing & call sites (2026-06-12)
+
+`reconcilePendingTrades` finds PENDING `trader_trades` rows with a `broker_order_id`, looks each up at the broker, and writes back fill price / time / corrected P&L / final status. Two failure modes from the 2026-06-09 → 06-11 admin incident drove a rework:
+
+1. **24h lookback was too short.** A 5-loss `consecutive_losses` halt suppressed all `runScan` calls — and reconcile only ran from `runScan` — for ~50h. By the time admin restarted the engine on 06-11, the three exit rows from 06-09 (AAPL / DELL / ADI trailing stops; broker-filled at the time) had aged out of the 24h query window and stayed PENDING forever. Window widened to `RECONCILE_LOOKBACK_MS = 7d`. The follow-up `getOrders(200)` batch still caps the broker pull regardless.
+2. **`getOrders(200)` batch can miss old ids.** A row's broker-side id can fall out of the most-recent-200 in a high-volume account, or simply by aging out. The loop now falls back to per-id `client.getOrder(orderId)` for any row not in the batch. Broker 404 → terminal "purged"; transient error → leave PENDING for next cycle.
+3. **runScan-only call site was a single point of failure.** Reconcile is now wired into three call sites:
+   - **`runScan` / `runTacticalScan` / `runTacticalSmartScan`** — unthrottled, once per 15-min cycle. Gated by `engine.halted` like every BUY-side action.
+   - **`runExitCheck`** (1-min protective poll, intentionally bypasses halt) — throttled to `RECONCILE_THROTTLE_MS = 5 min` via `engine.lastReconcileAt`. Closes the halt-window gap: even with the engine halted, stale PENDING rows reconcile within ~5 min of the broker filling them.
+   - **`startEngine`** — fire-and-forget sweep right after `engine.running = true`. Catches up any rows stranded by a halt window before the next scan boundary.
+
+Idempotent: a row already FILLED / CANCELED / EXPIRED / REJECTED is excluded by the `status = "PENDING"` filter on the next call.
+
+**One-off cleanup for rows stranded before this change shipped:** `scripts/reconcile-stuck-trades.ts` (dry-run by default; `--apply` to write). Uses per-id `getOrder` for every match, so it works regardless of how old the row is.
 
 **Last revised:** 2026-05-13 (Journal v2 phases 1-6, scan re-entrancy guard, getOrders abort, CSRF audit fixes, themes 5-up, resizable Analysis layout).

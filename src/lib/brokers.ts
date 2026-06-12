@@ -128,6 +128,14 @@ export interface BrokerClient {
   getAccount(): Promise<BrokerAccount>;
   getPositions(): Promise<BrokerPosition[]>;
   getOrders(limit?: number, status?: "all" | "open" | "closed"): Promise<BrokerOrder[]>;
+  /**
+   * Fetch a single order by broker-side id. Returns null when the broker
+   * 404s (order id not found, e.g. typo or pre-account-switch). Throws on
+   * non-404 errors so the caller can distinguish a missing order from a
+   * transient broker failure. Used by reconcilePendingTrades when a stuck
+   * PENDING row's broker_order_id has aged out of the recent-orders batch.
+   */
+  getOrder?(orderId: string): Promise<BrokerOrder | null>;
   placeOrder(params: PlaceOrderParams): Promise<BrokerOrder>;
   cancelOrder?(orderId: string): Promise<void>;
   cancelAllOrders?(): Promise<void>;
@@ -190,6 +198,27 @@ function toString(value: unknown): string {
   if (typeof value === "string") return value;
   if (value == null) return "";
   return String(value);
+}
+
+/** Shared Alpaca order → BrokerOrder mapper. Used by both getOrders (batch)
+ *  and getOrder (single). Centralizing prevents drift between the two paths. */
+function mapAlpacaOrder(o: Record<string, unknown>): BrokerOrder {
+  return {
+    id: toString(o.id),
+    symbol: toString(o.symbol),
+    side: toString(o.side),
+    qty: toNumber(o.qty),
+    filledQty: toNumber(o.filled_qty),
+    type: toString(o.type),
+    status: toString(o.status),
+    filledPrice: o.filled_avg_price != null ? toNumber(o.filled_avg_price) : null,
+    timeInForce: toString(o.time_in_force),
+    limitPrice: o.limit_price != null ? toString(o.limit_price) : null,
+    stopPrice: o.stop_price != null ? toString(o.stop_price) : null,
+    submittedAt: toString(o.submitted_at),
+    filledAt: o.filled_at != null ? toString(o.filled_at) : null,
+    canceledAt: o.canceled_at != null ? toString(o.canceled_at) : null,
+  };
 }
 
 // ─── Alpaca Client ───────────────────────────────────────────────────────────
@@ -320,22 +349,30 @@ export class AlpacaClient implements BrokerClient {
       );
     }
 
-    return data.map((o) => ({
-      id: toString(o.id),
-      symbol: toString(o.symbol),
-      side: toString(o.side),
-      qty: toNumber(o.qty),
-      filledQty: toNumber(o.filled_qty),
-      type: toString(o.type),
-      status: toString(o.status),
-      filledPrice: o.filled_avg_price != null ? toNumber(o.filled_avg_price) : null,
-      timeInForce: toString(o.time_in_force),
-      limitPrice: o.limit_price != null ? toString(o.limit_price) : null,
-      stopPrice: o.stop_price != null ? toString(o.stop_price) : null,
-      submittedAt: toString(o.submitted_at),
-      filledAt: o.filled_at != null ? toString(o.filled_at) : null,
-      canceledAt: o.canceled_at != null ? toString(o.canceled_at) : null,
-    }));
+    return data.map(mapAlpacaOrder);
+  }
+
+  async getOrder(orderId: string): Promise<BrokerOrder | null> {
+    // GET /v2/orders/{order_id}. Returns null on 404 so callers can treat
+    // "broker doesn't have this order" as a known terminal state instead
+    // of an exception to bubble up. Useful for reconciliation of rows
+    // whose order id has been purged or never existed at the broker.
+    const res = await brokerFetch(
+      `${this.baseUrl}/v2/orders/${encodeURIComponent(orderId)}`,
+      { headers: this.headers }
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      log.error({ broker: "alpaca", orderId, status: res.status }, "Order fetch failed");
+      throw new BrokerError(`Alpaca order ${res.status}`, 502, "Failed to fetch order");
+    }
+    let data: Record<string, unknown>;
+    try {
+      data = await res.json();
+    } catch {
+      throw new BrokerError("Invalid JSON from Alpaca order", 502, "Invalid response from broker");
+    }
+    return mapAlpacaOrder(data);
   }
 
   async placeOrder(params: PlaceOrderParams): Promise<BrokerOrder> {
