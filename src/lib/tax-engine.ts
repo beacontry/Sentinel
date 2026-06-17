@@ -186,6 +186,16 @@ export interface TaxPosition {
 export interface TaxCalcOptions {
   filingStatus?: FilingStatus;
   ordinaryIncome?: number; // other income for marginal rate estimation
+  /**
+   * When both are set, FIFO matching runs over the FULL trade history (so a
+   * prior-year buy lot still supplies cost basis), but only disposals whose
+   * SELL executedAt falls within [taxYearStart, taxYearEnd] are REPORTED. Lots
+   * are still consumed by out-of-range sells so in-range sells match the
+   * correct remaining lots. Without this, filtering trades to the year before
+   * FIFO dropped the basis of any lot bought in a prior year (audit #8).
+   */
+  taxYearStart?: Date;
+  taxYearEnd?: Date;
 }
 
 // ─── Form 8949 Generator ──────────────────────────────────────────
@@ -233,7 +243,10 @@ export function generateForm8949(
   const {
     filingStatus = "single",
     ordinaryIncome = 50000,
+    taxYearStart,
+    taxYearEnd,
   } = options;
+  const hasRange = taxYearStart != null && taxYearEnd != null;
 
   const sorted = [...trades].sort(
     (a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime()
@@ -274,6 +287,10 @@ export function generateForm8949(
       const symbolLots = lots.get(symbol) ?? [];
       let remaining = trade.quantity;
       const sellDate = new Date(trade.executedAt);
+      // FIFO always consumes the lot (so later in-range sells match correctly),
+      // but only sells inside the reporting window produce a reported line.
+      const sellInRange =
+        !hasRange || (sellDate >= taxYearStart! && sellDate <= taxYearEnd!);
 
       while (remaining > 0 && symbolLots.length > 0) {
         const lot = symbolLots[0];
@@ -314,20 +331,22 @@ export function generateForm8949(
           }
         }
 
-        lines.push({
-          symbol,
-          dateAcquired: lot.date.toISOString().slice(0, 10),
-          dateSold: sellDate.toISOString().slice(0, 10),
-          proceeds: round2(proceeds),
-          costBasis: round2(costBasis),
-          quantity: matched,
-          gainLoss: round2(washSale ? 0 : gainLoss), // disallowed loss = 0 reported gain
-          holdingDays,
-          isLongTerm,
-          washSale,
-          washSaleDisallowed: round2(washSaleDisallowed),
-          source: lot.source,
-        });
+        if (sellInRange) {
+          lines.push({
+            symbol,
+            dateAcquired: lot.date.toISOString().slice(0, 10),
+            dateSold: sellDate.toISOString().slice(0, 10),
+            proceeds: round2(proceeds),
+            costBasis: round2(costBasis),
+            quantity: matched,
+            gainLoss: round2(washSale ? 0 : gainLoss), // disallowed loss = 0 reported gain
+            holdingDays,
+            isLongTerm,
+            washSale,
+            washSaleDisallowed: round2(washSaleDisallowed),
+            source: lot.source,
+          });
+        }
 
         remaining -= matched;
         lot.quantity -= matched;
@@ -420,8 +439,11 @@ export function generateForm8949(
  * Calculate tax summary from a list of trades (legacy wrapper).
  * Matches BUY → SELL in FIFO order to compute realized gains/losses.
  */
-export function calculateTaxSummary(trades: TaxTrade[]): TaxSummary {
-  return generateForm8949(trades).summary;
+export function calculateTaxSummary(
+  trades: TaxTrade[],
+  options: TaxCalcOptions = {}
+): TaxSummary {
+  return generateForm8949(trades, options).summary;
 }
 
 /**

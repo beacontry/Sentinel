@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { portfolios, portfolioTrades, traderTrades } from "@/lib/db/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { calculateTaxSummary, type TaxTrade } from "@/lib/tax-engine";
 import { toCSV } from "@/lib/csv";
 import { createRouteLogger } from "@/lib/logger";
@@ -31,7 +31,8 @@ export async function GET(request: NextRequest) {
   const yearEnd = new Date(`${year}-12-31T23:59:59.999-05:00`);
 
   try {
-    // 1. Manual portfolio trades
+    // 1. Manual portfolio trades — FULL history (FIFO needs prior-year buy
+    //    lots to supply cost basis; we report only the tax year's disposals).
     const userPortfolios = await db
       .select({ id: portfolios.id })
       .from(portfolios)
@@ -45,13 +46,7 @@ export async function GET(request: NextRequest) {
       const trades = await db
         .select()
         .from(portfolioTrades)
-        .where(
-          and(
-            eq(portfolioTrades.portfolioId, pId),
-            gte(portfolioTrades.executedAt, yearStart),
-            lte(portfolioTrades.executedAt, yearEnd)
-          )
-        );
+        .where(eq(portfolioTrades.portfolioId, pId));
 
       for (const t of trades) {
         allTrades.push({
@@ -64,8 +59,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 2. Live engine trades (Alpaca fills) — filter by fill time, not order creation,
-    //    so trades placed in Dec but filled in Jan land in the right tax year.
+    // 2. Live engine trades (Alpaca fills) — FULL history, fill-time based.
+    //    FIFO matches across years; only the year's disposals are reported.
     const engineTrades = await db
       .select()
       .from(traderTrades)
@@ -80,7 +75,6 @@ export async function GET(request: NextRequest) {
       const price = t.fillPrice ?? t.limitPrice ?? 0;
       if (price <= 0) continue;
       const executedAt = t.fillTime ?? t.createdAt;
-      if (executedAt < yearStart || executedAt > yearEnd) continue;
 
       // Normalize engine action vocabulary (BUY / SELL / manual_close) to BUY/SELL
       const action = t.action.toUpperCase() === "BUY" ? "BUY" : "SELL";
@@ -113,12 +107,25 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const summary = calculateTaxSummary(allTrades);
+    // FIFO over the FULL history (so prior-year buy lots supply cost basis),
+    // reporting only disposals whose SELL falls in the ET-anchored tax year.
+    // Filtering trades to the year BEFORE FIFO (the old behavior) dropped the
+    // basis of any lot bought in a prior year, losing/garbling its gain (#8).
+    const summary = calculateTaxSummary(allTrades, {
+      taxYearStart: yearStart,
+      taxYearEnd: yearEnd,
+    });
+
+    // Raw trade list (CSV + JSON preview) is the tax year's own trades only.
+    const yearTrades = allTrades.filter((t) => {
+      const ts = new Date(t.executedAt);
+      return ts >= yearStart && ts <= yearEnd;
+    });
 
     // CSV export
     if (format === "csv") {
       const headers = ["Date", "Symbol", "Action", "Quantity", "Price", "Total"];
-      const rows = allTrades
+      const rows = yearTrades
         .sort((a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime())
         .map((t) => [
           // ET trade date — matches the tax-year bucketing above. A UTC
@@ -141,7 +148,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { year, summary, trades: allTrades },
+      { year, summary, trades: yearTrades },
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {
