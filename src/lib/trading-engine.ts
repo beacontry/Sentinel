@@ -4423,6 +4423,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
     // 1. Swap: sell weak held positions and replace with top STRONG_BUY candidates
     let swapCount = 0;
     for (const weak of weakHeld) {
+      // Cooperative cancellation: a Stop or a superseding scan bumps the
+      // generation; exit cleanly instead of placing more swap orders (audit #3).
+      throwIfScanCancelled(engine, myGeneration);
       if (candidates.length === 0) break;
       const bp = currentPositions.find(p => p.symbol === weak.symbol);
       if (!bp || bp.qty <= 0) continue;
@@ -4525,6 +4528,8 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
     const hardCap = Math.floor(riskLimits.maxPositions * 1.5);
     let addCount = 0;
     for (const cand of candidates) {
+      // Cooperative cancellation (audit #3) — see swap loop above.
+      throwIfScanCancelled(engine, myGeneration);
       if (positionMap.size >= hardCap) break;
 
       const positionValue = equity * riskLimits.positionPct;
@@ -6303,6 +6308,14 @@ export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?
   }
 
   engine.running = false;
+
+  // Cancel any in-flight scan. clearInterval above only stops FUTURE ticks; a
+  // scan already past the wrapper's running-check keeps fetching, analyzing,
+  // and placing BUY/SELL orders for the rest of its symbol list after Stop.
+  // Bumping the generation makes throwIfScanCancelled fire at the orphan's next
+  // yield, so Stop actually stops trading (audit #3) — same cooperative-
+  // cancellation plumbing a superseding scan uses.
+  engine.scanGeneration++;
 
   // Place broker-side safety stop orders for all open positions
   await placeSafetyStops(engine.userId);
