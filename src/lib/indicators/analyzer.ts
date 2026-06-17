@@ -65,7 +65,17 @@ function createIndicators(sp?: SignalParams): SymbolIndicators {
   };
 }
 
-function detectCrossover(
+/**
+ * Detect a fast-over-slow crossover within the last `lookback` bars.
+ *
+ * The two EMA history arrays do NOT start at the same bar — the faster EMA
+ * begins recording earlier (smaller window) and each array is independently
+ * capped at maxHistory — so they routinely differ in length. Indexing both by
+ * the same front-counted position would compare EMAs from DIFFERENT bars. We
+ * end-align (slice each to its last minLen entries) so index i refers to the
+ * same bar in both arrays. Exported for unit testing.
+ */
+export function detectCrossover(
   fastHistory: number[],
   slowHistory: number[],
   lookback: number
@@ -73,16 +83,20 @@ function detectCrossover(
   const minLen = Math.min(fastHistory.length, slowHistory.length);
   if (minLen < 2) return false;
 
+  const fast = fastHistory.slice(fastHistory.length - minLen);
+  const slow = slowHistory.slice(slowHistory.length - minLen);
   const start = Math.max(0, minLen - lookback - 1);
   for (let i = start; i < minLen - 1; i++) {
-    if (fastHistory[i] <= slowHistory[i] && fastHistory[i + 1] > slowHistory[i + 1]) {
+    if (fast[i] <= slow[i] && fast[i + 1] > slow[i + 1]) {
       return true;
     }
   }
   return false;
 }
 
-function detectCrossunder(
+/** Fast-under-slow crossunder within the last `lookback` bars. End-aligned for
+ *  the same reason as detectCrossover. Exported for unit testing. */
+export function detectCrossunder(
   fastHistory: number[],
   slowHistory: number[],
   lookback: number
@@ -90,9 +104,11 @@ function detectCrossunder(
   const minLen = Math.min(fastHistory.length, slowHistory.length);
   if (minLen < 2) return false;
 
+  const fast = fastHistory.slice(fastHistory.length - minLen);
+  const slow = slowHistory.slice(slowHistory.length - minLen);
   const start = Math.max(0, minLen - lookback - 1);
   for (let i = start; i < minLen - 1; i++) {
-    if (fastHistory[i] >= slowHistory[i] && fastHistory[i + 1] < slowHistory[i + 1]) {
+    if (fast[i] >= slow[i] && fast[i + 1] < slow[i + 1]) {
       return true;
     }
   }
