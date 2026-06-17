@@ -1954,6 +1954,11 @@ export type GraduationMode = "enabled" | "disabled";
  *  below the +50% trigger (so it's a meaningful step-back floor) but above
  *  the typical -12% disaster stop so the position is well-protected. */
 const GRADUATION_FLOOR_PCT = 0.30;
+/** The graduation floor is capped this far BELOW the price that triggered
+ *  graduation, so locking the floor can never place the stop at/above market
+ *  (which would instantly trip "stop loss hit" and get the broker sell-stop
+ *  rejected). Only binds when takeProfit fired below entry × (1 + floor). */
+const GRADUATION_FLOOR_BUFFER_PCT = 0.02;
 
 /** Volume-contraction weakness signal: 5-day avg volume < 20-day avg × this. */
 const GRADUATION_VOLUME_RATIO_THRESHOLD = 0.85;
@@ -2203,13 +2208,26 @@ export function shouldGraduateExit(
 }
 
 /**
- * Promote pos.stopLoss to the graduation floor (entry × 1.30 by default).
- * Idempotent: never lowers an existing higher stop. Returns true when a
- * promotion happened, false on no-op. The caller logs the promotion event
- * so we have a clear trail of when each position transitioned to graduated.
+ * Promote pos.stopLoss to the graduation floor (entry × 1.30 by default),
+ * capped just below currentPrice when supplied. Idempotent: never lowers an
+ * existing higher stop. Returns true when a promotion happened, false on no-op.
+ *
+ * The cap is essential: takeProfit frequently triggers graduation well below
+ * entry × 1.30 (ATR-based optimized TP, or tactical-smart's entry × 1.06
+ * preset), so an unconditional +30% lock would land ABOVE the triggering
+ * price — instantly tripping the "stop loss hit" exit on the next poll and
+ * getting the broker's sell-stop rejected for sitting above market. Callers
+ * MUST pass currentPrice; the optional signature is only for pure unit tests.
  */
-export function promoteToGraduationFloor(pos: { entryPrice: number; stopLoss: number }): boolean {
-  const lockStop = pos.entryPrice * (1 + GRADUATION_FLOOR_PCT);
+export function promoteToGraduationFloor(
+  pos: { entryPrice: number; stopLoss: number },
+  currentPrice?: number
+): boolean {
+  let lockStop = pos.entryPrice * (1 + GRADUATION_FLOOR_PCT);
+  if (typeof currentPrice === "number" && currentPrice > 0) {
+    const cap = currentPrice * (1 - GRADUATION_FLOOR_BUFFER_PCT);
+    if (lockStop > cap) lockStop = cap;
+  }
   if (pos.stopLoss >= lockStop) return false;
   pos.stopLoss = lockStop;
   return true;
@@ -5074,7 +5092,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         const gradMode = getGraduationMode(getActiveMode(engine));
         if (gradMode === "enabled" && currentPrice >= heldPosition.takeProfit) {
           takeProfitGraduated = true;
-          if (promoteToGraduationFloor(heldPosition)) {
+          if (promoteToGraduationFloor(heldPosition, currentPrice)) {
             log.info(
               {
                 symbol,
@@ -5083,7 +5101,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
                 currentPrice: currentPrice.toFixed(2),
                 takeProfit: heldPosition.takeProfit.toFixed(2),
               },
-              "Take-profit graduation: locked floor at entry × 1.30"
+              "Take-profit graduation: locked profit floor (capped below current price)"
             );
           }
           const indicators = analysis.indicators as unknown as Record<string, number | null | undefined>;
@@ -7383,7 +7401,8 @@ export function getUnprotectedSymbols(userId: string): string[] {
  * Public entry-point for the standalone stop-sync scheduler. Calls
  * syncBrokerStops for a user IF the engine is healthy enough for the
  * sync to be meaningful:
- *   - engine instance exists + is running + not halted
+ *   - engine instance exists + is running (halt does NOT gate — protective
+ *     stops must keep refreshing while halted)
  *   - position map is non-empty (nothing to sync)
  *   - no scan in flight (avoid racing the in-scan sync at the scan tail)
  *
@@ -7395,7 +7414,7 @@ export function getUnprotectedSymbols(userId: string): string[] {
  * pos.stopLoss in memory. The dedicated 5-min stop-sync scheduler
  * breaks that coupling — see src/lib/stop-sync-scheduler.ts.
  *
- * No-op on missing/stopped/halted/empty engines. Errors inside
+ * No-op on missing/stopped/empty engines (NOT halted ones). Errors inside
  * syncBrokerStops are already logged + swallowed there.
  *
  * Returns {ran: true} when the broker call was actually attempted;
@@ -7405,42 +7424,59 @@ export async function syncBrokerStopsForUser(
   userId: string
 ): Promise<{ ran: boolean; reason?: string }> {
   const engine = g.__tradingEngines?.get(userId);
-  if (!engine) return { ran: false, reason: "no_engine" };
-  if (!engine.running) return { ran: false, reason: "engine_stopped" };
-  // Halt does NOT gate this path. syncBrokerStops only places/replaces
-  // sell-side GTC stop orders (it never opens positions), so it remains
-  // active while halted. Without this, the 5-min standalone scheduler
-  // (stop-sync-scheduler.ts) stops refreshing broker stops for halted
-  // engines — peak-price ratchets and breakeven promotions cached on
-  // pos.stopLoss by runExitCheck never reach Alpaca, leaving positions
-  // protected by a stop that's stale relative to current peak.
   const positionMap = g2.__enginePositionMaps?.get(userId);
-  if (!positionMap || positionMap.size === 0) {
-    return { ran: false, reason: "no_positions" };
-  }
-  if (engine.scanStartedAt) {
-    // Skip when a scan is genuinely in-flight to avoid racing the in-scan
-    // syncBrokerStops at the scan tail. BUT — the runScanGuarded override
-    // launches new scans after 10 min and overwrites engine.scanStartedAt
-    // with the new attempt's start time; the old hung promise is never
-    // cleaned up and scanStartedAt is never null'd. On a chronically
-    // hanging tactical-smart scan (the exact incident PR 4 is meant to
-    // mitigate), this gate would skip forever. Audit P0 #2 (2026-05-26).
-    // If scanStartedAt is older than 10 min, treat the scan as
-    // abandoned and run the sync anyway — broker stops can't wait
-    // indefinitely on a wedged scan.
-    const scanAgeMs = Date.now() - engine.scanStartedAt.getTime();
-    const STALE_SCAN_OVERRIDE_MS = 10 * 60 * 1000;
-    if (scanAgeMs < STALE_SCAN_OVERRIDE_MS) {
-      return { ran: false, reason: "scan_in_flight" };
-    }
-    // Fall through: scan is "in flight" past the override threshold; run
-    // sync anyway. Log so we have a forensic trace of these cases.
+  const hasPositions = !!positionMap && positionMap.size > 0;
+  const now = Date.now();
+  const decision = checkStopSyncEligibility(engine, hasPositions, now);
+  if (!decision.ran) return decision;
+  // Scan flagged in-flight but older than the override threshold: the scan is
+  // wedged (the 2026-05-26 hung-tactical-smart incident). Run the sync anyway
+  // and log a forensic trace.
+  if (decision.reason === "stale_scan_override" && engine?.scanStartedAt) {
     log.warn(
-      { userId, scanAgeMs },
+      { userId, scanAgeMs: now - engine.scanStartedAt.getTime() },
       "Stop-sync running past stale-scan override — scan flag has been set for >10 min"
     );
   }
   await syncBrokerStops(userId);
+  return { ran: true };
+}
+
+/** ms after which a still-set scanStartedAt is treated as a wedged
+ *  (abandoned) scan, so stop-sync runs anyway instead of skipping forever. */
+export const STALE_SCAN_OVERRIDE_MS = 10 * 60 * 1000;
+
+/**
+ * Pure eligibility decision for the standalone stop-sync scheduler — the
+ * single source of truth shared by syncBrokerStopsForUser (production) and its
+ * unit test, so the two can never drift (the prior mirror-in-the-test pattern
+ * silently diverged when the halt gate was removed on 2026-06-04 and the
+ * stale-scan override was added).
+ *
+ * Gate order: engine exists → engine running → has positions → scan not
+ * freshly in-flight. Halt DELIBERATELY does not gate: syncBrokerStops only
+ * places/replaces sell-side protective stops (never opens positions), so it
+ * must keep refreshing while halted — otherwise peak ratchets / breakeven
+ * promotions cached on pos.stopLoss never reach Alpaca during the exact
+ * high-stress window where a fresh stop matters most.
+ *
+ * A scan older than STALE_SCAN_OVERRIDE_MS is treated as wedged and the sync
+ * runs anyway (reason "stale_scan_override").
+ */
+export function checkStopSyncEligibility(
+  engine: { running: boolean; halted: boolean; scanStartedAt: Date | null } | undefined,
+  hasPositions: boolean,
+  now: number
+): { ran: boolean; reason?: string } {
+  if (!engine) return { ran: false, reason: "no_engine" };
+  if (!engine.running) return { ran: false, reason: "engine_stopped" };
+  if (!hasPositions) return { ran: false, reason: "no_positions" };
+  if (engine.scanStartedAt) {
+    const scanAgeMs = now - engine.scanStartedAt.getTime();
+    if (scanAgeMs < STALE_SCAN_OVERRIDE_MS) {
+      return { ran: false, reason: "scan_in_flight" };
+    }
+    return { ran: true, reason: "stale_scan_override" };
+  }
   return { ran: true };
 }

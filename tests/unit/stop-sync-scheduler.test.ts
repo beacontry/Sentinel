@@ -1,19 +1,24 @@
 /**
  * Tests for stop-sync-scheduler's gating logic.
  *
- * The scheduler itself is a thin loop over getAllEngineSnapshots that
- * delegates the actual sync to syncBrokerStopsForUser. The interesting
- * behavior is the gating inside syncBrokerStopsForUser — which engines
- * get skipped and why — because misclassifying a healthy engine as
- * "skip" means stops freeze; misclassifying an unhealthy engine as
- * "run" means we race with the in-scan sync at the scan tail.
+ * These exercise the REAL pure helper exported from trading-engine.ts —
+ * checkStopSyncEligibility — which syncBrokerStopsForUser itself calls. The
+ * previous version mirrored the gating in the test body and silently drifted
+ * from production: when the halt gate was removed (2026-06-04) and the
+ * stale-scan override was added, the mirror kept asserting the OLD behavior
+ * and stayed green, providing zero protection. Testing the real helper
+ * eliminates that drift class entirely.
  *
- * Following the pattern of tests/unit/engine-safeguards.test.ts:
- * mirror the helper's body so the contract is pinned without booting
- * the full engine module.
+ * Why each gate matters:
+ *   - misclassifying a healthy engine as "skip" freezes broker stops;
+ *   - misclassifying a wedged scan as "skip" leaves stops stale all session
+ *     (the 2026-05-26 incident);
+ *   - a HALTED engine must STILL run — protective stops must keep refreshing
+ *     during the halt window, the exact scenario where a fresh stop matters most.
  */
 
 import { describe, it, expect } from "vitest";
+import { checkStopSyncEligibility, STALE_SCAN_OVERRIDE_MS } from "@/lib/trading-engine";
 
 interface MinimalEngine {
   running: boolean;
@@ -21,127 +26,83 @@ interface MinimalEngine {
   scanStartedAt: Date | null;
 }
 
-interface FakeGlobalState {
-  engines: Map<string, MinimalEngine>;
-  positionMaps: Map<string, Map<string, unknown>>;
+function engine(overrides: Partial<MinimalEngine> = {}): MinimalEngine {
+  return { running: true, halted: false, scanStartedAt: null, ...overrides };
 }
 
-// Mirror of syncBrokerStopsForUser's gating from src/lib/trading-engine.ts.
-// If the engine's checks change, update both. This is the contract test.
-function checkSyncEligibility(
-  state: FakeGlobalState,
-  userId: string
-): { ran: boolean; reason?: string } {
-  const engine = state.engines.get(userId);
-  if (!engine) return { ran: false, reason: "no_engine" };
-  if (!engine.running) return { ran: false, reason: "engine_stopped" };
-  if (engine.halted) return { ran: false, reason: "engine_halted" };
-  const positionMap = state.positionMaps.get(userId);
-  if (!positionMap || positionMap.size === 0) {
-    return { ran: false, reason: "no_positions" };
-  }
-  if (engine.scanStartedAt) {
-    return { ran: false, reason: "scan_in_flight" };
-  }
-  return { ran: true };
-}
+const NOW = 1_750_000_000_000;
 
-function newState(): FakeGlobalState {
-  return { engines: new Map(), positionMaps: new Map() };
-}
-
-function addEngine(
-  state: FakeGlobalState,
-  userId: string,
-  overrides: Partial<MinimalEngine> = {},
-  positions: string[] = []
-): void {
-  state.engines.set(userId, {
-    running: true,
-    halted: false,
-    scanStartedAt: null,
-    ...overrides,
-  });
-  const pm = new Map<string, unknown>();
-  for (const sym of positions) pm.set(sym, {});
-  state.positionMaps.set(userId, pm);
-}
-
-describe("syncBrokerStopsForUser — eligibility gates", () => {
+describe("checkStopSyncEligibility — stop-sync gates", () => {
   it("skips with no_engine when the user has never started an engine", () => {
-    const s = newState();
-    expect(checkSyncEligibility(s, "ghost-user")).toEqual({ ran: false, reason: "no_engine" });
+    expect(checkStopSyncEligibility(undefined, false, NOW)).toEqual({
+      ran: false,
+      reason: "no_engine",
+    });
   });
 
   it("skips with engine_stopped when engine.running=false", () => {
-    const s = newState();
-    addEngine(s, "u1", { running: false }, ["AAPL"]);
-    expect(checkSyncEligibility(s, "u1")).toEqual({ ran: false, reason: "engine_stopped" });
+    expect(checkStopSyncEligibility(engine({ running: false }), true, NOW)).toEqual({
+      ran: false,
+      reason: "engine_stopped",
+    });
   });
 
-  it("skips with engine_halted when engine.halted=true", () => {
-    const s = newState();
-    addEngine(s, "u1", { halted: true }, ["AAPL"]);
-    expect(checkSyncEligibility(s, "u1")).toEqual({ ran: false, reason: "engine_halted" });
+  it("RUNS for a halted engine — protective stops must keep refreshing while halted", () => {
+    // The 2026-06-04 fix: halt does NOT gate this path. A prior contract test
+    // asserted the opposite and silently passed against drifted code.
+    expect(checkStopSyncEligibility(engine({ halted: true }), true, NOW)).toEqual({
+      ran: true,
+    });
   });
 
-  it("skips with no_positions when positionMap is empty", () => {
-    const s = newState();
-    addEngine(s, "u1", {}, []);
-    expect(checkSyncEligibility(s, "u1")).toEqual({ ran: false, reason: "no_positions" });
+  it("skips with no_positions when there is nothing to sync", () => {
+    expect(checkStopSyncEligibility(engine(), false, NOW)).toEqual({
+      ran: false,
+      reason: "no_positions",
+    });
   });
 
-  it("skips with no_positions when positionMap is missing entirely", () => {
-    const s = newState();
-    s.engines.set("u1", { running: true, halted: false, scanStartedAt: null });
-    // intentionally no positionMaps entry
-    expect(checkSyncEligibility(s, "u1")).toEqual({ ran: false, reason: "no_positions" });
+  it("skips with scan_in_flight when a fresh scan (<10 min) is running", () => {
+    const e = engine({ scanStartedAt: new Date(NOW - 60_000) }); // 1 min ago
+    expect(checkStopSyncEligibility(e, true, NOW)).toEqual({
+      ran: false,
+      reason: "scan_in_flight",
+    });
   });
 
-  it("skips with scan_in_flight when a scan is currently running", () => {
-    const s = newState();
-    addEngine(s, "u1", { scanStartedAt: new Date() }, ["AAPL"]);
-    expect(checkSyncEligibility(s, "u1")).toEqual({ ran: false, reason: "scan_in_flight" });
+  it("RUNS (stale_scan_override) when a scan has been in-flight past the override", () => {
+    // The 2026-05-26 incident: a wedged tactical-smart scan that never
+    // completes must NOT freeze broker stops forever. Past the override the
+    // sync runs anyway. The OLD mirror test asserted this stayed skipped.
+    const e = engine({ scanStartedAt: new Date(NOW - 6 * 60 * 60 * 1000) }); // 6h ago
+    expect(checkStopSyncEligibility(e, true, NOW)).toEqual({
+      ran: true,
+      reason: "stale_scan_override",
+    });
+  });
+
+  it("treats the override threshold as the boundary (>= overrides, < still skips)", () => {
+    const atThreshold = engine({ scanStartedAt: new Date(NOW - STALE_SCAN_OVERRIDE_MS) });
+    expect(checkStopSyncEligibility(atThreshold, true, NOW)).toEqual({
+      ran: true,
+      reason: "stale_scan_override",
+    });
+    const justUnder = engine({ scanStartedAt: new Date(NOW - STALE_SCAN_OVERRIDE_MS + 1) });
+    expect(checkStopSyncEligibility(justUnder, true, NOW)).toEqual({
+      ran: false,
+      reason: "scan_in_flight",
+    });
   });
 
   it("runs when all gates pass", () => {
-    const s = newState();
-    addEngine(s, "u1", {}, ["AAPL", "MSFT"]);
-    expect(checkSyncEligibility(s, "u1")).toEqual({ ran: true });
+    expect(checkStopSyncEligibility(engine(), true, NOW)).toEqual({ ran: true });
   });
 
-  it("evaluates each engine independently — one user's skip doesn't affect another", () => {
-    const s = newState();
-    addEngine(s, "healthy", {}, ["AAPL"]);
-    addEngine(s, "halted", { halted: true }, ["MSFT"]);
-    addEngine(s, "scanning", { scanStartedAt: new Date() }, ["GOOGL"]);
-
-    expect(checkSyncEligibility(s, "healthy")).toEqual({ ran: true });
-    expect(checkSyncEligibility(s, "halted")).toEqual({ ran: false, reason: "engine_halted" });
-    expect(checkSyncEligibility(s, "scanning")).toEqual({ ran: false, reason: "scan_in_flight" });
-  });
-
-  it("gates apply in the documented order — stopped check fires before halted", () => {
-    // An engine that's both stopped AND halted reports stopped — order matters
-    // because a stopped engine never reaches a halt and reporting "halted"
-    // would mislead a future debugger trying to grep for "why is sync skipping".
-    const s = newState();
-    addEngine(s, "u1", { running: false, halted: true }, ["AAPL"]);
-    expect(checkSyncEligibility(s, "u1")).toEqual({ ran: false, reason: "engine_stopped" });
-  });
-
-  it("a hung scan (scanStartedAt set for hours) still reports scan_in_flight", () => {
-    // The incident this whole PR addresses: tactical-smart scan flagged
-    // in-flight, never completes. Scheduler MUST skip — not race in.
-    // The 10-min override in the engine's tick logic clears scanStartedAt
-    // eventually, after which the next scheduler tick will fire.
-    const s = newState();
-    addEngine(
-      s,
-      "u1",
-      { scanStartedAt: new Date(Date.now() - 6 * 60 * 60 * 1000) }, // 6 hours ago
-      ["AAPL"]
-    );
-    expect(checkSyncEligibility(s, "u1")).toEqual({ ran: false, reason: "scan_in_flight" });
+  it("stopped check fires before the (no-op) halt consideration", () => {
+    // An engine that's both stopped AND halted reports stopped — running is the
+    // first gate, and halt never gates anyway.
+    expect(
+      checkStopSyncEligibility(engine({ running: false, halted: true }), true, NOW)
+    ).toEqual({ ran: false, reason: "engine_stopped" });
   });
 });
