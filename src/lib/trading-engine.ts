@@ -3744,6 +3744,11 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
   const provider = getMarketDataProvider();
   const positionMap = getPositionMap(engine.userId ?? undefined);
 
+  // Sector-exposure context for canPlaceBuyOrder's sector cap (see the
+  // matching block in runTacticalSmartScanInner). Built once from the
+  // slightly-stale in-memory map, mirroring runScan's scanSectorCtx.
+  const tacticalSectorCtx = buildSectorExposureContext(engine.userId!, equity);
+
   // Fetch SPY bars for trend analysis
   let spyBars: Bar[];
   try {
@@ -3904,7 +3909,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
         }
         const limitPrice = (quote.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, tacticalSectorCtx ?? undefined);
         if (!gate.ok) {
           log.warn({ symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Tactical BUY blocked");
           void writeAudit({
@@ -4051,6 +4056,15 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
   const equity = account.equity;
   const provider = getMarketDataProvider();
   const positionMap = getPositionMap(engine.userId ?? undefined);
+
+  // Sector-exposure context for canPlaceBuyOrder's sector cap. Built once
+  // from the (slightly-stale) in-memory map — same trade-off as runScan's
+  // scanSectorCtx: mid-scan buys aren't reflected on the broker until the
+  // next sync, so a per-symbol rebuild would buy little accuracy. Without
+  // this, the sector cap was silently inert on the tactical-smart path
+  // (only runScan passed it) — which let admin's book concentrate ~entirely
+  // in semis/tech and draw down together (2026-06 give-back).
+  const tsSectorCtx = buildSectorExposureContext(engine.userId!, equity);
 
   // SPY trend check (same as tactical)
   let spyBars: Bar[];
@@ -4275,7 +4289,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       try {
         const limitPrice = (price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = await canPlaceBuyOrder(engine, symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, tsSectorCtx ?? undefined);
         if (!gate.ok) {
           log.warn({ symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Smart BUY blocked");
           void writeAudit({
@@ -4460,7 +4474,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       try {
         const limitPrice = (replacement.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = await canPlaceBuyOrder(engine, replacement.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = await canPlaceBuyOrder(engine, replacement.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, tsSectorCtx ?? undefined);
         if (!gate.ok) {
           log.warn({ symbol: replacement.symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Swap BUY blocked");
           void writeAudit({
@@ -4530,7 +4544,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
-        const gate = await canPlaceBuyOrder(engine, cand.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity);
+        const gate = await canPlaceBuyOrder(engine, cand.symbol, buyNotional, riskLimits, engine.boot?.equity ?? equity, tsSectorCtx ?? undefined);
         if (!gate.ok) {
           log.warn({ symbol: cand.symbol, qty, notional: buyNotional, reason: gate.reason, ...gate.details }, "Add BUY blocked");
           void writeAudit({

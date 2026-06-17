@@ -21,7 +21,7 @@ import { getSession } from "@/lib/auth";
 import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { users, traderTrades, traderStatus } from "@/lib/db/schema";
 import { eq, sql, isNotNull, and } from "drizzle-orm";
-import { peekEngineStatus } from "@/lib/trading-engine";
+import { peekEngineStatus, getBrokerPositionCache } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("admin/user-performance");
@@ -101,6 +101,11 @@ export async function GET() {
       const agg = aggByUser.get(u.id);
       const hb = heartbeatByUser.get(u.id);
       const engine = peekEngineStatus(u.id);
+      const brokerCache = getBrokerPositionCache(u.id);
+      const openUnrealizedPnl =
+        brokerCache?.positions.reduce((sum, p) => sum + p.unrealizedPnl, 0) ?? null;
+      const openMarketValue =
+        brokerCache?.positions.reduce((sum, p) => sum + p.marketValue, 0) ?? null;
 
       // Derived metrics
       const totalTrades = agg?.totalTrades ?? 0;
@@ -136,6 +141,13 @@ export async function GET() {
         today: {
           tradesCount: agg?.tradesToday ?? 0,
           realizedPnl: Math.round((agg?.todayRealized ?? 0) * 100) / 100,
+        },
+        open: {
+          unrealizedPnl:
+            openUnrealizedPnl === null ? null : Math.round(openUnrealizedPnl * 100) / 100,
+          marketValue:
+            openMarketValue === null ? null : Math.round(openMarketValue * 100) / 100,
+          fetchedAt: brokerCache?.fetchedAt.toISOString() ?? null,
         },
         lifetime: {
           totalTrades,

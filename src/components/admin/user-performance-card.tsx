@@ -8,12 +8,14 @@
 //   - Users with the most realized P&L (validate engine across cohorts)
 //   - Users with stale activity (haven't traded in a while)
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart3, AlertTriangle, ArrowUpDown } from "lucide-react";
+import { usePolling } from "@/hooks/usePolling";
+import { POLLING_INTERVALS } from "@/lib/config";
 
 interface UserRow {
   user: { id: string; email: string; name: string | null; role: string; tier: string | null; createdAt: string };
@@ -28,6 +30,7 @@ interface UserRow {
     lastScanAt: string | null;
   } | null;
   today: { tradesCount: number; realizedPnl: number };
+  open: { unrealizedPnl: number | null; marketValue: number | null; fetchedAt: string | null };
   lifetime: {
     totalTrades: number;
     wins: number;
@@ -41,7 +44,7 @@ interface UserRow {
   activity: { lastTradeAt: string | null; lastHeartbeatAt: string | null; serviceMode: string | null };
 }
 
-type SortKey = "todayPnl" | "lifetimePnl" | "winRate" | "trades" | "lastTrade";
+type SortKey = "openPnl" | "todayPnl" | "lifetimePnl" | "winRate" | "trades" | "lastTrade";
 
 function fmtMoney(n: number): string {
   const sign = n >= 0 ? "+" : "";
@@ -90,30 +93,25 @@ export function UserPerformanceCard() {
   const [sortKey, setSortKey] = useState<SortKey>("lifetimePnl");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetch("/api/admin/user-performance")
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setRows(data.rows ?? []);
-        setError("");
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "load failed");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/user-performance");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setRows(data.rows ?? []);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "load failed");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  usePolling(load, POLLING_INTERVALS.dashboardRefresh);
 
   const sortedRows = useMemo(() => {
     const direction = sortDir === "desc" ? -1 : 1;
@@ -121,6 +119,10 @@ export function UserPerformanceCard() {
       let av: number;
       let bv: number;
       switch (sortKey) {
+        case "openPnl":
+          av = a.open.unrealizedPnl ?? -Infinity;
+          bv = b.open.unrealizedPnl ?? -Infinity;
+          break;
         case "todayPnl":
           av = a.today.realizedPnl;
           bv = b.today.realizedPnl;
@@ -210,6 +212,7 @@ export function UserPerformanceCard() {
                 <th className="pb-2 pr-4 font-medium">Tier</th>
                 <th className="pb-2 pr-4 font-medium">Engine</th>
                 <th className="pb-2 pr-4 font-medium text-right">Pos</th>
+                {sortableTh("openPnl", "Open P&L")}
                 {sortableTh("todayPnl", "Today P&L")}
                 {sortableTh("lifetimePnl", "Lifetime P&L")}
                 {sortableTh("winRate", "Win %")}
@@ -259,6 +262,9 @@ export function UserPerformanceCard() {
                       </div>
                     </td>
                     <td className="py-2 pr-4 text-right">{row.engine?.positionCount ?? 0}</td>
+                    <td className={`py-2 pr-4 text-right ${row.open.unrealizedPnl === null ? "text-text-muted" : pnlClass(row.open.unrealizedPnl)}`}>
+                      {row.open.unrealizedPnl === null ? "—" : fmtMoney(row.open.unrealizedPnl)}
+                    </td>
                     <td className={`py-2 pr-4 text-right ${pnlClass(row.today.realizedPnl)}`}>
                       {row.today.tradesCount > 0 ? fmtMoney(row.today.realizedPnl) : "—"}
                     </td>

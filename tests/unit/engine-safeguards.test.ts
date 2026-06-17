@@ -1002,6 +1002,104 @@ describe("consecutive_losses halt — same-day regime gate (#4)", () => {
   });
 });
 
+describe("sector-exposure cap (canPlaceBuyOrder gate)", () => {
+  // Mirror of the sector-cap block in canPlaceBuyOrder (kept in lockstep).
+  // Pins the contract independently: the gate is disabled at pct=0, sums
+  // only same-sector existing market value, adds the new notional, and
+  // blocks when the post-buy sector fraction exceeds the cap.
+  //
+  // Regression intent: the cap was silently inert on the tactical-smart
+  // path (it never received a sectorExposureContext) until the 2026-06
+  // wiring fix. These cases pin the math the wired path now exercises.
+
+  function sectorGateBlocks(args: {
+    maxSectorExposurePct: number;
+    equity: number;
+    newNotional: number;
+    newSector: string;
+    // existing positions: [sector, marketValue]
+    positions: Array<[string, number]>;
+  }): boolean {
+    const { maxSectorExposurePct, equity, newNotional, newSector, positions } = args;
+    if (!(maxSectorExposurePct > 0) || !(equity > 0)) return false; // disabled
+    let sectorMv = 0;
+    for (const [sector, mv] of positions) {
+      if (sector === newSector) sectorMv += mv;
+    }
+    const sectorPctAfter = (sectorMv + newNotional) / equity;
+    return sectorPctAfter > maxSectorExposurePct;
+  }
+
+  it("is disabled when the cap is 0 (default)", () => {
+    expect(
+      sectorGateBlocks({
+        maxSectorExposurePct: 0,
+        equity: 100_000,
+        newNotional: 90_000,
+        newSector: "Technology",
+        positions: [["Technology", 50_000]],
+      })
+    ).toBe(false);
+  });
+
+  it("blocks a BUY that pushes the sector over the cap", () => {
+    // 40% existing tech + 20% new = 60% > 50% cap → block
+    expect(
+      sectorGateBlocks({
+        maxSectorExposurePct: 0.5,
+        equity: 100_000,
+        newNotional: 20_000,
+        newSector: "Technology",
+        positions: [["Technology", 40_000]],
+      })
+    ).toBe(true);
+  });
+
+  it("allows a BUY that stays under the cap", () => {
+    // 20% existing tech + 20% new = 40% < 50% cap → allow
+    expect(
+      sectorGateBlocks({
+        maxSectorExposurePct: 0.5,
+        equity: 100_000,
+        newNotional: 20_000,
+        newSector: "Technology",
+        positions: [["Technology", 20_000]],
+      })
+    ).toBe(false);
+  });
+
+  it("counts only same-sector positions toward the cap", () => {
+    // 45% in Healthcare doesn't count against a Technology buy.
+    // Tech after = 0 + 30% = 30% < 50% → allow
+    expect(
+      sectorGateBlocks({
+        maxSectorExposurePct: 0.5,
+        equity: 100_000,
+        newNotional: 30_000,
+        newSector: "Technology",
+        positions: [["Healthcare", 45_000]],
+      })
+    ).toBe(false);
+  });
+
+  it("the June-style all-semis book would be blocked at a 40% cap", () => {
+    // ~75% already in Technology; any further tech BUY is refused.
+    expect(
+      sectorGateBlocks({
+        maxSectorExposurePct: 0.4,
+        equity: 100_000,
+        newNotional: 5_000,
+        newSector: "Technology",
+        positions: [
+          ["Technology", 30_000],
+          ["Technology", 25_000],
+          ["Technology", 20_000],
+        ],
+      })
+    ).toBe(true);
+  });
+});
+
 // Vitest needs at least one beforeEach if we use afterEach with env state — keep
 // the structure simple even though we don't need shared state at the top level.
 beforeEach(() => {

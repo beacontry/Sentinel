@@ -55,7 +55,7 @@ All components share `analyzeBars()` (`src/lib/indicators/analyzer.ts`):
 - **Per-symbol GA params** — own `stopLossPct`, `takeProfitAtrMult`, `trailingStopPct`, `holdPeriod`, RSI bounds, EMAs. Tactical-smart uses uniform defaults (entry × 0.88 stop, × 1.50 take, 11.7% trail, 999 hold).
 - **Fixed position sizing** — `equity × positionPct`. Tactical-smart uses inverse-volatility weighting.
 - **Finite hold period** — GA-tuned ~33 days vs tactical-smart's 999 (effectively never).
-- **GA fitness is TRAIN-ONLY** (2026-05-28) — `excessReturn × sharpeMult × drawdownMult`, multipliers on positive returns only, floored at 0.05 (`drawdownMult` divisor is a percent — the old `/0.30` froze it at 0.05). The test window is NOT in fitness (it used to blend `0.6*train + 0.4*test`, leaking the holdout); the holdout is now scored once on the final winner as genuine OOS. Both backtesters apply a shared cost model (`BACKTEST_COSTS`, default 5 bps/$0) — were frictionless before. **Re-run the optimizer after any fitness/cost change; expect honest (lower) test returns.** Survivorship bias only *partially* fixed (PIT membership via `getSP500MembershipResolver()` on `sp500`; `top50`/`top150` still today's-winners, fully-delisted names drop out) — treat returns as relative scores, validate via paper trading. Full detail in `docs/ENGINE_RULESET.md`.
+- **GA fitness is TRAIN-ONLY** (2026-05-28) — `excessReturn × sharpeMult × drawdownMult`, multipliers floored at 0.05. Holdout scored once as genuine OOS (no longer blended into fitness). Both backtesters apply shared `BACKTEST_COSTS` (default 5 bps/$0). Survivorship bias only partially fixed: PIT membership on `sp500`; `top50`/`top150` still today's-winners. **Re-run optimizer after any fitness/cost change.** Full detail in `docs/ENGINE_RULESET.md`.
 
 **Per-mode opt-in maps:**
 | Map | Optimized | Tactical-smart | Others |
@@ -65,12 +65,12 @@ All components share `analyzeBars()` (`src/lib/indicators/analyzer.ts`):
 | `MODE_SWAP_SELL_DEFAULT` (post-exit redeploy) | `enabled` | `disabled` (uses own pair-wise) | `disabled` |
 
 **Implementation notes** (full PR-by-PR rationale in `docs/changelog.md`):
-- **Graduation gates BOTH scan paths** (PR 16) — `runScan` (15-min) and `runExitCheck` (1-min) both gate the hard take-profit on `getGraduationMode(getActiveMode(engine)) !== "disabled"`, else the 1-min poll exits before the 15-min scan can graduate.
-- **Backtester graduation parity** (PR 16) — `runBacktest` + `portfolioBacktest` simulate graduation where enabled, so GA-tuned `takeProfitAtrMult` is chosen under the same exit logic the engine uses. Swap-sell parity NOT yet mirrored (single-symbol backtest lacks the candidate pool).
-- **Stop-sync hung-scan recovery** (PR 16) — scheduler runs sync anyway when scan age > `STALE_SCAN_OVERRIDE_MS` (10 min) instead of skipping forever on a stale `scan_in_flight` flag.
-- **Cooperative scan cancellation** (PR 21c) — each scan holds `myGeneration`; a 10-min override bumps `engine.scanGeneration` and the stale scan calls `throwIfScanCancelled()` at yield points, throwing `ScanCancelledError`. Top-level scan fns catch it and exit cleanly; in-flight HTTP just resolves to nothing.
-- **Engine state persistence** (PR 21b) — `src/lib/engine-snapshot.ts` writes the position map + risk counters (dailyLoss, dailyNotional, consecutiveLosses, cooldowns, pendingExits, recentOrderTimestamps, etc.) to `trader_engine_snapshot` (migration `0040`, one row/user) at each successful `runScan`; hydrated in `startEngine`, discarded if older than `SNAPSHOT_MAX_AGE_MS` (60 min). Versioned (`v: 1`); audit `ENGINE_STARTED` `origin: "snapshot_hydrate"` on hydrate.
-- **Swap-sell planner** (PR 21a) — pure `planSwapSellRedeploy()` returns the decision tree (`{attempts, skips, reachedHardCap, reachedExposureCap}`); `runScan` executes only the I/O parts. Integration-tested in `tests/unit/swap-sell-plan.test.ts`.
+- **Graduation gates BOTH scan paths** — `runScan` (15-min) and `runExitCheck` (1-min) both gate on graduation mode, else 1-min poll exits before 15-min scan can graduate.
+- **Backtester graduation parity** — `runBacktest` + `portfolioBacktest` simulate graduation; swap-sell parity NOT yet mirrored (single-symbol backtest lacks candidate pool).
+- **Stop-sync hung-scan recovery** — scheduler runs sync when scan age > `STALE_SCAN_OVERRIDE_MS` (10 min) instead of skipping on stale `scan_in_flight` flag.
+- **Cooperative scan cancellation** — each scan holds `myGeneration`; override bumps `engine.scanGeneration` and stale scan throws `ScanCancelledError` at yield points.
+- **Engine state persistence** — `src/lib/engine-snapshot.ts` writes position map + risk counters to `trader_engine_snapshot` (migration `0040`) per `runScan`; hydrated in `startEngine`, discarded if older than 60 min.
+- **Swap-sell planner** — pure `planSwapSellRedeploy()` returns the decision tree; `runScan` executes only the I/O parts.
 
 ### Screener (Shared)
 The screener scans market data, shared across users (not per-user). It pushes actionable signals (BUY/STRONG_BUY, confidence ≥ 0.6) to the engine via `pushExternalSignal()` — in-memory, expire after 30 min. Optimization runs are admin-only; results (strategy params) are shared globally.
@@ -104,9 +104,9 @@ All tokens defined in `src/app/globals.css` `@theme` block. Light is the implici
 
 Trading semantics (`bullish`, `bearish`, `warning`) stay universal red/green across all themes so P&L is recognizable.
 
-**ThemeProvider** (`src/components/theme-provider.tsx`): persists to `localStorage("sentinel-theme")`, applies the class on `<html>`, updates PWA `theme-color`. `useTheme()` → `{ theme, setTheme, toggleTheme }` (`toggleTheme()` cycles all 5; `setTheme(t)` jumps). `isDarkTheme(theme)` (true for `dark`/`gray`) exported for embeds like the TradingView widget.
+**ThemeProvider** (`src/components/theme-provider.tsx`): persists to `localStorage("sentinel-theme")`, sets `<html>` class, updates PWA `theme-color`. `useTheme()` → `{ theme, setTheme, toggleTheme }`. `isDarkTheme(theme)` (true for `dark`/`gray`) exported for TradingView embed.
 
-**Theme picker** (`src/components/theme-picker.tsx`): two variants — `variant="icon"` (palette icon button, downward popover; default in the dashboard top bar + landing navbar) and `variant="sidebar"` (full-width button, upward 5-theme popover; used inside the mobile drawer of `TopNavShell`). Name predates the layout swap — "sidebar" now means "full-width button suitable for a stacked menu", not literal sidebar.
+**Theme picker** (`src/components/theme-picker.tsx`): `variant="icon"` (palette button, downward popover; dashboard top bar + landing navbar) and `variant="sidebar"` (full-width button, upward popover; mobile drawer of `TopNavShell` — name predates layout swap, means "stacked-menu button" not literal sidebar).
 
 **Landing page** uses separate `ld-*` tokens (`bg-ld-deep`, `text-ld-accent`, …) that also switch via `html.dark` overrides.
 
@@ -185,6 +185,8 @@ Risk settings live on the **Trader page** only (not Settings). Stored in `user_r
 | `maxSingleTradeLoss` | Informational — not enforced by engine |
 | `maxDailyNotionalPct` | Cap on gross BUY notional / day as fraction of equity (default 1.0 = 100%) |
 | `maxConsecutiveLosses` | Auto-halt threshold; resets on any winning trade (default 5) |
+| `trailActivationProfitPct` | Trail stays dormant until peak rises this fraction above entry (NULL/0 = always-active). Recommended `0.05` per 2026-06-11 robustness sweep |
+| `trailActivationBars` | Trail stays dormant for N trading days after entry (NULL/0 = always-active). Less robust than profit gate; tuning-only |
 
 **Engine boot:** Engines auto-restart on server startup via `instrumentation.ts` → `bootEngines()`. Checks all users with active broker connections, restores last-used mode.
 
@@ -198,17 +200,19 @@ Live trading is gated behind `ALLOW_LIVE_TRADING=1`. Without it, the engine refu
 - Order rate limit: 30 orders / 60s sliding window per engine
 - Daily notional cap: rejects BUYs exceeding `maxDailyNotionalPct × bootEquity` (cumulative across the day)
 - Consecutive-loss halt at threshold
+- **Mark-to-market drawdown halt** (2026-06-10): scan-end halt when `realized + unrealized < -1.5 × dailyLossThreshold`. Catches the bleed before it converts to realized losses (admin's Jun 8 had -$829 unrealized with no halt; the realized-only gate only caught it on Jun 9 *after* stops fired). Does NOT cancel pending orders — protective stops keep firing. Audit metadata `reason=daily_loss_unrealized`.
 
 All halts emit `engine.halted` audit events with `metadata.reason ∈ {broker_unreachable, account_mismatch, equity_collapse, consecutive_losses, user_requested_flatten_all}`.
 
 **Phase 5 — Personalized live protections** (layered on the safeguards above):
 - **MTM election** (Trader → Tax election card): self-attested §475(f) → `user_tax_status`. MTM unchecked → wash-sale ON; checked → OFF (MTM exempt from §1091). Effective on next engine start.
 - **Wash-sale protection**: blocks BUYs on a symbol with a losing exit (`SELL`/`manual_close`, `pnl < 0`) in the last 31 calendar days. Symbol-level not lot-level (over-conservative but simpler); set refreshed every 5 min from `trader_trades`; audit reason `wash_sale_protection`. Does NOT catch manual Alpaca-UI buys, "substantially identical" ETFs, or different share classes (GOOG ≠ GOOGL).
-- **PDT protection — retired 2026-06-04.** FINRA Rule 4210 was amended; the Pattern Day Trader designation was eliminated and the $25k minimum dropped to the standard $2k margin floor. Alpaca aligned the same day (`pattern_day_trader` returns `false`, `daytrade_count` returns `0`, both fields removed from the API on 2026-07-06). The preemptive PDT block (`PDT_EQUITY_THRESHOLD`, `PDT_DAYTRADE_BUY_BLOCK`, `evaluatePdtState`, `canPlaceBuyOrder` PDT branch, `pdtVulnerable`/`pdtDayTradeCount`/`pdtPatternFlagged` state, `ENGINE_PDT_VULNERABLE` audit transitions) was removed in the same change. **Reactive** handling (`isPdtRejection()` matching Alpaca error `40310100`, exit-suppression after N consecutive rejections, unprotected-symbols banner) is kept for now — the legacy error code may still appear on transitional accounts. `AuditAction.ENGINE_PDT_VULNERABLE` enum value is preserved so historical audit rows still resolve, but the event is no longer emitted.
+- **Losing-reentry cooldown** (2026-06-10): strategy gate, independent of MTM. Same query as wash-sale but 3-day window; blocks the falling-knife re-entry pattern that the wash-sale gate misses on MTM-elected engines. Off in `tactical` mode only. Audit reason `losing_reentry_cooldown`. See `docs/ENGINE_RULESET.md` § Losing-Reentry Cooldown for the post-mortem this came from.
+- **PDT protection — retired 2026-06-04.** FINRA Rule 4210 amended; PDT designation eliminated, $25k minimum replaced by standard $2k margin floor. Alpaca aligned same day. Preemptive PDT block + state removed; reactive handling (`isPdtRejection()` for Alpaca error `40310100`, exit-suppression, unprotected-symbols banner) kept for transitional accounts. `AuditAction.ENGINE_PDT_VULNERABLE` enum preserved for historical rows; event no longer emitted.
 
-Gate ordering inside `canPlaceBuyOrder()`: wash-sale → notional → rate-limit (cheapest first).
+Gate ordering inside `canPlaceBuyOrder()`: earnings blackout → sector exposure → losing-reentry cooldown → wash-sale → notional → rate-limit (cheapest first).
 
-**Recommended risk profile for a $5k live account:** mode `optimized`/`adaptive` (tactical-smart's loose stops + 50% take-profit assume larger equity); `maxPositionPct` 25-33% (3-4 positions); `maxDailyLossPct` 2% ($100/day); `maxDailyNotionalPct` 0.5; `maxConsecutiveLosses` 3; MTM unchecked unless you actually filed §475(f) at last year-start. (PDT minimum no longer applies — see above.)
+**Recommended risk profile for a $5k live account:** mode `optimized`/`adaptive` (tactical-smart's loose stops assume larger equity); `maxPositionPct` 25-33%; `maxDailyLossPct` 2%; `maxDailyNotionalPct` 0.5; `maxConsecutiveLosses` 3; MTM unchecked unless §475(f) filed at last year-start.
 
 > **Going-live procedure, paper-vs-live differences, and 3-option rollback procedures** (env-only → code revert → migration drop) live in `docs/runbooks/live-trading.md`. Read it before flipping `ALLOW_LIVE_TRADING=1` or when planning a rollback.
 
@@ -220,7 +224,7 @@ Manual orders go through `/dashboard/trade` (index: symbol search + recently-vie
 2. **Ticket UI** — `validate()` blocks submit with "Stop the engine before placing manual orders."
 3. **Index UI** — warning banner when the engine runs, linking to `/dashboard/trader` to stop it.
 
-The block exists because concurrent manual + engine orders create position-map drift: the engine's in-memory position map lags the broker by up to one scan interval, risking a protective stop sized for the wrong quantity. Easier to require exclusivity than to reconcile.
+The block prevents position-map drift: the engine's in-memory map lags the broker by up to one scan interval, risking a protective stop sized for the wrong quantity.
 
 Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.source = "manual_ui"`) as engine fills, the same journal auto-stub, and merge into the same Tax Center (`/api/tax/report` reads `trader_trades.action IN ('BUY', 'SELL', 'manual_close')`).
 
@@ -242,7 +246,7 @@ Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.sourc
 
 **Live vs backtest:** live reads VIX + SPY + breadth; backtest replays VIX + SPY only (breadth replay is expensive). The classifier degrades gracefully — the strong-risk-on `aggressive` bump just doesn't fire in backtest.
 
-**Mode-compare backtest** at `/dashboard/backtest/mode-compare?symbol=AAPL` runs comparable modes (`optimized` / `tactical` / `adaptive`; `tactical-smart` excluded — its active-management logic doesn't translate to backtesting) against the same symbol+date-range: stats table + equity-curve overlay + adaptive's modeTimeline.
+**Mode-compare backtest** at `/dashboard/backtest/mode-compare?symbol=AAPL` runs `optimized` / `tactical` / `adaptive` against the same range (tactical-smart excluded — active-management doesn't translate to backtesting): stats table + equity-curve overlay + adaptive modeTimeline.
 
 ## Congressional trades (official source)
 
@@ -258,11 +262,11 @@ User alert rules (`alert_rules` table) are evaluated by a **scheduled cron**, no
 
 - **Cron:** `GET /api/cron/evaluate-alerts` (`x-cron-secret` vs `CRON_SECRET`, gated to `isMarketOpen()`). One `fetchBars` per distinct enabled-rule symbol, runs `analyzeBars` once, then evaluates every rule on that symbol. Schedule every ~5 min (the route self-skips off-hours, so a flat `*/5 * * * *` is fine). **Not yet wired into prod cron — add the crontab entry.**
 - **Edge-triggering:** rules fire only on the `false→true` transition and re-arm when the condition clears (`alert_rules.last_condition_met`, migration `0044`). The 1h `last_triggered` cooldown is a secondary anti-spam guard. The pure decision lives in `decideAlert()` (tested in `tests/unit/alert-engine.test.ts`). This makes "crossover" rule types signal the actual cross, not "still above since days ago".
-- **History:** 2026-05-28 — replaced the old per-analyze trigger (keyed by symbol-only → a stranger's analyze drove your rule; symbols nobody analyzed were never checked). See `docs/changelog.md`.
+- **History:** 2026-05-28 — replaced per-analyze trigger (symbol-only key meant strangers' analyzes drove your rule, unanalyzed symbols never checked). See `docs/changelog.md`.
 
 ## AI Providers & System Configuration
 
-**All AI flows go through Groq (`llama-3.3-70b-versatile`)** — Insights, Quick Insight, hybrid AI scoring + sentiment, filings chat, market digest, AI chat panel, Recent-Trades **AI ✨**. The last Anthropic route (`summarize-trade`) was migrated 2026-05-12; `@anthropic-ai/sdk` is gone. The misleadingly-named `CLAUDE_CONFIG` (`src/lib/config.ts`) still holds `.model` + `.maxTokens` but no longer reads `.apiKey` — key lookups go through `getLlmApiKey()` / `getFinnhubApiKey()` / `getAnthropicApiKey()` in `src/lib/system-config.ts`.
+**All AI flows go through Groq (`llama-3.3-70b-versatile`)** — Insights, Quick Insight, hybrid AI scoring + sentiment, filings chat, market digest, AI chat panel, Recent-Trades AI. `@anthropic-ai/sdk` removed 2026-05-12. `CLAUDE_CONFIG` (`src/lib/config.ts`) holds `.model` + `.maxTokens` only; keys via `getLlmApiKey()` / `getFinnhubApiKey()` / `getAnthropicApiKey()` in `src/lib/system-config.ts`.
 
 **Keys live in the `system_config` table** (migration `0030_system_config.sql`), encrypted with AES-256-GCM via `src/lib/crypto.ts`. Rotate from **/dashboard/admin/system-config** — no SSH required. Lookup order at runtime: 60s in-memory cache → DB → `process.env[<key>]` fallback. The env fallback is intentional so a fresh install boots cleanly before the admin has populated the DB.
 
@@ -358,19 +362,14 @@ Located at `/dashboard/education` with three top-level tabs (Glossary | Guides |
 - `src/lib/education/guide-search.ts` — in-memory inverted index over guides for AI chat RAG (TF-IDF + query-term boosts; de-dupes by guide).
 
 ### Calculators (8)
-Live in `src/components/education/calculators/*.tsx`. Registered in:
-1. `GuideCalculator` union in `guides-data.ts`
-2. `Block` switch in `src/components/education/guide-renderer.tsx`
-3. The Calculators tab in `src/app/dashboard/education/page.tsx`
-
-Adding a calculator: drop the component, then add to all three places.
+Live in `src/components/education/calculators/*.tsx`. Adding one: register in `GuideCalculator` union (`guides-data.ts`), `Block` switch (`guide-renderer.tsx`), and the Calculators tab (`education/page.tsx`).
 
 ### Cross-feature integrations
-- **Tax Center** — `PersonalizedTaxEducation` ranks education links by user data; `TaxStatusCard` self-attests §475(f) MTM via `/api/tax-status`.
+- **Tax Center** — `PersonalizedTaxEducation` ranks links by user data; `TaxStatusCard` self-attests §475(f) MTM via `/api/tax-status`.
 - **Trader page** — `TraderTaxCallouts` reads `/api/portfolio/summary` + `/api/tax-status` for MTM-aware harvestable-loss messaging.
-- **AI Chat** (`/api/chat`) — `gatherChatContext()` calls `searchGuides(query, 3)` to inject guide snippets + citation links into the system prompt.
-- **Dashboard widgets** — `NetWorthWidget`, `ContinueReadingWidget` (via `useEducationProgress()`), both in `src/lib/widget-registry.ts`.
-- **Guide bodies** — `<GlossaryAwareText>` auto-wraps known terms in tooltip definitions (multi-word first, per-paragraph dedup).
+- **AI Chat** — `gatherChatContext()` injects `searchGuides(query, 3)` snippets + citations into system prompt.
+- **Dashboard widgets** — `NetWorthWidget`, `ContinueReadingWidget` (via `useEducationProgress()`) in `widget-registry.ts`.
+- **Guide bodies** — `<GlossaryAwareText>` auto-wraps known terms in tooltips (multi-word first, per-paragraph dedup).
 
 ### Database & Disclaimers
 Schema in `src/lib/db/schema/education.ts` — `education_guide_views` (views + bookmark + quiz state, text slug), `glossary_review_state` (SM-2 per `(user_id, term_id)`, `ease_factor` integer ×100), `user_tax_status` (TTS + MTM year). `glossary_terms` + `education_progress` are legacy/unused (kept for FK stability). `<EducationalDisclaimer />` renders on every guide/calculator/hub/Tax-Status modal, tagged `data-print-disclaimer` for PDF.
