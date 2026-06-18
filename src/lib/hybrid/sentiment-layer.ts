@@ -1,8 +1,11 @@
 import type { SignalType, SentimentLayer } from "@/types";
 import { getFinnhubClient } from "../finnhub";
 import { CLAUDE_CONFIG } from "../config";
+import { createRouteLogger } from "../logger";
 
 export type { SentimentLayer };
+
+const log = createRouteLogger("sentiment-layer");
 
 // ─── Cache ──────────────────────────────────────────────────────────
 
@@ -34,6 +37,12 @@ function setCache(symbol: string, data: SentimentLayer): void {
     const now = Date.now();
     for (const [k, v] of g.__sentimentCache!) {
       if (now > v.expiry) g.__sentimentCache!.delete(k);
+    }
+    // Hard cap: evict oldest-first when all entries are still live (audit #65).
+    if (g.__sentimentCache!.size > 200) {
+      for (const k of [...g.__sentimentCache!.keys()].slice(0, g.__sentimentCache!.size - 200)) {
+        g.__sentimentCache!.delete(k);
+      }
     }
   }
 }
@@ -93,7 +102,9 @@ export async function applySentimentLayer(
 
     setCache(symbol, result);
     return result;
-  } catch {
+  } catch (err) {
+    // Log the cause instead of silently returning "no data" (audit #66).
+    log.warn({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Sentiment layer failed — degrading to no data");
     return null;
   }
 }

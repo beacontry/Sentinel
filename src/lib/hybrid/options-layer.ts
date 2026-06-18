@@ -1,6 +1,9 @@
 import type { SignalType, OptionsFlowLayer } from "@/types";
+import { createRouteLogger } from "../logger";
 
 export type { OptionsFlowLayer };
+
+const log = createRouteLogger("options-layer");
 
 // ─── Cache ──────────────────────────────────────────────────────────
 
@@ -32,6 +35,14 @@ function setCache(symbol: string, data: OptionsFlowLayer): void {
     const now = Date.now();
     for (const [k, v] of g.__optionsCache!) {
       if (now > v.expiry) g.__optionsCache!.delete(k);
+    }
+    // Hard cap: if every entry is still live the expired-sweep frees nothing,
+    // so evict oldest-first (uniform TTL ⇒ Map insertion order = expiry order)
+    // until at the cap — otherwise the cache grows unbounded (audit #65).
+    if (g.__optionsCache!.size > 200) {
+      for (const k of [...g.__optionsCache!.keys()].slice(0, g.__optionsCache!.size - 200)) {
+        g.__optionsCache!.delete(k);
+      }
     }
   }
 }
@@ -66,7 +77,11 @@ export async function applyOptionsFlowLayer(
 
     setCache(symbol, result);
     return result;
-  } catch {
+  } catch (err) {
+    // Graceful degradation is intended, but don't swallow the cause silently
+    // (audit #66) — a transient upstream failure shouldn't be indistinguishable
+    // from genuine "no options data".
+    log.warn({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Options layer failed — degrading to no data");
     return null;
   }
 }

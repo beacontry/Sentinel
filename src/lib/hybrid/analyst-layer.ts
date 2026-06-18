@@ -1,5 +1,8 @@
 import type { SignalType } from "@/types";
 import { getFinnhubClient } from "../finnhub";
+import { createRouteLogger } from "../logger";
+
+const log = createRouteLogger("analyst-layer");
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -45,6 +48,12 @@ function setCache(symbol: string, data: AnalystLayer): void {
     const now = Date.now();
     for (const [k, v] of g.__analystCache!) {
       if (now > v.expiry) g.__analystCache!.delete(k);
+    }
+    // Hard cap: evict oldest-first when all entries are still live (audit #65).
+    if (g.__analystCache!.size > 200) {
+      for (const k of [...g.__analystCache!.keys()].slice(0, g.__analystCache!.size - 200)) {
+        g.__analystCache!.delete(k);
+      }
     }
   }
 }
@@ -106,7 +115,9 @@ export async function applyAnalystLayer(
 
     setCache(symbol, result);
     return result;
-  } catch {
+  } catch (err) {
+    // Log the cause instead of silently returning "no data" (audit #66).
+    log.warn({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Analyst layer failed — degrading to no data");
     return null;
   }
 }
