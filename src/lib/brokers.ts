@@ -437,15 +437,16 @@ export class AlpacaClient implements BrokerClient {
       payload.position_intent = params.positionIntent;
     }
 
-    // Bracket orders: entry + stop-loss + take-profit as one atomic order
+    // Bracket orders: entry + stop-loss + take-profit as one atomic order.
     if (params.orderClass === "bracket") {
-      payload.order_class = "bracket";
-      if (params.takeProfitPrice) {
-        payload.take_profit = { limit_price: params.takeProfitPrice };
-      }
-      if (params.stopLossPrice) {
-        payload.stop_loss = { stop_price: params.stopLossPrice };
-      }
+      const hasTp = Boolean(params.takeProfitPrice);
+      const hasSl = Boolean(params.stopLossPrice);
+      // Alpaca's "bracket" class requires BOTH legs; a single-leg order is an
+      // "oto". Forwarding a one-sided bracket gets rejected with a 422 (audit
+      // #42), so downgrade to oto with whichever leg is present.
+      payload.order_class = hasTp && hasSl ? "bracket" : "oto";
+      if (hasTp) payload.take_profit = { limit_price: params.takeProfitPrice };
+      if (hasSl) payload.stop_loss = { stop_price: params.stopLossPrice };
     } else {
       if (params.stopPrice) payload.stop_price = params.stopPrice;
     }
@@ -537,9 +538,23 @@ export class AlpacaClient implements BrokerClient {
       method: "DELETE",
       headers: this.headers,
     });
+    // DELETE /v2/orders returns 207 Multi-Status when SOME orders couldn't be
+    // canceled. The old code treated 207 as success (res.ok) and merely logged
+    // a hard failure (audit #43). Surface the partial, and THROW on a hard
+    // non-2xx so callers don't silently assume a clean flatten — every caller
+    // wraps this in try/catch and independently re-verifies positions.
+    if (res.status === 207) {
+      const body = await res.text().catch(() => "");
+      log.warn(
+        { broker: "alpaca", status: 207, body: body.slice(0, 500) },
+        "Cancel-all returned 207 Multi-Status — some orders may not have canceled"
+      );
+      return;
+    }
     if (!res.ok) {
       const msg = await res.text().catch(() => "Unknown");
       log.error({ broker: "alpaca", status: res.status, err: msg }, "Cancel all orders failed");
+      throw new BrokerError(`Cancel all orders failed: ${msg}`, res.status, "Failed to cancel orders");
     }
   }
 
