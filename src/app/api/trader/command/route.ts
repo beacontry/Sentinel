@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { brokerConnections, traderTrades, traderDailyPnl } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
@@ -177,19 +177,28 @@ export async function POST(request: NextRequest) {
             // traderDailyPnl row via getETDateString(); a UTC key here would
             // fragment the day's realized total into a separate (tomorrow-
             // dated) row whenever a flatten lands after ~8 PM ET.
+            // Atomic upsert on the (date, userId) accumulator row (audit #35).
+            // The old select-then-(insert|update) lost a flatten's realized P&L
+            // under concurrency: two writers both saw "no row", raced the
+            // INSERT, the unique (date,userId) index rejected one, and the catch
+            // swallowed it; the UPDATE branch was a lost-update RMW. ON CONFLICT
+            // folds the deltas in one statement.
             try {
-              const today = getETDateString();
-              const [existing] = await db.select().from(traderDailyPnl)
-                .where(and(eq(traderDailyPnl.date, today), eq(traderDailyPnl.userId, auth.userId)))
-                .limit(1);
-              if (existing) {
-                await db.update(traderDailyPnl)
-                  .set({ realizedPnl: existing.realizedPnl + realizedPnl, tradesCount: existing.tradesCount + 1 })
-                  .where(eq(traderDailyPnl.id, existing.id));
-              } else {
-                await db.insert(traderDailyPnl).values({ userId: auth.userId, date: today, realizedPnl, unrealizedPnl: 0, tradesCount: 1, halted: false });
-              }
-            } catch { /* best effort */ }
+              await db.insert(traderDailyPnl)
+                .values({ userId: auth.userId, date: getETDateString(), realizedPnl, unrealizedPnl: 0, tradesCount: 1, halted: false })
+                .onConflictDoUpdate({
+                  target: [traderDailyPnl.date, traderDailyPnl.userId],
+                  set: {
+                    realizedPnl: sql`${traderDailyPnl.realizedPnl} + ${realizedPnl}`,
+                    tradesCount: sql`${traderDailyPnl.tradesCount} + 1`,
+                  },
+                });
+            } catch (err) {
+              log.warn(
+                { err: err instanceof Error ? err.message : "unknown", symbol: pos.symbol },
+                "Failed to record flatten P&L to daily total"
+              );
+            }
           } catch (err) {
             const msg = err instanceof Error ? err.message : "unknown";
             results.push({ symbol: pos.symbol, qty: pos.qty, status: `failed: ${msg}` });
