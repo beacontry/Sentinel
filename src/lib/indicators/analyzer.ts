@@ -297,7 +297,19 @@ export function analyzeBars(symbol: string, bars: Bar[], signalParams?: SignalPa
     bollinger_lower: [],
   };
 
+  let prevSession: string | null = null;
   for (const bar of bars) {
+    // VWAP is session-anchored: reset it at each new trading day so it stays a
+    // true intraday VWAP (the 5m path) instead of cumulating across the whole
+    // window. On daily bars every bar is its own session, so VWAP collapses to
+    // that bar's typical price rather than a multi-month VWMA that sat
+    // systematically below price in any uptrend, biasing the score (audit #29).
+    const session = bar.date.slice(0, 10);
+    if (prevSession !== null && session !== prevSession) {
+      ind.vwap.reset();
+    }
+    prevSession = session;
+
     ind.sma9.update(bar);
     ind.sma20.update(bar);
     ind.sma50.update(bar);
@@ -406,7 +418,19 @@ export function analyzeSignalOnly(
 ): { signal: SignalType; confidence: number; atr: number | null } {
   const ind = createIndicators(signalParams);
 
+  let prevSession: string | null = null;
   for (const bar of bars) {
+    // VWAP is session-anchored: reset it at each new trading day so it stays a
+    // true intraday VWAP (the 5m path) instead of cumulating across the whole
+    // window. On daily bars every bar is its own session, so VWAP collapses to
+    // that bar's typical price rather than a multi-month VWMA that sat
+    // systematically below price in any uptrend, biasing the score (audit #29).
+    const session = bar.date.slice(0, 10);
+    if (prevSession !== null && session !== prevSession) {
+      ind.vwap.reset();
+    }
+    prevSession = session;
+
     ind.sma9.update(bar);
     ind.sma20.update(bar);
     ind.sma50.update(bar);
