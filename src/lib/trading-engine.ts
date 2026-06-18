@@ -9,7 +9,7 @@
 // flag, full error isolation per symbol.
 
 import type { Bar } from "@/types";
-import { createBrokerClient } from "./brokers";
+import { createBrokerClient, BrokerError } from "./brokers";
 import type { BrokerClient, BrokerAccount, BrokerPosition, BrokerOrder, PlaceOrderParams } from "./brokers";
 import { decrypt } from "./crypto";
 import { getMarketDataProvider } from "./market-data";
@@ -4884,6 +4884,19 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
     engine.consecutiveBrokerFailures = 0;
     setBrokerPositionCache(engine.userId!, brokerPositions);
   } catch (err) {
+    // A 429 rate-limit is a transient throttle, not a connectivity failure.
+    // Skip this scan cycle WITHOUT incrementing the failure counter or halting,
+    // so a burst of throttling doesn't trip the broker-unreachable halt or
+    // blind-retry against the limit (audit #14).
+    if (err instanceof BrokerError && err.retryable && err.statusCode === 429) {
+      log.warn(
+        { retryAfterMs: err.retryAfterMs },
+        "Broker rate-limited (429) — skipping scan cycle, not counting toward halt"
+      );
+      engine.lastScanAt = new Date();
+      engine.scanStartedAt = null;
+      return;
+    }
     engine.consecutiveBrokerFailures++;
     log.warn(
       { err: err instanceof Error ? err.message : "unknown", failures: engine.consecutiveBrokerFailures },

@@ -150,11 +150,26 @@ class BrokerError extends Error {
   constructor(
     message: string,
     public statusCode: number = 502,
-    public userMessage: string = "Failed to connect to broker"
+    public userMessage: string = "Failed to connect to broker",
+    /** Transient (429 / 503 / timeout) — caller may back off and retry rather
+     *  than treating it as a connectivity failure (audit #14). */
+    public retryable: boolean = false,
+    /** Parsed Retry-After in ms when the broker supplied one, else null. */
+    public retryAfterMs: number | null = null
   ) {
     super(message);
     this.name = "BrokerError";
   }
+}
+
+/** Parse a Retry-After header (delta-seconds or HTTP-date) into ms, or null. */
+function parseRetryAfterMs(header: string | null): number | null {
+  if (!header) return null;
+  const secs = Number(header);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const date = Date.parse(header);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return null;
 }
 
 async function brokerFetch(
@@ -169,16 +184,31 @@ async function brokerFetch(
       ...options,
       signal: controller.signal,
     });
+    if (res.status === 429) {
+      // Respect the broker's rate-limit signal (audit #14): surface 429 as a
+      // distinct RETRYABLE error carrying Retry-After, so callers back off and
+      // the engine doesn't miscount a throttle as a connectivity failure (which
+      // would blind-retry and trip the broker-unreachable halt).
+      throw new BrokerError(
+        "Broker rate limit (429)",
+        429,
+        "Broker is rate-limiting requests — backing off",
+        true,
+        parseRetryAfterMs(res.headers.get("retry-after"))
+      );
+    }
     return res;
   } catch (err) {
+    if (err instanceof BrokerError) throw err; // already classified (e.g. 429)
     const message = err instanceof Error ? err.message : "Unknown error";
     if (message.includes("abort")) {
-      throw new BrokerError("Connection timed out", 504, "Connection timed out");
+      throw new BrokerError("Connection timed out", 504, "Connection timed out", true);
     }
     throw new BrokerError(
       `Fetch failed: ${message}`,
       502,
-      "Failed to connect to broker"
+      "Failed to connect to broker",
+      true
     );
   } finally {
     clearTimeout(timeout);
@@ -439,14 +469,20 @@ export class AlpacaClient implements BrokerClient {
         "Order placement failed"
       );
 
+      // Curated, sanitized client message — NEVER forward the raw Alpaca body
+      // (it can disclose buying-power figures, account restrictions, internal
+      // reason codes, and isn't a stable contract — audit #13). The full text
+      // is already logged server-side above; map only known cases.
       let userError = "Failed to place order";
-      try {
-        const errorData = JSON.parse(errorText);
-        if (errorData.message) {
-          userError = errorData.message;
-        }
-      } catch {
-        // Use generic error
+      const lc = errorText.toLowerCase();
+      if (lc.includes("buying power") || lc.includes("insufficient")) {
+        userError = "Insufficient buying power for this order";
+      } else if (lc.includes("client_order_id must be unique")) {
+        userError = "Duplicate order — this trade was already submitted";
+      } else if (lc.includes("not tradable") || lc.includes("not_tradable") || lc.includes("not active") || lc.includes("not allowed")) {
+        userError = "This symbol is not currently tradable";
+      } else if (lc.includes("wash")) {
+        userError = "Order blocked by the broker's wash-trade check";
       }
 
       throw new BrokerError(
