@@ -152,8 +152,21 @@ export async function searchFilings(
 export async function getFilingContent(url: string): Promise<string> {
   if (!url.startsWith("https://")) return "";
 
-  const parsed = new URL(url);
-  if (!parsed.hostname.endsWith("sec.gov")) return "";
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "";
+  }
+  // SSRF guard (audit #45): exact domain allowlist. The old
+  // endsWith("sec.gov") matched "evil-sec.gov"; the ".sec.gov" suffix requires
+  // a literal dot so only genuine SEC (sub)domains pass. Also reject userinfo
+  // (user:pass@) and non-443 ports — both SSRF smuggling vectors — and don't
+  // follow redirects to an unvalidated host (a 3xx → !res.ok → "").
+  const host = parsed.hostname.toLowerCase();
+  if (host !== "sec.gov" && !host.endsWith(".sec.gov")) return "";
+  if (parsed.username || parsed.password) return "";
+  if (parsed.port && parsed.port !== "443") return "";
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
@@ -161,6 +174,7 @@ export async function getFilingContent(url: string): Promise<string> {
     const res = await fetch(url, {
       signal: controller.signal,
       headers: { "User-Agent": UA },
+      redirect: "manual",
     });
 
     if (!res.ok) return "";

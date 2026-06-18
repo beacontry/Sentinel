@@ -60,6 +60,25 @@ export async function POST(request: NextRequest) {
 
   const { priceId, successUrl, cancelUrl } = parsed.data;
 
+  // Open-redirect guard (audit #85): a client-supplied success/cancel URL must
+  // point back to our own origin, else the post-checkout redirect lands the
+  // user on an attacker domain inside a legit-looking Stripe flow.
+  const baseOrigin = new URL(process.env.NEXT_PUBLIC_BASE_URL ?? "https://beacontry.com").origin;
+  const sameOrigin = (u: string | undefined): boolean => {
+    if (!u) return true;
+    try {
+      return new URL(u).origin === baseOrigin;
+    } catch {
+      return false;
+    }
+  };
+  if (!sameOrigin(successUrl) || !sameOrigin(cancelUrl)) {
+    return NextResponse.json(
+      { error: { code: "INVALID_INPUT", message: "Redirect URLs must point to this site", retryable: false } },
+      { status: 400 }
+    );
+  }
+
   // Defense in depth: only our known price IDs are allowed. Without
   // this, an attacker could craft a checkout for a fake $0.01 Trader
   // price they created in a different Stripe account. (Not possible
