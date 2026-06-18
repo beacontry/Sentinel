@@ -163,17 +163,25 @@ bullish + bearish should roughly sum to 1.0`,
 const BULLISH_WORDS = ["surge", "jump", "rally", "gain", "rise", "beat", "upgrade", "record", "high", "strong", "growth", "profit", "revenue", "bullish", "positive", "outperform"];
 const BEARISH_WORDS = ["drop", "fall", "decline", "loss", "miss", "downgrade", "low", "weak", "cut", "slash", "bearish", "negative", "underperform", "crash", "plunge", "sell-off"];
 
-function scoreSentimentHeuristic(headlines: string[]): { bullish: number; bearish: number } {
-  let bullCount = 0;
-  let bearCount = 0;
-  const joined = headlines.join(" ").toLowerCase();
+/** Count word-boundary occurrences of any keyword in the text. The old
+ *  `joined.includes(word)` substring test mislabeled unrelated words —
+ *  "high" matched "highlight"/"higher", "gain" matched "against", "low"
+ *  matched "below"/"follow", "cut" matched "circuit" (audit #28). Weighted by
+ *  number of occurrences, not mere presence. */
+function countKeywordHits(text: string, words: string[]): number {
+  let count = 0;
+  for (const word of words) {
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const matches = text.match(new RegExp(`\\b${escaped}\\b`, "g"));
+    if (matches) count += matches.length;
+  }
+  return count;
+}
 
-  for (const word of BULLISH_WORDS) {
-    if (joined.includes(word)) bullCount++;
-  }
-  for (const word of BEARISH_WORDS) {
-    if (joined.includes(word)) bearCount++;
-  }
+export function scoreSentimentHeuristic(headlines: string[]): { bullish: number; bearish: number } {
+  const joined = headlines.join(" ").toLowerCase();
+  const bullCount = countKeywordHits(joined, BULLISH_WORDS);
+  const bearCount = countKeywordHits(joined, BEARISH_WORDS);
 
   const total = bullCount + bearCount || 1;
   return {

@@ -37,10 +37,17 @@ function isSellish(s: string): boolean {
   return s === "SELL" || s === "STRONG_SELL";
 }
 
-function isDirectionFlip(original: string, adjusted: string): boolean {
+export function isDirectionFlip(original: string, adjusted: string): boolean {
   return (
     (isBuyish(original) && isSellish(adjusted)) ||
-    (isSellish(original) && isBuyish(adjusted))
+    (isSellish(original) && isBuyish(adjusted)) ||
+    // HOLD is a PROTECTED origin: the AI layer may down-rank a directional
+    // signal to HOLD, but must never INTRODUCE a directional signal the
+    // technical layer didn't produce (audit #27). The engine buys purely on
+    // signal===BUY/STRONG_BUY with no independent entry confidence floor, and
+    // STRONG_BUY additionally bypasses the position cap — so a HOLD→BUY
+    // promotion from the LLM would fabricate a trade from nothing.
+    (original === "HOLD" && (isBuyish(adjusted) || isSellish(adjusted)))
   );
 }
 
