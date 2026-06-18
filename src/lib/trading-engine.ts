@@ -5627,6 +5627,21 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
     const currentExposure = Array.from(positionMap.values())
       .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
 
+    // Re-fetch buying power (audit #26): `account` was snapshotted at scan
+    // start, and the in-loop entry buys placed this scan have since reserved
+    // capital at the broker. Feeding the stale snapshot under-counts committed
+    // capital and lets the planner green-light redeploys that exceed actual
+    // remaining buying power. Fall back to the snapshot if the refresh fails.
+    let swapBuyingPower = account.buyingPower;
+    try {
+      swapBuyingPower = (await client.getAccount()).buyingPower;
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : "unknown" },
+        "Swap-sell buying-power refresh failed — using scan-start snapshot"
+      );
+    }
+
     const plan = planSwapSellRedeploy({
       swapMode,
       exitsThisScan,
@@ -5645,7 +5660,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
       equity,
       positionPct: riskLimits.positionPct,
       maxPositionSize: riskLimits.maxPositionSize,
-      buyingPower: account.buyingPower,
+      buyingPower: swapBuyingPower,
       currentExposure,
       maxExposure: swapEffectiveMaxExposure,
     });
