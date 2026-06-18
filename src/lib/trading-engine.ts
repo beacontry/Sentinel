@@ -670,7 +670,7 @@ async function getSentimentScore(symbol: string): Promise<number> {
 async function passesSmartFilters(
   symbol: string,
   bars: Bar[],
-  opts?: { earningsBlackoutDays?: number },
+  opts?: { earningsBlackoutDays?: number; userId?: string | null },
 ): Promise<{ allowed: boolean; reason?: string }> {
   // #1: Earnings blackout — driven by user setting; opts.earningsBlackoutDays
   // === 0 disables. Default 5 keeps the historical behavior for any caller
@@ -688,7 +688,7 @@ async function passesSmartFilters(
   // Read RS threshold from latest optimizer params (default -5%)
   let rsThreshold = -0.05;
   try {
-    const latestParams = await getLatestOptimizedParams();
+    const latestParams = await getLatestOptimizedParams(opts?.userId ?? null);
     if (latestParams && "rsThreshold" in latestParams) {
       rsThreshold = (latestParams as unknown as { rsThreshold: number }).rsThreshold;
     }
@@ -2636,50 +2636,72 @@ export async function resolveBrokerClient(
 
 // ─── Latest Optimizer Results ────────────────────────────────────────────────
 
-// Cache to avoid hitting DB on every symbol every scan
-let _optimizedParamsCache: { params: StrategyParams; signalParams: SignalParams | null; takeProfitAtrMult: number | null; fetchedAt: number } | null = null;
+// Cache to avoid hitting DB on every symbol every scan. Keyed by userId
+// (audit #12): the explicitly-saved GLOBAL active preset is shared by design,
+// but the no-active fallback must resolve to the USER'S OWN latest run, never
+// whichever tenant finished most recently — otherwise user B's optimized engine
+// silently adopts user A's GA-tuned stop/take-profit/EMA/RSI params. A single
+// module-level slot leaked across tenants; a per-userId map closes that.
+type OptimizedParamsCacheEntry = { params: StrategyParams; signalParams: SignalParams | null; takeProfitAtrMult: number | null; fetchedAt: number };
+const _optimizedParamsCache = new Map<string, OptimizedParamsCacheEntry>();
 const OPTIMIZER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// Cache key for the rare null-userId path (no engine context). The global
+// active preset is the same for everyone, so a shared sentinel slot is fine.
+const OPTIMIZER_CACHE_NO_USER = "__global__";
 
-async function getLatestOptimizedParams(): Promise<StrategyParams | null> {
-  if (_optimizedParamsCache && Date.now() - _optimizedParamsCache.fetchedAt < OPTIMIZER_CACHE_TTL) {
-    return _optimizedParamsCache.params;
-  }
-  await _loadOptimizedParams();
-  return _optimizedParamsCache?.params ?? null;
+function _cachedOptimizedParams(userId: string | null): OptimizedParamsCacheEntry | null {
+  const entry = _optimizedParamsCache.get(userId ?? OPTIMIZER_CACHE_NO_USER);
+  if (entry && Date.now() - entry.fetchedAt < OPTIMIZER_CACHE_TTL) return entry;
+  return null;
+}
+
+async function getLatestOptimizedParams(userId: string | null): Promise<StrategyParams | null> {
+  const cached = _cachedOptimizedParams(userId);
+  if (cached) return cached.params;
+  await _loadOptimizedParams(userId);
+  return _cachedOptimizedParams(userId)?.params ?? null;
 }
 
 /** Get ATR multiplier for adaptive take profit, or null for fixed TP */
-async function getOptimizedTpAtrMult(): Promise<number | null> {
-  if (_optimizedParamsCache && Date.now() - _optimizedParamsCache.fetchedAt < OPTIMIZER_CACHE_TTL) {
-    return _optimizedParamsCache.takeProfitAtrMult;
-  }
-  await _loadOptimizedParams();
-  return _optimizedParamsCache?.takeProfitAtrMult ?? null;
+async function getOptimizedTpAtrMult(userId: string | null): Promise<number | null> {
+  const cached = _cachedOptimizedParams(userId);
+  if (cached) return cached.takeProfitAtrMult;
+  await _loadOptimizedParams(userId);
+  return _cachedOptimizedParams(userId)?.takeProfitAtrMult ?? null;
 }
 
 /** Get tuned signal params (EMA/RSI) from latest optimizer run, or null if unavailable */
-async function getOptimizedSignalParams(): Promise<SignalParams | null> {
-  if (_optimizedParamsCache && Date.now() - _optimizedParamsCache.fetchedAt < OPTIMIZER_CACHE_TTL) {
-    return _optimizedParamsCache.signalParams;
-  }
-  await _loadOptimizedParams();
-  return _optimizedParamsCache?.signalParams ?? null;
+async function getOptimizedSignalParams(userId: string | null): Promise<SignalParams | null> {
+  const cached = _cachedOptimizedParams(userId);
+  if (cached) return cached.signalParams;
+  await _loadOptimizedParams(userId);
+  return _cachedOptimizedParams(userId)?.signalParams ?? null;
 }
 
-async function _loadOptimizedParams(): Promise<void> {
+async function _loadOptimizedParams(userId: string | null): Promise<void> {
   try {
-    // Prefer the explicitly saved "active" run; fall back to latest completed
+    // 1. Explicitly-saved GLOBAL active preset. This single shared slot is
+    //    intentional — save-preset deactivates all other runs and activates
+    //    one for everyone (see save-preset/route.ts). No userId predicate.
     const [activeRun] = await db
       .select({ bestParams: optimizationRuns.bestParams, bestTestReturn: optimizationRuns.bestTestReturn })
       .from(optimizationRuns)
       .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
       .limit(1);
-    const [run] = activeRun ? [activeRun] : await db
-      .select({ bestParams: optimizationRuns.bestParams, bestTestReturn: optimizationRuns.bestTestReturn })
-      .from(optimizationRuns)
-      .where(eq(optimizationRuns.status, "complete"))
-      .orderBy(desc(optimizationRuns.completedAt))
-      .limit(1);
+    // 2. Fallback: the engine owner's OWN latest completed run — scoped by
+    //    userId so user B never inherits user A's params (audit #12). When
+    //    there's no engine context (userId == null) we skip the fallback
+    //    rather than grab an arbitrary tenant's run.
+    const [run] = activeRun
+      ? [activeRun]
+      : userId
+        ? await db
+            .select({ bestParams: optimizationRuns.bestParams, bestTestReturn: optimizationRuns.bestTestReturn })
+            .from(optimizationRuns)
+            .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.userId, userId)))
+            .orderBy(desc(optimizationRuns.completedAt))
+            .limit(1)
+        : [undefined];
 
     if (!run?.bestParams) return;
 
@@ -2707,10 +2729,10 @@ async function _loadOptimizedParams(): Promise<void> {
         }
       : null;
 
-    _optimizedParamsCache = { params, signalParams, takeProfitAtrMult, fetchedAt: Date.now() };
-    log.info({ params, signalParams, takeProfitAtrMult, testReturn: run.bestTestReturn }, "Loaded latest optimizer params");
+    _optimizedParamsCache.set(userId ?? OPTIMIZER_CACHE_NO_USER, { params, signalParams, takeProfitAtrMult, fetchedAt: Date.now() });
+    log.info({ userId, params, signalParams, takeProfitAtrMult, testReturn: run.bestTestReturn }, "Loaded latest optimizer params");
   } catch (err) {
-    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to load optimizer params");
+    log.warn({ userId, err: err instanceof Error ? err.message : "unknown" }, "Failed to load optimizer params");
   }
 }
 
@@ -2751,7 +2773,7 @@ async function resolveStrategy(
   const activeMode = getActiveMode(engine);
   // For optimized/tactical modes, use latest optimizer results from DB
   if (activeMode === "optimized" || activeMode === "tactical" || activeMode === "tactical-smart") {
-    const latest = await getLatestOptimizedParams();
+    const latest = await getLatestOptimizedParams(userId);
     if (latest) return latest;
   }
 
@@ -4902,7 +4924,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
   // Load optimized signal params for "optimized" mode (tuned EMA/RSI from GA).
   // Adaptive's effective mode collapses to "optimized" when regime warrants —
   // getActiveMode lets adaptive users inherit the GA params automatically.
-  const optSignalParams = getActiveMode(engine) === "optimized" ? await getOptimizedSignalParams() : null;
+  const optSignalParams = getActiveMode(engine) === "optimized" ? await getOptimizedSignalParams(engine.userId) : null;
   // Tier-aware hybrid options (Phase E3):
   //   - Free shouldn't reach here (server gates engine start); fallback to trader
   //     pipeline if somehow reached
@@ -5451,6 +5473,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         // inside the later canPlaceBuyOrder gate.
         const filterResult = await passesSmartFilters(symbol, bars, {
           earningsBlackoutDays: riskLimits.earningsBlackoutDays,
+          userId: engine.userId,
         });
         if (!filterResult.allowed) {
           if (isStrongSignal) log.info({ symbol, reason: filterResult.reason }, "STRONG_BUY blocked by smart filter");
@@ -5506,7 +5529,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         // Adaptive TP: use ATR × multiplier from optimizer if available, else fixed %.
         // (Naming overlap: this "adaptive TP" predates the "adaptive engine
         // mode" — separate concept. Active mode is used for the gate.)
-        const tpAtrMult = getActiveMode(engine) === "optimized" ? await getOptimizedTpAtrMult() : null;
+        const tpAtrMult = getActiveMode(engine) === "optimized" ? await getOptimizedTpAtrMult(engine.userId) : null;
         const atrVal = analysis.indicators.atr_14;
         const takeProfitPrice = tpAtrMult && atrVal
           ? parseFloat((currentPrice + atrVal * tpAtrMult).toFixed(2))
@@ -5762,6 +5785,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         // async work. Mirrors the in-loop entry path's gate order.
         const filterResult = await passesSmartFilters(candFull.symbol, candFull.bars, {
           earningsBlackoutDays: riskLimits.earningsBlackoutDays,
+          userId: engine.userId,
         });
         if (!filterResult.allowed) {
           log.info({ symbol: candFull.symbol, reason: filterResult.reason }, "Swap-sell candidate blocked by smart filter");
