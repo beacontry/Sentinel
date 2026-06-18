@@ -3518,6 +3518,19 @@ async function reconcileBrokerSideExit(
       { symbol, userId, fillPrice, pnl: pnl.toFixed(2), brokerOrderId: candidate.id, signal },
       "Reconciled broker-side exit into trader_trades"
     );
+
+    // Feed the broker-side realized P&L into the in-memory halt accounting
+    // (audit #21). A disaster/protective stop firing on Alpaca, or a manual
+    // close, realizes a loss the engine never ran through enforceDailyLossHalt
+    // or the consecutive-loss streak — so without this a broker-side stop-out
+    // is invisible to the realized daily-loss halt. No double-count: the engine
+    // did not place this sell (engine-placed exits are reconciled by
+    // reconcilePendingTrades, which corrects only the fill delta).
+    const engine = g.__tradingEngines?.get(userId);
+    if (engine) {
+      const riskLimits = await loadRiskLimits(userId);
+      recordRealizedExit(engine, pnl, riskLimits);
+    }
   } catch (err) {
     // Unique-constraint violation = idempotency race (someone else just logged it). Safe to swallow.
     const msg = err instanceof Error ? err.message : "unknown";
@@ -3541,7 +3554,7 @@ async function reconcileBrokerSideExit(
  *   - canceled  → status="CANCELED", pnl=null
  *   - rejected  → status="REJECTED", pnl=null
  *   - expired   → status="EXPIRED", pnl=null
- *   - partial   → status="PARTIAL_FILLED", fillPrice from broker, pnl scaled to filled qty
+ *   - partial   → left PENDING (non-terminal), re-reconciles to FILLED on completion
  *
  * P&L correction (no schema change needed):
  *   placeholder_pnl = (placeholder_fill - entry) × qty   [recorded at submission]
@@ -3611,8 +3624,14 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
       }
 
       const bs = brokerOrder.status;
-      // Still pending → leave as-is
-      if (["new", "accepted", "pending_new", "held", "accepted_for_bidding"].includes(bs)) continue;
+      // Still in-flight → leave the row PENDING so it re-reconciles next scan.
+      // "partially_filled" is treated as non-terminal (audit #22): the prior
+      // code moved it to a terminal PARTIAL_FILLED status that reconcile never
+      // re-selected, so the remaining fill + final P&L were never captured and
+      // the row was dropped from realized P&L / 8949 (which filter status=FILLED
+      // exactly). Leaving it PENDING lets the FILLED branch's full-quantity
+      // delta math run once the order completes.
+      if (["new", "accepted", "pending_new", "held", "accepted_for_bidding", "partially_filled"].includes(bs)) continue;
 
       // Resolved states → compute update
       let newStatus: string;
@@ -3633,17 +3652,18 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
         ) {
           const delta = (newFillPrice - row.fillPrice) * row.quantity;
           newPnl = row.pnl + delta;
-        }
-      } else if (bs === "partially_filled") {
-        newStatus = "PARTIAL_FILLED";
-        newFillPrice = brokerOrder.filledPrice ?? row.fillPrice;
-        newFillTime = brokerOrder.filledAt ? new Date(brokerOrder.filledAt) : new Date();
-        // P&L: scale to actual filled qty proportionally
-        if (row.action === "SELL" && row.pnl !== null && row.fillPrice !== null && newFillPrice !== null && row.quantity > 0) {
-          const filledQty = brokerOrder.filledQty;
-          const deltaPerShare = newFillPrice - row.fillPrice;
-          const pnlPerShare = row.pnl / row.quantity;
-          newPnl = (pnlPerShare + deltaPerShare) * filledQty;
+          // Correct the in-memory daily-loss accumulator by the same delta
+          // (audit #24): the placeholder (quote-based) pnl was already added to
+          // engine.dailyLoss at exit time, so applying the delta makes the
+          // realized daily-loss halt reflect the ACTUAL fill. Only the delta,
+          // never the full pnl, to avoid double-counting. The consecutive-loss
+          // streak is left as-is — a post-hoc sign flip can't be cleanly
+          // unwound in a sequential streak, and the placeholder ≈ the fill
+          // except on gap days.
+          if (delta !== 0) {
+            const engine = g.__tradingEngines?.get(userId);
+            if (engine) accrueRealizedPnl(engine, delta);
+          }
         }
       } else if (bs === "canceled" || bs === "expired") {
         newStatus = bs === "canceled" ? "CANCELED" : "EXPIRED";
