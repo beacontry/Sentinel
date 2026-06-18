@@ -24,7 +24,7 @@ import { getFinnhubClient } from "./finnhub";
 let SCAN_UNIVERSE = SP500_SYMBOLS; // starts with fallback, updated on first scan
 import type { StrategyParams } from "./strategy-presets";
 import { SignalType } from "@/types";
-import { db } from "./db";
+import { db, withTimeout } from "./db";
 import {
   brokerConnections,
   // watchlistItems not used — engine scans full universe
@@ -1596,11 +1596,13 @@ async function placeEngineOrder(
  */
 async function loadTaxStatus(userId: string): Promise<{ mtmElected: boolean }> {
   try {
-    const [row] = await db
-      .select({ hasTraderTaxStatus: userTaxStatus.hasTraderTaxStatus })
-      .from(userTaxStatus)
-      .where(eq(userTaxStatus.userId, userId))
-      .limit(1);
+    const [row] = await withTimeout(3000, (tx) =>
+      tx
+        .select({ hasTraderTaxStatus: userTaxStatus.hasTraderTaxStatus })
+        .from(userTaxStatus)
+        .where(eq(userTaxStatus.userId, userId))
+        .limit(1)
+    );
     return { mtmElected: row?.hasTraderTaxStatus === true };
   } catch (err) {
     log.warn(
@@ -1626,24 +1628,29 @@ async function refreshWashSaleBlockedSymbols(userId: string): Promise<Set<string
   // returned an empty Set, which the caller stored as the new "blocked
   // symbols" → wash-sale protection silently disabled for the entire
   // WASH_SALE_REFRESH_MS window. The empty-on-error path was the bug.
-  const rows = await db
-    .selectDistinct({ symbol: traderTrades.symbol })
-    .from(traderTrades)
-    .where(
-      and(
-        eq(traderTrades.userId, userId),
-        inArray(traderTrades.action, ["SELL", "manual_close"]),
-        // Prefer fillTime (when the trade actually closed) over createdAt
-        // (when the row was inserted). For a SELL queued late one day and
-        // filled the next, the wash-sale window anchors on the fill.
-        // Falls back to createdAt for rows missing fillTime (legacy data).
-        gt(
-          sql`COALESCE(${traderTrades.fillTime}, ${traderTrades.createdAt})`,
-          cutoff
-        ),
-        lt(traderTrades.pnl, 0)
+  // withTimeout bounds the stall inside the per-BUY gate (audit #64); a slow
+  // query throws and the caller's catch keeps the previous set without bumping
+  // lastRefreshAt (retry next scan), preserving the fail-soft semantics.
+  const rows = await withTimeout(3000, (tx) =>
+    tx
+      .selectDistinct({ symbol: traderTrades.symbol })
+      .from(traderTrades)
+      .where(
+        and(
+          eq(traderTrades.userId, userId),
+          inArray(traderTrades.action, ["SELL", "manual_close"]),
+          // Prefer fillTime (when the trade actually closed) over createdAt
+          // (when the row was inserted). For a SELL queued late one day and
+          // filled the next, the wash-sale window anchors on the fill.
+          // Falls back to createdAt for rows missing fillTime (legacy data).
+          gt(
+            sql`COALESCE(${traderTrades.fillTime}, ${traderTrades.createdAt})`,
+            cutoff
+          ),
+          lt(traderTrades.pnl, 0)
+        )
       )
-    );
+  );
   return new Set(rows.map((r) => r.symbol));
 }
 
@@ -1682,20 +1689,24 @@ async function maybeRefreshWashSaleSet(engine: EngineState): Promise<void> {
  */
 async function refreshLosingReentryBlockedSymbols(userId: string): Promise<Set<string>> {
   const cutoff = new Date(Date.now() - LOSING_REENTRY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const rows = await db
-    .selectDistinct({ symbol: traderTrades.symbol })
-    .from(traderTrades)
-    .where(
-      and(
-        eq(traderTrades.userId, userId),
-        inArray(traderTrades.action, ["SELL", "manual_close"]),
-        gt(
-          sql`COALESCE(${traderTrades.fillTime}, ${traderTrades.createdAt})`,
-          cutoff
-        ),
-        lt(traderTrades.pnl, 0)
+  // withTimeout bounds the stall inside the per-BUY gate (audit #64); fail-soft
+  // as above — throw → caller keeps previous set, retries next scan.
+  const rows = await withTimeout(3000, (tx) =>
+    tx
+      .selectDistinct({ symbol: traderTrades.symbol })
+      .from(traderTrades)
+      .where(
+        and(
+          eq(traderTrades.userId, userId),
+          inArray(traderTrades.action, ["SELL", "manual_close"]),
+          gt(
+            sql`COALESCE(${traderTrades.fillTime}, ${traderTrades.createdAt})`,
+            cutoff
+          ),
+          lt(traderTrades.pnl, 0)
+        )
       )
-    );
+  );
   return new Set(rows.map((r) => r.symbol));
 }
 
