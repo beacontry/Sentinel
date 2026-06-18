@@ -25,6 +25,13 @@ export async function POST(request: NextRequest) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
 
+  // Rate-limit gate first (audit #79) — the cheapest per-user check, ahead of
+  // the tier DB lookup and the body parse, so a flood can't drive that work.
+  const { allowed } = rateLimit(`trader-cmd:${auth.userId}`, 10, 60);
+  if (!allowed) {
+    return NextResponse.json({ error: "Rate limited" }, { status: 429 });
+  }
+
   // Trader tier or higher — engine command (flatten / risk update) is
   // a paid-feature mutation. Returns 402 with upgrade payload if not.
   const tierFail = await checkTier(auth.userId, "trader");
@@ -35,11 +42,6 @@ export async function POST(request: NextRequest) {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-  }
-
-  const { allowed } = rateLimit(`trader-cmd:${auth.userId}`, 10, 60);
-  if (!allowed) {
-    return NextResponse.json({ error: "Rate limited" }, { status: 429 });
   }
 
   const parsed = commandSchema.safeParse(body);

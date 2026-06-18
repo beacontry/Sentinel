@@ -102,14 +102,17 @@ export async function POST(request: NextRequest) {
   // slips past the pre-check below is harmless; sequential Stripe retries are
   // deduped by the recorded row.
 
-  // Fast-path: skip re-handling an event we've already recorded (the common
-  // case — Stripe's sequential redelivery of an event we acked late).
-  const [already] = await db
-    .select({ eventId: stripeEventsProcessed.eventId })
-    .from(stripeEventsProcessed)
-    .where(eq(stripeEventsProcessed.eventId, event.id))
-    .limit(1);
-  if (already) {
+  // Claim the event atomically BEFORE handling (audit #83). The pre-check +
+  // post-success insert let two concurrent deliveries both pass the check and
+  // both run handleEvent — duplicating append-only side effects (audit rows,
+  // notifications). The unique constraint on event_id makes this INSERT the
+  // lock: zero rows returned ⇒ another delivery already claimed it ⇒ dedup.
+  const claimed = await db
+    .insert(stripeEventsProcessed)
+    .values({ eventId: event.id, eventType: event.type })
+    .onConflictDoNothing()
+    .returning({ eventId: stripeEventsProcessed.eventId });
+  if (claimed.length === 0) {
     log.info({ eventId: event.id, type: event.type }, "Duplicate webhook event ignored");
     return NextResponse.json({ received: true, deduped: true });
   }
@@ -120,24 +123,24 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message, eventId: event.id, type: event.type }, "Webhook handler error");
-    // No dedup row was written, so Stripe's automatic retry will redeliver.
+    // Roll back the claim so Stripe's automatic retry re-handles the event
+    // (otherwise a failed handler would be permanently deduped).
+    await db
+      .delete(stripeEventsProcessed)
+      .where(eq(stripeEventsProcessed.eventId, event.id))
+      .catch(() => {});
     return NextResponse.json(
       { error: { code: "HANDLER_FAILED", message: "Webhook handler error; please retry", retryable: true } },
       { status: 500 }
     );
   }
 
-  // Handler succeeded — record the event so future retries are deduped.
-  // onConflictDoNothing in case a concurrent delivery recorded it first.
+  // Handler succeeded — backfill the audit metadata on the claimed row.
   await db
-    .insert(stripeEventsProcessed)
-    .values({
-      eventId: event.id,
-      eventType: event.type,
-      userId: result.userId ?? null,
-      actionTaken: result.actionTaken ?? null,
-    })
-    .onConflictDoNothing();
+    .update(stripeEventsProcessed)
+    .set({ userId: result.userId ?? null, actionTaken: result.actionTaken ?? null })
+    .where(eq(stripeEventsProcessed.eventId, event.id))
+    .catch(() => {});
 
   log.info(
     { eventId: event.id, type: event.type, action: result.actionTaken, userId: result.userId },

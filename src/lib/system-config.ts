@@ -107,6 +107,9 @@ export async function getConfig(key: string): Promise<string | null> {
   }
 
   let value: string | null = null;
+  // A row that exists but won't decrypt is a MISCONFIGURATION (wrong
+  // ENCRYPTION_KEY / tampered ciphertext), not an "unset" key — see below.
+  let rowPresentButUndecryptable = false;
   try {
     const [row] = await db
       .select({ valueEncrypted: systemConfig.valueEncrypted })
@@ -117,23 +120,30 @@ export async function getConfig(key: string): Promise<string | null> {
       try {
         value = decrypt(row.valueEncrypted);
       } catch (err) {
-        // Tampered ciphertext or wrong ENCRYPTION_KEY. Log and fall through
-        // to env fallback rather than crashing the LLM call path.
+        // Row present but undecryptable. Do NOT silently fall back to env
+        // (audit #82): the admin configured THIS value, so substituting a
+        // different (stale) env value masks the misconfiguration — e.g. a
+        // rotated ENCRYPTION_KEY would make every Stripe webhook
+        // signature-verify fail (silently dropping tier grants) with no
+        // obvious cause. Fail CLOSED and log loudly so it surfaces at once.
+        rowPresentButUndecryptable = true;
         log.error(
           { key, err: err instanceof Error ? err.message : "unknown" },
-          "Failed to decrypt system_config row — falling back to env"
+          "system_config row present but UNDECRYPTABLE — failing closed (check ENCRYPTION_KEY); NOT falling back to env"
         );
       }
     }
   } catch (err) {
-    // DB unreachable / table missing pre-migration — fall through to env.
+    // DB unreachable / table missing pre-migration — env fallback is fine.
     log.warn(
       { key, err: err instanceof Error ? err.message : "unknown" },
       "system_config read failed — falling back to env"
     );
   }
 
-  if (!value) {
+  // Env fallback only when there is no configured row (legitimate pre-population
+  // / dev). A present-but-undecryptable row stays null (fail closed).
+  if (!value && !rowPresentButUndecryptable) {
     value = process.env[key] ?? null;
   }
 
