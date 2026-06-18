@@ -5536,6 +5536,15 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           continue;
         }
 
+        // Re-check cancellation right before placing (audit #23): the loop-top
+        // throwIfScanCancelled leaves a window where a scan superseded
+        // mid-iteration (the 10-min stale-scan override) would place one more
+        // real order between the gate and here. Thrown OUTSIDE the try below so
+        // ScanCancelledError propagates up to abort the orphan — which also
+        // means it never reaches recordOrderPlacement, so it can't
+        // double-increment the shared notional / rate-limit counters.
+        throwIfScanCancelled(engine, myGeneration);
+
         try {
           // Place limit buy order — stop-loss and take-profit are managed
           // internally by the engine's exit logic (trailing stop, hold period)
@@ -5740,6 +5749,9 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         }
         const strategy = await resolveStrategy(engine.userId, candFull.symbol);
         const limitPrice = (candFull.currentPrice * 1.001).toFixed(2);
+        // Re-check cancellation right before placing (audit #23) — same window
+        // as the main buy loop, in the post-loop redeploy.
+        throwIfScanCancelled(engine, myGeneration);
         const order = await placeEngineOrder(client, {
           symbol: candFull.symbol,
           side: "buy",
