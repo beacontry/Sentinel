@@ -6616,6 +6616,9 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
   // stale, which is fine for a per-scan stop refresh.
   const engine = getEngine(userId);
   const regimeVix = engine.adaptiveRegime?.vix;
+  // Delayed-trail activation knobs — gate the resting broker stop exactly as
+  // the exit logic does (audit #18).
+  const riskLimits = await loadRiskLimits(userId);
 
   try {
     // Get only open stop orders (avoids old filled/cancelled orders eating the limit)
@@ -6653,7 +6656,22 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
         strategy.trailingStopPct,
         { atr: pos.atr, vix: regimeVix, rsi: pos.rsi }
       );
-      const trailStop = pos.peakPrice * (1 - dynTrailPct);
+      // Honor the delayed-trail activation gate exactly as runExitCheck/runScan
+      // do (audit #18): while the trail is dormant the broker stop falls back to
+      // the fixed/breakeven floor (pos.stopLoss), not the trail level —
+      // otherwise the resting broker stop contradicts the engine's own exit
+      // logic and a normal early pullback gets stopped out at the broker, the
+      // exact pullback the delayed-trail knob is configured to ride through.
+      const positionAgeBars = tradingDaysBetween(pos.entryDate, new Date());
+      const peakProfitPct =
+        pos.entryPrice > 0 ? (pos.peakPrice - pos.entryPrice) / pos.entryPrice : 0;
+      const trailActive = isTrailActive({
+        positionAgeBars,
+        peakProfitPct,
+        trailActivationBars: riskLimits.trailActivationBars,
+        trailActivationProfitPct: riskLimits.trailActivationProfitPct,
+      });
+      const trailStop = trailActive ? pos.peakPrice * (1 - dynTrailPct) : 0;
       // v3 — use pos.stopLoss as the fixed-stop floor instead of
       // recomputing from entryPrice * (1 - strategy.stopLossPct).
       // pos.stopLoss carries:
@@ -6840,8 +6858,14 @@ async function placeDisasterStops(userId: string | null): Promise<void> {
       const trailStop = peakPrice * (1 - dynTrailPct);
       const fixedStop = pos.avgEntryPrice * (1 - strategy.stopLossPct);
 
-      // Use the tightest (highest) stop that protects gains
-      const stopPrice = Math.max(disasterStop, trailStop, fixedStop).toFixed(2);
+      // Use the tightest (highest) stop that protects gains, but clamp below
+      // current price (audit #17). On a position that gapped down past its
+      // fixed/disaster stop, Math.max selects a level ABOVE market, which
+      // Alpaca rejects (stop_price >= last) — leaving the position silently
+      // broker-unprotected. A stop just under market still protects and fires
+      // on the next downtick when the level is already breached.
+      const rawStop = Math.max(disasterStop, trailStop, fixedStop);
+      const stopPrice = Math.min(rawStop, pos.currentPrice * (1 - 0.001)).toFixed(2);
 
       try {
         await placeEngineOrder(resolved.client, {
@@ -6883,7 +6907,11 @@ async function placeSafetyStops(userId: string | null): Promise<void> {
       if (pos.qty <= 0) continue;
 
       const strategy = await resolveStrategy(userId, pos.symbol);
-      const stopPrice = (pos.avgEntryPrice * (1 - strategy.stopLossPct)).toFixed(2);
+      // Clamp below current price (audit #17) — a gapped-down position whose
+      // fixed stop sits above market would otherwise be rejected by Alpaca and
+      // left broker-unprotected.
+      const rawStop = pos.avgEntryPrice * (1 - strategy.stopLossPct);
+      const stopPrice = Math.min(rawStop, pos.currentPrice * (1 - 0.001)).toFixed(2);
 
       try {
         await placeEngineOrder(client, {
