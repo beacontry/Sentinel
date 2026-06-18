@@ -124,10 +124,12 @@ function detectBullFlag(
     const tightness = consRange / impulseMagnitude;
     if (tightness > params.maxTightness) continue;
 
-    const avgConsVol =
-      consolidation.reduce((s, b) => s + b.volume, 0) / k || 1;
-    const volumeMultiple = current.volume / avgConsVol;
-    const volumeSurge = volumeMultiple >= params.minVolumeSurge;
+    // A zero-volume consolidation (halted/illiquid base) must NOT auto-confirm
+    // the breakout. The old `/ k || 1` substituted 1 share, fabricating a huge
+    // volumeMultiple (audit #70). Require a real positive average.
+    const avgConsVol = consolidation.reduce((s, b) => s + b.volume, 0) / k;
+    const volumeMultiple = avgConsVol > 0 ? current.volume / avgConsVol : 0;
+    const volumeSurge = avgConsVol > 0 && volumeMultiple >= params.minVolumeSurge;
 
     return {
       consolidationLength: k,
@@ -315,16 +317,20 @@ export function analyzeMomentumBars(
     };
   }
 
-  // Score the confirmed setup. Tighter flag + bigger impulse + bigger volume = stronger.
-  const tightnessScore = 1 - pattern.tightness / params.maxTightness; // 0..1
-  const impulseScore = Math.min(
-    1,
-    (pattern.impulsePct - params.minImpulsePct) / (0.05 - params.minImpulsePct)
+  // Score the confirmed setup. Tighter flag + bigger impulse + bigger volume =
+  // stronger. The hardcoded ceilings (0.05 impulse, 3× volume) can fall at or
+  // below a tuned min, making the denominator <= 0 → NaN/Infinity/negative
+  // sub-scores (audit #69). Floor each denominator positive and clamp every
+  // sub-score to [0,1].
+  const clamp01 = (x: number) => (Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0);
+  const tightnessScore = clamp01(1 - pattern.tightness / params.maxTightness);
+  const impulseCeil = Math.max(params.minImpulsePct + 1e-6, 0.05);
+  const impulseScore = clamp01(
+    (pattern.impulsePct - params.minImpulsePct) / (impulseCeil - params.minImpulsePct)
   );
-  const volumeScore = Math.min(
-    1,
-    (pattern.volumeMultiple - params.minVolumeSurge) /
-      (3 - params.minVolumeSurge)
+  const volumeCeil = Math.max(params.minVolumeSurge + 1e-6, 3);
+  const volumeScore = clamp01(
+    (pattern.volumeMultiple - params.minVolumeSurge) / (volumeCeil - params.minVolumeSurge)
   );
   const compositeScore =
     tightnessScore * 0.35 + impulseScore * 0.3 + volumeScore * 0.35;

@@ -166,6 +166,9 @@ async function fetchSectorMovers(): Promise<SymbolChange[]> {
       if (bars.length < 2) throw new Error(`Insufficient data for ${sym}`);
       const prev = bars[bars.length - 2].close;
       const curr = bars[bars.length - 1].close;
+      // Guard the divisor (audit #47): a non-positive prior close makes
+      // changePct Infinity/NaN. Throw so allSettled drops this symbol.
+      if (!(prev > 0)) throw new Error(`Non-positive prior close for ${sym}`);
       return {
         symbol: sym,
         changePct: ((curr - prev) / prev) * 100,
