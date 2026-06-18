@@ -344,7 +344,21 @@ export const placeBrokerOrderSchema = z
       message: "Bracket orders need at least a stop-loss or take-profit",
       path: ["orderClass"],
     }
-  );
+  )
+  // Every numeric field arrives as a string off the wire; reject
+  // NaN/Infinity/negative/zero so a malformed qty/notional/price can never
+  // reach the broker or position-sizing math (audit #78).
+  .superRefine((v, ctx) => {
+    const numericFields = ["qty", "notional", "limitPrice", "stopPrice", "takeProfitPrice", "stopLossPrice"] as const;
+    for (const field of numericFields) {
+      const raw = v[field];
+      if (raw === undefined) continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: `${field} must be a positive number` });
+      }
+    }
+  });
 
 // ─── Inferred Types ───────────────────────────────────────────────
 

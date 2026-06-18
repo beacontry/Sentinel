@@ -7,6 +7,15 @@ import { z } from "zod";
 
 const productionRequired = process.env.NODE_ENV === "production";
 
+/** ENCRYPTION_KEY must decode to exactly 32 bytes (AES-256). Mirrors crypto.ts's
+ *  getEncryptionKey: accept 64 hex chars or 44 base64 chars. A 32-CHARACTER hex
+ *  string is only 16 bytes and passed the old `.min(32)` char check, then
+ *  crashed every crypto call at runtime instead of failing loudly at boot
+ *  (audit #84). */
+function decodesTo32Bytes(key: string): boolean {
+  return Buffer.from(key, "hex").length === 32 || Buffer.from(key, "base64").length === 32;
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 
@@ -20,8 +29,8 @@ const envSchema = z.object({
 
   // Required for at-rest encryption (broker tokens, etc.)
   ENCRYPTION_KEY: productionRequired
-    ? z.string().min(32, "ENCRYPTION_KEY must be 32+ chars in production")
-    : z.string().optional(),
+    ? z.string().refine(decodesTo32Bytes, "ENCRYPTION_KEY must decode to 32 bytes (64 hex or 44 base64 chars)")
+    : z.string().refine(decodesTo32Bytes, "ENCRYPTION_KEY must decode to 32 bytes (64 hex or 44 base64 chars)").optional(),
 
   // Required for cron route authentication
   CRON_SECRET: productionRequired

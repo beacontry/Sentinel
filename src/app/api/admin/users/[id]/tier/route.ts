@@ -40,7 +40,9 @@ export async function PATCH(
   if (auth instanceof Response) return auth;
 
   const { id } = await params;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+  // Strict UUID (audit #80) — the old /^[0-9a-f-]{36}$/ accepted any 36-char
+  // hex/dash soup (e.g. all-dashes), not a well-formed UUID.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
   }
 
