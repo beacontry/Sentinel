@@ -60,6 +60,10 @@ export interface ScreenerCache {
    * only share the in-flight promise when it matches its own timeframe —
    * otherwise it would receive 5m-bar signals labelled as a daily scan. */
   scanInFlightType: "daily" | "intraday" | null;
+  /** Timeframe of the COMPLETED results currently in `results` (audit #76):
+   *  daily (90×1d) and intraday (2d×5m) scans share one array, so consumers
+   *  couldn't tell a 1d-bar signal from a 5m-bar one. Set on each completion. */
+  resultsTimeframe: "daily" | "intraday" | null;
   traderPushResults: TraderPushResult[];
 }
 
@@ -74,7 +78,7 @@ const g = globalThis as typeof globalThis & {
    * refreshes + recovery). */
   __screenerDailyTimeout?: ReturnType<typeof setTimeout> | null;
 };
-g.__screenerCache ??= { results: [], scannedAt: new Date(0), scanStartedAt: null, scanning: false, scanInFlight: null, scanInFlightType: null, traderPushResults: [] };
+g.__screenerCache ??= { results: [], scannedAt: new Date(0), scanStartedAt: null, scanning: false, scanInFlight: null, scanInFlightType: null, resultsTimeframe: null, traderPushResults: [] };
 
 export function getScreenerCache(): ScreenerCache {
   return g.__screenerCache!;
@@ -264,6 +268,7 @@ async function runScanInternal(): Promise<ScreenerResult[]> {
 
   cache.results = results;
   cache.scannedAt = new Date();
+  cache.resultsTimeframe = cache.scanInFlightType; // tag the feed that produced these results (audit #76)
 
   log.info(
     {
@@ -383,6 +388,7 @@ async function runIntradayScanInternal(): Promise<ScreenerResult[]> {
 
   cache.results = results;
   cache.scannedAt = new Date();
+  cache.resultsTimeframe = cache.scanInFlightType; // tag the feed that produced these results (audit #76)
 
   log.info(
     {
@@ -486,10 +492,19 @@ export function startScreenerScheduler(): void {
     // Missed-daily recovery: server started after 9:30 with no scan
     // yet today. The setTimeout couldn't fire because it was scheduled
     // for tomorrow's open. Trigger a daily scan here.
-    const etStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
-    const et = new Date(etStr);
-    const scanDateStr = cache.scannedAt.toLocaleDateString("en-US", { timeZone: "America/New_York" });
-    const todayStr = et.toLocaleDateString("en-US");
+    // Compare both timestamps as ET calendar days via ONE timezone-aware
+    // formatter (audit #77). The old code round-tripped `now` through
+    // new Date(toLocaleString(...)) — re-parsing an ET-localized string in the
+    // server's local TZ — then compared it against an ET-formatted scan date,
+    // so the day boundary was wrong whenever the server wasn't on ET.
+    const etDay = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const scanDateStr = etDay.format(cache.scannedAt);
+    const todayStr = etDay.format(now);
     if (scanDateStr !== todayStr) {
       log.info("Screener scheduler: missed-daily recovery — no scan yet today");
       await runDailyScan("missed-daily recovery");
