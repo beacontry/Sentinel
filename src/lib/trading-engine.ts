@@ -801,7 +801,10 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
       const maxConsecutiveLosses =
         profile.maxConsecutiveLosses != null ? profile.maxConsecutiveLosses : defaults.maxConsecutiveLosses;
       // Phase 4 — engine intelligence
-      const maxSectorExposurePct = profile.maxSectorExposurePct ?? defaults.maxSectorExposurePct;
+      // Stored as a PERCENT (0..100) like the other *Pct fields; engine uses a
+      // fraction, so divide by 100 (audit #52). 0/null = disabled.
+      const maxSectorExposurePct =
+        profile.maxSectorExposurePct != null ? profile.maxSectorExposurePct / 100 : defaults.maxSectorExposurePct;
       const adaptiveModeEnabled = profile.adaptiveModeEnabled ?? defaults.adaptiveModeEnabled;
       const earningsBlackoutDays = profile.earningsBlackoutDays ?? defaults.earningsBlackoutDays;
       const trailActivationProfitPct = profile.trailActivationProfitPct ?? defaults.trailActivationProfitPct;
@@ -906,7 +909,10 @@ async function canPlaceBuyOrder(
   // fails (best-effort; we don't want to block trades on a cache miss).
   if (riskLimits.earningsBlackoutDays > 0) {
     try {
-      const inBlackout = await isInEarningsBlackout(symbol);
+      // Use the user's configured window, not the hardcoded 5-day default
+      // (audit #49) — gating on the configured value but then checking a fixed
+      // 5 days meant a 10-day setting only ever blocked 5.
+      const inBlackout = await isInEarningsBlackout(symbol, riskLimits.earningsBlackoutDays);
       if (inBlackout) {
         return {
           ok: false,
