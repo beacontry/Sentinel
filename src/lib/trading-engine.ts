@@ -7351,6 +7351,7 @@ export function getAllEngineSnapshots(): Array<{
   consecutiveBrokerFailures: number;
   dailyLoss: number;
   dailyLossLimit: number;
+  bootEquity: number | null;
   recentErrors: string[];
 }> {
   if (!g.__tradingEngines) return [];
@@ -7366,6 +7367,7 @@ export function getAllEngineSnapshots(): Array<{
       consecutiveBrokerFailures: engine.consecutiveBrokerFailures,
       dailyLoss: engine.dailyLoss,
       dailyLossLimit: engine.dailyLossLimit,
+      bootEquity: engine.boot?.equity ?? null,
       recentErrors: engine.errors.slice(-5),
     });
   }
