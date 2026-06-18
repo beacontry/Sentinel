@@ -50,7 +50,12 @@ export function decideAlert(
   const risingEdge = conditionMet && !lastConditionMet;
   if (!risingEdge) return { fire: false, persistState };
   if (lastTriggered && now - lastTriggered.getTime() < cooldownMs) {
-    return { fire: false, persistState };
+    // Suppressed purely by cooldown — do NOT consume the edge (audit #39).
+    // Keep lastConditionMet unchanged so the next evaluation after the cooldown
+    // expires re-detects the still-true condition as a rising edge and fires.
+    // Persisting lastConditionMet=true here would permanently swallow the alert
+    // until the condition clears and re-rises.
+    return { fire: false, persistState: false };
   }
   return { fire: true, persistState };
 }

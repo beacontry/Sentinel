@@ -31,12 +31,13 @@ describe("decideAlert — edge-trigger + cooldown state machine", () => {
     expect(decideAlert(false, false, null, NOW)).toEqual({ fire: false, persistState: false });
   });
 
-  it("suppresses a rising edge inside the cooldown but still consumes the edge", () => {
-    // last fired 30 min ago → cooldown blocks, but state must persist so it
-    // doesn't fire again until a fresh false→true after cooldown.
+  it("suppresses a rising edge inside the cooldown WITHOUT consuming the edge", () => {
+    // Audit #39: a cooldown-suppressed rising edge must NOT be consumed — keep
+    // lastConditionMet unchanged so the still-true condition fires once the
+    // cooldown expires, instead of being permanently swallowed.
     expect(decideAlert(true, false, new Date(NOW - 30 * 60 * 1000), NOW)).toEqual({
       fire: false,
-      persistState: true,
+      persistState: false,
     });
   });
 

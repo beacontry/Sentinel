@@ -11,6 +11,8 @@ import { isMarketOpen } from "@/lib/market-hours";
 
 const log = createRouteLogger("cron-evaluate-alerts");
 
+const g = globalThis as typeof globalThis & { __alertCronRunning?: boolean };
+
 /**
  * Scheduled alert evaluator. Replaces the old "evaluate when someone happens
  * to analyze the symbol" trigger, which keyed rules by symbol-only (so a
@@ -33,6 +35,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: "skipped", reason: "market_closed" });
   }
 
+  // Concurrency guard (audit #40): two overlapping cron invocations would
+  // double-fire and race the edge-trigger state (both read lastConditionMet
+  // before either writes). The engine runs in-process, so a single-process
+  // in-flight flag is sufficient — a second concurrent run skips cleanly.
+  if (g.__alertCronRunning) {
+    return NextResponse.json({ status: "skipped", reason: "already_running" });
+  }
+  g.__alertCronRunning = true;
+  try {
   const rows = await db
     .selectDistinct({ symbol: alertRules.symbol })
     .from(alertRules)
@@ -74,4 +85,7 @@ export async function GET(request: NextRequest) {
 
   log.info({ symbols: symbols.length, evaluated, fired, errored }, "Alert evaluation cron complete");
   return NextResponse.json({ status: "ok", symbols: symbols.length, evaluated, fired, errored });
+  } finally {
+    g.__alertCronRunning = false;
+  }
 }
