@@ -4009,6 +4009,10 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
         }
         const tentryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
+        // Accumulate this buy in the sector context so a later same-sector buy
+        // in this same scan sees it — otherwise N same-sector buys each read a
+        // stale pre-scan snapshot and all bypass the cap (audit #15).
+        tacticalSectorCtx?.positionMarketValues.set(symbol, buyNotional);
         pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(symbol, "tactical_entry", "BUY", qty, quote.price, "PENDING", null, "Tactical entry: SPY above SMA", tentryOrder.id, null, engine.userId);
 
@@ -4403,6 +4407,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         }
         const tsEntryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
+        tsSectorCtx?.positionMarketValues.set(symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(symbol, "tactical_smart_entry", "BUY", qty, price, "PENDING", null, "Smart: momentum + signal + invVol weighted", tsEntryOrder.id, null, engine.userId);
         tradesThisScan++;
@@ -4594,6 +4599,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         }
         const swapBuyOrder = await placeEngineOrder(client, { symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
+        tsSectorCtx?.positionMarketValues.set(replacement.symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(replacement.symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(replacement.symbol, "tactical_smart_swap_buy", "BUY", qty, replacement.price, "PENDING", null, `Swap in: STRONG_BUY score ${replacement.score.toFixed(1)}`, swapBuyOrder.id, null, engine.userId);
         tradesThisScan++;
@@ -4666,6 +4672,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         }
         const addOrder = await placeEngineOrder(client, { symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
         recordOrderPlacement(engine, "buy", buyNotional);
+        tsSectorCtx?.positionMarketValues.set(cand.symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(cand.symbol); // Phase 7: prevent re-fire within this scan
         await logTrade(cand.symbol, "tactical_smart_add", "BUY", qty, cand.price, "PENDING", null, `STRONG_BUY add: score ${cand.score.toFixed(1)}`, addOrder.id, null, engine.userId);
         tradesThisScan++;
@@ -5563,6 +5570,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
             limitPrice: String(limitPrice),
           });
           recordOrderPlacement(engine, "buy", buyNotional);
+          scanSectorCtx?.positionMarketValues.set(symbol, buyNotional); // accumulate in-scan (audit #15)
           pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
 
           tradesThisScan++;
@@ -5767,6 +5775,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           limitPrice,
         });
         recordOrderPlacement(engine, "buy", orderCost);
+        scanSectorCtx?.positionMarketValues.set(candFull.symbol, orderCost); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(candFull.symbol);
         engine.cooldowns.set(candFull.symbol, Date.now());
         await logTrade(
