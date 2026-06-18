@@ -84,6 +84,13 @@ async function writeAlert(args: {
 }
 
 export async function runWatchdog(): Promise<void> {
+  // In-flight guard (audit #59): the 60s interval can fire again while a slow
+  // cycle (many engines × awaited DB/push calls) is still running. Two
+  // concurrent cycles both pass the recentlyAlerted dedup check before either
+  // commits and double-write/double-push. Claim synchronously before any await.
+  if (g.__engineWatchdogRunning) return;
+  g.__engineWatchdogRunning = true;
+  try {
   const snapshots = getAllEngineSnapshots();
   if (snapshots.length === 0) return;
 
@@ -162,10 +169,14 @@ export async function runWatchdog(): Promise<void> {
       }
     }
   }
+  } finally {
+    g.__engineWatchdogRunning = false;
+  }
 }
 
 const g = globalThis as typeof globalThis & {
   __engineWatchdogId?: ReturnType<typeof setInterval>;
+  __engineWatchdogRunning?: boolean;
 };
 
 const WATCHDOG_INTERVAL_MS = 60 * 1000;
