@@ -224,10 +224,13 @@ async function fetchSymbolBars(symbol: string): Promise<Bar[]> {
 
     // Fetch only the missing days + a small overlap for safety
     const provider = getMarketDataProvider();
+    let incTimeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       const newBars = await Promise.race([
         provider.fetchBars(symbol, daysSince + 5, "1d"),
-        new Promise<Bar[]>((_, reject) => setTimeout(() => reject(new Error("timeout")), 10000)),
+        new Promise<Bar[]>((_, reject) => {
+          incTimeoutId = setTimeout(() => reject(new Error("timeout")), 10000);
+        }),
       ]);
 
       if (newBars.length > 0) {
@@ -247,21 +250,28 @@ async function fetchSymbolBars(symbol: string): Promise<Bar[]> {
       return cached.bars; // fetch failed, use cached
     } catch {
       return cached.bars; // timeout, use cached
+    } finally {
+      clearTimeout(incTimeoutId); // clear the race timer so it doesn't linger (audit #74)
     }
   }
 
   // No cache or too small — full fetch
   const provider = getMarketDataProvider();
+  let fullTimeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     const bars = await Promise.race([
       provider.fetchBars(symbol, DATA_DAYS, "1d"),
-      new Promise<Bar[]>((_, reject) => setTimeout(() => reject(new Error("timeout")), 10000)),
+      new Promise<Bar[]>((_, reject) => {
+        fullTimeoutId = setTimeout(() => reject(new Error("timeout")), 10000);
+      }),
     ]);
     if (bars.length > 200) await cacheBars(symbol, bars);
     return bars;
   } catch (err) {
     logger.warn({ symbol, err: (err as Error).message }, "Failed to fetch");
     return [];
+  } finally {
+    clearTimeout(fullTimeoutId); // clear the race timer (audit #74)
   }
 }
 

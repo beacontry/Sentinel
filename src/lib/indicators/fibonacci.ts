@@ -79,12 +79,15 @@ export function calculateFibLevels(bars: Bar[], lookback = 50): FibonacciLevels 
 
   const range = swingHigh.price - swingLow.price;
 
-  // Direction: if swing high came after swing low, price is trending up (retrace from high)
-  // If swing low came after swing high, price is trending down (retrace from low)
+  // Direction (audit #67): if the swing LOW is more recent than the swing HIGH,
+  // price is in a downtrend → project retracement levels UP from the low;
+  // otherwise (uptrend) retrace DOWN from the high. The old code always
+  // retraced from the high, mislabeling downtrend levels.
+  const downtrend = swingLow.date > swingHigh.date;
   const levels = FIB_RATIOS.map(({ ratio, label }) => ({
     ratio,
     label,
-    price: swingHigh.price - ratio * range,
+    price: downtrend ? swingLow.price + ratio * range : swingHigh.price - ratio * range,
   }));
 
   return {

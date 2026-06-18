@@ -74,9 +74,16 @@ export async function GET(request: NextRequest) {
         )
     );
 
+    let skippedNoPrice = 0;
     for (const t of engineTrades) {
       const price = t.fillPrice ?? t.limitPrice ?? 0;
-      if (price <= 0) continue;
+      if (price <= 0) {
+        // Surface dropped rows (audit #86) instead of silently orphaning their
+        // disposition and desyncing FIFO — a FILLED row with no fill/limit
+        // price is a data anomaly worth observing.
+        skippedNoPrice++;
+        continue;
+      }
       const executedAt = t.fillTime ?? t.createdAt;
 
       // Normalize engine action vocabulary (BUY / SELL / manual_close) to BUY/SELL
@@ -89,6 +96,13 @@ export async function GET(request: NextRequest) {
         price,
         executedAt: executedAt.toISOString(),
       });
+    }
+
+    if (skippedNoPrice > 0) {
+      log.warn(
+        { userId: session.userId, skippedNoPrice, year },
+        "Tax report skipped FILLED engine trades with no fill/limit price — disposition may be incomplete"
+      );
     }
 
     if (allTrades.length === 0) {
