@@ -9,13 +9,25 @@ import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("alerts");
 
-const createAlertSchema = z.object({
-  symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
-  indicatorField: z.string().min(1).max(100),
-  operator: z.string().min(1).max(20),
-  value: z.number(),
-  channel: z.string().min(1).max(50).default("push"),
-});
+const createAlertSchema = z
+  .object({
+    symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
+    indicatorField: z.string().min(1).max(100),
+    operator: z.string().min(1).max(20),
+    value: z.number(),
+    channel: z.string().min(1).max(50).default("push"),
+  })
+  .superRefine((d, ctx) => {
+    // price_above_sma only supports the SMA periods the analyzer computes.
+    // Reject others up front rather than silently evaluating the wrong MA (#9).
+    if (d.operator === "price_above_sma" && d.value !== 20 && d.value !== 50) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["value"],
+        message: "price_above_sma supports only SMA period 20 or 50",
+      });
+    }
+  });
 
 const updateAlertSchema = z.object({
   id: z.string().uuid(),

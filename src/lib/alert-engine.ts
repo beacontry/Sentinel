@@ -32,11 +32,20 @@ const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour — secondary anti-spam guard
  */
 export function decideAlert(
   conditionMet: boolean,
-  lastConditionMet: boolean,
+  lastConditionMet: boolean | null,
   lastTriggered: Date | null,
   now: number,
   cooldownMs: number = COOLDOWN_MS
 ): { fire: boolean; persistState: boolean } {
+  // First observation (lastConditionMet === null): the rule has never been
+  // evaluated. Record the current state as a baseline but do NOT fire — a
+  // freshly-created rule whose level is ALREADY true (price already above the
+  // SMA, MACD already positive days ago) must signal the next true CROSS, not
+  // the pre-existing state. Without this the very first cron eval emits a
+  // spurious "crossover detected" (audit #10).
+  if (lastConditionMet === null) {
+    return { fire: false, persistState: true };
+  }
   const persistState = conditionMet !== lastConditionMet;
   const risingEdge = conditionMet && !lastConditionMet;
   if (!risingEdge) return { fire: false, persistState };
@@ -61,8 +70,14 @@ export function checkIndicatorRule(ruleType: string, threshold: number, ctx: Ale
     case "ema_crossover":
       return ind.ema_9 !== null && ind.ema_21 !== null && ind.ema_9 > ind.ema_21;
     case "price_above_sma":
+      // Map the configured period to the SMA the analyzer actually computes
+      // (only 20 and 50). Any other period (100, 200, ...) cannot be evaluated
+      // here, so DON'T fire — the old code silently fell through to SMA-20 for
+      // every non-50 value, testing a different MA than the user configured
+      // (audit #9). Unsupported periods are also rejected at rule creation.
       if (threshold === 50) return ind.sma_50 !== null && ctx.price > ind.sma_50;
-      return ind.sma_20 !== null && ctx.price > ind.sma_20; // default SMA 20
+      if (threshold === 20) return ind.sma_20 !== null && ctx.price > ind.sma_20;
+      return false;
     default:
       return false;
   }
@@ -154,7 +169,7 @@ function buildMessage(name: string, ruleType: string, threshold: number, ctx: Al
     rsi_above: `${ctx.symbol} RSI rose above ${threshold} (overbought territory)`,
     macd_crossover: `${ctx.symbol} MACD bullish crossover detected`,
     ema_crossover: `${ctx.symbol} EMA 9/21 bullish crossover detected`,
-    price_above_sma: `${ctx.symbol} price crossed above SMA ${threshold === 50 ? 50 : 20}`,
+    price_above_sma: `${ctx.symbol} price crossed above SMA ${threshold}`,
   };
   return labels[ruleType] ?? `Alert "${name}" triggered for ${ctx.symbol}`;
 }
