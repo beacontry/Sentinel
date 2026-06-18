@@ -191,6 +191,17 @@ const symbolSectors: Record<string, string> = {
   XLP: "ETF", XLY: "ETF", XLU: "ETF", XLB: "ETF", XLRE: "ETF",
   XLC: "ETF",
   UVXY: "ETF",
+
+  // ─── Added 2026-06 (audit #34) ───────────────────────────────────────
+  // S&P 500 names that were defaulting to "Other", which lumped unrelated
+  // companies (BlackRock=Financials, Walgreens=Staples, Marathon Oil=Energy)
+  // into one synthetic sector for the exposure cap. Project naming, not GICS.
+  AAL: "Industrials", ACGL: "Financials", AMP: "Financials", BIO: "Healthcare",
+  BLK: "Financials", CMA: "Financials", DAY: "Technology", FBHS: "Industrials",
+  FISV: "Technology", MRO: "Energy", OGN: "Healthcare", PVH: "Consumer Discretionary",
+  QRVO: "Technology", RE: "Financials", RHI: "Industrials", ROL: "Industrials",
+  SEE: "Materials", SJM: "Consumer Staples", TECH: "Healthcare", WBA: "Consumer Staples",
+  XRAY: "Healthcare",
 };
 
 export function getSymbolSector(symbol: string): string {
