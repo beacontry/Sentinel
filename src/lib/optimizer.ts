@@ -107,6 +107,10 @@ const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
 // Per-side slippage as a fraction (5 bps → 0.0005). See BACKTEST_COSTS.
 const SLIP = BACKTEST_COSTS.slippageBps / 10000;
 const COMMISSION = BACKTEST_COSTS.commissionPerFill;
+// Trailing-stop floor — mirrors the live engine's TRAIL_FLOOR (2%) and
+// backtester.ts. The profit-based decay range is clamped at 0 so a sub-floor
+// base trail can't be widened toward it (audit #39).
+const TRAIL_FLOOR = 0.02;
 
 // Fixed position sizing for backtesting (user risk profiles control live sizing)
 const BACKTEST_POSITION_PCT = 0.10;
@@ -310,12 +314,74 @@ export interface PortfolioData {
   dateIdx: Map<string, number>;
   barLookup: Map<string, Map<string, Bar>>; // symbol → dateKey → Bar
   trainEnd: number;   // index into dates
+  // Equal-weight buy-and-hold PORTFOLIO return for each segment, on the same
+  // INITIAL_CASH + integer-share + entry-cost basis as the strategy's
+  // totalReturn (see portfolioBuyHold). Named "avg…" for back-compat; the
+  // value is now a portfolio terminal-wealth return, not an average of
+  // per-symbol simple returns (audit #11).
   avgBuyHoldTrain: number;
   avgBuyHoldTest: number;
 }
 
 function normalizeDate(d: string): string {
   return d.split("T")[0];
+}
+
+/**
+ * Equal-weight buy-and-hold PORTFOLIO return over [startIdx, endIdx), as a
+ * percent of INITIAL_CASH (audit #11).
+ *
+ * The GA's excessReturn = strategy.totalReturn − benchmark must compare like
+ * with like. The old benchmark was the equal-weight AVERAGE of each symbol's
+ * single-name simple return — an incomparable basis against the strategy's
+ * compounded, cash-constrained, ≤10-name, integer-share portfolio measured as
+ * terminal wealth on INITIAL_CASH. This simulates the benchmark the SAME way:
+ *
+ *  - Split INITIAL_CASH equally across every symbol with a bar in the window.
+ *  - Buy INTEGER shares at each symbol's first available close, paying the same
+ *    entry slippage + commission the strategy pays on entries; leftover cash
+ *    (rounding + unspendable sleeves) sits idle, as a real buy-and-hold would.
+ *  - Mark each holding at its last available close (no exit cost) — matching how
+ *    the strategy values its still-open terminal positions in finalEquity.
+ *
+ * For a fully-present universe this lands a touch below the old mean-of-returns
+ * (integer-share cash drag + entry cost); under point-in-time membership it also
+ * tracks which names were actually holdable. Either way it is now a true
+ * portfolio-vs-portfolio excess return.
+ */
+export function portfolioBuyHold(
+  barLookup: Map<string, Map<string, Bar>>,
+  dates: string[],
+  startIdx: number,
+  endIdx: number
+): number {
+  const sleeves: Array<{ first: number; last: number }> = [];
+  for (const [, lookup] of barLookup) {
+    let first: number | null = null;
+    let last: number | null = null;
+    for (let i = startIdx; i < endIdx; i++) {
+      const bar = lookup.get(dates[i]);
+      if (bar && bar.close > 0) {
+        if (first === null) first = bar.close;
+        last = bar.close;
+      }
+    }
+    if (first !== null && last !== null) sleeves.push({ first, last });
+  }
+  if (sleeves.length === 0) return 0;
+
+  const perSleeveCash = INITIAL_CASH / sleeves.length;
+  let cash = INITIAL_CASH;
+  let holdingsValue = 0;
+  for (const s of sleeves) {
+    const entryFill = s.first * (1 + SLIP);
+    const shares = Math.floor(perSleeveCash / entryFill);
+    if (shares <= 0) continue; // sleeve too small to buy a whole share — cash idles
+    cash -= shares * entryFill + COMMISSION;
+    holdingsValue += shares * s.last; // marked at last close, like the strategy's terminal MTM
+  }
+  const terminal = cash + holdingsValue;
+  return ((terminal - INITIAL_CASH) / INITIAL_CASH) * 100;
 }
 
 export function buildPortfolioData(allBars: Map<string, Bar[]>, trainPct: number): PortfolioData {
@@ -339,29 +405,11 @@ export function buildPortfolioData(allBars: Map<string, Bar[]>, trainPct: number
   const trainEnd = Math.floor(dates.length * (trainPct / 100));
   const symbols = [...allBars.keys()];
 
-  // Compute average buy-and-hold for train and test
-  let bhTrainSum = 0, bhTestSum = 0, bhTrainN = 0, bhTestN = 0;
-  for (const [, lookup] of barLookup) {
-    // Train period
-    let firstTrain: number | null = null, lastTrain: number | null = null;
-    let firstTest: number | null = null, lastTest: number | null = null;
-    for (let i = 0; i < trainEnd; i++) {
-      const bar = lookup.get(dates[i]);
-      if (bar) { if (firstTrain === null) firstTrain = bar.close; lastTrain = bar.close; }
-    }
-    for (let i = trainEnd; i < dates.length; i++) {
-      const bar = lookup.get(dates[i]);
-      if (bar) { if (firstTest === null) firstTest = bar.close; lastTest = bar.close; }
-    }
-    if (firstTrain !== null && lastTrain !== null && firstTrain > 0) {
-      bhTrainSum += ((lastTrain - firstTrain) / firstTrain) * 100;
-      bhTrainN++;
-    }
-    if (firstTest !== null && lastTest !== null && firstTest > 0) {
-      bhTestSum += ((lastTest - firstTest) / firstTest) * 100;
-      bhTestN++;
-    }
-  }
+  // Equal-weight buy-and-hold PORTFOLIO benchmark for each segment — same
+  // INITIAL_CASH + integer-share + entry-cost basis as the strategy, so
+  // excessReturn is a like-for-like portfolio comparison (audit #11).
+  const avgBuyHoldTrain = portfolioBuyHold(barLookup, dates, 0, trainEnd);
+  const avgBuyHoldTest = portfolioBuyHold(barLookup, dates, trainEnd, dates.length);
 
   return {
     symbols,
@@ -369,8 +417,8 @@ export function buildPortfolioData(allBars: Map<string, Bar[]>, trainPct: number
     dateIdx,
     barLookup,
     trainEnd,
-    avgBuyHoldTrain: bhTrainN > 0 ? bhTrainSum / bhTrainN : 0,
-    avgBuyHoldTest: bhTestN > 0 ? bhTestSum / bhTestN : 0,
+    avgBuyHoldTrain,
+    avgBuyHoldTest,
   };
 }
 
@@ -458,16 +506,27 @@ export function portfolioBacktest(
       const bar = data.barLookup.get(pos.symbol)?.get(date);
       if (!bar) continue;
 
-      if (bar.high > pos.peakPrice) pos.peakPrice = bar.high;
+      // Intrabar look-ahead fix (audit #9/#10): anchor THIS bar's trail to the
+      // peak as of the PRIOR bar. Folding this bar's high into the peak before
+      // testing this bar's low against the just-raised trail assumes high-
+      // before-low ordering and over-rewards tight trailing stops — exactly the
+      // GA-tuned param (trailingStopPct). The high is folded into the peak only
+      // AFTER the exit checks (below), so it tightens the NEXT bar's trail.
+      // Mirrors backtester.ts.
+      const peakForTrail = pos.peakPrice;
       let exitPrice: number | null = null;
 
       // Stops with profit-based tightening. pos.stopLoss is the mutable
       // fixed-stop floor (mirrors the live engine's TrackedPosition.stopLoss).
       // Initialized to entry × (1 - stopLossPct), promoted upward by take-
       // profit graduation to entry × 1.30 when graduation gate fires below.
-      const profitPct = (pos.peakPrice - pos.entryPrice) / pos.entryPrice;
-      const dynTrail = profitPct > 0 ? 0.02 + (params.trailingStopPct - 0.02) * Math.exp(-3 * profitPct) : params.trailingStopPct;
-      const trailStop = pos.peakPrice * (1 - dynTrail);
+      const profitPct = (peakForTrail - pos.entryPrice) / pos.entryPrice;
+      // Trail-floor clamp (audit #39): Math.max(0, base - floor) so a base
+      // trail tighter than the 2% floor isn't widened toward it as profit grows
+      // (the old `0.02 + (base - 0.02)*exp(…)` inverted for base < 2%). Matches
+      // the live engine's getDynamicTrailingPct and backtester.ts.
+      const dynTrail = profitPct > 0 ? TRAIL_FLOOR + Math.max(0, params.trailingStopPct - TRAIL_FLOOR) * Math.exp(-3 * profitPct) : params.trailingStopPct;
+      const trailStop = peakForTrail * (1 - dynTrail);
 
       // Take-profit graduation (PR 14 parity, 2026-05-26). The GA tunes
       // takeProfitAtrMult; the optimizer historically treated that as a
@@ -499,16 +558,22 @@ export function portfolioBacktest(
       // Effective stop check uses the (possibly graduation-promoted)
       // pos.stopLoss instead of recomputing entry × (1 - stopLossPct)
       // every bar — recomputing would silently undo the graduation lock.
-      if (!exitPrice && bar.low <= Math.max(pos.stopLoss, trailStop)) {
-        exitPrice = Math.max(pos.stopLoss, trailStop);
+      // Gap-through fill (audit #48): a bar that OPENED below the stop blew
+      // through it overnight, so fill at min(stopLevel, bar.open) rather than
+      // optimistically at the (higher) stop level — otherwise gap-down exits
+      // are systematically overstated and bias the GA's risk picture upward.
+      const stopLevel = Math.max(pos.stopLoss, trailStop);
+      if (!exitPrice && bar.low <= stopLevel) {
+        exitPrice = Math.min(stopLevel, bar.open);
       }
 
       // Hard take-profit (only when graduation gate didn't already act).
       // Now that graduationEnabled=true above always intercepts the
       // takeProfit crossing, this branch is dormant for optimized. Kept
       // for parity in case graduationEnabled becomes mode-conditional later.
+      // Gap-up fill (audit #48): fills above the TP when the bar gapped up.
       if (!exitPrice && !graduationEnabled && bar.high >= pos.takeProfitPrice) {
-        exitPrice = pos.takeProfitPrice;
+        exitPrice = Math.max(pos.takeProfitPrice, bar.open);
       }
 
       // Sell signal (step boundaries only) — uses same analyzer as live engine
@@ -539,6 +604,11 @@ export function portfolioBacktest(
         perSymbol.set(pos.symbol, existing);
 
         positions.splice(p, 1);
+      } else if (bar.high > pos.peakPrice) {
+        // Still in position — NOW fold this bar's high into the peak so the
+        // NEXT bar's trail can tighten off it (deferred per the intrabar
+        // look-ahead fix, audit #9/#10).
+        pos.peakPrice = bar.high;
       }
     }
 
@@ -572,10 +642,19 @@ export function portfolioBacktest(
         const bar = data.barLookup.get(symbol)?.get(date);
         if (!bar) continue;
 
-        // RS filter: check 60-day momentum against threshold
-        if (w.length >= 60) {
-          const rs60 = (w[w.length - 1].close - w[w.length - 60].close) / w[w.length - 60].close;
-          if (rs60 < params.rsThreshold) continue;
+        // RS filter: 60-day momentum vs threshold. Off-by-one fix (audit #49):
+        // w[length-1] vs w[length-60] is a 59-interval return (index distance
+        // 59), not the 60 days the param name implies. Use w[length-61] for a
+        // true 60-interval lookback and require >=61 bars. On the single
+        // warm-up bar where the window is exactly 60, the filter is skipped
+        // (best-effort, one-bar boundary — the rsThreshold gate re-applies from
+        // 61 bars on).
+        if (w.length >= 61) {
+          const past = w[w.length - 61].close;
+          if (past > 0) {
+            const rs60 = (w[w.length - 1].close - past) / past;
+            if (rs60 < params.rsThreshold) continue;
+          }
         }
 
         const { signal: sig, atr, confidence } = analyzeSignalOnly(symbol, w, signalParams);

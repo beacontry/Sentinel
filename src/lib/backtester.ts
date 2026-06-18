@@ -8,6 +8,10 @@ import { BACKTEST_COSTS } from "./config";
 // two backtesters stay in parity (see config.ts § BACKTEST_COSTS).
 const SLIP = BACKTEST_COSTS.slippageBps / 10000; // per-side slippage fraction
 const COMMISSION = BACKTEST_COSTS.commissionPerFill;
+// Trailing-stop floor — mirrors the live engine's TRAIL_FLOOR (2%). Used as the
+// asymptote of the profit-based decay; the decay range is clamped at 0 so a
+// sub-floor base trail can't be widened toward it (audit #39).
+const TRAIL_FLOOR = 0.02;
 import {
   type EngineMode,
   getGraduationMode,
@@ -250,19 +254,30 @@ export function runBacktest(
 
     // ── In a position: check exits on every bar ──
     if (position) {
-      if (bar.high > position.peakPrice) {
-        position.peakPrice = bar.high;
-      }
+      // Intrabar look-ahead fix (audit #9/#10): the trailing stop for THIS bar
+      // is anchored to the peak as of the PRIOR bar. We must NOT let this bar's
+      // high raise the peak and then test this bar's low against the just-raised
+      // trail — that assumes high-before-low ordering and systematically over-
+      // rewards tight trailing stops on dip-then-rally bars. The current bar's
+      // high is folded into the peak only AFTER the exit checks (see end of the
+      // block), so it tightens the NEXT bar's trail, not this one's.
+      const peakForTrail = position.peakPrice;
 
       let exitPrice: number | null = null;
       let exitReason = "";
 
-      // Profit-based trailing stop — exponential decay toward 2% floor.
+      // Profit-based trailing stop — exponential decay toward the 2% floor.
       // Uses activeCfg so adaptive's per-bar config swap actually drives the
       // trail and stop on adaptive backtests.
-      const profitPct = (position.peakPrice - position.entryPrice) / position.entryPrice;
+      const profitPct = (peakForTrail - position.entryPrice) / position.entryPrice;
+      // Trail-floor fix (audit #39): clamp the decay range at 0 (Math.max(0,…))
+      // so a base trail tighter than the 2% floor can't be WIDENED toward it as
+      // profit grows. Matches the live engine's getDynamicTrailingPct, which
+      // uses `range = Math.max(0, base - floor)`. The old
+      // `0.02 + (base - 0.02)*exp(-3·profit)` inverted for base < 2%: the trail
+      // loosened (rose toward 2%) as the trade worked — the opposite of intent.
       const dynTrailPct = profitPct > 0
-        ? 0.02 + (activeCfg.trailingStopPct - 0.02) * Math.exp(-3 * profitPct)
+        ? TRAIL_FLOOR + Math.max(0, activeCfg.trailingStopPct - TRAIL_FLOOR) * Math.exp(-3 * profitPct)
         : activeCfg.trailingStopPct;
 
       // Delayed-trail activation gate (post-2026-06-11). Both knobs default
@@ -279,7 +294,7 @@ export function runBacktest(
       // position.stopLoss can be promoted above the entry-time fixed floor
       // by take-profit graduation (see below). Always uses the higher of
       // (a) the position's current stop and (b) the dynamic trail.
-      const trailingStop = trailActive ? position.peakPrice * (1 - dynTrailPct) : 0;
+      const trailingStop = trailActive ? peakForTrail * (1 - dynTrailPct) : 0;
       const effectiveStop = Math.max(position.stopLoss, trailingStop);
 
       // Resolve which mode's MODE_GRADUATION_DEFAULT applies. For adaptive,
@@ -322,7 +337,13 @@ export function runBacktest(
       // hit on the same bar that price gapped above takeProfit. The
       // effectiveStop reads the (possibly graduation-promoted) stopLoss.
       if (!exitPrice && bar.low <= effectiveStop) {
-        exitPrice = parseFloat(effectiveStop.toFixed(2));
+        // Gap-through fill (audit #48): a bar that OPENED below the stop blew
+        // through it overnight — the realistic fill is at the open, not the
+        // stop level. Fill at min(effectiveStop, bar.open). Without this the
+        // backtest books every gap-down at the (higher) stop, understating
+        // downside and inflating returns/Sharpe that pick live params.
+        const stopFill = Math.min(effectiveStop, bar.open);
+        exitPrice = parseFloat(stopFill.toFixed(2));
         exitReason = trailingStop >= position.stopLoss ? "trailing_stop" : "stop_loss";
       }
 
@@ -331,7 +352,10 @@ export function runBacktest(
       // block above instead of this hard exit.
       if (!exitPrice && !graduationEnabled) {
         if (bar.high >= tpLevel) {
-          exitPrice = parseFloat(tpLevel.toFixed(2));
+          // Gap-through fill (audit #48): a gap UP through the TP fills at the
+          // open (above the TP), not exactly at the TP level.
+          const tpFill = Math.max(tpLevel, bar.open);
+          exitPrice = parseFloat(tpFill.toFixed(2));
           exitReason = "take_profit";
         }
       }
@@ -374,6 +398,12 @@ export function runBacktest(
         });
 
         position = null;
+      } else if (bar.high > position.peakPrice) {
+        // Still in position — NOW fold this bar's high into the peak so the
+        // NEXT bar's trail can tighten off it. Deferring the update past the
+        // exit checks is the second half of the intrabar look-ahead fix
+        // (audit #9/#10): this bar's high never anchored this bar's trail.
+        position.peakPrice = bar.high;
       }
     } else {
       // ── Not in position: evaluate signals on step boundaries ──
