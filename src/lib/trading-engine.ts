@@ -1041,6 +1041,35 @@ function recordTradeResult(engine: EngineState, pnl: number, threshold: number):
 }
 
 /**
+ * Fold one closed position's realized P&L into the engine's NET daily-loss
+ * accumulator. NET — not the old gross losing-trade sum (audit #20) — so a
+ * net-profitable, high-turnover day no longer false-halts the daily-loss / MTM
+ * gates.
+ */
+export function accrueRealizedPnl(engine: EngineState, pnl: number): void {
+  engine.dailyLoss += pnl;
+}
+
+/**
+ * Per-position exit accounting shared by every DISCRETIONARY single-position
+ * exit (runScan stop/TP, runExitCheck, tactical-smart swap-sell). Accrues the
+ * realized P&L AND advances the consecutive-loss streak, tripping the safeguard
+ * halt at the threshold. Mass regime-flattens deliberately do NOT use this —
+ * they accrue P&L per position but register a single NET streak result, so a
+ * defensive flatten of N losers doesn't itself trip the consecutive-loss halt
+ * (audit #2; net-only behavior chosen 2026-06-17).
+ */
+export function recordRealizedExit(engine: EngineState, pnl: number, riskLimits: RiskLimits): void {
+  accrueRealizedPnl(engine, pnl);
+  if (recordTradeResult(engine, pnl, riskLimits.maxConsecutiveLosses)) {
+    tripSafeguardHalt(engine, "consecutive_losses", {
+      consecutiveLosses: engine.consecutiveLosses,
+      threshold: riskLimits.maxConsecutiveLosses,
+    });
+  }
+}
+
+/**
  * Halt the engine due to a safeguard tripping. Called from the scan loop in
  * response to broker disconnect, account switch, equity collapse, or
  * consecutive-loss threshold. Engine.halted = true blocks new orders; the
@@ -2885,16 +2914,10 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
           const exitOrder = await placeEngineOrder(client, { symbol, qty: String(pos.qty), side: "sell", type: "market", timeInForce: "day" });
           recordOrderPlacement(engine, "sell", 0);
           const pnl = (currentPrice - pos.entryPrice) * pos.qty;
-          engine.dailyLoss += pnl < 0 ? pnl : 0;
-          // Phase 3: track consecutive losses; halt if threshold tripped.
+          // Net daily-loss + consecutive-loss accounting (audit #2/#20).
           {
             const riskLimitsForLoss = await loadRiskLimits(engine.userId!);
-            if (recordTradeResult(engine, pnl, riskLimitsForLoss.maxConsecutiveLosses)) {
-              tripSafeguardHalt(engine, "consecutive_losses", {
-                consecutiveLosses: engine.consecutiveLosses,
-                threshold: riskLimitsForLoss.maxConsecutiveLosses,
-              });
-            }
+            recordRealizedExit(engine, pnl, riskLimitsForLoss);
           }
 
           await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "PENDING", pnl, exitReason, exitOrder.id, null, engine.userId);
@@ -3870,15 +3893,26 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
     spyRSI: spyRSI.toFixed(1), confirmedBelow, isInvested, positions: positionMap.size, pendingBuys: pendingBuySymbols.size,
   }, "Tactical scan");
 
+  // Realized P&L + exit count for this scan, fed to the tail upsertDailyPnl
+  // and the net consecutive-loss accounting below (audit #2 — the tactical
+  // flatten previously recorded neither realized P&L nor any halt signal).
+  let tacticalRealized = 0;
+  let tacticalExits = 0;
+
   if (isInvested && confirmedBelow && spyPrice < smaExit) {
     // ── EXIT: Confirmed weakness → sell everything (simple, no graduated) ──
     log.warn("TACTICAL EXIT — SPY confirmed below exit SMA, going to cash");
+    const riskLimits = await loadRiskLimits(engine.userId!);
 
     for (const pos of currentPositions) {
       if (pos.qty <= 0) continue;
       try {
         const texitOrder = await placeEngineOrder(client, { symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
         await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "PENDING", pos.unrealizedPnl, "Tactical exit: SPY below SMA", texitOrder.id, null, engine.userId);
+        recordOrderPlacement(engine, "sell", 0);
+        accrueRealizedPnl(engine, pos.unrealizedPnl);
+        tacticalRealized += pos.unrealizedPnl;
+        tacticalExits++;
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -3886,6 +3920,15 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
       await new Promise(r => setTimeout(r, 100));
     }
     engine.positionCount = 0;
+    // Net-only consecutive-loss accounting for a mass regime-flatten: the whole
+    // defensive flatten counts as ONE net result, so closing N losers at once
+    // doesn't trip the consecutive-loss halt (audit #2).
+    if (tacticalExits > 0 && recordTradeResult(engine, tacticalRealized, riskLimits.maxConsecutiveLosses)) {
+      tripSafeguardHalt(engine, "consecutive_losses", {
+        consecutiveLosses: engine.consecutiveLosses,
+        threshold: riskLimits.maxConsecutiveLosses,
+      });
+    }
 
   } else if (!isInvested && spyPrice > smaTrend) {
     // ── ENTRY: SPY above trend SMA → buy equal-weight (simple, proven) ──
@@ -3967,7 +4010,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
   // realized+unrealized exceeds 1.5× the realized threshold. See
   // enforceUnrealizedLossHalt() for full rationale.
   await enforceUnrealizedLossHalt(engine, account.equity, totalUnrealizedPnl, today);
-  await upsertDailyPnl(today, 0, totalUnrealizedPnl, 0, engine.halted, undefined, engine.userId);
+  await upsertDailyPnl(today, tacticalRealized, totalUnrealizedPnl, tacticalExits, engine.halted, undefined, engine.userId);
 
   // Update status — scan completed, clear in-flight marker
   engine.lastScanAt = new Date();
@@ -4183,12 +4226,19 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
   if (isInvested && confirmedBelow && spyPrice < sma20) {
     // ── EXIT: same as regular tactical ──
     log.warn("TACTICAL SMART EXIT — SPY below SMA, going to cash");
+    const tsExitRiskLimits = await loadRiskLimits(engine.userId!);
+    let tsFlattenRealized = 0;
+    let tsFlattenExits = 0;
     for (const pos of currentPositions) {
       if (pos.qty <= 0) continue;
       try {
         const tsExitOrder = await placeEngineOrder(client, { symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
         await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "PENDING", pos.unrealizedPnl, "Tactical Smart exit", tsExitOrder.id, null, engine.userId);
+        recordOrderPlacement(engine, "sell", 0);
         realizedPnlThisScan += pos.unrealizedPnl;
+        accrueRealizedPnl(engine, pos.unrealizedPnl);
+        tsFlattenRealized += pos.unrealizedPnl;
+        tsFlattenExits++;
         tradesThisScan++;
         positionMap.delete(pos.symbol);
       } catch (err) {
@@ -4197,6 +4247,13 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       await new Promise(r => setTimeout(r, 100));
     }
     engine.positionCount = 0;
+    // Net-only consecutive-loss accounting for the mass regime-flatten (audit #2).
+    if (tsFlattenExits > 0 && recordTradeResult(engine, tsFlattenRealized, tsExitRiskLimits.maxConsecutiveLosses)) {
+      tripSafeguardHalt(engine, "consecutive_losses", {
+        consecutiveLosses: engine.consecutiveLosses,
+        threshold: tsExitRiskLimits.maxConsecutiveLosses,
+      });
+    }
 
   } else if (!isInvested && spyPrice > sma50) {
     // ── ENTRY: Use screener signals + analyzeBars to pick best stocks ──
@@ -4477,7 +4534,10 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         const swapSellOrder = await placeEngineOrder(client, { symbol: weak.symbol, side: "sell", qty: String(bp.qty), type: "market", timeInForce: "day" });
         pendingSellSymbols.add(weak.symbol); // mark immediately so subsequent iterations in this scan don't re-fire
         await logTrade(weak.symbol, "tactical_smart_swap_sell", "SELL", bp.qty, bp.currentPrice, "PENDING", bp.unrealizedPnl, `Swap out: ${weak.signal}`, swapSellOrder.id, null, engine.userId);
+        recordOrderPlacement(engine, "sell", 0);
         realizedPnlThisScan += bp.unrealizedPnl;
+        // Discretionary single-position exit → counts toward the streak (audit #2).
+        recordRealizedExit(engine, bp.unrealizedPnl, riskLimits);
         tradesThisScan++;
         positionMap.delete(weak.symbol);
         heldSymbols.delete(weak.symbol);
@@ -5210,15 +5270,9 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
             const pnl =
               (currentPrice - heldPosition.entryPrice) * sellQty;
             realizedPnlThisScan += pnl;
-            engine.dailyLoss += pnl < 0 ? pnl : 0;
             recordOrderPlacement(engine, "sell", 0);
-            // Phase 3: track consecutive losses for auto-halt
-            if (recordTradeResult(engine, pnl, riskLimits.maxConsecutiveLosses)) {
-              tripSafeguardHalt(engine, "consecutive_losses", {
-                consecutiveLosses: engine.consecutiveLosses,
-                threshold: riskLimits.maxConsecutiveLosses,
-              });
-            }
+            // Net daily-loss + consecutive-loss accounting (audit #2/#20).
+            recordRealizedExit(engine, pnl, riskLimits);
             tradesThisScan++;
 
             await logTrade(
