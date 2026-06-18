@@ -76,6 +76,19 @@ describe("FIFO matching", () => {
     expect(lots[0].isLongTerm).toBe(false);
   });
 
+  it("leap-year boundary: sale on the 1-year anniversary spanning a leap year is short-term (audit #36)", () => {
+    // 2024 is a leap year → 366 calendar days from 2024-01-01 to 2025-01-01.
+    // The 1-year anniversary is 2025-01-01; a sale ON it is NOT more than one
+    // year (IRS Pub 550), so short-term. The old `holdingDays > 365` count
+    // misclassified this 366-day hold as long-term.
+    const events = [
+      evt({ id: "b1", action: "BUY", fillPrice: 100, fillTime: D("2024-01-01T15:00:00Z") }),
+      evt({ id: "s1", action: "SELL", fillPrice: 150, fillTime: D("2025-01-01T15:00:00Z") }),
+    ];
+    const lots = computeFifoClosedLots(events);
+    expect(lots[0].isLongTerm).toBe(false);
+  });
+
   it("losses produce negative realized gain", () => {
     const events = [
       evt({ id: "b1", action: "BUY", fillPrice: 100, fillTime: D("2025-01-01T15:00:00Z") }),

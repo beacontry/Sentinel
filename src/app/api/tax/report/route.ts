@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { portfolios, portfolioTrades, traderTrades } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { calculateTaxSummary, type TaxTrade } from "@/lib/tax-engine";
 import { toCSV } from "@/lib/csv";
 import { createRouteLogger } from "@/lib/logger";
@@ -31,45 +31,48 @@ export async function GET(request: NextRequest) {
   const yearEnd = new Date(`${year}-12-31T23:59:59.999-05:00`);
 
   try {
-    // 1. Manual portfolio trades — FULL history (FIFO needs prior-year buy
-    //    lots to supply cost basis; we report only the tax year's disposals).
-    const userPortfolios = await db
-      .select({ id: portfolios.id })
-      .from(portfolios)
-      .where(eq(portfolios.userId, session.userId as string));
-
-    const portfolioIds = userPortfolios.map((p) => p.id);
-
     const allTrades: TaxTrade[] = [];
 
-    for (const pId of portfolioIds) {
-      const trades = await db
+    // 1. Manual portfolio trades — FULL history (FIFO needs prior-year buy
+    //    lots; we report only the tax year's disposals). One inArray query +
+    //    a 5s statement timeout instead of an unbounded per-portfolio loop
+    //    with no timeout (audit #38).
+    const portfolioTradeRows = await withTimeout(5000, async (tx) => {
+      const userPortfolios = await tx
+        .select({ id: portfolios.id })
+        .from(portfolios)
+        .where(eq(portfolios.userId, session.userId as string));
+      const portfolioIds = userPortfolios.map((p) => p.id);
+      if (portfolioIds.length === 0) return [];
+      return tx
         .select()
         .from(portfolioTrades)
-        .where(eq(portfolioTrades.portfolioId, pId));
+        .where(inArray(portfolioTrades.portfolioId, portfolioIds));
+    });
 
-      for (const t of trades) {
-        allTrades.push({
-          symbol: t.symbol,
-          action: t.action,
-          quantity: t.quantity,
-          price: t.price,
-          executedAt: t.executedAt.toISOString(),
-        });
-      }
+    for (const t of portfolioTradeRows) {
+      allTrades.push({
+        symbol: t.symbol,
+        action: t.action,
+        quantity: t.quantity,
+        price: t.price,
+        executedAt: t.executedAt.toISOString(),
+      });
     }
 
     // 2. Live engine trades (Alpaca fills) — FULL history, fill-time based.
     //    FIFO matches across years; only the year's disposals are reported.
-    const engineTrades = await db
-      .select()
-      .from(traderTrades)
-      .where(
-        and(
-          eq(traderTrades.userId, session.userId as string),
-          eq(traderTrades.status, "FILLED")
+    const engineTrades = await withTimeout(5000, async (tx) =>
+      tx
+        .select()
+        .from(traderTrades)
+        .where(
+          and(
+            eq(traderTrades.userId, session.userId as string),
+            eq(traderTrades.status, "FILLED")
+          )
         )
-      );
+    );
 
     for (const t of engineTrades) {
       const price = t.fillPrice ?? t.limitPrice ?? 0;
@@ -152,6 +155,12 @@ export async function GET(request: NextRequest) {
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out — too many trades in history" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Tax report error");
     return NextResponse.json(
