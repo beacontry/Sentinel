@@ -4961,16 +4961,22 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         });
         return;
       }
-      // Equity collapsed beyond reasonable mark-to-market — halt for human review.
-      const equityDrop = (engine.boot.equity - currentAccount.equity) / engine.boot.equity;
-      if (equityDrop > ACCOUNT_SWITCH_EQUITY_DROP_PCT) {
-        tripSafeguardHalt(engine, "equity_collapse", {
-          bootEquity: engine.boot.equity,
-          currentEquity: currentAccount.equity,
-          dropPct: equityDrop,
-          threshold: ACCOUNT_SWITCH_EQUITY_DROP_PCT,
-        });
-        return;
+      // Equity collapsed beyond reasonable mark-to-market — halt for human
+      // review. Guard the divisor (audit #57): a zero/negative boot equity (a
+      // transient glitch at boot) would make equityDrop NaN/Infinity, and
+      // `NaN > 0.5` is false — silently disabling the tripwire. Only evaluate
+      // against a positive boot basis.
+      if (engine.boot.equity > 0) {
+        const equityDrop = (engine.boot.equity - currentAccount.equity) / engine.boot.equity;
+        if (equityDrop > ACCOUNT_SWITCH_EQUITY_DROP_PCT) {
+          tripSafeguardHalt(engine, "equity_collapse", {
+            bootEquity: engine.boot.equity,
+            currentEquity: currentAccount.equity,
+            dropPct: equityDrop,
+            threshold: ACCOUNT_SWITCH_EQUITY_DROP_PCT,
+          });
+          return;
+        }
       }
     } catch {
       // Account fetch failure — already counted as a broker failure above; don't double-count.
