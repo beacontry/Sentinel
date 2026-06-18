@@ -4631,7 +4631,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       // Check exposure (use equity as cap when not configured)
       const effectiveMaxExposure = riskLimits.maxExposure < 0 ? equity * Math.abs(riskLimits.maxExposure) : riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
       const currentExposure = Array.from(positionMap.values())
-        .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
+        .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0);
       if (currentExposure + cand.price * qty > effectiveMaxExposure) break;
 
       // Phase 7 — duplicate-order guard: skip add if buy already pending on broker
@@ -5474,7 +5474,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         // Check max portfolio exposure (use equity as cap when not configured)
         const effectiveMaxExposure = riskLimits.maxExposure < 0 ? equity * Math.abs(riskLimits.maxExposure) : riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
         const currentExposure = Array.from(positionMap.values())
-          .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
+          .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0);
         if (currentExposure + (currentPrice * qty) > effectiveMaxExposure) {
           if (isStrongSignal) log.info({ symbol, currentExposure: currentExposure.toFixed(2), maxExposure: effectiveMaxExposure.toFixed(2), orderCost: (currentPrice * qty).toFixed(2) }, "STRONG_BUY skipped — max exposure reached");
           else log.info({ symbol, currentExposure, maxExposure: effectiveMaxExposure }, "Max exposure reached, skipping");
@@ -5674,7 +5674,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           : equity * 1.5;
     const COOLDOWN_MS = 150 * 60 * 1000;
     const currentExposure = Array.from(positionMap.values())
-      .reduce((sum, p) => sum + p.entryPrice * p.qty, 0);
+      .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0);
 
     // Re-fetch buying power (audit #26): `account` was snapshotted at scan
     // start, and the in-loop entry buys placed this scan have since reserved
@@ -6648,14 +6648,22 @@ const TACTICAL_MAX_EXTERNAL_SYMBOLS = 50;
 function selectExternalSymbolsForTactical(
   externalSignals: readonly ExternalSignal[],
   universe: readonly string[],
-  maxCount: number = TACTICAL_MAX_EXTERNAL_SYMBOLS
+  maxCount: number = TACTICAL_MAX_EXTERNAL_SYMBOLS,
+  now: number = Date.now()
 ): string[] {
   const universeSet = new Set(universe);
-  // Filter to actionable signals not already in the hardcoded universe,
-  // then sort by confidence desc, then take top N. Confidence comes
-  // straight from the screener / hybrid pipeline.
+  // Filter to FRESH actionable signals not already in the hardcoded universe,
+  // then sort by confidence desc, then take top N. Enforcing the 30-min TTL at
+  // consumption time (audit #62) — not relying solely on end-of-scan cleanup —
+  // keeps up-to-30-min-stale externals out of the trade universe.
+  const EXTERNAL_SIGNAL_TTL_MS = 30 * 60 * 1000;
   return externalSignals
-    .filter((s) => (s.signal === "BUY" || s.signal === "STRONG_BUY") && !universeSet.has(s.symbol))
+    .filter(
+      (s) =>
+        (s.signal === "BUY" || s.signal === "STRONG_BUY") &&
+        !universeSet.has(s.symbol) &&
+        now - s.receivedAt < EXTERNAL_SIGNAL_TTL_MS
+    )
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, maxCount)
     .map((s) => s.symbol);
