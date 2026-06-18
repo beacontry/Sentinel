@@ -7035,6 +7035,16 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
     }
   }
 
+  // Persist the halt to today's P&L row so autoStartIfNeeded's integrity-halt
+  // suppression actually fires for emergency halts (audit #19). tripSafeguardHalt
+  // and enforceDailyLossHalt already persist halted=true; haltEngine didn't, and
+  // because it clears every interval no later scan would write it either — so a
+  // server restart could silently auto-resume a user-halted engine.
+  engine.haltContext = { reason: "user_emergency_halt", haltedAt: Date.now() };
+  void upsertDailyPnl(getETDateString(), 0, 0, 0, true, "user_emergency_halt", engine.userId).catch(() => {
+    /* DB write failure non-blocking; in-memory halted is already true */
+  });
+
   log.warn("Trading engine emergency halted");
   return { ok: true };
 }
