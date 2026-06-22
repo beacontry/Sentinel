@@ -148,6 +148,16 @@ function detectBullFlag(
 
 // ── Main analyzer ───────────────────────────────────────────────────
 
+/**
+ * Analyze momentum + detect a bull-flag breakout.
+ *
+ * CONTRACT (audit #46): every bar passed in MUST be a fully closed bar. The
+ * breakout check treats the final bar as a confirmed breakout (its close vs
+ * the consolidation high and its volume multiple), so a live/unclosed bar
+ * produces a provisional signal that can flip once the true close prints.
+ * Callers fetching intraday data must strip the current in-progress bar first
+ * (the /api/momentum/analyze route drops any final bar younger than a minute).
+ */
 export function analyzeMomentumBars(
   symbol: string,
   bars: Bar[],
