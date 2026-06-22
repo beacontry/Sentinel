@@ -1,8 +1,8 @@
 "use client";
 
-// One-on-one DM thread view. Loads the thread, marks it as read on
-// mount (the GET endpoint updates last_seen server-side), and lets the
-// user post replies.
+// One-on-one DM thread view. Loads the thread (read-only GET), then marks it
+// read via the CSRF-protected PATCH after load (audit #47 — mark-seen is no
+// longer a side effect on GET), and lets the user post replies.
 
 import { useEffect, useRef, useState, use } from "react";
 import { Card } from "@/components/ui/card";
@@ -77,6 +77,10 @@ export default function DmThreadPage({
             ? data.thread.userBId
             : data.thread.userAId;
         setMyId(me);
+        // Mark-seen is a CSRF-protected PATCH (audit #47 moved it off the GET).
+        // Fire-and-forget — clearing the unread badge is non-critical. The
+        // global fetch patch adds the CSRF token automatically.
+        void fetch(`/api/dm/threads/${id}`, { method: "PATCH" }).catch(() => {});
       }
     } catch {
       // Non-critical
