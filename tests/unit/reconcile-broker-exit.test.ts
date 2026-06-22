@@ -28,7 +28,10 @@ function findReconciliationCandidate(
   expectedQty: number,
   now: number = Date.now()
 ): MockOrder | null {
-  const oneHourAgo = now - 60 * 60 * 1000;
+  // Mirrors RECONCILE_LOOKBACK_MS (7 days) — widened from 1 hour (audit #43)
+  // so a GTC protective stop that fires overnight/over a weekend is still
+  // matched by the next market-hours sync.
+  const cutoff = now - 7 * 24 * 60 * 60 * 1000;
   const matches = closedOrders.filter(
     (o) =>
       o.symbol === symbol &&
@@ -36,7 +39,7 @@ function findReconciliationCandidate(
       o.status === "filled" &&
       Number(o.filledQty) === expectedQty &&
       o.filledAt &&
-      new Date(o.filledAt).getTime() > oneHourAgo
+      new Date(o.filledAt).getTime() > cutoff
   );
   return matches.sort(
     (a, b) => new Date(b.filledAt!).getTime() - new Date(a.filledAt!).getTime()
@@ -96,11 +99,22 @@ describe("reconcileBrokerSideExit — candidate selection (Phase 7.5)", () => {
     expect(c?.id).toBe("current_29");
   });
 
-  it("ignores fills older than 1 hour", () => {
+  it("ignores fills older than the 7-day reconciliation window", () => {
     const orders = [
-      order({ id: "old", filledAt: new Date(NOW - 2 * 60 * 60 * 1000).toISOString() }),
+      order({ id: "stale", filledAt: new Date(NOW - 8 * 24 * 60 * 60 * 1000).toISOString() }),
     ];
     expect(findReconciliationCandidate(orders, "TGT", 29, NOW + 1000)).toBeNull();
+  });
+
+  it("matches an overnight/weekend fill hours-to-days old (audit #43 widened window)", () => {
+    // The bug: a GTC stop firing overnight was >1h old by the next market-hours
+    // sync, so it was dropped. The 7-day window now catches it.
+    const orders = [
+      order({ id: "overnight", filledAt: new Date(NOW - 18 * 60 * 60 * 1000).toISOString() }),
+      order({ id: "weekend", filledAt: new Date(NOW - 3 * 24 * 60 * 60 * 1000).toISOString() }),
+    ];
+    const c = findReconciliationCandidate(orders, "TGT", 29, NOW + 1000);
+    expect(c?.id).toBe("overnight"); // most recent of the two matches
   });
 
   it("picks the MOST RECENT fill when multiple match", () => {

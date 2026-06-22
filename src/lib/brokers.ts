@@ -224,6 +224,18 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
+/**
+ * Parse a broker numeric that must be strictly positive (e.g. a fill price).
+ * Returns null for absent / 0 / negative / non-numeric input rather than
+ * toNumber's 0-coercion, so a malformed value can't masquerade as a real
+ * price and feed fabricated P&L delta math downstream (audit #39).
+ */
+function positivePriceOrNull(value: unknown): number | null {
+  if (value == null) return null;
+  const n = toNumber(value);
+  return n > 0 ? n : null;
+}
+
 function toString(value: unknown): string {
   if (typeof value === "string") return value;
   if (value == null) return "";
@@ -241,7 +253,7 @@ function mapAlpacaOrder(o: Record<string, unknown>): BrokerOrder {
     filledQty: toNumber(o.filled_qty),
     type: toString(o.type),
     status: toString(o.status),
-    filledPrice: o.filled_avg_price != null ? toNumber(o.filled_avg_price) : null,
+    filledPrice: positivePriceOrNull(o.filled_avg_price),
     timeInForce: toString(o.time_in_force),
     limitPrice: o.limit_price != null ? toString(o.limit_price) : null,
     stopPrice: o.stop_price != null ? toString(o.stop_price) : null,
@@ -512,7 +524,7 @@ export class AlpacaClient implements BrokerClient {
       filledQty: toNumber(o.filled_qty),
       type: toString(o.type),
       status: toString(o.status),
-      filledPrice: o.filled_avg_price != null ? toNumber(o.filled_avg_price) : null,
+      filledPrice: positivePriceOrNull(o.filled_avg_price),
       timeInForce: toString(o.time_in_force),
       limitPrice: o.limit_price != null ? toString(o.limit_price) : null,
       stopPrice: o.stop_price != null ? toString(o.stop_price) : null,
@@ -583,7 +595,7 @@ export class AlpacaClient implements BrokerClient {
       filledQty: Number(o.filled_qty) || 0,
       type: toString(o.type),
       status: toString(o.status),
-      filledPrice: o.filled_avg_price != null ? Number(o.filled_avg_price) : null,
+      filledPrice: positivePriceOrNull(o.filled_avg_price),
       timeInForce: toString(o.time_in_force),
       limitPrice: o.limit_price != null ? toString(o.limit_price) : null,
       stopPrice: o.stop_price != null ? toString(o.stop_price) : null,
@@ -795,7 +807,7 @@ class IBKRClient implements BrokerClient {
       filledQty: toNumber(o.filledQuantity),
       type: toString(o.orderType),
       status: toString(o.status),
-      filledPrice: toNumber(o.avgPrice) || null,
+      filledPrice: positivePriceOrNull(o.avgPrice),
       timeInForce: toString(o.timeInForce) || "DAY",
       limitPrice: o.price != null ? toString(o.price) : null,
       stopPrice: o.auxPrice != null ? toString(o.auxPrice) : null,
@@ -1223,7 +1235,7 @@ class TradierClient implements BrokerClient {
       filledQty: toNumber(o.exec_quantity) || toNumber(o.last_fill_quantity) || 0,
       type: toString(o.type),
       status: toString(o.status),
-      filledPrice: o.avg_fill_price != null ? toNumber(o.avg_fill_price) : null,
+      filledPrice: positivePriceOrNull(o.avg_fill_price),
       timeInForce: toString(o.duration) || "day",
       limitPrice: o.price != null ? toString(o.price) : null,
       stopPrice: o.stop_price != null ? toString(o.stop_price) : null,

@@ -17,7 +17,7 @@ import { analyzeHybrid } from "./hybrid/pipeline";
 import type { SignalParams } from "./indicators/analyzer";
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { SP500_SYMBOLS, getSP500Symbols } from "./sp500";
-import { getSymbolSector } from "./sectors";
+import { getSectorForExposureCap } from "./sectors";
 import { getFinnhubClient } from "./finnhub";
 
 /** Resolved at scan time via getSP500Symbols() — auto-updates daily */
@@ -936,11 +936,13 @@ async function canPlaceBuyOrder(
     sectorExposureContext &&
     sectorExposureContext.equity > 0
   ) {
-    const newSector = getSymbolSector(symbol);
+    // Use the exposure-cap sector key (audit #40): off-list symbols and ETFs
+    // bucket as themselves so unrelated holdings don't pool and trip the cap.
+    const newSector = getSectorForExposureCap(symbol);
     // Sum existing market value in the same sector
     let sectorMv = 0;
     for (const [posSymbol, mv] of sectorExposureContext.positionMarketValues) {
-      if (getSymbolSector(posSymbol) === newSector) sectorMv += mv;
+      if (getSectorForExposureCap(posSymbol) === newSector) sectorMv += mv;
     }
     const totalAfter = sectorMv + notionalUsd;
     const sectorPct = totalAfter / sectorExposureContext.equity;
@@ -3486,12 +3488,18 @@ async function reconcileBrokerSideExit(
 ): Promise<void> {
   try {
     const closedOrders = await client.getOrders(50, "closed");
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    // Use the same 7-day lookback as reconcilePendingTrades (audit #43). The 1h
+    // window dropped GTC protective-stop fills entirely: scans only run during
+    // market hours, so a stop that fires overnight or over a weekend is easily
+    // >1h old before the next sync — and the realized P&L + tax row was then
+    // silently never inserted. The 2026-06-09 reconcilePendingTrades incident
+    // (a 50h halt outran a 24h window) is the same class of bug.
+    const sinceMs = Date.now() - RECONCILE_LOOKBACK_MS;
 
-    // Find the most recent filled SELL for this symbol that matches qty and
-    // filled within the last hour. We match on qty because a position can
-    // have multiple historical sells across days; we want only the one that
-    // just closed our tracked position.
+    // Find the most recent filled SELL for this symbol matching the tracked
+    // position's qty within the window. Exact-qty match is correct here: a
+    // protective stop closes the FULL tracked position, so its fill qty equals
+    // expectedPos.qty. A fuzzy match would risk recording an unrelated sell.
     const candidate = closedOrders
       .filter((o) =>
         o.symbol === symbol &&
@@ -3499,14 +3507,14 @@ async function reconcileBrokerSideExit(
         o.status === "filled" &&
         Number(o.filledQty) === expectedPos.qty &&
         o.filledAt &&
-        new Date(o.filledAt).getTime() > oneHourAgo
+        new Date(o.filledAt).getTime() > sinceMs
       )
       .sort((a, b) => new Date(b.filledAt!).getTime() - new Date(a.filledAt!).getTime())[0];
 
     if (!candidate) {
       log.warn(
         { symbol, userId, expectedQty: expectedPos.qty },
-        "Reconciliation: position disappeared but no matching broker fill found in last hour — trader_trades not updated, manual investigation may be needed"
+        "Reconciliation: position disappeared but no matching broker fill found in the 7-day window — trader_trades not updated, manual investigation may be needed"
       );
       return;
     }
@@ -3524,8 +3532,10 @@ async function reconcileBrokerSideExit(
     }
 
     const fillPrice = candidate.filledPrice ?? 0;
-    if (fillPrice === 0) {
-      log.warn({ symbol, brokerOrderId: candidate.id }, "Reconciliation: filled order missing filledPrice — cannot compute P&L");
+    if (!(fillPrice > 0)) {
+      // Rejects null/0/negative/NaN — a filled order with no usable price is a
+      // data anomaly; skip rather than book a fabricated P&L (audit #39).
+      log.warn({ symbol, brokerOrderId: candidate.id }, "Reconciliation: filled order missing a positive filledPrice — cannot compute P&L");
       return;
     }
 
@@ -3686,8 +3696,13 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
         if (
           row.action === "SELL" &&
           row.pnl !== null &&
-          row.fillPrice !== null &&
-          newFillPrice !== null
+          // Both prices must be positive finite numbers before money math
+          // (audit #39): a broker price coerced to 0 from a malformed field
+          // would otherwise produce delta = (0 - entry)·qty — a fabricated loss
+          // written to the daily-P&L accumulator. Skipping the correction
+          // leaves the quote-based placeholder pnl in place.
+          row.fillPrice !== null && row.fillPrice > 0 &&
+          newFillPrice !== null && newFillPrice > 0
         ) {
           const delta = (newFillPrice - row.fillPrice) * row.quantity;
           newPnl = row.pnl + delta;
@@ -5764,7 +5779,8 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
       const candFull = candBySymbol.get(attempt.symbol);
       if (!candFull) continue;
       const qty = attempt.qty!;
-      const orderCost = attempt.orderCost!;
+      // orderCost is recomputed from a fresh quote below (audit #44), so the
+      // planner's price-based attempt.orderCost is intentionally not used here.
 
       try {
         // Position-map drift guard (post-2026-06-11) — same defense as the
@@ -5791,19 +5807,36 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           log.info({ symbol: candFull.symbol, reason: filterResult.reason }, "Swap-sell candidate blocked by smart filter");
           continue;
         }
+        // Fresh quote BEFORE the gate (audit #44): candFull.currentPrice was
+        // captured earlier in this scan's per-symbol loop, which can be minutes
+        // stale by the time this post-loop redeploy runs (~80 symbols of
+        // analyzeHybrid + pacing + smart-filter I/O). Re-quote so BOTH the
+        // gate's notional AND the order's limit + position-map
+        // entry/peak/stop/take-profit reflect the current price. Gating on the
+        // stale cost would let a price that rose since capture slip past the
+        // buying-power / sector-exposure limits; anchoring the stops to it would
+        // place an unfillable limit or size protective exits off the wrong basis
+        // (a drift syncPositionMapFromBroker never reconciles).
+        const freshQuote = await getMarketDataProvider().fetchQuote(candFull.symbol);
+        const refPrice = freshQuote?.price;
+        if (!(refPrice && refPrice > 0)) {
+          log.warn({ symbol: candFull.symbol }, "Swap-sell redeploy skipped — fresh quote unavailable");
+          continue;
+        }
+        const freshOrderCost = qty * refPrice;
         const gate = await canPlaceBuyOrder(
-          engine, candFull.symbol, orderCost, riskLimits,
+          engine, candFull.symbol, freshOrderCost, riskLimits,
           engine.boot?.equity ?? equity, scanSectorCtx ?? undefined
         );
         if (!gate.ok) {
           log.warn(
-            { symbol: candFull.symbol, qty, notional: orderCost, reason: gate.reason, ...gate.details },
+            { symbol: candFull.symbol, qty, notional: freshOrderCost, reason: gate.reason, ...gate.details },
             "Swap-sell BUY blocked"
           );
           continue;
         }
         const strategy = await resolveStrategy(engine.userId, candFull.symbol);
-        const limitPrice = (candFull.currentPrice * 1.001).toFixed(2);
+        const limitPrice = (refPrice * 1.001).toFixed(2);
         // Re-check cancellation right before placing (audit #23) — same window
         // as the main buy loop, in the post-loop redeploy.
         throwIfScanCancelled(engine, myGeneration);
@@ -5815,8 +5848,8 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           timeInForce: "day",
           limitPrice,
         });
-        recordOrderPlacement(engine, "buy", orderCost);
-        scanSectorCtx?.positionMarketValues.set(candFull.symbol, orderCost); // accumulate in-scan (audit #15)
+        recordOrderPlacement(engine, "buy", freshOrderCost);
+        scanSectorCtx?.positionMarketValues.set(candFull.symbol, freshOrderCost); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(candFull.symbol);
         engine.cooldowns.set(candFull.symbol, Date.now());
         await logTrade(
@@ -5824,7 +5857,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           `swap_sell_redeploy:${candFull.signal}`,
           "BUY",
           qty,
-          candFull.currentPrice,
+          refPrice,
           "PENDING",
           null,
           `Swap-sell redeploy (confidence ${candFull.confidence.toFixed(3)})`,
@@ -5835,10 +5868,10 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         positionMap.set(candFull.symbol, {
           symbol: candFull.symbol,
           qty,
-          entryPrice: candFull.currentPrice,
-          peakPrice: candFull.currentPrice,
-          stopLoss: candFull.currentPrice * (1 - strategy.stopLossPct),
-          takeProfit: candFull.currentPrice * (1 + strategy.takeProfitPct),
+          entryPrice: refPrice,
+          peakPrice: refPrice,
+          stopLoss: refPrice * (1 - strategy.stopLossPct),
+          takeProfit: refPrice * (1 + strategy.takeProfitPct),
           trailingStopPct: strategy.trailingStopPct,
           entryDate: new Date(),
           holdPeriod: strategy.holdPeriod,
@@ -7156,6 +7189,18 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
     /* DB write failure non-blocking; in-memory halted is already true */
   });
 
+  // Reclaim in-memory engine state after the grace period, same as stopEngine
+  // (audit #41). haltEngine is terminal — it clears every interval and
+  // liquidates — so nothing keeps the maps alive afterward, yet eviction was
+  // only ever scheduled from stopEngine, leaking one map entry per emergency
+  // halt. The halt row persisted above is the source of truth for restart
+  // suppression, so dropping in-memory state is safe; evictEngineState re-checks
+  // running/starting, so an explicit restart in the meantime cancels it.
+  const evictUserId = engine.userId;
+  if (evictUserId) {
+    setTimeout(() => evictEngineState(evictUserId), ENGINE_EVICTION_DELAY_MS).unref?.();
+  }
+
   log.warn("Trading engine emergency halted");
   return { ok: true };
 }
@@ -7311,11 +7356,23 @@ export async function autoStartIfNeeded(userId: string): Promise<void> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const resolved = await resolveBrokerClient(userId);
-      if (!resolved) return; // no broker connection — not transient, nothing to retry
+      if (!resolved) {
+        // No broker connection — the engine getEngine() just created never
+        // starts. Evict it so bootEngines (which calls this for every
+        // broker-connected user) doesn't leak one idle map entry per user with
+        // no usable connection (audit #41). Re-created cheaply on next call.
+        evictEngineState(userId);
+        return;
+      }
 
       const positions = await resolved.client.getPositions();
       lastPositionCount = positions.length;
-      if (positions.length === 0) return;
+      if (positions.length === 0) {
+        // Nothing to manage and the engine never started — evict the
+        // just-created entry rather than leaving it idle forever (audit #41).
+        evictEngineState(userId);
+        return;
+      }
 
       let lastMode: EngineMode = "optimized";
       try {
@@ -7518,10 +7575,19 @@ export function reserveManualFlatten(
   if (!engine || !engine.running) {
     return { release: () => {} };
   }
+  // Capture which symbols the engine's OWN exit paths (runExitCheck /
+  // runScanInner) had already claimed in pendingExits BEFORE we add ours
+  // (audit #42). pendingExits is the only guard serializing concurrent sells
+  // across the scan + exit-check intervals; if release() blindly deleted every
+  // symbol it would clear an engine-owned in-flight-sell guard, opening a
+  // double-sell window. Leave pre-existing claims intact on release.
+  const preOwned = new Set(symbols.filter((s) => engine.pendingExits.has(s)));
   for (const s of symbols) engine.pendingExits.add(s);
   return {
     release: (soldSymbols: string[]) => {
-      for (const s of symbols) engine.pendingExits.delete(s);
+      for (const s of symbols) {
+        if (!preOwned.has(s)) engine.pendingExits.delete(s);
+      }
       if (soldSymbols.length > 0) {
         const posMap = getPositionMap(userId);
         for (const s of soldSymbols) posMap.delete(s);
