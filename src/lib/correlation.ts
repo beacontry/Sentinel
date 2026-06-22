@@ -5,7 +5,7 @@ import type { Bar } from "@/types";
  */
 export function computeCorrelationMatrix(
   symbolBars: Record<string, Bar[]>
-): { symbols: string[]; matrix: number[][] } {
+): { symbols: string[]; matrix: (number | null)[][] } {
   const symbols = Object.keys(symbolBars);
   const n = symbols.length;
 
@@ -22,7 +22,7 @@ export function computeCorrelationMatrix(
   const trimmed = closes.map((c) => c.slice(c.length - minLen));
 
   // Compute correlation matrix
-  const matrix: number[][] = [];
+  const matrix: (number | null)[][] = [];
   for (let i = 0; i < n; i++) {
     matrix[i] = [];
     for (let j = 0; j < n; j++) {
@@ -39,9 +39,9 @@ export function computeCorrelationMatrix(
   return { symbols, matrix };
 }
 
-function pearsonCorrelation(x: number[], y: number[]): number {
+function pearsonCorrelation(x: number[], y: number[]): number | null {
   const n = x.length;
-  if (n < 2) return 0;
+  if (n < 2) return null;
 
   let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
   for (let i = 0; i < n; i++) {
@@ -55,5 +55,12 @@ function pearsonCorrelation(x: number[], y: number[]): number {
   const num = n * sumXY - sumX * sumY;
   const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
 
-  return den === 0 ? 0 : num / den;
+  // Zero variance in either series (a flat/halted/delisted price line) makes
+  // correlation mathematically UNDEFINED, not zero (audit #45). Returning 0
+  // reported a flatlined holding as a perfect diversifier, inflating the
+  // diversification score and understating concentration risk. null is the
+  // honest sentinel — and unlike NaN it survives JSON.stringify (NaN → "null"
+  // would crash `.toFixed` on the client); callers render it as "n/a" and skip
+  // it in averages.
+  return den === 0 ? null : num / den;
 }

@@ -12,10 +12,11 @@ import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface CorrelationResult {
   symbols: string[];
-  matrix: number[][];
+  matrix: (number | null)[][];
 }
 
-function getCorrelationColor(value: number): string {
+function getCorrelationColor(value: number | null): string {
+  if (value == null) return "bg-bg-elevated/50"; // undefined (flat series) — neutral
   if (value >= 0.7) return "bg-bullish/80";
   if (value >= 0.3) return "bg-bullish/60";
   if (value > -0.3) return "bg-bg-elevated";
@@ -72,6 +73,10 @@ export default function RiskCorrelationPage() {
     for (let i = 0; i < result.matrix.length; i++) {
       for (let j = i + 1; j < result.matrix[i].length; j++) {
         const val = result.matrix[i][j];
+        // Skip undefined correlations (flat series → null, audit #45) so a
+        // halted/delisted holding doesn't dilute avgCorrelation and inflate
+        // the diversification score.
+        if (val == null) continue;
         sum += val;
         count++;
         if (val > maxCorrelation) {
@@ -175,7 +180,7 @@ export default function RiskCorrelationPage() {
                       {result.matrix[i].map((val, j) => (
                         <td key={j} className="px-0.5 py-0.5">
                           <div className={`${getCorrelationColor(val)} rounded px-2 py-1.5 text-center font-mono text-xs text-text-primary/90 min-w-[48px]`}>
-                            {val.toFixed(2)}
+                            {val == null ? "n/a" : val.toFixed(2)}
                           </div>
                         </td>
                       ))}
