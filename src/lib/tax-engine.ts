@@ -173,6 +173,11 @@ export interface HarvestingSuggestion {
   quantity: number;
   entryPrice: number;
   currentPrice: number;
+  /** True when held > 1 year → loss offsets LTCG at the lower LTCG rate. */
+  isLongTerm: boolean;
+  /** False when acquisition date is unknown (broker positions) and the
+   *  short-term/ordinary rate was assumed — the UI should caveat the figure. */
+  holdingPeriodKnown: boolean;
 }
 
 export interface TaxPosition {
@@ -181,6 +186,13 @@ export interface TaxPosition {
   entryPrice: number;
   currentPrice: number;
   unrealizedPnl: number;
+  /**
+   * Acquisition date for holding-period (short- vs long-term) classification
+   * (audit #9). Undefined when the source has no lot-level date — e.g. live
+   * broker positions, whose Alpaca getPositions() response carries no
+   * acquisition date; those are treated as short-term.
+   */
+  acquisitionDate?: Date;
 }
 
 export interface TaxCalcOptions {
@@ -449,6 +461,21 @@ export function calculateTaxSummary(
 /**
  * Suggest tax-loss harvesting opportunities from positions with unrealized losses.
  * Recommends selling losers to offset gains, with wash-sale date warning.
+ *
+ * `potentialSavings` is per-position holding-period-aware (audit #9): a
+ * long-term loss is valued at the LTCG marginal rate (0/15/20%) since it
+ * offsets long-term gains, while a short-term loss is valued at the higher
+ * ordinary marginal rate. Applying the ordinary rate to every loss (the old
+ * behavior) overstated the savings for long-term losers. Positions with no
+ * acquisition date (live broker lots) are assumed short-term and flagged
+ * `holdingPeriodKnown: false` so the UI can caveat them.
+ *
+ * NOTE: the figure is the gross "loss × applicable rate" — i.e. the benefit if
+ * the loss offsets a realized gain of the same character. It does NOT apply the
+ * $3,000/yr ($1,500 MFS) cap on losses deducted against *ordinary income*,
+ * because that cap is an aggregate that depends on the user's realized gains
+ * for the year, which this per-position view doesn't have. Treat it as an
+ * upper bound; the Tax Center disclaimers cover this.
  */
 export function suggestHarvesting(
   positions: TaxPosition[],
@@ -456,15 +483,28 @@ export function suggestHarvesting(
   ordinaryIncome: number = 50000,
 ): HarvestingSuggestion[] {
   const suggestions: HarvestingSuggestion[] = [];
-  const marginalRate = getMarginalRate(ORDINARY_BRACKETS[filingStatus], ordinaryIncome);
+  const ordinaryRate = getMarginalRate(ORDINARY_BRACKETS[filingStatus], ordinaryIncome);
+  const ltcgRate = getMarginalRate(LTCG_BRACKETS[filingStatus], ordinaryIncome);
+  const now = new Date();
 
   for (const pos of positions) {
     if (pos.unrealizedPnl >= 0) continue; // only losses
 
     const currentLoss = Math.abs(pos.unrealizedPnl);
-    const potentialSavings = round2(currentLoss * marginalRate);
 
-    const now = new Date();
+    // Holding period → which rate the harvested loss is worth. Use the calendar
+    // anniversary (matches the FIFO long-term test, audit #36) rather than
+    // 365-day arithmetic so leap years don't shift the boundary.
+    const holdingPeriodKnown = pos.acquisitionDate != null;
+    let isLongTerm = false;
+    if (holdingPeriodKnown) {
+      const anniversary = new Date(pos.acquisitionDate!);
+      anniversary.setFullYear(anniversary.getFullYear() + 1);
+      isLongTerm = now.getTime() > anniversary.getTime();
+    }
+    const rate = isLongTerm ? ltcgRate : ordinaryRate;
+    const potentialSavings = round2(currentLoss * rate);
+
     const washSaleDate = new Date(now.getTime() + WASH_SALE_DAYS * 86400000);
 
     suggestions.push({
@@ -475,6 +515,8 @@ export function suggestHarvesting(
       quantity: pos.quantity,
       entryPrice: pos.entryPrice,
       currentPrice: pos.currentPrice,
+      isLongTerm,
+      holdingPeriodKnown,
     });
   }
 

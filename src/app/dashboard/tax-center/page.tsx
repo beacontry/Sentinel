@@ -41,6 +41,8 @@ interface HarvestingSuggestion {
   quantity: number;
   entryPrice: number;
   currentPrice: number;
+  isLongTerm: boolean;
+  holdingPeriodKnown: boolean;
 }
 
 function formatCurrency(value: number): string {
@@ -390,6 +392,19 @@ export default function TaxCenterPage() {
                     </p>
                     <p className="text-xs text-bullish">
                       Save ~{formatCurrency(s.potentialSavings)}
+                      <span
+                        className="text-text-muted"
+                        title={
+                          s.holdingPeriodKnown
+                            ? s.isLongTerm
+                              ? "Long-term: valued at the LTCG rate"
+                              : "Short-term: valued at the ordinary rate"
+                            : "Holding period unknown (broker lot) — estimated at the short-term/ordinary rate"
+                        }
+                      >
+                        {" "}
+                        ({s.holdingPeriodKnown ? (s.isLongTerm ? "LT" : "ST") : "est."})
+                      </span>
                     </p>
                   </div>
 
@@ -405,9 +420,13 @@ export default function TaxCenterPage() {
             ))}
 
             <p className="text-xs text-text-muted mt-2">
-              * Tax-loss harvesting involves selling securities at a loss to offset
-              capital gains. The wash-sale rule prevents repurchasing the same
-              security within 30 days.{" "}
+              * Estimated savings = loss × the rate matching its holding period
+              (LT = long-term/LTCG, ST = short-term/ordinary, est. = holding
+              period unknown, assumed short-term). It&apos;s a gross upper bound:
+              losses deducted against ordinary income are capped at $3,000/yr
+              ($1,500 married-separate) when you have no offsetting capital gains.
+              Tax-loss harvesting sells at a loss to offset gains; the wash-sale
+              rule prevents repurchasing the same security within 30 days.{" "}
               <Link
                 href="/dashboard/education/guides/wash-sale-rules-deep-dive"
                 className="text-accent hover:underline"
