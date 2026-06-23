@@ -7,7 +7,7 @@ import { RS_CONFIG } from "./config";
 export interface RSResult {
   symbol: string;
   sector: string;
-  rsScore: number;          // symbol return / benchmark return
+  rsScore: number;          // growth-factor ratio (1+r)/(1+b): >1 outperformed, <1 underperformed, 1 = parity (NOT the naive r/b, which inverts through a negative benchmark)
   returnPct: number;        // symbol's return over period
   benchmarkReturnPct: number;  // SPY's return over period
   rank: number;             // assigned after sorting

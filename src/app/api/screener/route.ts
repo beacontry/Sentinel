@@ -49,6 +49,7 @@ export async function GET() {
         // says "45m ago" the whole time, then jumps to "now").
         scanStartedAt: cache.scanStartedAt ? cache.scanStartedAt.toISOString() : null,
         scanning: cache.scanning,
+        resultsTimeframe: cache.resultsTimeframe, // "daily" | "intraday" | null (audit #76)
         stale: hasData ? stale : true,
         count: cache.results.length,
         traderPush: cache.traderPushResults ?? [],
@@ -121,6 +122,7 @@ export async function POST(request: Request) {
         results: filtered,
         scannedAt: everScanned ? scannedAt.toISOString() : null,
         scanning: cache.scanning,
+        resultsTimeframe: cache.resultsTimeframe, // "daily" | "intraday" | null (audit #76)
         stale: !freshScan && stale,
         count: filtered.length,
         totalSymbols: results.length,

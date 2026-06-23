@@ -191,10 +191,44 @@ const symbolSectors: Record<string, string> = {
   XLP: "ETF", XLY: "ETF", XLU: "ETF", XLB: "ETF", XLRE: "ETF",
   XLC: "ETF",
   UVXY: "ETF",
+
+  // ─── Added 2026-06 (audit #34) ───────────────────────────────────────
+  // S&P 500 names that were defaulting to "Other", which lumped unrelated
+  // companies (BlackRock=Financials, Walgreens=Staples, Marathon Oil=Energy)
+  // into one synthetic sector for the exposure cap. Project naming, not GICS.
+  AAL: "Industrials", ACGL: "Financials", AMP: "Financials", BIO: "Healthcare",
+  BLK: "Financials", CMA: "Financials", DAY: "Technology", FBHS: "Industrials",
+  FISV: "Technology", MRO: "Energy", OGN: "Healthcare", PVH: "Consumer Discretionary",
+  QRVO: "Technology", RE: "Financials", RHI: "Industrials", ROL: "Industrials",
+  SEE: "Materials", SJM: "Consumer Staples", TECH: "Healthcare", WBA: "Consumer Staples",
+  XRAY: "Healthcare",
 };
 
+/**
+ * Display-grouping sector: maps to a GICS sector, "ETF" for ETFs, "Other" for
+ * off-list symbols. Used by sector breakdowns / heatmaps / rotation views where
+ * "ETF" and "Other" are meaningful display buckets. For the risk exposure cap,
+ * use getSectorForExposureCap instead (it de-pools — see audit #40).
+ */
 export function getSymbolSector(symbol: string): string {
   return symbolSectors[symbol.toUpperCase()] ?? "Other";
+}
+
+/**
+ * Sector key for the risk EXPOSURE CAP only (audit #40). Off-list symbols
+ * (manual broker buys, ADRs) and ETFs each get their OWN bucket — the ticker
+ * itself — instead of pooling into a synthetic "Other"/"ETF" group. The cap
+ * sums market value by sector equality; pooling unrelated holdings (GLD vs XLF
+ * vs TLT, or two unrelated ADRs) made it fire spuriously on positions that
+ * share no real sector risk. Sector SPDRs self-bucket too: mapping
+ * XLF→Financials would wrongly count it against single-name financial caps.
+ * Kept separate from getSymbolSector so display groupings still see "ETF"/"Other".
+ */
+export function getSectorForExposureCap(symbol: string): string {
+  const upper = symbol.toUpperCase();
+  const mapped = symbolSectors[upper];
+  if (mapped === undefined || mapped === "ETF") return upper;
+  return mapped;
 }
 
 export function getAllSectors(): string[] {

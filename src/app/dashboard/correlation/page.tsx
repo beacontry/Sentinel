@@ -10,10 +10,11 @@ import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 interface CorrelationResult {
   symbols: string[];
-  matrix: number[][];
+  matrix: (number | null)[][];
 }
 
-function getCorrelationColor(value: number): string {
+function getCorrelationColor(value: number | null): string {
+  if (value == null) return "bg-bg-elevated/50"; // undefined (flat series) — neutral
   if (value >= 0.7) return "bg-bullish/80";
   if (value >= 0.3) return "bg-bullish/60";
   if (value > -0.3) return "bg-bg-elevated";
@@ -69,9 +70,12 @@ export default function CorrelationPage() {
               ? (() => {
                   let maxVal = -2, maxI = 0, maxJ = 1;
                   for (let i = 0; i < result.matrix.length; i++)
-                    for (let j = i + 1; j < result.matrix[i].length; j++)
-                      if (result.matrix[i][j] > maxVal) { maxVal = result.matrix[i][j]; maxI = i; maxJ = j; }
-                  return `${result.symbols[maxI]}/${result.symbols[maxJ]}`;
+                    for (let j = i + 1; j < result.matrix[i].length; j++) {
+                      const v = result.matrix[i][j];
+                      if (v != null && v > maxVal) { maxVal = v; maxI = i; maxJ = j; }
+                    }
+                  // All-null (every pair flat/undefined) → no valid pair to show.
+                  return maxVal === -2 ? "--" : `${result.symbols[maxI]}/${result.symbols[maxJ]}`;
                 })()
               : "--",
             tone: "bullish",
@@ -82,9 +86,11 @@ export default function CorrelationPage() {
               ? (() => {
                   let maxVal = -2;
                   for (let i = 0; i < result.matrix.length; i++)
-                    for (let j = i + 1; j < result.matrix[i].length; j++)
-                      if (result.matrix[i][j] > maxVal) maxVal = result.matrix[i][j];
-                  return maxVal.toFixed(2);
+                    for (let j = i + 1; j < result.matrix[i].length; j++) {
+                      const v = result.matrix[i][j];
+                      if (v != null && v > maxVal) maxVal = v;
+                    }
+                  return maxVal === -2 ? "--" : maxVal.toFixed(2);
                 })()
               : "--",
             tone: "brand",
@@ -144,9 +150,9 @@ export default function CorrelationPage() {
                         <div
                           className={`${getCorrelationColor(val)} rounded px-2 py-1.5 text-center
                             font-mono text-xs text-text-primary/90 min-w-[48px]`}
-                          title={`${result.symbols[i]} vs ${result.symbols[j]}: ${val.toFixed(3)}`}
+                          title={`${result.symbols[i]} vs ${result.symbols[j]}: ${val == null ? "undefined (flat series)" : val.toFixed(3)}`}
                         >
-                          {val.toFixed(2)}
+                          {val == null ? "n/a" : val.toFixed(2)}
                         </div>
                       </td>
                     ))}

@@ -49,6 +49,10 @@ export async function GET() {
           entryPrice: pos.entryPrice,
           currentPrice,
           unrealizedPnl,
+          // Manual positions carry an entry date → holding-period-aware rate
+          // (audit #9). Broker positions below have no lot date, so they're
+          // left undefined and treated as short-term.
+          acquisitionDate: pos.entryDate,
         });
       }
     }

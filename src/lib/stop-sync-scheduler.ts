@@ -42,6 +42,7 @@ const STOP_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 const g = globalThis as typeof globalThis & {
   __stopSyncSchedulerId?: ReturnType<typeof setInterval>;
+  __stopSyncRunning?: boolean;
 };
 
 /**
@@ -54,6 +55,13 @@ const g = globalThis as typeof globalThis & {
  * waiting 5 minutes for the first scheduled tick).
  */
 export async function runStopSyncCycle(): Promise<void> {
+  // In-flight guard (audit #60): the 5-min interval, the boot immediate-run,
+  // and a long cycle (many engines × awaited replaceOrder) can otherwise
+  // overlap and race concurrent replaceOrder on the same broker stop. Claim the
+  // slot synchronously before the first await.
+  if (g.__stopSyncRunning) return;
+  g.__stopSyncRunning = true;
+  try {
   const snapshots = getAllEngineSnapshots();
   if (snapshots.length === 0) return;
 
@@ -84,6 +92,9 @@ export async function runStopSyncCycle(): Promise<void> {
       { engines: snapshots.length, ran: ranCount, skipped: skipReasons },
       "Stop-sync cycle complete"
     );
+  }
+  } finally {
+    g.__stopSyncRunning = false;
   }
 }
 

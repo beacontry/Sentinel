@@ -84,6 +84,13 @@ async function writeAlert(args: {
 }
 
 export async function runWatchdog(): Promise<void> {
+  // In-flight guard (audit #59): the 60s interval can fire again while a slow
+  // cycle (many engines × awaited DB/push calls) is still running. Two
+  // concurrent cycles both pass the recentlyAlerted dedup check before either
+  // commits and double-write/double-push. Claim synchronously before any await.
+  if (g.__engineWatchdogRunning) return;
+  g.__engineWatchdogRunning = true;
+  try {
   const snapshots = getAllEngineSnapshots();
   if (snapshots.length === 0) return;
 
@@ -120,29 +127,25 @@ export async function runWatchdog(): Promise<void> {
       }
     }
 
-    // 3. Daily loss warning — fires at 80% of halt limit so the user can react
-    //    before auto-halt. dailyLoss is negative when at a loss.
-    //    dailyLossLimit is a fraction of equity; we don't have equity here so
-    //    we approximate using the absolute loss magnitude vs the limit fraction
-    //    of the user's typical book size. Skip if dailyLossLimit is 0/unset.
-    if (s.running && !s.halted && s.dailyLossLimit > 0 && s.dailyLoss < 0) {
-      // Treat dailyLoss in $ vs (dailyLossLimit * 100k) as a rough heuristic;
-      // the engine itself uses equity at scan time so this watchdog warn is
-      // intentionally conservative — anything within 20% of any plausible halt
-      // line earns an alert.
+    // 3. Daily loss warning — fires at 80% of the REAL halt line
+    //    (dailyLossLimit × boot equity) so it scales with account size
+    //    (audit #61). The old fixed $50k basis warned a $500k book on nearly
+    //    every losing day and never warned a $5k book before the engine's own
+    //    halt. Skip when equity is unknown rather than fabricate one.
+    if (
+      s.running && !s.halted && s.dailyLossLimit > 0 && s.dailyLoss < 0 &&
+      s.bootEquity != null && s.bootEquity > 0
+    ) {
       const lossMag = Math.abs(s.dailyLoss);
-      // Default 2% of $50k = $1000; warn at 80% = $800. Use the engine's known
-      // limit fraction × a conservative $50k floor to avoid double-alerting on
-      // tiny accounts.
-      const conservativeHaltDollars = s.dailyLossLimit * 50_000;
-      if (lossMag >= DAILY_LOSS_WARN_FRAC * conservativeHaltDollars) {
+      const haltDollars = s.dailyLossLimit * s.bootEquity;
+      if (lossMag >= DAILY_LOSS_WARN_FRAC * haltDollars) {
         if (!(await recentlyAlerted(s.userId, "daily_loss_warn"))) {
           await writeAlert({
             userId: s.userId,
             kind: "daily_loss_warn",
             severity: "warn",
-            message: `Daily loss approaching halt limit ($${lossMag.toFixed(2)})`,
-            context: { dailyLoss: s.dailyLoss, dailyLossLimit: s.dailyLossLimit },
+            message: `Daily loss approaching halt limit ($${lossMag.toFixed(2)} of $${haltDollars.toFixed(0)})`,
+            context: { dailyLoss: s.dailyLoss, dailyLossLimit: s.dailyLossLimit, haltDollars },
           });
         }
       }
@@ -162,10 +165,14 @@ export async function runWatchdog(): Promise<void> {
       }
     }
   }
+  } finally {
+    g.__engineWatchdogRunning = false;
+  }
 }
 
 const g = globalThis as typeof globalThis & {
   __engineWatchdogId?: ReturnType<typeof setInterval>;
+  __engineWatchdogRunning?: boolean;
 };
 
 const WATCHDOG_INTERVAL_MS = 60 * 1000;

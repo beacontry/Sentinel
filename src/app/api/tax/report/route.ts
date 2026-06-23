@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { portfolios, portfolioTrades, traderTrades } from "@/lib/db/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { calculateTaxSummary, type TaxTrade } from "@/lib/tax-engine";
 import { toCSV } from "@/lib/csv";
 import { createRouteLogger } from "@/lib/logger";
@@ -31,56 +31,60 @@ export async function GET(request: NextRequest) {
   const yearEnd = new Date(`${year}-12-31T23:59:59.999-05:00`);
 
   try {
-    // 1. Manual portfolio trades
-    const userPortfolios = await db
-      .select({ id: portfolios.id })
-      .from(portfolios)
-      .where(eq(portfolios.userId, session.userId as string));
-
-    const portfolioIds = userPortfolios.map((p) => p.id);
-
     const allTrades: TaxTrade[] = [];
 
-    for (const pId of portfolioIds) {
-      const trades = await db
+    // 1. Manual portfolio trades — FULL history (FIFO needs prior-year buy
+    //    lots; we report only the tax year's disposals). One inArray query +
+    //    a 5s statement timeout instead of an unbounded per-portfolio loop
+    //    with no timeout (audit #38).
+    const portfolioTradeRows = await withTimeout(5000, async (tx) => {
+      const userPortfolios = await tx
+        .select({ id: portfolios.id })
+        .from(portfolios)
+        .where(eq(portfolios.userId, session.userId as string));
+      const portfolioIds = userPortfolios.map((p) => p.id);
+      if (portfolioIds.length === 0) return [];
+      return tx
         .select()
         .from(portfolioTrades)
-        .where(
-          and(
-            eq(portfolioTrades.portfolioId, pId),
-            gte(portfolioTrades.executedAt, yearStart),
-            lte(portfolioTrades.executedAt, yearEnd)
-          )
-        );
+        .where(inArray(portfolioTrades.portfolioId, portfolioIds));
+    });
 
-      for (const t of trades) {
-        allTrades.push({
-          symbol: t.symbol,
-          action: t.action,
-          quantity: t.quantity,
-          price: t.price,
-          executedAt: t.executedAt.toISOString(),
-        });
-      }
+    for (const t of portfolioTradeRows) {
+      allTrades.push({
+        symbol: t.symbol,
+        action: t.action,
+        quantity: t.quantity,
+        price: t.price,
+        executedAt: t.executedAt.toISOString(),
+      });
     }
 
-    // 2. Live engine trades (Alpaca fills) — filter by fill time, not order creation,
-    //    so trades placed in Dec but filled in Jan land in the right tax year.
-    const engineTrades = await db
-      .select()
-      .from(traderTrades)
-      .where(
-        and(
-          eq(traderTrades.userId, session.userId as string),
-          eq(traderTrades.status, "FILLED")
+    // 2. Live engine trades (Alpaca fills) — FULL history, fill-time based.
+    //    FIFO matches across years; only the year's disposals are reported.
+    const engineTrades = await withTimeout(5000, async (tx) =>
+      tx
+        .select()
+        .from(traderTrades)
+        .where(
+          and(
+            eq(traderTrades.userId, session.userId as string),
+            eq(traderTrades.status, "FILLED")
+          )
         )
-      );
+    );
 
+    let skippedNoPrice = 0;
     for (const t of engineTrades) {
       const price = t.fillPrice ?? t.limitPrice ?? 0;
-      if (price <= 0) continue;
+      if (price <= 0) {
+        // Surface dropped rows (audit #86) instead of silently orphaning their
+        // disposition and desyncing FIFO — a FILLED row with no fill/limit
+        // price is a data anomaly worth observing.
+        skippedNoPrice++;
+        continue;
+      }
       const executedAt = t.fillTime ?? t.createdAt;
-      if (executedAt < yearStart || executedAt > yearEnd) continue;
 
       // Normalize engine action vocabulary (BUY / SELL / manual_close) to BUY/SELL
       const action = t.action.toUpperCase() === "BUY" ? "BUY" : "SELL";
@@ -92,6 +96,13 @@ export async function GET(request: NextRequest) {
         price,
         executedAt: executedAt.toISOString(),
       });
+    }
+
+    if (skippedNoPrice > 0) {
+      log.warn(
+        { userId: session.userId, skippedNoPrice, year },
+        "Tax report skipped FILLED engine trades with no fill/limit price — disposition may be incomplete"
+      );
     }
 
     if (allTrades.length === 0) {
@@ -113,12 +124,25 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const summary = calculateTaxSummary(allTrades);
+    // FIFO over the FULL history (so prior-year buy lots supply cost basis),
+    // reporting only disposals whose SELL falls in the ET-anchored tax year.
+    // Filtering trades to the year BEFORE FIFO (the old behavior) dropped the
+    // basis of any lot bought in a prior year, losing/garbling its gain (#8).
+    const summary = calculateTaxSummary(allTrades, {
+      taxYearStart: yearStart,
+      taxYearEnd: yearEnd,
+    });
+
+    // Raw trade list (CSV + JSON preview) is the tax year's own trades only.
+    const yearTrades = allTrades.filter((t) => {
+      const ts = new Date(t.executedAt);
+      return ts >= yearStart && ts <= yearEnd;
+    });
 
     // CSV export
     if (format === "csv") {
       const headers = ["Date", "Symbol", "Action", "Quantity", "Price", "Total"];
-      const rows = allTrades
+      const rows = yearTrades
         .sort((a, b) => new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime())
         .map((t) => [
           // ET trade date — matches the tax-year bucketing above. A UTC
@@ -141,10 +165,16 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { year, summary, trades: allTrades },
+      { year, summary, trades: yearTrades },
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {
+    if (isStatementTimeout(err)) {
+      return NextResponse.json(
+        { error: "Query timed out — too many trades in history" },
+        { status: 504, headers: { "X-Query-Timeout": "true" } }
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Tax report error");
     return NextResponse.json(

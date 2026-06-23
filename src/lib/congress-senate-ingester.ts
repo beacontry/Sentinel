@@ -242,12 +242,22 @@ async function searchPtrs(
         `Senate eFD search returned ${res.status} ${res.statusText}`
       );
     }
-    const data = (await res.json()) as {
-      recordsTotal: number;
-      data: Array<[string, string, string, string, string]>;
-    };
+    // Guard against Akamai challenge / HTML interstitials: the body may not be
+    // JSON. Parse defensively and stop paginating on a non-JSON body instead of
+    // letting a SyntaxError abort the whole year's ingest (audit #48).
+    const text = await res.text();
+    let data: { recordsTotal: number; data: Array<[string, string, string, string, string]> };
+    try {
+      data = JSON.parse(text);
+    } catch {
+      log.warn(
+        { status: res.status, preview: text.slice(0, 200) },
+        "Senate eFD returned a non-JSON body (likely an Akamai challenge) — stopping pagination for this run"
+      );
+      break;
+    }
 
-    if (!Array.isArray(data.data)) break;
+    if (!data || !Array.isArray(data.data)) break;
     for (const row of data.data) {
       results.push({
         first: row[0],

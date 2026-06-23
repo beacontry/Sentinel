@@ -31,17 +31,25 @@ describe("decideAlert — edge-trigger + cooldown state machine", () => {
     expect(decideAlert(false, false, null, NOW)).toEqual({ fire: false, persistState: false });
   });
 
-  it("suppresses a rising edge inside the cooldown but still consumes the edge", () => {
-    // last fired 30 min ago → cooldown blocks, but state must persist so it
-    // doesn't fire again until a fresh false→true after cooldown.
+  it("suppresses a rising edge inside the cooldown WITHOUT consuming the edge", () => {
+    // Audit #39: a cooldown-suppressed rising edge must NOT be consumed — keep
+    // lastConditionMet unchanged so the still-true condition fires once the
+    // cooldown expires, instead of being permanently swallowed.
     expect(decideAlert(true, false, new Date(NOW - 30 * 60 * 1000), NOW)).toEqual({
       fire: false,
-      persistState: true,
+      persistState: false,
     });
   });
 
   it("fires a rising edge once the cooldown has elapsed", () => {
     expect(decideAlert(true, false, new Date(NOW - 2 * HOUR), NOW)).toEqual({ fire: true, persistState: true });
+  });
+
+  it("first observation (null) records a baseline and does NOT fire, even if already true", () => {
+    // Audit #10: a freshly-created rule whose level is already true must not
+    // emit a spurious cross on its first eval — it seeds state instead.
+    expect(decideAlert(true, null, null, NOW)).toEqual({ fire: false, persistState: true });
+    expect(decideAlert(false, null, null, NOW)).toEqual({ fire: false, persistState: true });
   });
 });
 
@@ -109,5 +117,12 @@ describe("checkIndicatorRule — reads the pre-computed snapshot, no I/O", () =>
   it("price_above_sma selects SMA 50 vs 20 by threshold", () => {
     expect(checkIndicatorRule("price_above_sma", 50, ctx(105, { sma_50: 100, sma_20: 110 }))).toBe(true);
     expect(checkIndicatorRule("price_above_sma", 20, ctx(105, { sma_50: 100, sma_20: 110 }))).toBe(false);
+  });
+
+  it("price_above_sma does NOT fall through to SMA-20 for unsupported periods (audit #9)", () => {
+    // value=200 used to silently test SMA-20 (105 > 110 = false here, but it
+    // would have fired in an uptrend). Unsupported periods now never fire.
+    expect(checkIndicatorRule("price_above_sma", 200, ctx(105, { sma_50: 100, sma_20: 90 }))).toBe(false);
+    expect(checkIndicatorRule("price_above_sma", 100, ctx(105, { sma_50: 100, sma_20: 90 }))).toBe(false);
   });
 });

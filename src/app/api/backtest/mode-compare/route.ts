@@ -108,15 +108,16 @@ async function loadOptimizedParamsForSymbol(
         );
     if (run?.bestParams) {
       const p = run.bestParams as Record<string, number>;
-      if (
-        typeof p.stopLossPct === "number" &&
-        typeof p.takeProfitPct === "number" &&
-        typeof p.trailingStopPct === "number"
-      ) {
+      // GA runs write takeProfitAtrMult, not takeProfitPct — hard-requiring
+      // takeProfitPct silently dropped every modern run's Optimized config and
+      // fell back to defaults (audit #32). Mirror trading-engine's
+      // _loadOptimizedParams fallback (takeProfitPct ?? 5.0) and require only
+      // the keys the GA actually writes.
+      if (typeof p.stopLossPct === "number" && typeof p.trailingStopPct === "number") {
         return {
           config: {
             stopLossPct: p.stopLossPct,
-            takeProfitPct: p.takeProfitPct,
+            takeProfitPct: typeof p.takeProfitPct === "number" ? p.takeProfitPct : 5.0,
             trailingStopPct: p.trailingStopPct,
           },
           holdPeriod: typeof p.holdPeriod === "number" ? p.holdPeriod : undefined,

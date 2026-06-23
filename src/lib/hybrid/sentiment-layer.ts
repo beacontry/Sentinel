@@ -1,8 +1,11 @@
 import type { SignalType, SentimentLayer } from "@/types";
 import { getFinnhubClient } from "../finnhub";
 import { CLAUDE_CONFIG } from "../config";
+import { createRouteLogger } from "../logger";
 
 export type { SentimentLayer };
+
+const log = createRouteLogger("sentiment-layer");
 
 // ─── Cache ──────────────────────────────────────────────────────────
 
@@ -34,6 +37,12 @@ function setCache(symbol: string, data: SentimentLayer): void {
     const now = Date.now();
     for (const [k, v] of g.__sentimentCache!) {
       if (now > v.expiry) g.__sentimentCache!.delete(k);
+    }
+    // Hard cap: evict oldest-first when all entries are still live (audit #65).
+    if (g.__sentimentCache!.size > 200) {
+      for (const k of [...g.__sentimentCache!.keys()].slice(0, g.__sentimentCache!.size - 200)) {
+        g.__sentimentCache!.delete(k);
+      }
     }
   }
 }
@@ -93,7 +102,9 @@ export async function applySentimentLayer(
 
     setCache(symbol, result);
     return result;
-  } catch {
+  } catch (err) {
+    // Log the cause instead of silently returning "no data" (audit #66).
+    log.warn({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Sentiment layer failed — degrading to no data");
     return null;
   }
 }
@@ -163,17 +174,25 @@ bullish + bearish should roughly sum to 1.0`,
 const BULLISH_WORDS = ["surge", "jump", "rally", "gain", "rise", "beat", "upgrade", "record", "high", "strong", "growth", "profit", "revenue", "bullish", "positive", "outperform"];
 const BEARISH_WORDS = ["drop", "fall", "decline", "loss", "miss", "downgrade", "low", "weak", "cut", "slash", "bearish", "negative", "underperform", "crash", "plunge", "sell-off"];
 
-function scoreSentimentHeuristic(headlines: string[]): { bullish: number; bearish: number } {
-  let bullCount = 0;
-  let bearCount = 0;
-  const joined = headlines.join(" ").toLowerCase();
+/** Count word-boundary occurrences of any keyword in the text. The old
+ *  `joined.includes(word)` substring test mislabeled unrelated words —
+ *  "high" matched "highlight"/"higher", "gain" matched "against", "low"
+ *  matched "below"/"follow", "cut" matched "circuit" (audit #28). Weighted by
+ *  number of occurrences, not mere presence. */
+function countKeywordHits(text: string, words: string[]): number {
+  let count = 0;
+  for (const word of words) {
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const matches = text.match(new RegExp(`\\b${escaped}\\b`, "g"));
+    if (matches) count += matches.length;
+  }
+  return count;
+}
 
-  for (const word of BULLISH_WORDS) {
-    if (joined.includes(word)) bullCount++;
-  }
-  for (const word of BEARISH_WORDS) {
-    if (joined.includes(word)) bearCount++;
-  }
+export function scoreSentimentHeuristic(headlines: string[]): { bullish: number; bearish: number } {
+  const joined = headlines.join(" ").toLowerCase();
+  const bullCount = countKeywordHits(joined, BULLISH_WORDS);
+  const bearCount = countKeywordHits(joined, BEARISH_WORDS);
 
   const total = bullCount + bearCount || 1;
   return {

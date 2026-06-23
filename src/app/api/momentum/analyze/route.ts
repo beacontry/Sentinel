@@ -68,14 +68,35 @@ export async function POST(request: NextRequest) {
   const today = new Date();
 
   try {
-    const bars = await fetchMinuteBars(symbol, today, today);
-    if (bars.length === 0) {
+    const rawBars = await fetchMinuteBars(symbol, today, today);
+    if (rawBars.length === 0) {
       return NextResponse.json({
         configured: true,
         symbol,
         result: null,
         message:
           "No bars returned. Markets may be closed, or the symbol may be delisted / not covered by Polygon's plan.",
+      });
+    }
+
+    // Drop the live, unclosed final minute bar (audit #46). Polygon timestamps
+    // a minute aggregate at the START of its minute, so the most recent bar is
+    // still in-progress until 60s elapse. analyzeMomentumBars treats the last
+    // bar as a CLOSED breakout bar (volume multiple + breakout close), so a
+    // partial bar yields a flickering, look-ahead signal that can reverse once
+    // the true close prints. Exclude it when it's younger than one minute.
+    const last = rawBars[rawBars.length - 1];
+    const bars =
+      last && Date.now() - new Date(last.date).getTime() < 60_000
+        ? rawBars.slice(0, -1)
+        : rawBars;
+    if (bars.length === 0) {
+      return NextResponse.json({
+        configured: true,
+        symbol,
+        result: null,
+        message:
+          "Only the current, unclosed minute bar is available — retry after it closes.",
       });
     }
 

@@ -1,6 +1,7 @@
-// GET  /api/dm/threads/[id] — fetch a thread + messages, mark caller's
-//                              last_seen as "now" so unread clears
-// POST /api/dm/threads/[id] — append a message to the thread
+// GET   /api/dm/threads/[id] — fetch a thread + messages (read-only)
+// PATCH /api/dm/threads/[id] — mark caller's last_seen as "now" so unread
+//                              clears (CSRF-protected; was a side effect on GET)
+// POST  /api/dm/threads/[id] — append a message to the thread
 
 import { NextResponse } from "next/server";
 import { getSession, requireAuthWithCsrf } from "@/lib/auth";
@@ -78,13 +79,8 @@ export async function GET(
       return { other, messages: msgs };
     });
 
-    // Mark this side's last-seen as now — clears the unread badge
-    const isA = thread.userAId === session.userId;
-    await db
-      .update(dmThreads)
-      .set(isA ? { aLastSeenAt: new Date() } : { bLastSeenAt: new Date() })
-      .where(eq(dmThreads.id, id));
-
+    // Mark-seen is NOT done here (audit #47): a GET must not mutate state. The
+    // client clears its unread badge via the CSRF-protected PATCH below.
     return NextResponse.json(
       { thread, other: result.other, messages: result.messages },
       { headers: { "Cache-Control": "private, no-store" } }
@@ -95,6 +91,39 @@ export async function GET(
     }
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "DM thread GET error");
+    return NextResponse.json({ error: "Failed" }, { status: 500 });
+  }
+}
+
+// Mark the caller's side of the thread as seen (clears the unread badge).
+// CSRF-protected because it mutates state — previously this was a side effect
+// on the GET handler, which a cross-site top-level navigation could trigger
+// (audit #47). loadThread scopes ownership, so a non-participant 404s.
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireAuthWithCsrf(request);
+  if (auth instanceof Response) return auth;
+  const { id } = await params;
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
+  try {
+    const thread = await loadThread(id, auth.userId);
+    if (!thread) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const isA = thread.userAId === auth.userId;
+    await db
+      .update(dmThreads)
+      .set(isA ? { aLastSeenAt: new Date() } : { bLastSeenAt: new Date() })
+      .where(eq(dmThreads.id, id));
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    log.error({ err: message }, "DM thread PATCH error");
     return NextResponse.json({ error: "Failed" }, { status: 500 });
   }
 }

@@ -210,6 +210,9 @@ class RateLimiter {
   private lastRefill: number;
   private readonly maxTokens: number;
   private readonly refillRate: number; // tokens per second
+  // Serializes acquire() so concurrent callers can't all pass the token check
+  // across the await and overshoot the cap (audit #46).
+  private chain: Promise<void> = Promise.resolve();
 
   constructor(maxPerMinute: number) {
     this.maxTokens = maxPerMinute;
@@ -218,7 +221,16 @@ class RateLimiter {
     this.lastRefill = Date.now();
   }
 
-  async acquire(): Promise<void> {
+  acquire(): Promise<void> {
+    // Each acquire waits for the previous to finish (including its wait), so the
+    // check-then-decrement is atomic per caller — no interleaving that lets two
+    // callers both see a token and both decrement past the cap.
+    const result = this.chain.then(() => this.acquireOne());
+    this.chain = result.catch(() => {}); // keep the chain alive even on failure
+    return result;
+  }
+
+  private async acquireOne(): Promise<void> {
     this.refill();
     if (this.tokens < 1) {
       const waitMs = ((1 - this.tokens) / this.refillRate) * 1000;

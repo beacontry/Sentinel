@@ -73,11 +73,19 @@ export async function GET(request: NextRequest) {
     });
 
     const events: TaxTradeEvent[] = rows
-      .filter((r) => r.fillPrice !== null && (r.action === "BUY" || r.action === "SELL"))
+      .filter(
+        (r) =>
+          r.fillPrice !== null &&
+          (r.action === "BUY" || r.action === "SELL" || r.action === "manual_close")
+      )
       .map((r) => ({
         id: r.id,
         symbol: r.symbol,
-        action: r.action as "BUY" | "SELL",
+        // manual_close is an engine/user disposal — normalize to SELL so its
+        // realized gain is reported and its lot is closed in FIFO. Dropping it
+        // (the prior BUY/SELL-only filter) omitted the gain AND left the lot
+        // perpetually open, corrupting subsequent FIFO matching.
+        action: (r.action === "BUY" ? "BUY" : "SELL") as "BUY" | "SELL",
         quantity: r.quantity,
         fillPrice: r.fillPrice!,
         fillTime: r.fillTime ?? r.traderTimestamp,

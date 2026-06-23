@@ -16,6 +16,8 @@
 
 ## Architecture: Multi-Tenant Trading Engine
 
+> **Building/maintaining engine, backtester, optimizer, broker, or tax code?** Read `docs/patterns-trading.md` first — the build-patterns + recurring-bug-classes cookbook (backtest fidelity, optimizer/GA discipline, halt accounting, fill reconciliation, risk gating, broker numeric guards, market-data freshness, tax). It complements `docs/ENGINE_RULESET.md` (current behavior) and `docs/changelog.md` (history); most patterns trace to `docs/audit-2026-06-17.md`.
+
 ### Engine Isolation
 Each user gets their own independent trading engine instance:
 - `globalThis.__tradingEngines`: `Map<userId, EngineState>` — per-user engine state

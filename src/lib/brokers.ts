@@ -150,11 +150,26 @@ class BrokerError extends Error {
   constructor(
     message: string,
     public statusCode: number = 502,
-    public userMessage: string = "Failed to connect to broker"
+    public userMessage: string = "Failed to connect to broker",
+    /** Transient (429 / 503 / timeout) — caller may back off and retry rather
+     *  than treating it as a connectivity failure (audit #14). */
+    public retryable: boolean = false,
+    /** Parsed Retry-After in ms when the broker supplied one, else null. */
+    public retryAfterMs: number | null = null
   ) {
     super(message);
     this.name = "BrokerError";
   }
+}
+
+/** Parse a Retry-After header (delta-seconds or HTTP-date) into ms, or null. */
+function parseRetryAfterMs(header: string | null): number | null {
+  if (!header) return null;
+  const secs = Number(header);
+  if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
+  const date = Date.parse(header);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return null;
 }
 
 async function brokerFetch(
@@ -169,16 +184,31 @@ async function brokerFetch(
       ...options,
       signal: controller.signal,
     });
+    if (res.status === 429) {
+      // Respect the broker's rate-limit signal (audit #14): surface 429 as a
+      // distinct RETRYABLE error carrying Retry-After, so callers back off and
+      // the engine doesn't miscount a throttle as a connectivity failure (which
+      // would blind-retry and trip the broker-unreachable halt).
+      throw new BrokerError(
+        "Broker rate limit (429)",
+        429,
+        "Broker is rate-limiting requests — backing off",
+        true,
+        parseRetryAfterMs(res.headers.get("retry-after"))
+      );
+    }
     return res;
   } catch (err) {
+    if (err instanceof BrokerError) throw err; // already classified (e.g. 429)
     const message = err instanceof Error ? err.message : "Unknown error";
     if (message.includes("abort")) {
-      throw new BrokerError("Connection timed out", 504, "Connection timed out");
+      throw new BrokerError("Connection timed out", 504, "Connection timed out", true);
     }
     throw new BrokerError(
       `Fetch failed: ${message}`,
       502,
-      "Failed to connect to broker"
+      "Failed to connect to broker",
+      true
     );
   } finally {
     clearTimeout(timeout);
@@ -192,6 +222,18 @@ function toNumber(value: unknown): number {
     return isNaN(n) ? 0 : n;
   }
   return 0;
+}
+
+/**
+ * Parse a broker numeric that must be strictly positive (e.g. a fill price).
+ * Returns null for absent / 0 / negative / non-numeric input rather than
+ * toNumber's 0-coercion, so a malformed value can't masquerade as a real
+ * price and feed fabricated P&L delta math downstream (audit #39).
+ */
+function positivePriceOrNull(value: unknown): number | null {
+  if (value == null) return null;
+  const n = toNumber(value);
+  return n > 0 ? n : null;
 }
 
 function toString(value: unknown): string {
@@ -211,7 +253,7 @@ function mapAlpacaOrder(o: Record<string, unknown>): BrokerOrder {
     filledQty: toNumber(o.filled_qty),
     type: toString(o.type),
     status: toString(o.status),
-    filledPrice: o.filled_avg_price != null ? toNumber(o.filled_avg_price) : null,
+    filledPrice: positivePriceOrNull(o.filled_avg_price),
     timeInForce: toString(o.time_in_force),
     limitPrice: o.limit_price != null ? toString(o.limit_price) : null,
     stopPrice: o.stop_price != null ? toString(o.stop_price) : null,
@@ -407,15 +449,16 @@ export class AlpacaClient implements BrokerClient {
       payload.position_intent = params.positionIntent;
     }
 
-    // Bracket orders: entry + stop-loss + take-profit as one atomic order
+    // Bracket orders: entry + stop-loss + take-profit as one atomic order.
     if (params.orderClass === "bracket") {
-      payload.order_class = "bracket";
-      if (params.takeProfitPrice) {
-        payload.take_profit = { limit_price: params.takeProfitPrice };
-      }
-      if (params.stopLossPrice) {
-        payload.stop_loss = { stop_price: params.stopLossPrice };
-      }
+      const hasTp = Boolean(params.takeProfitPrice);
+      const hasSl = Boolean(params.stopLossPrice);
+      // Alpaca's "bracket" class requires BOTH legs; a single-leg order is an
+      // "oto". Forwarding a one-sided bracket gets rejected with a 422 (audit
+      // #42), so downgrade to oto with whichever leg is present.
+      payload.order_class = hasTp && hasSl ? "bracket" : "oto";
+      if (hasTp) payload.take_profit = { limit_price: params.takeProfitPrice };
+      if (hasSl) payload.stop_loss = { stop_price: params.stopLossPrice };
     } else {
       if (params.stopPrice) payload.stop_price = params.stopPrice;
     }
@@ -439,14 +482,20 @@ export class AlpacaClient implements BrokerClient {
         "Order placement failed"
       );
 
+      // Curated, sanitized client message — NEVER forward the raw Alpaca body
+      // (it can disclose buying-power figures, account restrictions, internal
+      // reason codes, and isn't a stable contract — audit #13). The full text
+      // is already logged server-side above; map only known cases.
       let userError = "Failed to place order";
-      try {
-        const errorData = JSON.parse(errorText);
-        if (errorData.message) {
-          userError = errorData.message;
-        }
-      } catch {
-        // Use generic error
+      const lc = errorText.toLowerCase();
+      if (lc.includes("buying power") || lc.includes("insufficient")) {
+        userError = "Insufficient buying power for this order";
+      } else if (lc.includes("client_order_id must be unique")) {
+        userError = "Duplicate order — this trade was already submitted";
+      } else if (lc.includes("not tradable") || lc.includes("not_tradable") || lc.includes("not active") || lc.includes("not allowed")) {
+        userError = "This symbol is not currently tradable";
+      } else if (lc.includes("wash")) {
+        userError = "Order blocked by the broker's wash-trade check";
       }
 
       throw new BrokerError(
@@ -475,7 +524,7 @@ export class AlpacaClient implements BrokerClient {
       filledQty: toNumber(o.filled_qty),
       type: toString(o.type),
       status: toString(o.status),
-      filledPrice: o.filled_avg_price != null ? toNumber(o.filled_avg_price) : null,
+      filledPrice: positivePriceOrNull(o.filled_avg_price),
       timeInForce: toString(o.time_in_force),
       limitPrice: o.limit_price != null ? toString(o.limit_price) : null,
       stopPrice: o.stop_price != null ? toString(o.stop_price) : null,
@@ -501,9 +550,23 @@ export class AlpacaClient implements BrokerClient {
       method: "DELETE",
       headers: this.headers,
     });
+    // DELETE /v2/orders returns 207 Multi-Status when SOME orders couldn't be
+    // canceled. The old code treated 207 as success (res.ok) and merely logged
+    // a hard failure (audit #43). Surface the partial, and THROW on a hard
+    // non-2xx so callers don't silently assume a clean flatten — every caller
+    // wraps this in try/catch and independently re-verifies positions.
+    if (res.status === 207) {
+      const body = await res.text().catch(() => "");
+      log.warn(
+        { broker: "alpaca", status: 207, body: body.slice(0, 500) },
+        "Cancel-all returned 207 Multi-Status — some orders may not have canceled"
+      );
+      return;
+    }
     if (!res.ok) {
       const msg = await res.text().catch(() => "Unknown");
       log.error({ broker: "alpaca", status: res.status, err: msg }, "Cancel all orders failed");
+      throw new BrokerError(`Cancel all orders failed: ${msg}`, res.status, "Failed to cancel orders");
     }
   }
 
@@ -532,7 +595,7 @@ export class AlpacaClient implements BrokerClient {
       filledQty: Number(o.filled_qty) || 0,
       type: toString(o.type),
       status: toString(o.status),
-      filledPrice: o.filled_avg_price != null ? Number(o.filled_avg_price) : null,
+      filledPrice: positivePriceOrNull(o.filled_avg_price),
       timeInForce: toString(o.time_in_force),
       limitPrice: o.limit_price != null ? toString(o.limit_price) : null,
       stopPrice: o.stop_price != null ? toString(o.stop_price) : null,
@@ -744,7 +807,7 @@ class IBKRClient implements BrokerClient {
       filledQty: toNumber(o.filledQuantity),
       type: toString(o.orderType),
       status: toString(o.status),
-      filledPrice: toNumber(o.avgPrice) || null,
+      filledPrice: positivePriceOrNull(o.avgPrice),
       timeInForce: toString(o.timeInForce) || "DAY",
       limitPrice: o.price != null ? toString(o.price) : null,
       stopPrice: o.auxPrice != null ? toString(o.auxPrice) : null,
@@ -1172,7 +1235,7 @@ class TradierClient implements BrokerClient {
       filledQty: toNumber(o.exec_quantity) || toNumber(o.last_fill_quantity) || 0,
       type: toString(o.type),
       status: toString(o.status),
-      filledPrice: o.avg_fill_price != null ? toNumber(o.avg_fill_price) : null,
+      filledPrice: positivePriceOrNull(o.avg_fill_price),
       timeInForce: toString(o.duration) || "day",
       limitPrice: o.price != null ? toString(o.price) : null,
       stopPrice: o.stop_price != null ? toString(o.stop_price) : null,

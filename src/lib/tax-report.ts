@@ -137,7 +137,14 @@ export function computeFifoClosedLots(events: TaxTradeEvent[]): ClosedLot[] {
         const proceeds = takeQty * event.fillPrice;
         const costBasis = takeQty * head.fillPrice;
         const realizedGainLoss = proceeds - costBasis;
-        const holdingDays = (event.fillTime.getTime() - head.fillTime.getTime()) / MS_PER_DAY;
+        // Long-term = held MORE than one year (IRS Pub 550): the holding period
+        // starts the day AFTER purchase, so a sale on the 1-year anniversary is
+        // still short-term. Compare against the calendar anniversary
+        // (leap-year-correct); a fixed 365-day count misclassifies an exactly-
+        // one-year hold spanning a leap year (366 days) as long-term (audit #36).
+        // Matches tax-engine.ts's generateForm8949.
+        const oneYearAfter = new Date(head.fillTime);
+        oneYearAfter.setFullYear(oneYearAfter.getFullYear() + 1);
 
         closedLots.push({
           symbol,
@@ -147,7 +154,7 @@ export function computeFifoClosedLots(events: TaxTradeEvent[]): ClosedLot[] {
           costBasis,
           proceeds,
           realizedGainLoss,
-          isLongTerm: holdingDays > 365,
+          isLongTerm: event.fillTime.getTime() > oneYearAfter.getTime(),
           washSaleDisallowed: 0, // set in second pass below
           acquiredFromTradeId: head.tradeId,
           soldFromTradeId: event.id,

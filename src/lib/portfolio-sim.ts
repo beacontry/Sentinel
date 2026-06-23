@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { portfolios, portfolioPositions, portfolioTrades } from "./db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, gte, sql } from "drizzle-orm";
 import { getMarketDataProvider } from "./market-data";
 
 export async function createPortfolio(userId: string, name: string, initialCash: number = 10000) {
@@ -49,102 +49,79 @@ export async function executeTrade(
   shares: number,
   price: number
 ) {
-  const [portfolio] = await db
-    .select()
-    .from(portfolios)
-    .where(eq(portfolios.id, portfolioId))
-    .limit(1);
-
-  if (!portfolio) throw new Error("Portfolio not found");
-
-  if (side === "BUY") {
-    const cost = shares * price;
-    if (cost > portfolio.currentBalance) {
-      throw new Error("Insufficient cash");
-    }
-
-    // Deduct cash
-    await db
-      .update(portfolios)
-      .set({ currentBalance: portfolio.currentBalance - cost })
-      .where(eq(portfolios.id, portfolioId));
-
-    // Update or create position
-    const [existing] = await db
-      .select()
-      .from(portfolioPositions)
-      .where(
-        and(
-          eq(portfolioPositions.portfolioId, portfolioId),
-          eq(portfolioPositions.symbol, symbol)
-        )
-      )
+  // Single transaction with atomic, guarded SQL deltas (audit #12). The old
+  // read-modify-write off a stale snapshot let two concurrent trades (double-
+  // click / two tabs / a BUY racing a SELL) both pass the cash/share check and
+  // both write off the same balance — silently losing one delta or overdrawing
+  // the account, while BOTH trades were still recorded. Each WHERE-guarded
+  // UPDATE makes the check and the write one statement; the row lock serializes
+  // concurrent writers, and any throw rolls back the whole trade.
+  await db.transaction(async (tx) => {
+    const [portfolio] = await tx
+      .select({ id: portfolios.id })
+      .from(portfolios)
+      .where(eq(portfolios.id, portfolioId))
       .limit(1);
+    if (!portfolio) throw new Error("Portfolio not found");
 
-    if (existing) {
-      const totalCost = existing.entryPrice * existing.quantity + price * shares;
-      const totalShares = existing.quantity + shares;
-      await db
-        .update(portfolioPositions)
-        .set({
-          quantity: totalShares,
-          entryPrice: totalCost / totalShares,
-        })
-        .where(eq(portfolioPositions.id, existing.id));
+    if (side === "BUY") {
+      const cost = shares * price;
+      // Deduct cash only if the balance still covers it, atomically.
+      const deducted = await tx
+        .update(portfolios)
+        .set({ currentBalance: sql`${portfolios.currentBalance} - ${cost}` })
+        .where(and(eq(portfolios.id, portfolioId), gte(portfolios.currentBalance, cost)))
+        .returning({ id: portfolios.id });
+      if (deducted.length === 0) throw new Error("Insufficient cash");
+
+      // Upsert the position; weighted-average entry computed in SQL against the
+      // EXISTING row so concurrent buys can't lose shares to a stale read.
+      await tx
+        .insert(portfolioPositions)
+        .values({ portfolioId, symbol, quantity: shares, entryPrice: price })
+        .onConflictDoUpdate({
+          target: [portfolioPositions.portfolioId, portfolioPositions.symbol],
+          set: {
+            entryPrice: sql`(${portfolioPositions.entryPrice} * ${portfolioPositions.quantity} + ${price * shares}) / (${portfolioPositions.quantity} + ${shares})`,
+            quantity: sql`${portfolioPositions.quantity} + ${shares}`,
+          },
+        });
     } else {
-      await db.insert(portfolioPositions).values({
-        portfolioId,
-        symbol,
-        quantity: shares,
-        entryPrice: price,
-      });
-    }
-  } else {
-    // SELL
-    const [position] = await db
-      .select()
-      .from(portfolioPositions)
-      .where(
-        and(
-          eq(portfolioPositions.portfolioId, portfolioId),
-          eq(portfolioPositions.symbol, symbol)
+      // SELL — decrement shares only if enough are held, atomically.
+      const proceeds = shares * price;
+      const sold = await tx
+        .update(portfolioPositions)
+        .set({ quantity: sql`${portfolioPositions.quantity} - ${shares}` })
+        .where(
+          and(
+            eq(portfolioPositions.portfolioId, portfolioId),
+            eq(portfolioPositions.symbol, symbol),
+            gte(portfolioPositions.quantity, shares)
+          )
         )
-      )
-      .limit(1);
+        .returning({ id: portfolioPositions.id, quantity: portfolioPositions.quantity });
+      if (sold.length === 0) throw new Error("Insufficient shares");
 
-    if (!position || position.quantity < shares) {
-      throw new Error("Insufficient shares");
+      // Drop a now-empty lot.
+      if (sold[0].quantity <= 0) {
+        await tx.delete(portfolioPositions).where(eq(portfolioPositions.id, sold[0].id));
+      }
+
+      // Credit proceeds atomically.
+      await tx
+        .update(portfolios)
+        .set({ currentBalance: sql`${portfolios.currentBalance} + ${proceeds}` })
+        .where(eq(portfolios.id, portfolioId));
     }
 
-    const proceeds = shares * price;
-
-    // Add cash
-    await db
-      .update(portfolios)
-      .set({ currentBalance: portfolio.currentBalance + proceeds })
-      .where(eq(portfolios.id, portfolioId));
-
-    // Update or remove position
-    const remaining = position.quantity - shares;
-    if (remaining === 0) {
-      await db
-        .delete(portfolioPositions)
-        .where(eq(portfolioPositions.id, position.id));
-    } else {
-      await db
-        .update(portfolioPositions)
-        .set({ quantity: remaining })
-        .where(eq(portfolioPositions.id, position.id));
-    }
-  }
-
-  // Record trade
-  await db.insert(portfolioTrades).values({
-    portfolioId,
-    symbol,
-    action: side,
-    quantity: shares,
-    price,
+    // Record the trade only after the balance/position mutation succeeded.
+    await tx.insert(portfolioTrades).values({
+      portfolioId,
+      symbol,
+      action: side,
+      quantity: shares,
+      price,
+    });
   });
 }
 

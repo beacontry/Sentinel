@@ -255,6 +255,8 @@ export default function TraderPage() {
     maxExposureMultiplier: "",
     trailActivationProfitPct: "",
     trailActivationBars: "",
+    maxSectorExposurePct: "",
+    earningsBlackoutDays: "",
   });
   const [riskSaving, setRiskSaving] = useState(false);
   const [riskSaved, setRiskSaved] = useState(false);
@@ -351,6 +353,13 @@ export default function TraderPage() {
               : "",
             trailActivationBars: profile.trailActivationBars != null
               ? String(profile.trailActivationBars)
+              : "",
+            // Stored as a percent (0..100); shown as-is.
+            maxSectorExposurePct: profile.maxSectorExposurePct != null
+              ? String(profile.maxSectorExposurePct)
+              : "",
+            earningsBlackoutDays: profile.earningsBlackoutDays != null
+              ? String(profile.earningsBlackoutDays)
               : "",
           });
         }
@@ -1348,6 +1357,20 @@ export default function TraderPage() {
                   placeholder: "Off (skip unless tuning)",
                   step: "1",
                   help: "Trailing stop stays dormant for this many trading days after entry. Less robust than the profit gate per the sweep — surfaced for opt-in tuning only. Leave blank or 0 for default.",
+                },
+                {
+                  key: "maxSectorExposurePct",
+                  label: "Max sector exposure (% of equity)",
+                  placeholder: "Off (e.g. 30)",
+                  step: "1",
+                  help: "Blocks a BUY that would push any one sector (Technology, Financials, ...) above this % of equity, capping single-sector concentration. Leave blank to disable.",
+                },
+                {
+                  key: "earningsBlackoutDays",
+                  label: "Earnings blackout (days)",
+                  placeholder: "Off (e.g. 5)",
+                  step: "1",
+                  help: "Blocks new BUYs within this many calendar days of a symbol's earnings release, avoiding event-risk gaps. Leave blank or 0 to disable.",
                 },
               ] as const).map(({ key, label, placeholder, step, help }) => (
                 <div key={key}>

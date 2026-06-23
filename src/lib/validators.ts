@@ -196,6 +196,13 @@ export const updateRiskProfileSchema = z.object({
   // sweep showed diminishing/negative returns above that threshold.
   trailActivationProfitPct: z.number().min(0).max(0.30).nullable().optional(),
   trailActivationBars: z.number().int().min(0).max(30).nullable().optional(),
+  // Phase-4 engine knobs — previously absent from this schema (Zod strips
+  // unknown keys), so the sector-exposure cap and earnings blackout were
+  // disabled for everyone configuring via the app (audit #16).
+  // maxSectorExposurePct is a PERCENT (0..100) consistent with maxDailyLossPct /
+  // maxPositionPct — loadRiskLimits divides by 100 (audit #52). 0 = disabled.
+  maxSectorExposurePct: z.number().min(0).max(100).nullable().optional(),
+  earningsBlackoutDays: z.number().int().min(0).max(30).nullable().optional(),
 });
 
 // ─── Forum ────────────────────────────────────────────────────────
@@ -344,7 +351,21 @@ export const placeBrokerOrderSchema = z
       message: "Bracket orders need at least a stop-loss or take-profit",
       path: ["orderClass"],
     }
-  );
+  )
+  // Every numeric field arrives as a string off the wire; reject
+  // NaN/Infinity/negative/zero so a malformed qty/notional/price can never
+  // reach the broker or position-sizing math (audit #78).
+  .superRefine((v, ctx) => {
+    const numericFields = ["qty", "notional", "limitPrice", "stopPrice", "takeProfitPrice", "stopLossPrice"] as const;
+    for (const field of numericFields) {
+      const raw = v[field];
+      if (raw === undefined) continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: `${field} must be a positive number` });
+      }
+    }
+  });
 
 // ─── Inferred Types ───────────────────────────────────────────────
 
