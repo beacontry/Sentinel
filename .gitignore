@@ -57,3 +57,6 @@ backups/
 books/*.html
 books/*.pdf
 books/__pycache__/
+
+# paid book manuscripts live in the private ixiondt/manuscripts repo, never here
+books/
