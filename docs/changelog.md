@@ -4,6 +4,32 @@ Dated retrospectives extracted from CLAUDE.md. Day-to-day "when did X land" ques
 
 ---
 
+## 2026-07-14 — Split-phantom P&L, silent risk-limit outage & sell-signal demotion
+
+Started as "prod is drawing down and our gains are gone" and unwound into three distinct root causes. Full forensic chain below because each layer masked the next.
+
+**Incident 1 — corporate-action phantom losses (ledger + code)**
+- CRWD ran a **4:1 split on Jul 2**; the engine held 5 pre-split shares @ $758.89, never adjusted, and its stale stop "realized" **−$2,829 that never happened** — which then tripped the daily-loss halt on a phantom number. CVNA's 5:1 (May 7) did the same through the reconciler: **−$1,882**. Booked all-time net read +$476; the real number was **+$3,319.50**.
+- **Ledger corrected on prod** (backups in `trader_trades_bak_split_fix_20260714` / `trader_daily_pnl_bak_split_fix_20260714`): both trade rows re-based to split-adjusted P&L (+$14.23 / +$7.88), both daily-P&L rows fixed. Halt flags left untouched — the halts *happened*; we corrected money, not history.
+- **Code:** `detectSplitAdjustment()` (pure, tested) — qty moved >10% with total basis conserved within 2% = split. Wired into `syncPositionMapFromBroker` (rescale entry/stop/TP/peak in place + `engine.position_split_adjusted` audit), the 1-min `runExitCheck` (quote < 60% of entry re-verifies against broker before firing the stop), and `reconcileBrokerSideExit` (integer entry/fill ratio → basis correction, noted in the row).
+
+**Incident 2 — missing migrations silently disabled every risk control (17 days)**
+- Migrations **0046/0047 shipped in the Jun 27 deploy but were never applied to prod**. Every `loadRiskLimits` errored (`column "trail_activation_profit_pct" does not exist` — **38,750 PG errors**) and fell back to defaults: all user risk settings (loss limits, sector cap, blackout, notional, trail knobs) ignored since Jun 29's first scan.
+- The error storm also failed every wash-sale / losing-reentry refresh; fail-soft "keep previous set" semantics meant both blocked sets sat **empty since boot — zero gate blocks ever fired** (GLW re-bought 3.97 days after a −$318 stop-out, inside the 5-day window, and lost another −$327).
+- **Fixed:** migrations applied; `recordRealizedExit` now takes the symbol and adds losing exits to both blocked sets *synchronously* (no 5-min refresh window); persistent refresh failure (>15 min) now writes an `engine_alerts` row + `engine.protection_degraded` audit instead of warn-level log spam; `loadRiskLimits` failure upgraded to error-level with an explicit "running on DEFAULT risk limits" message.
+
+**Incident 3 — sell-signal exits were a losing exit class**
+- All-time exit autopsy: `signal_sell` market exits went **1-for-30, −$2,717**, while trailing stops on the same book made **+$2,814** — the analyzer's SELL lags the move and sold local bottoms. **Demoted to stop-tighten** (`tightenStopOnSellSignal`, pure, tested): SELL keeps 1/2 of the current dynamic trail, STRONG_SELL 1/3, floored at a 1% trail, never lowering an existing stop. Breakdown exits via the tightened stop; whipsaw survives.
+
+**Ops hygiene**
+- Wedged-scan reaper: a `scanStartedAt` older than 60 min is cleared by the stop-sync scheduler (one engine spammed the stale-scan override every 5 min for **7 days** after an equity_collapse halt).
+- Watchdog: stall clock now clamps to time-since-9:30-ET-open (`msSinceSessionOpen`, pure, tested) — kills the Monday-open "not scanned in 3,942 min" weekend false positives; hourly sweep marks `trader_status` rows disconnected when heartbeat >24h stale with no in-memory engine (one row sat connected=true for 35 days).
+
+**Follow-up:** re-run the GA optimizer (params predate the June fitness/cost changes); mirror swap-sell into the backtester remains open.
+
+### Migrations (idempotent; applied on prod as `postgres` 2026-07-14)
+- `0046_trail_activation_knobs.sql` + `0047_alert_last_condition_nullable.sql` — were shipped Jun 27 but not applied; **the deploy runbook's migration step must be verified against `information_schema` post-deploy, not assumed**.
+
 ## 2026-05-29 — Optimizer honesty, responsiveness & P&L-percent fixes
 
 A day of making the optimizer's numbers trustworthy, its runs non-disruptive, and trade P&L percentages correct.

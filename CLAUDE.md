@@ -6,11 +6,11 @@
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)
-- Drizzle ORM + PostgreSQL (46 migrations as of `0045_optimization_test_metrics.sql`)
+- Drizzle ORM + PostgreSQL (48 migrations as of `0047_alert_last_condition_nullable.sql`) — **verify each migration actually applied on prod post-deploy** (query `information_schema.columns`, don't assume; 0046/0047 sat unapplied Jun 27→Jul 14 and silently disabled all risk limits — see `docs/changelog.md` 2026-07-14)
 - Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
-- Vitest for testing (596 tests across 43 suites — engine-safeguards, swap-sell planner, engine-snapshot, scan cancellation, graduation, accuracy, audit, analyzer, market-regime, tax-report, etc.)
+- Vitest for testing (799 tests across 60 suites — engine-safeguards, swap-sell planner, engine-snapshot, scan cancellation, graduation, split-adjustment, signal-stop-tighten, accuracy, audit, analyzer, market-regime, tax-report, etc.)
 - Alpaca Markets API for paper/live trading
 - Stripe for billing (Free / Trader $20 / Premium $40 / Self-Hosted) — webhook handler at `/api/webhooks/stripe`, sandbox + portal at `/api/billing/{checkout,portal}`
 
@@ -212,7 +212,11 @@ All halts emit `engine.halted` audit events with `metadata.reason ∈ {broker_un
 - **Losing-reentry cooldown** (2026-06-10): strategy gate, independent of MTM. Same query as wash-sale but 3-day window; blocks the falling-knife re-entry pattern that the wash-sale gate misses on MTM-elected engines. Off in `tactical` mode only. Audit reason `losing_reentry_cooldown`. See `docs/ENGINE_RULESET.md` § Losing-Reentry Cooldown for the post-mortem this came from.
 - **PDT protection — retired 2026-06-04.** FINRA Rule 4210 amended; PDT designation eliminated, $25k minimum replaced by standard $2k margin floor. Alpaca aligned same day. Preemptive PDT block + state removed; reactive handling (`isPdtRejection()` for Alpaca error `40310100`, exit-suppression, unprotected-symbols banner) kept for transitional accounts. `AuditAction.ENGINE_PDT_VULNERABLE` enum preserved for historical rows; event no longer emitted.
 
-Gate ordering inside `canPlaceBuyOrder()`: earnings blackout → sector exposure → losing-reentry cooldown → wash-sale → notional → rate-limit (cheapest first).
+Gate ordering inside `canPlaceBuyOrder()`: earnings blackout → sector exposure → losing-reentry cooldown → wash-sale → notional → rate-limit (cheapest first). Losing exits enter both blocked sets **synchronously** via `recordRealizedExit(engine, pnl, riskLimits, symbol)` (2026-07-14) — the 5-min DB refresh is backfill, not the primary path; persistent refresh failure (>15 min) writes `engine_alerts` kind `protection_degraded`.
+
+**Corporate actions (2026-07-14):** `detectSplitAdjustment()` (qty moved >10%, total basis conserved within 2%) rescales tracked positions in `syncPositionMapFromBroker`; the 1-min exit check re-verifies against the broker before firing a stop on a quote < 60% of entry; the reconciler corrects basis on integer entry/fill ratios. Audit action `engine.position_split_adjusted`. Born from the CRWD 4:1 phantom −$2,829 (see changelog 2026-07-14).
+
+**Sell-signal exits are demoted to stop-tighten (2026-07-14):** SELL/STRONG_SELL from the analyzer raises `pos.stopLoss` via `tightenStopOnSellSignal()` (1/2 or 1/3 of the dynamic trail) instead of market-exiting — 30 signal exits had gone 1-for-30 (−$2,717). Update `docs/ENGINE_RULESET.md` + `public/docs/engine-ruleset.html` together if this changes again.
 
 **Recommended risk profile for a $5k live account:** mode `optimized`/`adaptive` (tactical-smart's loose stops assume larger equity); `maxPositionPct` 25-33%; `maxDailyLossPct` 2%; `maxDailyNotionalPct` 0.5; `maxConsecutiveLosses` 3; MTM unchecked unless §475(f) filed at last year-start.
 

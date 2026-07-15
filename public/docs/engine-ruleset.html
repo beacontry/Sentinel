@@ -872,13 +872,18 @@
         <span><span class="exit-name">Take Profit</span><span class="exit-desc">&mdash; price exceeds entry &times; (1 + takeProfitPct)</span></span>
       </div>
       <div class="exit-item">
-        <span class="exit-icon" style="color:var(--bearish)">&#9724;</span>
-        <span><span class="exit-name">Sell Signal</span><span class="exit-desc">&mdash; technical analysis generates SELL or STRONG_SELL</span></span>
+        <span class="exit-icon" style="color:var(--warning)">&#9724;</span>
+        <span><span class="exit-name">Sell Signal &rarr; Stop-Tighten</span><span class="exit-desc">&mdash; a SELL/STRONG_SELL no longer exits at market (demoted 2026-07-14). It raises the stop to price &times; (1 &minus; trail &times; &frac12;) on SELL or &times; (1 &minus; trail &times; &#8531;) on STRONG_SELL, floored at a 1% trail and never lowering an existing stop. A genuine breakdown exits via the tightened stop; a whipsaw survives. (Prod history: 30 signal exits, 1 winner, &minus;$2,717 vs trailing stops +$2,814.)</span></span>
       </div>
       <div class="exit-item">
         <span class="exit-icon" style="color:var(--text-muted)">&#9724;</span>
         <span><span class="exit-name">Hold Period Expired</span><span class="exit-desc">&mdash; position held longer than max hold bars</span></span>
       </div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span><strong>Corporate actions (splits).</strong> The broker sync detects a split signature (share count moved &gt;10% while total cost basis stayed conserved within 2%) and rescales entry/stop/take-profit/peak in place instead of treating it as a trade. The 1-min exit check re-verifies against the broker before firing any stop on a quote below 60% of tracked entry, and the reconciler corrects the basis when an entry/fill ratio lands on an integer split ratio. Added 2026-07-14 after a 4:1 split booked a phantom &minus;$2,829 loss and tripped a daily-loss halt.</span>
     </div>
   </section>
 
@@ -907,7 +912,7 @@
           <tr><td><strong>Take profit</strong></td><td class="mono">ATR &times; mult <span style="color:var(--text-muted)">(GA-tuned, graduates)</span></td><td class="mono">50% <span style="color:var(--text-muted)">(graduates to +30% floor)</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
           <tr><td><strong>Trailing stop</strong></td><td class="mono">~12.6% <span style="color:var(--text-muted)">(dynamic)</span></td><td class="mono">11.7% <span style="color:var(--text-muted)">(dynamic)</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
           <tr><td><strong>Hold period</strong></td><td class="mono">~33 days <span style="color:var(--text-muted)">(GA-tuned)</span></td><td class="mono">999 days <span style="color:var(--text-muted)">(effectively never)</span></td><td style="color:var(--text-muted)">None (SPY-driven)</td></tr>
-          <tr><td><strong>Sell signal</strong></td><td>SELL &rarr; exit position</td><td>SELL &rarr; swap for stronger stock</td><td style="color:var(--text-muted)">Not used</td></tr>
+          <tr><td><strong>Sell signal</strong></td><td>SELL &rarr; tighten stop (demoted from exit 2026-07-14)</td><td>SELL &rarr; swap for stronger stock</td><td style="color:var(--text-muted)">Not used</td></tr>
           <tr><td><strong>Universe</strong></td><td class="mono">SCAN_UNIVERSE + top-50 screener externals (by confidence)</td><td class="mono">SCAN_UNIVERSE + top-50 screener externals</td><td class="mono">SCAN_UNIVERSE only</td></tr>
           <tr><td><strong>Market regime</strong></td><td>SPY &lt; SMA(20) blocks buys only</td><td>SPY &lt; SMA(20) &times;3d &rarr; liquidate ALL</td><td>SPY &lt; SMA(20) &times;3d &rarr; liquidate ALL</td></tr>
           <tr><td><strong>Active mgmt</strong></td><td style="color:var(--bullish)">Yes &mdash; swap-sell redeploys freed capital</td><td style="color:var(--bullish)">Yes &mdash; swap weak, add strong</td><td style="color:var(--text-muted)">No &mdash; full in/full out</td></tr>

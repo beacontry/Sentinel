@@ -89,8 +89,10 @@ Positions are closed when ANY of these trigger:
 1. **Fixed stop loss** — price drops below `pos.stopLoss`. Initialized at entry × (1 − stopLossPct); ratcheted up to entry × 1.001 once unrealized profit crosses +2% (see Breakeven-Promote below)
 2. **Dynamic trailing stop** — price drops below peak × (1 - dynTrailPct)
 3. **Take profit** — price exceeds entry × (1 + takeProfitPct)
-4. **Sell signal** — technical analysis generates SELL/STRONG_SELL
+4. **Sell signal → stop-tighten, NOT exit** (2026-07-14) — a SELL/STRONG_SELL from technical analysis no longer market-exits. It raises `pos.stopLoss` to `price × (1 − dynTrail × f)` where f = 1/2 (SELL) or 1/3 (STRONG_SELL), floored at a 1% trail, never lowering an existing stop (`tightenStopOnSellSignal`). Rationale: all-time prod data showed 30 signal exits / 1 winner / −$2,717 while trailing stops made +$2,814 on the same book — the signal lags and exited at local bottoms. A genuine breakdown now exits via the tightened stop; a whipsaw survives. `syncBrokerStops` pushes the raised stop to the broker the same scan.
 5. **Hold period expired** — held longer than holdPeriod bars
+
+**Corporate actions (splits):** `syncPositionMapFromBroker` runs `detectSplitAdjustment` on every tracked-vs-broker mismatch — qty moved >10% while total cost basis conserved within 2% = split, and entry/stop/TP/peak are rescaled in place (audit event `engine.position_split_adjusted`) instead of booking phantom P&L. The 1-min exit check carries the same guard: a quote below 60% of tracked entry re-verifies against the broker before firing the stop (the 2026-07-02 CRWD 4:1 phantom −$2,829). The Phase 7.5 reconciler additionally corrects the basis when an entry/fill ratio lands within 3% of an integer split ratio (the 2026-05-08 CVNA 5:1 phantom −$1,882).
 
 **Dual cadence:** Exits run twice — every 15 min in the main scan (uses last-bar close), and every 1 min in `runExitCheck()` using a live quote. The 1-min loop runs in **every mode**, not just intraday — this is what keeps trailing stops tracking the live peak instead of yesterday's close. A `pendingExits: Set<symbol>` on engine state guards against the two intervals double-selling the same position.
 
@@ -205,7 +207,7 @@ For modes where graduation is enabled (**tactical-smart** and **optimized** — 
    - Volume contraction: 5-day avg < 20-day avg × 0.85
    - Plateau: currentPrice within 2% of 10-bar peak (and not extending — distFromPeak ≥ 0)
    - RSI rollover: `rsi_14 < 60` (was overbought, no longer)
-3. **2-of-3 fires** → exit with reason like `Graduated exit at +X%: N/3 weakness signals`. Otherwise hold; normal stop_loss + trailing + SELL signal still apply via the exit chain (which is wrapped in `if (!shouldExit)` so graduation's reason isn't overwritten).
+3. **2-of-3 fires** → exit with reason like `Graduated exit at +X%: N/3 weakness signals`. Otherwise hold; normal stop_loss + trailing still apply via the exit chain (which is wrapped in `if (!shouldExit)` so graduation's reason isn't overwritten), and a SELL signal tightens the stop (2026-07-14 demotion — see Exit Logic #4).
 
 | Engine mode | Graduation | Why |
 |---|---|---|
@@ -233,7 +235,7 @@ Exit logic varies dramatically between mode families. Signal-based modes (like O
 | **Take profit** | ATR × mult or % (GA-tuned, **graduates instead of exits** in both 15-min scan and 1-min poll) | 50% (graduates to +30% floor in both 15-min scan and 1-min poll) | None (SPY-driven exits) |
 | **Trailing stop** | ~12.6% base, tightens with profit | 11.7% base, tightens with profit | None (SPY-driven exits) |
 | **Hold period** | ~33 days (GA-tuned) | 999 days (effectively never) | None (SPY-driven exits) |
-| **Sell signal** | SELL/STRONG_SELL → exit position | SELL/STRONG_SELL → swap for stronger stock | Not used |
+| **Sell signal** | SELL/STRONG_SELL → tighten stop (1/2 or 1/3 of trail; demoted from exit 2026-07-14) | SELL/STRONG_SELL → swap for stronger stock | Not used |
 | **Universe** | SCAN_UNIVERSE + top-50 screener externals (by confidence) | SCAN_UNIVERSE + top-50 screener externals | SCAN_UNIVERSE only |
 | **Market regime** | SPY < SMA(20) blocks new buys only | SPY < SMA(20) ×3d → liquidate ALL | SPY < SMA(20) ×3d → liquidate ALL |
 | **Active management** | Yes — swap-sell redeploys freed capital | Yes — swap weak, add strong (pair-wise) | No — full in or full out |

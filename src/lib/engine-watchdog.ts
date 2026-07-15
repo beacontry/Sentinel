@@ -15,8 +15,8 @@
  */
 
 import { db } from "./db";
-import { engineAlerts } from "./db/schema";
-import { and, desc, eq, gt } from "drizzle-orm";
+import { engineAlerts, traderStatus } from "./db/schema";
+import { and, desc, eq, gt, lt } from "drizzle-orm";
 import { getAllEngineSnapshots, isMarketOpen } from "./trading-engine";
 import { sendPushToUser } from "./push";
 import { createRouteLogger } from "./logger";
@@ -30,6 +30,32 @@ const log = createRouteLogger("engine-watchdog");
 const STALL_THRESHOLD_MS = 32 * 60 * 1000;
 const DEDUP_WINDOW_MS = 15 * 60 * 1000;
 const DAILY_LOSS_WARN_FRAC = 0.8;
+// Zombie trader_status sweep: rows claiming connected=true whose heartbeat is
+// older than this are dead engines from a previous process (container
+// restart, crashed boot) — the cc7d3dfc row sat connected=true with a 35-day
+// stale heartbeat, skewing every dashboard/aggregate that trusts the flag.
+const STALE_STATUS_MS = 24 * 60 * 60 * 1000;
+const ZOMBIE_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Milliseconds elapsed since today's 9:30 ET session open. Pure given a
+ * timestamp; negative before the open. Used to clamp the stall clock: a
+ * lastScanAt from Friday afternoon read Monday 9:35 is ~65h old, but the
+ * engine has only had 5 minutes of market time to scan — the pre-clamp
+ * watchdog fired "not scanned in 3,942 min" every Monday open (weekend gap
+ * false positive).
+ */
+export function msSinceSessionOpen(nowMs: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "numeric",
+    hourCycle: "h23",
+  }).formatToParts(new Date(nowMs));
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return (hour * 60 + minute - (9 * 60 + 30)) * 60 * 1000;
+}
 
 type AlertKind = "stall" | "broker_disconnect" | "daily_loss_warn" | "exit_order_failed";
 type AlertSeverity = "warn" | "error";
@@ -92,15 +118,51 @@ export async function runWatchdog(): Promise<void> {
   g.__engineWatchdogRunning = true;
   try {
   const snapshots = getAllEngineSnapshots();
+  const now = Date.now();
+
+  // 0. Zombie trader_status sweep (hourly). Rows claiming connected=true with
+  //    a heartbeat older than STALE_STATUS_MS belong to engines from a dead
+  //    process — mark them disconnected so dashboards and aggregates stop
+  //    counting them. Engines alive in THIS process are exempt (they'd
+  //    re-heartbeat anyway, but don't race them). Runs before the empty-
+  //    snapshot early-return: a process with zero engines still reaps.
+  if (now - (g.__lastZombieSweepAt ?? 0) > ZOMBIE_SWEEP_INTERVAL_MS) {
+    g.__lastZombieSweepAt = now;
+    try {
+      const cutoff = new Date(now - STALE_STATUS_MS);
+      const inMemory = new Set(snapshots.map((s) => s.userId));
+      const staleRows = await db
+        .select({ userId: traderStatus.userId, lastHeartbeat: traderStatus.lastHeartbeat })
+        .from(traderStatus)
+        .where(and(eq(traderStatus.connected, true), lt(traderStatus.lastHeartbeat, cutoff)));
+      for (const row of staleRows) {
+        if (!row.userId || inMemory.has(row.userId)) continue;
+        await db
+          .update(traderStatus)
+          .set({ connected: false })
+          .where(eq(traderStatus.userId, row.userId));
+        log.warn(
+          { userId: row.userId, lastHeartbeat: row.lastHeartbeat?.toISOString() },
+          "Zombie trader_status reaped — connected=true with stale heartbeat, no engine in memory"
+        );
+      }
+    } catch (err) {
+      log.error({ err: err instanceof Error ? err.message : "unknown" }, "Zombie trader_status sweep failed");
+    }
+  }
+
   if (snapshots.length === 0) return;
 
   const marketOpen = isMarketOpen();
-  const now = Date.now();
 
   for (const s of snapshots) {
-    // 1. Stall detection — only meaningful during market hours and if engine claims to be running
+    // 1. Stall detection — only meaningful during market hours and if engine claims to be running.
+    //    The stall clock is clamped to time-since-session-open: a Friday-
+    //    afternoon lastScanAt read Monday 9:35 is 65h stale on the wall clock
+    //    but the engine has only had 5 min of MARKET time — pre-clamp, every
+    //    Monday open fired a "not scanned in 3,942 min" false positive.
     if (s.running && !s.halted && marketOpen && s.lastScanAt) {
-      const ageMs = now - s.lastScanAt.getTime();
+      const ageMs = Math.min(now - s.lastScanAt.getTime(), msSinceSessionOpen(now));
       if (ageMs > STALL_THRESHOLD_MS) {
         if (!(await recentlyAlerted(s.userId, "stall"))) {
           await writeAlert({
@@ -173,6 +235,7 @@ export async function runWatchdog(): Promise<void> {
 const g = globalThis as typeof globalThis & {
   __engineWatchdogId?: ReturnType<typeof setInterval>;
   __engineWatchdogRunning?: boolean;
+  __lastZombieSweepAt?: number;
 };
 
 const WATCHDOG_INTERVAL_MS = 60 * 1000;

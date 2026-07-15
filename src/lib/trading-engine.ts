@@ -37,6 +37,7 @@ import {
   optimizationRuns,
   userTaxStatus,
   users,
+  engineAlerts,
 } from "./db/schema";
 import { eq, and, desc, gt, inArray, lt, isNotNull, sql } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
@@ -215,6 +216,15 @@ export interface EngineState {
   losingReentryBlockedSymbols: Set<string>;
   /** Last refresh time for losingReentryBlockedSymbols (ms epoch). */
   losingReentryLastRefreshAt: number;
+  /** ms epoch of the FIRST failure in the current wash-sale/losing-reentry
+   *  refresh failure streak; null when the last refresh succeeded. Drives the
+   *  ENGINE_PROTECTION_DEGRADED alert after PROTECTION_REFRESH_ALERT_AFTER_MS
+   *  of continuous failure (the Jun 29 2026 missing-migration incident ran
+   *  17 days on warn-level logs nobody saw). */
+  protectionRefreshFailingSince: number | null;
+  /** Last time the degraded-protection alert was written (ms epoch) — dedup
+   *  so a persistent failure alerts once per window, not once per scan. */
+  protectionDegradedAlertedAt: number;
   // ── Adaptive mode ──
   /**
    * When `mode === "adaptive"`, this is the actual mode being executed
@@ -339,6 +349,8 @@ function createDefaultEngine(): EngineState {
     losingReentryCooldownEnabled: true, // re-enabled per-start based on mode (off for tactical)
     losingReentryBlockedSymbols: new Set(),
     losingReentryLastRefreshAt: 0,
+    protectionRefreshFailingSince: null,
+    protectionDegradedAlertedAt: 0,
     effectiveMode: null,
     adaptiveRegime: null,
     userTier: null,
@@ -735,6 +747,30 @@ const WASH_SALE_REFRESH_MS = 5 * 60 * 1000;       // re-query trader_trades at m
 // data showed.
 const LOSING_REENTRY_WINDOW_DAYS = 5;             // calendar days; ~3 trading days of cooldown after a losing exit
 const LOSING_REENTRY_REFRESH_MS = 5 * 60 * 1000;  // same cadence as wash-sale
+// ─── Corporate-action (split) detection (2026-07-14, CRWD/CVNA incident) ────
+// A broker position whose qty changed while total cost basis stayed conserved
+// is a split, not a trade. Tolerances: qty must differ by >10% (rules out
+// rounding), basis must match within 2% (rules out partial closes and
+// averaging up/down, both of which change total basis).
+const SPLIT_BASIS_TOLERANCE = 0.02;
+const SPLIT_MIN_QTY_CHANGE = 0.10;
+// 1-min exit-check split suspicion: a quote below 60% of tracked entry
+// overnight is far more likely an unprocessed corporate action than a real
+// crash — verify against the broker before firing the stop. (CRWD 4:1 put
+// the quote at 25% of entry; a real single-day S&P-500 move of −40% has no
+// precedent outside delistings, which the broker-position check also catches.)
+const SPLIT_SUSPECT_PRICE_RATIO = 0.6;
+// Sell-signal stop-tighten floor — never tighten the trail below 1% of price.
+const SIGNAL_TIGHTEN_MIN_TRAIL_PCT = 0.01;
+// A scan flagged in-flight this long is dead, not slow — clear the flag so
+// stop-sync stops logging the stale-scan override every 5 minutes forever
+// (the 5fa9f5cb engine spammed it for 7 days after an equity_collapse halt).
+export const SCAN_WEDGED_RESET_MS = 60 * 60 * 1000;
+// Persistent protection-refresh failure alerting: fail-soft "keep previous
+// set" is correct for a transient blip, but a failure that persists this long
+// means wash-sale/losing-reentry gates may be running on stale (or empty)
+// sets — surface it loudly instead of warn-level log spam.
+const PROTECTION_REFRESH_ALERT_AFTER_MS = 15 * 60 * 1000;
 // PDT preemptive block removed 2026-06-04 — FINRA retired the PDT designation
 // (Rule 4210 amendments) and Alpaca's pattern_day_trader / daytrade_count
 // fields are scheduled for full removal from the broker API on 2026-07-06.
@@ -835,7 +871,11 @@ async function loadRiskLimits(userId: string): Promise<RiskLimits> {
       };
     }
   } catch (err) {
-    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to load risk profile, using defaults");
+    // error-level, not warn: falling to defaults means the user's ENTIRE risk
+    // configuration (loss limits, sector cap, blackout, notional cap, trail
+    // knobs) is ignored. The Jun 29 → Jul 14 2026 missing-migration incident
+    // ran every engine on defaults for 17 days behind a warn-level log.
+    log.error({ userId, err: err instanceof Error ? err.message : "unknown" }, "Failed to load risk profile — engine is running on DEFAULT risk limits");
   }
 
   return defaults;
@@ -1067,8 +1107,23 @@ export function accrueRealizedPnl(engine: EngineState, pnl: number): void {
  * defensive flatten of N losers doesn't itself trip the consecutive-loss halt
  * (audit #2; net-only behavior chosen 2026-06-17).
  */
-export function recordRealizedExit(engine: EngineState, pnl: number, riskLimits: RiskLimits): void {
+export function recordRealizedExit(
+  engine: EngineState,
+  pnl: number,
+  riskLimits: RiskLimits,
+  /** When provided and pnl < 0, the symbol is added to the wash-sale +
+   *  losing-reentry blocked sets SYNCHRONOUSLY. The sets are otherwise only
+   *  rebuilt from trader_trades every 5 min — a window in which the engine
+   *  could re-buy a symbol it just stopped out of (and if the refresh query
+   *  is failing, the window is unbounded: the Jun 29–Jul 14 2026 incident
+   *  let GLW be re-bought 4 days after a −$318 stop-out). */
+  symbol?: string
+): void {
   accrueRealizedPnl(engine, pnl);
+  if (symbol && pnl < 0) {
+    if (engine.losingReentryCooldownEnabled) engine.losingReentryBlockedSymbols.add(symbol);
+    if (engine.washSaleProtectionEnabled) engine.washSaleBlockedSymbols.add(symbol);
+  }
   if (recordTradeResult(engine, pnl, riskLimits.maxConsecutiveLosses)) {
     tripSafeguardHalt(engine, "consecutive_losses", {
       consecutiveLosses: engine.consecutiveLosses,
@@ -1672,6 +1727,7 @@ async function maybeRefreshWashSaleSet(engine: EngineState): Promise<void> {
     const next = await refreshWashSaleBlockedSymbols(engine.userId);
     engine.washSaleBlockedSymbols = next;
     engine.washSaleLastRefreshAt = Date.now();
+    engine.protectionRefreshFailingSince = null;
   } catch (err) {
     log.warn(
       { err: err instanceof Error ? err.message : "unknown", userId: engine.userId },
@@ -1679,7 +1735,56 @@ async function maybeRefreshWashSaleSet(engine: EngineState): Promise<void> {
     );
     // INTENTIONAL: do NOT bump washSaleLastRefreshAt, do NOT clear
     // washSaleBlockedSymbols. Next scan retries.
+    void notePersistentProtectionFailure(engine, "wash_sale", err);
   }
+}
+
+/**
+ * Fail-LOUD companion to the fail-soft refresh semantics. "Keep the previous
+ * set" is right for a transient blip, but when the refresh has been failing
+ * continuously past PROTECTION_REFRESH_ALERT_AFTER_MS the previous set is
+ * stale — and if the failures started at engine boot, it's EMPTY, i.e. both
+ * gates are silently OFF. That was the Jun 29 → Jul 14 2026 incident: a
+ * missing prod migration failed every refresh for 17 days; warn-level logs
+ * were the only trace, zero gate blocks fired, and the engine re-bought GLW
+ * 4 days after a −$318 stop-out. Writes engine_alerts (severity error →
+ * push notification via the watchdog display surfaces) + a hash-chained
+ * audit row, deduped to once per alert window.
+ */
+async function notePersistentProtectionFailure(
+  engine: EngineState,
+  which: "wash_sale" | "losing_reentry",
+  err: unknown
+): Promise<void> {
+  const now = Date.now();
+  if (engine.protectionRefreshFailingSince == null) {
+    engine.protectionRefreshFailingSince = now;
+    return;
+  }
+  const failingForMs = now - engine.protectionRefreshFailingSince;
+  if (failingForMs < PROTECTION_REFRESH_ALERT_AFTER_MS) return;
+  if (now - engine.protectionDegradedAlertedAt < PROTECTION_REFRESH_ALERT_AFTER_MS) return;
+  engine.protectionDegradedAlertedAt = now;
+  const message = `Wash-sale/losing-reentry refresh failing for ${Math.round(failingForMs / 60000)} min — re-entry protection degraded (blocked sets stale or empty)`;
+  log.error({ userId: engine.userId, which, failingForMs }, message);
+  try {
+    await db.insert(engineAlerts).values({
+      userId: engine.userId!,
+      kind: "protection_degraded",
+      severity: "error",
+      message,
+      context: { which, failingForMs, err: err instanceof Error ? err.message : "unknown" },
+    });
+  } catch {
+    // alert write is best-effort — the log.error above is the floor
+  }
+  void writeAudit({
+    actor: { userId: engine.userId!, email: null, role: null },
+    action: AuditAction.ENGINE_PROTECTION_DEGRADED,
+    resourceType: "engine",
+    resourceId: engine.userId!,
+    metadata: { which, failingForMs },
+  });
 }
 
 /**
@@ -1725,11 +1830,13 @@ async function maybeRefreshLosingReentrySet(engine: EngineState): Promise<void> 
     const next = await refreshLosingReentryBlockedSymbols(engine.userId);
     engine.losingReentryBlockedSymbols = next;
     engine.losingReentryLastRefreshAt = Date.now();
+    engine.protectionRefreshFailingSince = null;
   } catch (err) {
     log.warn(
       { err: err instanceof Error ? err.message : "unknown", userId: engine.userId },
       "Losing-reentry refresh failed — keeping previous set and retrying next scan"
     );
+    void notePersistentProtectionFailure(engine, "losing_reentry", err);
   }
 }
 
@@ -2278,6 +2385,37 @@ export function promoteToGraduationFloor(
   }
   if (pos.stopLoss >= lockStop) return false;
   pos.stopLoss = lockStop;
+  return true;
+}
+
+/**
+ * Sell-signal stop-tighten (2026-07-14). Replaces the old market-exit on
+ * SELL/STRONG_SELL analyzer signals: 30 signal exits produced 1 winner and
+ * −$2,717 total while trailing stops on the same book made +$2,814 — the
+ * analyzer's SELL is a lagging exit that fires after the damage and locks in
+ * local bottoms. Instead of exiting, tighten the stop to a fraction of the
+ * position's current dynamic trail, anchored to the live price: a genuine
+ * continued slide exits via the (now-tight) stop; a whipsaw recovers without
+ * realizing the dip.
+ *
+ * Idempotent + monotonic: never lowers an existing stop. The tightened trail
+ * is floored at SIGNAL_TIGHTEN_MIN_TRAIL_PCT so a strong signal can't set the
+ * stop so close that ordinary spread noise fires it. Structural pos type for
+ * pure unit tests. Returns true when the stop was raised.
+ */
+export function tightenStopOnSellSignal(
+  pos: { stopLoss: number },
+  currentPrice: number,
+  dynTrailPct: number,
+  /** fraction of the current dynamic trail to keep: 1/2 for SELL, 1/3 for STRONG_SELL */
+  tightenFactor: number
+): boolean {
+  if (!(currentPrice > 0) || !(tightenFactor > 0)) return false;
+  const baseTrail = dynTrailPct > 0 ? dynTrailPct : SIGNAL_TIGHTEN_MIN_TRAIL_PCT;
+  const tightenedTrailPct = Math.max(baseTrail * tightenFactor, SIGNAL_TIGHTEN_MIN_TRAIL_PCT);
+  const candidate = currentPrice * (1 - tightenedTrailPct);
+  if (candidate <= pos.stopLoss) return false;
+  pos.stopLoss = candidate;
   return true;
 }
 
@@ -2930,6 +3068,58 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
       }
 
       if (exitReason) {
+        // Corporate-action guard (2026-07-02 CRWD 4:1 incident). A quote
+        // below SPLIT_SUSPECT_PRICE_RATIO of tracked entry is far more
+        // likely an unprocessed overnight forward split than a real crash —
+        // the split happened overnight, this 1-min poll runs from the open,
+        // and the 15-min scan's broker sync may not have corrected the map
+        // yet. Verify against the broker BEFORE firing the stop; a confirmed
+        // split rescales in place and skips this tick. If verification
+        // errors or the broker confirms the qty/basis, protection wins and
+        // the exit proceeds. (Reverse splits — price jumping UP — can't fire
+        // this stop branch and are handled by the scan-boundary sync.)
+        if (currentPrice < pos.entryPrice * SPLIT_SUSPECT_PRICE_RATIO) {
+          try {
+            const brokerPositions = await client.getPositions();
+            const bp = brokerPositions.find((p) => p.symbol === symbol);
+            const split = bp
+              ? detectSplitAdjustment(pos.qty, pos.entryPrice, bp.qty, bp.avgEntryPrice)
+              : null;
+            if (split && bp) {
+              const f = split.priceFactor;
+              log.warn(
+                { symbol, oldQty: pos.qty, newQty: bp.qty, oldEntry: pos.entryPrice, newEntry: bp.avgEntryPrice, priceFactor: f },
+                "Stock split detected at 1-min exit check — rescaling position, suppressing phantom stop"
+              );
+              void writeAudit({
+                actor: { userId: engine.userId, email: null, role: null },
+                action: AuditAction.ENGINE_POSITION_SPLIT_ADJUSTED,
+                resourceType: "position",
+                resourceId: symbol,
+                metadata: {
+                  symbol,
+                  oldQty: pos.qty,
+                  newQty: bp.qty,
+                  oldEntryPrice: pos.entryPrice,
+                  newEntryPrice: bp.avgEntryPrice,
+                  priceFactor: f,
+                  source: "exit_check",
+                },
+              });
+              pos.qty = bp.qty;
+              pos.entryPrice = bp.avgEntryPrice;
+              pos.stopLoss = pos.stopLoss * f;
+              pos.takeProfit = pos.takeProfit * f;
+              pos.peakPrice = Math.max(pos.peakPrice * f, currentPrice);
+              continue;
+            }
+          } catch (verifyErr) {
+            log.warn(
+              { symbol, err: verifyErr instanceof Error ? verifyErr.message : "unknown" },
+              "Split-suspect verification failed — proceeding with protective exit"
+            );
+          }
+        }
         // Atomic claim against the concurrent 15-min runScan. The
         // pendingExits.has check at the top of the loop is stale by now —
         // an await (fetchQuote/resolveStrategy) sat between it and here, and
@@ -2958,7 +3148,7 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
           // Net daily-loss + consecutive-loss accounting (audit #2/#20).
           {
             const riskLimitsForLoss = await loadRiskLimits(engine.userId!);
-            recordRealizedExit(engine, pnl, riskLimitsForLoss);
+            recordRealizedExit(engine, pnl, riskLimitsForLoss, symbol);
           }
 
           await logTrade(symbol, exitReason, "SELL", pos.qty, currentPrice, "PENDING", pnl, exitReason, exitOrder.id, null, engine.userId);
@@ -3327,6 +3517,36 @@ function detectPositionMapDrift(
  * - Updates qty/currentPrice for existing positions
  * - No DB writes — broker is the source of truth
  */
+/**
+ * Pure corporate-action detector (2026-07-14, CRWD 4:1 / CVNA 5:1 incident).
+ *
+ * A forward or reverse stock split changes a position's share count and
+ * per-share basis while conserving TOTAL cost basis. A partial close, an
+ * add-on buy, or an averaging fill all change total basis — so "qty moved
+ * >10% while total basis stayed within 2%" is a split signature, not a trade.
+ *
+ * Returns the price scale factor to apply to every tracked per-share price
+ * (entry, stop, take-profit, peak): e.g. a 4:1 forward split returns 0.25.
+ * Returns null when the change doesn't look like a split.
+ */
+export function detectSplitAdjustment(
+  trackedQty: number,
+  trackedEntryPrice: number,
+  brokerQty: number,
+  brokerAvgEntryPrice: number
+): { priceFactor: number } | null {
+  if (!(trackedQty > 0) || !(brokerQty > 0)) return null;
+  if (!(trackedEntryPrice > 0) || !(brokerAvgEntryPrice > 0)) return null;
+  const qtyRatio = brokerQty / trackedQty;
+  if (Math.abs(qtyRatio - 1) < SPLIT_MIN_QTY_CHANGE) return null;
+  const trackedBasis = trackedQty * trackedEntryPrice;
+  const brokerBasis = brokerQty * brokerAvgEntryPrice;
+  if (Math.abs(brokerBasis - trackedBasis) / trackedBasis > SPLIT_BASIS_TOLERANCE) return null;
+  // Scale factor derived from the qty ratio (exact), not the broker's avg
+  // price (which can carry sub-cent rounding).
+  return { priceFactor: trackedQty / brokerQty };
+}
+
 async function syncPositionMapFromBroker(
   brokerPositions: { symbol: string; qty: number; avgEntryPrice: number; currentPrice: number; marketValue?: number }[],
   positionMap: Map<string, TrackedPosition>,
@@ -3393,6 +3613,48 @@ async function syncPositionMapFromBroker(
   for (const bp of longBrokerPositions) {
     const existing = positionMap.get(bp.symbol);
     if (existing) {
+      // Corporate-action (split) detection — MUST run before the qty-change
+      // handling below. A split changes qty while conserving total basis;
+      // treating it as a qty change leaves entry/stop/TP at pre-split prices,
+      // and the next exit-check "realizes" a phantom loss against the stale
+      // basis (2026-07-02: CRWD 4:1 booked −$2,829 that never happened and
+      // tripped the daily-loss halt).
+      const split = detectSplitAdjustment(existing.qty, existing.entryPrice, bp.qty, bp.avgEntryPrice);
+      if (split) {
+        const f = split.priceFactor;
+        log.warn(
+          {
+            symbol: bp.symbol,
+            userId,
+            oldQty: existing.qty,
+            newQty: bp.qty,
+            oldEntry: existing.entryPrice,
+            newEntry: bp.avgEntryPrice,
+            priceFactor: f,
+          },
+          "Stock split detected — rescaling tracked position instead of treating as a trade"
+        );
+        void writeAudit({
+          actor: { userId, email: null, role: null },
+          action: AuditAction.ENGINE_POSITION_SPLIT_ADJUSTED,
+          resourceType: "position",
+          resourceId: bp.symbol,
+          metadata: {
+            symbol: bp.symbol,
+            oldQty: existing.qty,
+            newQty: bp.qty,
+            oldEntryPrice: existing.entryPrice,
+            newEntryPrice: bp.avgEntryPrice,
+            priceFactor: f,
+          },
+        });
+        existing.qty = bp.qty;
+        existing.entryPrice = bp.avgEntryPrice; // broker's split-adjusted basis is authoritative
+        existing.stopLoss = existing.stopLoss * f;
+        existing.takeProfit = existing.takeProfit * f;
+        // Peak scales too, then the max() below folds in the live price.
+        existing.peakPrice = existing.peakPrice * f;
+      }
       // Phase 2 (UI-lie audit fix): if qty dropped meaningfully (partial
       // close on broker), reset peakPrice to currentPrice. The dynamic
       // trail % is anchored to peakPrice; a stale peak from the larger
@@ -3539,7 +3801,40 @@ async function reconcileBrokerSideExit(
       return;
     }
 
-    const pnl = (fillPrice - expectedPos.entryPrice) * expectedPos.qty;
+    // Split-suspect basis correction (2026-07-14, CVNA 5:1 incident). The
+    // tracked entryPrice is pre-corporate-action; if the position split
+    // before this exit, P&L against the stale basis fabricates a huge loss
+    // (CVNA: entry $396.98, split-adjusted fill $80.71 → phantom −$1,882).
+    // An entry/fill ratio within 3% of an integer ≥ 2 is a split signature —
+    // real one-day moves of −50%+ on held large-caps don't land on integer
+    // ratios. Symmetric check for reverse splits (fill >> entry).
+    let entryForPnl = expectedPos.entryPrice;
+    let splitNote = "";
+    const fwdRatio = expectedPos.entryPrice / fillPrice;
+    const revRatio = fillPrice / expectedPos.entryPrice;
+    if (fwdRatio >= 1.75) {
+      const n = Math.round(fwdRatio);
+      if (n >= 2 && Math.abs(fwdRatio - n) / n <= 0.03) {
+        entryForPnl = expectedPos.entryPrice / n;
+        splitNote = ` [split-suspected ${n}:1 — basis adjusted $${expectedPos.entryPrice.toFixed(2)} → $${entryForPnl.toFixed(4)}]`;
+        log.warn(
+          { symbol, userId, entry: expectedPos.entryPrice, fillPrice, suspectedRatio: n },
+          "Reconciliation: forward-split signature on broker-side exit — adjusting basis instead of booking phantom loss"
+        );
+      }
+    } else if (revRatio >= 1.75) {
+      const n = Math.round(revRatio);
+      if (n >= 2 && Math.abs(revRatio - n) / n <= 0.03) {
+        entryForPnl = expectedPos.entryPrice * n;
+        splitNote = ` [reverse-split-suspected 1:${n} — basis adjusted $${expectedPos.entryPrice.toFixed(2)} → $${entryForPnl.toFixed(4)}]`;
+        log.warn(
+          { symbol, userId, entry: expectedPos.entryPrice, fillPrice, suspectedRatio: n },
+          "Reconciliation: reverse-split signature on broker-side exit — adjusting basis instead of booking phantom gain"
+        );
+      }
+    }
+
+    const pnl = (fillPrice - entryForPnl) * expectedPos.qty;
     // Map order type to a useful signal name for the trader_trades log
     const signal =
       candidate.type === "stop" || candidate.type === "stop_limit"
@@ -3559,7 +3854,7 @@ async function reconcileBrokerSideExit(
       fillTime: new Date(candidate.filledAt!),
       status: "FILLED",
       pnl,
-      notes: `Auto-reconciled: broker-side ${candidate.type || "exit"} fired at $${fillPrice.toFixed(4)} (entry $${expectedPos.entryPrice.toFixed(2)}). Engine missed logging — Phase 7.5 reconciliation inserted this row.`,
+      notes: `Auto-reconciled: broker-side ${candidate.type || "exit"} fired at $${fillPrice.toFixed(4)} (entry $${expectedPos.entryPrice.toFixed(2)}).${splitNote} Engine missed logging — Phase 7.5 reconciliation inserted this row.`,
       traderTimestamp: new Date(candidate.filledAt!),
     });
 
@@ -3578,7 +3873,7 @@ async function reconcileBrokerSideExit(
     const engine = g.__tradingEngines?.get(userId);
     if (engine) {
       const riskLimits = await loadRiskLimits(userId);
-      recordRealizedExit(engine, pnl, riskLimits);
+      recordRealizedExit(engine, pnl, riskLimits, symbol);
     }
   } catch (err) {
     // Unique-constraint violation = idempotency race (someone else just logged it). Safe to swallow.
@@ -4616,7 +4911,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         recordOrderPlacement(engine, "sell", 0);
         realizedPnlThisScan += bp.unrealizedPnl;
         // Discretionary single-position exit → counts toward the streak (audit #2).
-        recordRealizedExit(engine, bp.unrealizedPnl, riskLimits);
+        recordRealizedExit(engine, bp.unrealizedPnl, riskLimits, weak.symbol);
         tradesThisScan++;
         positionMap.delete(weak.symbol);
         heldSymbols.delete(weak.symbol);
@@ -5305,13 +5600,33 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
             shouldExit = true;
             exitReason = `Hold period expired (${tradingDays} trading days >= ${strategy.holdPeriod})`;
           }
-          // Sell signal
+          // Sell signal — DEMOTED from market-exit to stop-tighten
+          // (2026-07-14). All-time data: 30 "Sell signal received" exits,
+          // 1 winner, −$2,717 total vs trailing stops +$2,814 on the same
+          // book — the analyzer's SELL lags the move and exited at local
+          // bottoms. Tighten the stop instead: SELL keeps 1/2 of the current
+          // dynamic trail, STRONG_SELL keeps 1/3. A real breakdown exits via
+          // the tightened stop within the same session; a whipsaw survives.
+          // syncBrokerStops propagates the raised stop to the broker on this
+          // scan; the 1-min exit check enforces it in-memory immediately.
           else if (
             signal === SignalType.SELL ||
             signal === SignalType.STRONG_SELL
           ) {
-            shouldExit = true;
-            exitReason = `Sell signal received: ${signal} (confidence: ${(confidence * 100).toFixed(0)}%)`;
+            const tightenFactor = signal === SignalType.STRONG_SELL ? 1 / 3 : 1 / 2;
+            if (tightenStopOnSellSignal(heldPosition, currentPrice, dynTrail, tightenFactor)) {
+              log.info(
+                {
+                  symbol,
+                  signal,
+                  confidence,
+                  newStopLoss: heldPosition.stopLoss.toFixed(2),
+                  currentPrice: currentPrice.toFixed(2),
+                  dynTrail,
+                },
+                "Sell signal demoted to stop-tighten (was market-exit pre-2026-07-14)"
+              );
+            }
           }
         }
 
@@ -5372,7 +5687,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
             realizedPnlThisScan += pnl;
             recordOrderPlacement(engine, "sell", 0);
             // Net daily-loss + consecutive-loss accounting (audit #2/#20).
-            recordRealizedExit(engine, pnl, riskLimits);
+            recordRealizedExit(engine, pnl, riskLimits, symbol);
             tradesThisScan++;
 
             await logTrade(
@@ -7730,10 +8045,26 @@ export async function syncBrokerStopsForUser(
   // wedged (the 2026-05-26 hung-tactical-smart incident). Run the sync anyway
   // and log a forensic trace.
   if (decision.reason === "stale_scan_override" && engine?.scanStartedAt) {
+    const scanAgeMs = now - engine.scanStartedAt.getTime();
     log.warn(
-      { userId, scanAgeMs: now - engine.scanStartedAt.getTime() },
+      { userId, scanAgeMs },
       "Stop-sync running past stale-scan override — scan flag has been set for >10 min"
     );
+    // Past SCAN_WEDGED_RESET_MS the scan isn't slow, it's dead — a scan that
+    // aborted without clearing its flag (halt mid-scan, unhandled throw past
+    // the generation guards). Clear it so the scheduler stops re-logging the
+    // override every 5 min forever (the 5fa9f5cb engine spammed it for 7 DAYS
+    // after a Jul 7 equity_collapse halt) and so future scans gate normally.
+    // Safe against a genuinely-alive scan: anything running this long is
+    // superseded — its next throwIfScanCancelled yield throws, and the orphan
+    // resolution path already handles "flag owned by a newer scan".
+    if (scanAgeMs > SCAN_WEDGED_RESET_MS) {
+      log.error(
+        { userId, scanAgeMs },
+        "Wedged scan flag cleared — scan never resolved; scheduler gating restored"
+      );
+      engine.scanStartedAt = null;
+    }
   }
   await syncBrokerStops(userId);
   return { ran: true };

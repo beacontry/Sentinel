@@ -273,6 +273,18 @@ export const AuditAction = {
   ENGINE_PDT_VULNERABLE: "engine.pdt_vulnerable",
   ENGINE_ADMIN_OVERRIDE: "engine.admin_override",
   ENGINE_POSITION_DISAPPEARED: "engine.position_disappeared",
+  // Broker position qty/basis changed with total cost conserved — a forward
+  // or reverse stock split. The engine rescales entry/stop/TP/peak instead of
+  // booking phantom P&L against the pre-split basis (the 2026-07-02 CRWD 4:1
+  // incident: 5 shares @ $758.89 became 20 @ $189.72 and the stale stop
+  // "realized" a fabricated −$2,829).
+  ENGINE_POSITION_SPLIT_ADJUSTED: "engine.position_split_adjusted",
+  // Wash-sale / losing-reentry blocked-set refresh has been failing for
+  // longer than PROTECTION_REFRESH_ALERT_AFTER_MS. Fail-soft "keep previous
+  // set" semantics silently degrade to NO protection when the failure starts
+  // at boot (empty previous set) — the Jun 29–Jul 14 2026 incident where a
+  // missing migration broke the refresh for 17 days with zero visibility.
+  ENGINE_PROTECTION_DEGRADED: "engine.protection_degraded",
   // Container-boot autoStartIfNeeded exhausted all retries — engine will
   // not resume until the user manually restarts. Positions are orphaned
   // (no scans, no syncBrokerStops) until that happens. Audit so the next
