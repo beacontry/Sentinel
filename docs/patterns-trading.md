@@ -121,6 +121,10 @@ Patterns cite the audit finding that motivated them. **Cite symbols/functions, n
 
 > Guard: broker fills with zero/negative/missing prices are rejected; skip correction to avoid fabricated losses.
 
+### **Corporate actions: prevent first, rescale as fallback**
+
+Splits are ANNOUNCED days-to-weeks ahead — the cheapest handling is not holding through them. Preventive layer (2026-07-15): broker corporate-actions calendar → shared daily cache (earnings-cache semantics) → (a) BUY gate refusing entries with an ex-date inside the blackout window, (b) market exit on the **last trading day before the ex-date** (weekend-aware; holidays at worst exit a day early — the safe direction), routed through the existing 1-min exit path so it inherits every guard. Key insight: a split is economically neutral to hold through, but **brokers cancel open GTC protective stops on the ex-date** — the position sits unprotected until the next stop-sync. Detection/rescale (below) stays as the net for unannounced or missed actions.
+
 ### **Corporate actions: a split is a rescale, not a trade (2026-07-14 CRWD/CVNA incident)**
 
 A forward/reverse split changes share count and per-share basis while conserving TOTAL cost basis; a partial close, add-on buy, or averaging fill changes total basis. So "broker qty moved >10% while total basis stayed within 2%" is a split signature — `detectSplitAdjustment` (pure, tested). Three integration points, all required:

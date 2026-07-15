@@ -883,7 +883,12 @@
 
     <div class="callout info">
       <span class="callout-icon">&#8505;</span>
-      <span><strong>Corporate actions (splits).</strong> The broker sync detects a split signature (share count moved &gt;10% while total cost basis stayed conserved within 2%) and rescales entry/stop/take-profit/peak in place instead of treating it as a trade. The 1-min exit check re-verifies against the broker before firing any stop on a quote below 60% of tracked entry, and the reconciler corrects the basis when an entry/fill ratio lands on an integer split ratio. Added 2026-07-14 after a 4:1 split booked a phantom &minus;$2,829 loss and tripped a daily-loss halt.</span>
+      <span><strong>Corporate actions (splits) — preventive.</strong> The engine avoids holding through splits entirely (added 2026-07-15): announced splits are pulled from the broker's corporate-actions calendar daily; new BUYs are refused once a symbol's ex-date is within 5 calendar days (<code>split_blackout</code>), and held positions exit at market on the <strong>last trading day before the ex-date</strong> (<code>pre_split_exit</code>, weekend-aware). A split doesn't change position value, but brokers cancel open GTC protective stops on the ex-date — holding through means an unprotected window.</span>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#8505;</span>
+      <span><strong>Corporate actions (splits) — reactive safety net.</strong> For unannounced or missed actions: the broker sync detects a split signature (share count moved &gt;10% while total cost basis stayed conserved within 2%) and rescales entry/stop/take-profit/peak in place instead of treating it as a trade. The 1-min exit check re-verifies against the broker before firing any stop on a quote below 60% of tracked entry, and the reconciler corrects the basis when an entry/fill ratio lands on an integer split ratio. Added 2026-07-14 after a 4:1 split booked a phantom &minus;$2,829 loss and tripped a daily-loss halt.</span>
     </div>
   </section>
 

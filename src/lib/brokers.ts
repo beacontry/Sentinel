@@ -140,6 +140,26 @@ export interface BrokerClient {
   cancelOrder?(orderId: string): Promise<void>;
   cancelAllOrders?(): Promise<void>;
   replaceOrder?(orderId: string, updates: { stopPrice?: string; limitPrice?: string; qty?: string }): Promise<BrokerOrder>;
+  /**
+   * Upcoming split announcements with ex-dates inside [since, until]
+   * (YYYY-MM-DD, ≤90-day span). Feeds the split-blackout BUY gate and the
+   * pre-split exit sweep (2026-07-15, after the CRWD 4:1 / CVNA 5:1
+   * phantom-loss incident — holding through a split also loses broker-side
+   * GTC stop protection on the ex-date, when brokers cancel open orders).
+   * Optional — only Alpaca implements it; callers treat absence as "no
+   * calendar available" and skip the gate rather than blocking trading.
+   */
+  getSplitCalendar?(since: string, until: string): Promise<SplitAnnouncement[]>;
+}
+
+export interface SplitAnnouncement {
+  symbol: string;
+  /** YYYY-MM-DD — first date the split-adjusted price trades. */
+  exDate: string;
+  /** e.g. 1 old → 4 new for a 4:1 forward split. 0 when Alpaca omits it. */
+  oldRate: number;
+  newRate: number;
+  subType: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -324,6 +344,44 @@ export class AlpacaClient implements BrokerClient {
       longMarketValue: toNumber(data.long_market_value),
       lastEquity: toNumber(data.last_equity),
     };
+  }
+
+  async getSplitCalendar(since: string, until: string): Promise<SplitAnnouncement[]> {
+    // Trading-API announcements endpoint (works with paper + live keys).
+    // date_type=ex_date so the window filters on the date that matters to
+    // us: the first split-adjusted trading day.
+    const qs = new URLSearchParams({ ca_types: "split", since, until, date_type: "ex_date" });
+    const res = await brokerFetch(`${this.baseUrl}/v2/corporate_actions/announcements?${qs}`, {
+      headers: this.headers,
+    });
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => "Unknown error");
+      log.warn({ broker: "alpaca", status: res.status, err: errorText.slice(0, 200) }, "Split calendar fetch failed");
+      throw new BrokerError(`Alpaca ${res.status}: split announcements`, 502, "Failed to fetch split calendar");
+    }
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      throw new BrokerError("Invalid JSON from Alpaca announcements", 502, "Invalid response from broker");
+    }
+    if (!Array.isArray(data)) return [];
+    const out: SplitAnnouncement[] = [];
+    for (const raw of data as Record<string, unknown>[]) {
+      // target_symbol is the post-action symbol when it changes; prefer it,
+      // fall back to initial_symbol. Skip rows with neither or no ex_date.
+      const symbol = toString(raw.target_symbol) || toString(raw.initial_symbol);
+      const exDate = toString(raw.ex_date);
+      if (!symbol || !exDate) continue;
+      out.push({
+        symbol,
+        exDate,
+        oldRate: toNumber(raw.old_rate),
+        newRate: toNumber(raw.new_rate),
+        subType: toString(raw.ca_sub_type) || "split",
+      });
+    }
+    return out;
   }
 
   async getPositions(): Promise<BrokerPosition[]> {

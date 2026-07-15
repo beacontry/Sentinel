@@ -516,6 +516,9 @@ const gFilters = globalThis as typeof globalThis & {
   __rsCache?: Map<string, number>; // symbol → relative strength vs SPY
   __rsCacheDate?: string;
   __rsCacheTimestamp?: number;
+  __splitCalendar?: Map<string, string>; // symbol → earliest upcoming split ex-date (YYYY-MM-DD)
+  __splitCalendarDate?: string;
+  __splitCalendarTimestamp?: number;
 };
 
 // Phase 3 (UI-lie audit fix): max age for the date-based caches above.
@@ -601,6 +604,78 @@ async function isInEarningsBlackout(symbol: string, blackoutDays: number = 5): P
     if (daysUntil >= -1 && daysUntil <= blackoutDays) return true; // blackout window
   }
   return false;
+}
+
+/**
+ * Split-calendar cache refresh (2026-07-15). Market-wide data — one shared
+ * cache regardless of which user's broker client did the fetch. Same
+ * commit-on-success / keep-previous-on-error / throttle-retries semantics as
+ * the earnings cache above (transient upstream blips must not disable the
+ * protection OR hammer the API). Fire-and-forget from scan/exit-check
+ * preludes; the gate reads the cache synchronously.
+ */
+async function maybeRefreshSplitCalendar(client: BrokerClient): Promise<void> {
+  if (!client.getSplitCalendar) return;
+  const today = new Date().toISOString().slice(0, 10);
+  if (!isFilterCacheStale(gFilters.__splitCalendarDate, gFilters.__splitCalendarTimestamp, today) && gFilters.__splitCalendar) {
+    return;
+  }
+  try {
+    const until = new Date(Date.now() + SPLIT_CALENDAR_LOOKAHEAD_DAYS * 86400000).toISOString().slice(0, 10);
+    const rows = await client.getSplitCalendar(today, until);
+    const next = new Map<string, string>();
+    for (const r of rows) {
+      const existing = next.get(r.symbol);
+      if (!existing || r.exDate < existing) next.set(r.symbol, r.exDate);
+    }
+    gFilters.__splitCalendar = next;
+    gFilters.__splitCalendarDate = today;
+    gFilters.__splitCalendarTimestamp = Date.now();
+    if (next.size > 0) {
+      log.info({ symbols: Array.from(next.keys()), count: next.size }, "Split calendar refreshed — upcoming ex-dates cached");
+    }
+  } catch (err) {
+    // Keep the previous cache; bump the timestamp to throttle retries.
+    gFilters.__splitCalendarDate = today;
+    gFilters.__splitCalendarTimestamp = Date.now();
+    if (!gFilters.__splitCalendar) gFilters.__splitCalendar = new Map();
+    log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Split calendar refresh failed — keeping previous cache");
+  }
+}
+
+/**
+ * Earliest cached upcoming split ex-date for `symbol` when it falls within
+ * `withinDays` calendar days of `todayISO`; null otherwise. Pure given the
+ * cache — exported for tests via the injectable `calendar` param.
+ */
+export function getImminentSplitExDate(
+  symbol: string,
+  withinDays: number,
+  todayISO: string = new Date().toISOString().slice(0, 10),
+  calendar: Map<string, string> | undefined = gFilters.__splitCalendar
+): string | null {
+  const exDate = calendar?.get(symbol);
+  if (!exDate) return null;
+  if (exDate < todayISO) return null; // already past — broker sync's detectSplitAdjustment owns it now
+  const days = (new Date(exDate + "T00:00:00Z").getTime() - new Date(todayISO + "T00:00:00Z").getTime()) / 86400000;
+  return days <= withinDays ? exDate : null;
+}
+
+/**
+ * True when `todayISO` is the LAST trading day before the split ex-date —
+ * i.e., the next weekday on or after tomorrow is >= exDate. Weekend-aware
+ * (a Monday ex-date must exit on Friday); market holidays are ignored,
+ * which only ever exits one trading day early (safe direction). Pure;
+ * exported for tests.
+ */
+export function isLastTradingDayBeforeSplit(exDateISO: string, todayISO: string): boolean {
+  if (todayISO >= exDateISO) return false; // ex-date reached — rescale territory, not exit territory
+  const d = new Date(todayISO + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 1);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) {
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return d.toISOString().slice(0, 10) >= exDateISO;
 }
 
 /**
@@ -762,6 +837,17 @@ const SPLIT_MIN_QTY_CHANGE = 0.10;
 const SPLIT_SUSPECT_PRICE_RATIO = 0.6;
 // Sell-signal stop-tighten floor — never tighten the trail below 1% of price.
 const SIGNAL_TIGHTEN_MIN_TRAIL_PCT = 0.01;
+// ─── Split blackout (2026-07-15, announced corporate actions) ───────────────
+// Splits are announced days-to-weeks ahead (Alpaca ingests announcements the
+// trading day after declaration). Holding through one is operationally risky
+// even with detection guards: brokers cancel open GTC stops on the ex-date
+// (unprotected window until the next stop-sync) and any detection gap
+// re-opens the phantom-P&L class. So: stop BUYING a symbol once its ex-date
+// is within SPLIT_BLACKOUT_DAYS, and EXIT held positions on the last trading
+// day before the ex-date (economically ~neutral — a split doesn't change
+// position value — but removes the whole operational surface).
+const SPLIT_BLACKOUT_DAYS = 5;             // calendar days before ex-date to refuse new BUYs
+const SPLIT_CALENDAR_LOOKAHEAD_DAYS = 14;  // announcement fetch window
 // A scan flagged in-flight this long is dead, not slow — clear the flag so
 // stop-sync stops logging the stale-scan override every 5 minutes forever
 // (the 5fa9f5cb engine spammed it for 7 days after an equity_collapse halt).
@@ -965,6 +1051,22 @@ async function canPlaceBuyOrder(
       }
     } catch {
       // Best-effort — earnings cache lookup failures shouldn't block trading
+    }
+  }
+
+  // Split blackout (2026-07-15) — refuse BUYs on symbols with an announced
+  // split ex-date within SPLIT_BLACKOUT_DAYS. Cheap Map lookup against the
+  // shared calendar cache (refreshed by scan/exit-check preludes). Holding
+  // through a split loses broker-side GTC stop protection on the ex-date and
+  // re-opens the phantom-P&L class the CRWD/CVNA incident came from.
+  {
+    const splitExDate = getImminentSplitExDate(symbol, SPLIT_BLACKOUT_DAYS);
+    if (splitExDate) {
+      return {
+        ok: false,
+        reason: "split_blackout",
+        details: { symbol, exDate: splitExDate, blackoutDays: SPLIT_BLACKOUT_DAYS },
+      };
     }
   }
 
@@ -2988,6 +3090,11 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
     });
   }
 
+  // Warm the split calendar (internally throttled to daily/6h) so the
+  // pre-split exit below and canPlaceBuyOrder's blackout gate always have
+  // data during market hours.
+  void maybeRefreshSplitCalendar(client);
+
   const positionMap = getPositionMap(engine?.userId ?? engineUserId);
   if (positionMap.size === 0) return;
 
@@ -3069,7 +3176,24 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
       const trailStop = trailActive ? pos.peakPrice * (1 - dynTrailPct) : 0;
       const effectiveStop = Math.max(fixedStop, trailStop);
 
-      if (currentPrice <= effectiveStop) {
+      // Pre-split exit (2026-07-15) — checked FIRST so the informative
+      // reason wins if a stop would also fire this tick. On the last
+      // trading day before an announced split ex-date, exit at market:
+      // economically ~neutral (a split doesn't change position value) but
+      // it sidesteps the ex-date GTC-stop cancellation window and the
+      // whole corporate-action detection surface. Runs through this
+      // existing exit path so it inherits the double-sell claim, PDT
+      // suppression, halt accounting, and trade logging for free.
+      {
+        const today = new Date().toISOString().slice(0, 10);
+        const splitExDate = getImminentSplitExDate(symbol, SPLIT_BLACKOUT_DAYS, today);
+        if (splitExDate && isLastTradingDayBeforeSplit(splitExDate, today)) {
+          exitReason = "pre_split_exit";
+          log.info({ symbol, splitExDate }, "Pre-split exit — announced split ex-date is the next trading day");
+        }
+      }
+
+      if (!exitReason && currentPrice <= effectiveStop) {
         exitReason = currentPrice <= fixedStop ? "stop_loss" : "trailing_stop";
       }
 
@@ -3576,6 +3700,10 @@ async function syncPositionMapFromBroker(
   userId: string,
   client?: BrokerClient
 ): Promise<void> {
+  // Warm the split calendar from the scan prelude too (internally throttled)
+  // so the blackout gate has data on the first scan of the day.
+  if (client) void maybeRefreshSplitCalendar(client);
+
   // Engine is long-only. If a short shows up on the broker (manual order, external tool),
   // ignore it entirely — long-only stop/exit logic is wrong-direction for shorts.
   const longBrokerPositions = brokerPositions.filter(bp => {

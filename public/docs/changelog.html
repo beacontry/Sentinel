@@ -232,6 +232,19 @@
     </div>
   </header>
 
+  <!-- ════════════════════════ 2026-07-15 (later) ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-07-15</div>
+    <h2>Split blackout: don't hold through announced splits</h2>
+    <p class="summary">Preventive layer on top of the 07-14 reactive split guards. Splits are announced ahead of time &mdash; so the engine now avoids the event entirely.</p>
+    <ul>
+      <li><strong>Split calendar</strong> from the broker's corporate-actions announcements API (paper + live keys), cached daily with the same keep-previous-on-error semantics as the earnings cache.</li>
+      <li><strong><code>split_blackout</code> BUY gate</strong> &mdash; no new entries on a symbol with an ex-date within 5 calendar days.</li>
+      <li><strong><code>pre_split_exit</code></strong> &mdash; held positions exit at market on the <em>last trading day before the ex-date</em> (weekend-aware: a Monday ex-date exits Friday). Runs through the 1-min exit poll's existing hardened path.</li>
+      <li><strong>Why exit:</strong> a split is economically neutral, but brokers cancel open GTC protective stops on the ex-date &mdash; holding through means an unprotected window plus the phantom-P&amp;L surface. The reactive rescale guards remain as the safety net for unannounced actions.</li>
+    </ul>
+  </article>
+
   <!-- ════════════════════════ 2026-07-15 ════════════════════════ -->
   <article class="entry">
     <div class="date">2026-07-15</div>

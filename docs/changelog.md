@@ -4,6 +4,17 @@ Dated retrospectives extracted from CLAUDE.md. Day-to-day "when did X land" ques
 
 ---
 
+## 2026-07-15 (later) — Split blackout: don't hold through announced splits
+
+Preventive layer on top of the 07-14 reactive split guards. Splits are announced days-to-weeks ahead (Alpaca ingests announcements the trading day after declaration) — so the engine now simply avoids the event:
+
+- **`getSplitCalendar()`** on the Alpaca client (`/v2/corporate_actions/announcements`, `ca_types=split`, `date_type=ex_date`, paper + live keys) → shared daily engine cache (commit-on-success / keep-previous-on-error, same semantics as the earnings cache).
+- **`split_blackout` BUY gate** in `canPlaceBuyOrder` (after earnings blackout): refuses entries on symbols with an ex-date within 5 calendar days.
+- **`pre_split_exit`**: held positions exit at market on the **last trading day before the ex-date** (weekend-aware — Monday ex-date exits Friday; holidays at worst exit one day early). Runs inside the 1-min exit poll's existing hardened path, so it inherits the double-sell claim, PDT suppression, halt accounting, and logging.
+- Why exit rather than hold: a split is economically neutral, but brokers **cancel open GTC protective stops on the ex-date** (unprotected window until the next stop-sync), and any detection gap re-opens the phantom-P&L class. The 07-14 reactive guards (`detectSplitAdjustment`, exit-check re-verify, reconciler ratio correction) remain as the safety net for unannounced/missed actions.
+
+11 new unit tests (blackout window boundaries, weekend-aware last-trading-day logic); 810 pass across 61 suites.
+
 ## 2026-07-15 — Crisis-path confirmations, trader IA, dark default, landing de-slop
 
 Executed the 2026-07-14 design-review plan end-to-end (review scored 31/40 on Nielsen heuristics; the automated anti-pattern detector went 5 findings → 0).
