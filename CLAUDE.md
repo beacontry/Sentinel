@@ -406,6 +406,20 @@ CSP is set per-request in `src/middleware.ts` (not `next.config.ts`), with a per
 
 ---
 
+## Doc surfaces (sweep ALL on behavior change — see `~/.claude/patterns-docs.md`)
+
+| Surface | Role | Mirror (same commit!) |
+|---|---|---|
+| `docs/ENGINE_RULESET.md` | engine behavior spec — current truth only | `public/docs/engine-ruleset.html` |
+| `docs/changelog.md` | dated history + incident forensics | `public/docs/changelog.html` |
+| `README.md` | setup + capability/safety overview | — |
+| `public/docs/beacontry-features.html` | user training (mark retirements, don't delete) | — |
+| `public/docs/tiers.html` / `usage-slides.html` | pricing matrix / onboarding | — |
+| `docs/patterns-trading.md` | recurring bug-class cookbook | — |
+| `CLAUDE.md` (this file) | working conventions + hot facts | — |
+
+Sweep triggers: behavior change → coverage-matrix the new mechanism across the table; retirement → grep the retired name everywhere; incident close / sprint end → full staleness sweep (retired names, ordering strings like the gate sequence, tuned constants, counts, defaults).
+
 ## Static HTML docs (served by Next.js public/)
 
 User-facing HTML docs live in **`public/docs/`** (served at `/docs/*.html`; the repo-root `docs/` folder holds markdown source):
