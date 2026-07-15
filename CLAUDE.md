@@ -420,6 +420,8 @@ CSP is set per-request in `src/middleware.ts` (not `next.config.ts`), with a per
 
 Sweep triggers: behavior change → coverage-matrix the new mechanism across the table; retirement → grep the retired name everywhere; incident close / sprint end → full staleness sweep (retired names, ordering strings like the gate sequence, tuned constants, counts, defaults).
 
+**Enforced in CI:** `npm run docs:check` (`scripts/check-doc-staleness.mjs`) blocks the build when a banned stale marker appears in a current-truth surface (changelog pair exempt — it's history) or the migration-count anchor lags `drizzle/`. **When retiring/re-tuning anything, add a ban entry in the same PR.**
+
 ## Static HTML docs (served by Next.js public/)
 
 User-facing HTML docs live in **`public/docs/`** (served at `/docs/*.html`; the repo-root `docs/` folder holds markdown source):

@@ -8,6 +8,7 @@
     "build": "next build && node scripts/build-optimizer-worker.mjs",
     "start": "next start",
     "lint": "eslint .",
+    "docs:check": "node scripts/check-doc-staleness.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",

@@ -31,6 +31,14 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      # Blocking, like every other gate: banned stale-doc markers (retired
+      # features, old constants/defaults, dead gate orderings) must not
+      # appear in current-truth doc surfaces, and anchored counts must cite
+      # the newest migration. See scripts/check-doc-staleness.mjs and
+      # ~/.claude/patterns-docs.md § Automation Hooks.
+      - name: Doc staleness check
+        run: npm run docs:check
+
       - name: Test
         run: npm test
 
