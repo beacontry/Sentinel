@@ -6478,7 +6478,11 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
       engine.washSaleLastRefreshAt = Date.now();
     } catch (err) {
       log.warn(
-        { userId, err: err instanceof Error ? err.message : "unknown" },
+        {
+          userId,
+          err: err instanceof Error ? err.message : "unknown",
+          cause: err instanceof Error && err.cause instanceof Error ? err.cause.message : undefined,
+        },
         "Wash-sale prime failed at engine start — continuing with empty set; per-BUY refresh will retry"
       );
     }
@@ -6496,7 +6500,11 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
       engine.losingReentryLastRefreshAt = Date.now();
     } catch (err) {
       log.warn(
-        { userId, err: err instanceof Error ? err.message : "unknown" },
+        {
+          userId,
+          err: err instanceof Error ? err.message : "unknown",
+          cause: err instanceof Error && err.cause instanceof Error ? err.cause.message : undefined,
+        },
         "Losing-reentry prime failed at engine start — continuing with empty set; per-BUY refresh will retry"
       );
     }
