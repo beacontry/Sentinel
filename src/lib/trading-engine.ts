@@ -1700,9 +1700,17 @@ async function refreshWashSaleBlockedSymbols(userId: string): Promise<Set<string
           // (when the row was inserted). For a SELL queued late one day and
           // filled the next, the wash-sale window anchors on the fill.
           // Falls back to createdAt for rows missing fillTime (legacy data).
+          //
+          // cutoff MUST be an ISO string here, not a Date (2026-07-15 fix).
+          // With a raw sql`` fragment on the left, drizzle has no column
+          // driver-mapping for the right-hand param, so a Date object went to
+          // postgres.js unmapped and threw client-side ("Received an instance
+          // of Date") on EVERY call — wash-sale protection was silently dead
+          // from the day this COALESCE landed (2026-05-17). PG infers the
+          // param as timestamptz from the comparison and parses the string.
           gt(
             sql`COALESCE(${traderTrades.fillTime}, ${traderTrades.createdAt})`,
-            cutoff
+            cutoff.toISOString()
           ),
           lt(traderTrades.pnl, 0)
         )
@@ -1814,9 +1822,12 @@ async function refreshLosingReentryBlockedSymbols(userId: string): Promise<Set<s
         and(
           eq(traderTrades.userId, userId),
           inArray(traderTrades.action, ["SELL", "manual_close"]),
+          // ISO string, not Date — see refreshWashSaleBlockedSymbols
+          // (2026-07-15: raw-fragment gt() has no driver mapping; a Date
+          // param threw client-side on every call since this shipped).
           gt(
             sql`COALESCE(${traderTrades.fillTime}, ${traderTrades.createdAt})`,
-            cutoff
+            cutoff.toISOString()
           ),
           lt(traderTrades.pnl, 0)
         )
