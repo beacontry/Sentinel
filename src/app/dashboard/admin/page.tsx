@@ -18,6 +18,8 @@ import Link from "next/link";
 import { Users, Plus, Pencil, Trash2, Shield, Mail, Send, Check, Clock, Copy, Play, Square, XCircle, RefreshCw, AlertTriangle, BarChart3, Key, ArrowRight, MessagesSquare } from "lucide-react";
 import { RedditSubredditsCard } from "@/components/admin/reddit-subreddits-card";
 import { UserPerformanceCard } from "@/components/admin/user-performance-card";
+import { useToast } from "@/components/ui/toast";
+import { useConfirmAction } from "@/components/ui/confirm-action-modal";
 
 interface User {
   id: string;
@@ -100,6 +102,8 @@ const ROLE_OPTIONS = [
 ];
 
 export default function AdminPage() {
+  const { toast } = useToast();
+  const { requestConfirm, dialog: confirmDialog } = useConfirmAction();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -217,25 +221,33 @@ export default function AdminPage() {
     } catch { /* ignore */ }
   }, []);
 
-  async function toggleUserLiveTrading(targetUserId: string, enabled: boolean) {
+  function toggleUserLiveTrading(targetUserId: string, enabled: boolean) {
     const target = engineRows.find((r) => r.user.id === targetUserId);
     const label = target ? `${target.user.name} (${target.user.email})` : "this user";
-    const verb = enabled ? "GRANT live trading" : "REVOKE live trading";
-    if (!confirm(`${verb} for ${label}? They'll ${enabled ? "be able to start" : "no longer be able to start"} the engine on a LIVE broker connection.`)) return;
-    try {
-      const res = await fetch("/api/admin/user-live-trading", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetUserId, enabled }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: "Unknown" }));
-        setEngineCmdError(data.error ?? "Action failed");
-      }
-      await loadEngines();
-    } catch {
-      setEngineCmdError("Network error");
-    }
+    requestConfirm({
+      title: enabled ? "Grant live trading" : "Revoke live trading",
+      description: (
+        <>
+          <span className="font-mono text-text-primary">{label}</span> will{" "}
+          {enabled ? "be able to start" : "no longer be able to start"} the engine on a{" "}
+          <strong className="text-text-primary">LIVE broker connection</strong>.
+        </>
+      ),
+      tone: enabled ? "danger" : "primary",
+      confirmLabel: enabled ? "Grant live access" : "Revoke live access",
+      onConfirm: async () => {
+        const res = await fetch("/api/admin/user-live-trading", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetUserId, enabled }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({ error: "Unknown" }));
+          throw new Error(data.error ?? "Action failed");
+        }
+        await loadEngines();
+      },
+    });
   }
 
   async function adminEngineAction(
@@ -246,10 +258,39 @@ export default function AdminPage() {
     if (action === "halt") {
       const target = engineRows.find((r) => r.user.id === targetUserId);
       const label = target ? `${target.user.name} (${target.user.email})` : "this user";
-      if (!confirm(`EMERGENCY HALT for ${label}? Closes ALL their open positions at market.`)) return;
+      requestConfirm({
+        title: "Emergency halt (admin)",
+        description: (
+          <>
+            Halts <span className="font-mono text-text-primary">{label}</span>&apos;s engine and{" "}
+            <strong className="text-text-primary">liquidates ALL their open positions at market</strong>.
+            They must press Start themselves to resume.
+          </>
+        ),
+        typedKeyword: "HALT",
+        confirmLabel: "Halt their engine",
+        onConfirm: async () => {
+          const err = await runAdminEngineAction(targetUserId, action, mode);
+          if (err) throw new Error(err);
+          toast({ type: "warning", message: `Emergency halt sent for ${label}.` });
+        },
+      });
+      return;
     }
+    await runAdminEngineAction(targetUserId, action, mode);
+  }
+
+  async function runAdminEngineAction(
+    targetUserId: string,
+    action: "start" | "stop" | "halt",
+    mode?: string
+  ) {
     setEngineCmdUserId(targetUserId);
     setEngineCmdError("");
+    // Returns the error string (also set in state for the inline banner) so
+    // modal-driven callers can throw on it — React state reads are stale
+    // inside the same tick.
+    let errMsg: string | null = null;
     try {
       const res = await fetch("/api/admin/engine", {
         method: "POST",
@@ -258,14 +299,17 @@ export default function AdminPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Unknown" }));
-        setEngineCmdError(data.error ?? "Action failed");
+        errMsg = data.error ?? "Action failed";
+        setEngineCmdError(errMsg ?? "");
       }
       await loadEngines();
     } catch {
-      setEngineCmdError("Network error");
+      errMsg = "Network error";
+      setEngineCmdError(errMsg);
     } finally {
       setEngineCmdUserId(null);
     }
+    return errMsg;
   }
 
   useEffect(() => {
@@ -527,31 +571,35 @@ export default function AdminPage() {
                     <td className="py-3 pr-4">
                       <select
                         value={user.tier ?? "free"}
-                        onChange={async (e) => {
+                        onChange={(e) => {
                           const newTier = e.target.value;
                           if (newTier === user.tier) return;
-                          const ok = confirm(
-                            `Change ${user.name}'s tier to ${newTier}?`
-                          );
-                          if (!ok) return;
-                          const res = await fetch(
-                            `/api/admin/users/${user.id}/tier`,
-                            {
-                              method: "PATCH",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ tier: newTier }),
-                            }
-                          );
-                          if (res.ok) {
-                            loadUsers();
-                          } else {
-                            const data = await res.json().catch(() => ({}));
-                            alert(
-                              typeof data.error === "string"
-                                ? data.error
-                                : "Failed to update tier"
-                            );
-                          }
+                          requestConfirm({
+                            title: "Change tier",
+                            description: (
+                              <>
+                                Set <span className="font-mono text-text-primary">{user.name}</span>&apos;s tier to{" "}
+                                <strong className="text-text-primary">{newTier}</strong>? Feature access updates
+                                immediately; billing is unaffected.
+                              </>
+                            ),
+                            tone: "primary",
+                            confirmLabel: `Set tier to ${newTier}`,
+                            onConfirm: async () => {
+                              const res = await fetch(`/api/admin/users/${user.id}/tier`, {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ tier: newTier }),
+                              });
+                              if (!res.ok) {
+                                const data = await res.json().catch(() => ({}));
+                                throw new Error(
+                                  typeof data.error === "string" ? data.error : "Failed to update tier"
+                                );
+                              }
+                              loadUsers();
+                            },
+                          });
                         }}
                         className="rounded-md border border-border bg-bg-elevated px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-accent/50"
                         aria-label={`Tier for ${user.name}`}
@@ -1209,6 +1257,7 @@ export default function AdminPage() {
           </Button>
         </ModalFooter>
       </Modal>
+      {confirmDialog}
     </div>
   );
 }

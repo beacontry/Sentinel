@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { SignalBadge } from "@/components/ui/signal-badge";
 import { SymbolLink } from "@/components/ui/symbol-link";
 import { useToast } from "@/components/ui/toast";
+import { useConfirmAction } from "@/components/ui/confirm-action-modal";
 import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 import { PositionDetailSheet } from "@/components/dashboard/position-detail-sheet";
 import type { SignalType } from "@/types";
@@ -222,6 +223,7 @@ interface TaxStatus {
 export default function TraderPage() {
   const { pnlFormat } = useDisplayPrefs();
   const { toast } = useToast();
+  const { requestConfirm, dialog: confirmDialog } = useConfirmAction();
   const [data, setData] = useState<TraderData | null>(null);
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -370,14 +372,27 @@ export default function TraderPage() {
     loadRiskProfile();
   }, []);
 
-  async function handleEngine(action: "start" | "stop" | "halt" | "switch") {
+  async function handleEngine(
+    action: "start" | "stop" | "halt" | "switch"
+  ): Promise<{ ok: boolean; error?: string }> {
     setCmdLoading(action);
+    let outcome: { ok: boolean; error?: string } = { ok: true };
     try {
-      await fetch("/api/trader/engine", {
+      const res = await fetch("/api/trader/engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, mode: engineMode }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        outcome = {
+          ok: false,
+          error:
+            body?.error?.message ||
+            (typeof body?.error === "string" ? body.error : null) ||
+            `Engine command failed (${res.status})`,
+        };
+      }
       // Refresh
       const [dashRes, engRes] = await Promise.allSettled([
         fetch("/api/trader/dashboard"),
@@ -385,8 +400,11 @@ export default function TraderPage() {
       ]);
       if (dashRes.status === "fulfilled" && dashRes.value.ok) setData(await dashRes.value.json());
       if (engRes.status === "fulfilled" && engRes.value.ok) setEngine(await engRes.value.json());
-    } catch { /* silent */ }
+    } catch {
+      outcome = { ok: false, error: "Network error — the engine may not have received the command." };
+    }
     setCmdLoading(null);
+    return outcome;
   }
 
   if (loading) {
@@ -608,7 +626,10 @@ export default function TraderPage() {
           </select>
           {!engine?.running ? (
             <Button
-              onClick={() => handleEngine("start")}
+              onClick={async () => {
+                const r = await handleEngine("start");
+                if (!r.ok) toast({ type: "error", message: `Start failed: ${r.error}` });
+              }}
               disabled={cmdLoading !== null || !status.connected}
               className="min-h-[44px]"
             >
@@ -617,7 +638,10 @@ export default function TraderPage() {
             </Button>
           ) : engine?.mode !== engineMode ? (
             <Button
-              onClick={() => handleEngine("switch")}
+              onClick={async () => {
+                const r = await handleEngine("switch");
+                if (!r.ok) toast({ type: "error", message: `Switch failed: ${r.error}` });
+              }}
               disabled={cmdLoading !== null}
               className="min-h-[44px]"
             >
@@ -627,7 +651,10 @@ export default function TraderPage() {
           ) : (
             <Button
               variant="secondary"
-              onClick={() => handleEngine("stop")}
+              onClick={async () => {
+                const r = await handleEngine("stop");
+                if (!r.ok) toast({ type: "error", message: `Stop failed: ${r.error}` });
+              }}
               disabled={cmdLoading !== null}
               className="min-h-[44px]"
             >
@@ -638,9 +665,49 @@ export default function TraderPage() {
           <Button
             variant="destructive"
             onClick={() => {
-              if (confirm("EMERGENCY HALT — stops engine and closes ALL positions at market. Continue?")) {
-                handleEngine("halt");
-              }
+              // No typed keyword here on purpose: Halt is THE emergency
+              // button — friction defeats its purpose. The modal still shows
+              // exactly what's about to be liquidated.
+              const posCount = positions?.length ?? 0;
+              const mktValue = (positions ?? []).reduce((s, p) => s + p.currentPrice * p.quantity, 0);
+              const unreal = (positions ?? []).reduce((s, p) => s + p.unrealizedPnl, 0);
+              requestConfirm({
+                title: "Emergency halt",
+                description: (
+                  <>
+                    Stops the engine, cancels pending orders, and{" "}
+                    <strong className="text-text-primary">liquidates ALL open positions at market</strong>.
+                    The engine stays down until you explicitly press Start. This cannot be undone.
+                  </>
+                ),
+                summary:
+                  posCount > 0
+                    ? [
+                        { label: "Open positions", value: String(posCount) },
+                        {
+                          label: "Est. market value",
+                          value: `$${mktValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                        },
+                        {
+                          label: "Unrealized P&L",
+                          value: `${unreal >= 0 ? "+" : "−"}$${Math.abs(unreal).toFixed(2)}`,
+                          tone: unreal >= 0 ? "bullish" : "bearish",
+                        },
+                      ]
+                    : [{ label: "Open positions", value: "0" }],
+                confirmLabel: posCount > 0 ? `Halt & liquidate ${posCount}` : "Halt engine",
+                onConfirm: async () => {
+                  const r = await handleEngine("halt");
+                  if (!r.ok) throw new Error(r.error);
+                  toast({
+                    type: "warning",
+                    message:
+                      posCount > 0
+                        ? `Engine halted — ${posCount} liquidation order${posCount === 1 ? "" : "s"} submitted. Watching fills.`
+                        : "Engine halted.",
+                  });
+                },
+              });
             }}
             disabled={cmdLoading !== null}
             className="min-h-[44px]"
@@ -748,7 +815,16 @@ export default function TraderPage() {
                     <div className="text-xs text-text-secondary mt-0.5 font-mono">{todayPnl.haltReason}</div>
                   )}
                   <div className="text-xs text-text-muted mt-1">
-                    Halt blocks new BUYs but does NOT flatten. Existing broker stops still fire — but mark-to-market keeps moving. Review or flatten manually below.
+                    {/* Two different halts share this card (2026-07-15 copy fix):
+                        a user emergency halt LIQUIDATES everything (positions
+                        here mean fills are pending or sells were rejected);
+                        safeguard auto-halts (daily loss, equity collapse,
+                        consecutive losses) block new BUYs but deliberately do
+                        NOT flatten. Branch so the copy never lies about which
+                        one happened. */}
+                    {todayPnl.haltReason?.includes("user_emergency_halt") || todayPnl.haltReason?.includes("flatten")
+                      ? "Your emergency halt submitted market sells for every position. Anything still listed below is awaiting fills — or its sell was rejected. Re-flatten if these rows persist."
+                      : "This safeguard halt blocks new BUYs but does NOT flatten. Existing broker stops still fire — but mark-to-market keeps moving. Review or flatten manually below."}
                   </div>
                 </div>
               </div>
@@ -756,21 +832,53 @@ export default function TraderPage() {
                 variant="destructive"
                 size="sm"
                 loading={cmdLoading === "flatten_all_from_halt"}
-                onClick={async () => {
-                  if (!confirm(`Flatten all ${positions.length} positions at market? This will market-sell every open position.`)) return;
-                  setCmdLoading("flatten_all_from_halt");
-                  const result = await sendCommand("flatten");
-                  setCmdLoading(null);
-                  if (result.error) {
-                    alert(`Failed: ${result.error}`);
-                    return;
-                  }
-                  try {
-                    const res = await fetch("/api/trader/dashboard");
-                    if (res.ok) setData(await res.json());
-                  } catch {
-                    // Refresh failure is non-fatal
-                  }
+                onClick={() => {
+                  const count = positions.length;
+                  requestConfirm({
+                    title: "Flatten all positions",
+                    description: (
+                      <>
+                        Market-sells <strong className="text-text-primary">every open position</strong> right
+                        now, at whatever the market pays. Broker stops on these symbols are cancelled as the
+                        sells fill. This cannot be undone.
+                      </>
+                    ),
+                    summary: [
+                      { label: "Positions to sell", value: String(count) },
+                      {
+                        label: "Est. market value",
+                        value: `$${positions
+                          .reduce((s, p) => s + p.currentPrice * p.quantity, 0)
+                          .toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                      },
+                      {
+                        label: "Unrealized P&L",
+                        value: `${openUnrealized >= 0 ? "+" : "−"}$${Math.abs(openUnrealized).toFixed(2)}`,
+                        tone: openUnrealized >= 0 ? "bullish" : "bearish",
+                      },
+                    ],
+                    // The one action that liquidates the whole book gets the
+                    // typed-keyword gate — unlike Halt, this is reached from a
+                    // reflective state (reviewing the bleed list), not a panic.
+                    typedKeyword: "FLATTEN",
+                    confirmLabel: `Flatten ${count} position${count === 1 ? "" : "s"}`,
+                    onConfirm: async () => {
+                      setCmdLoading("flatten_all_from_halt");
+                      const result = await sendCommand("flatten");
+                      setCmdLoading(null);
+                      if (result.error) throw new Error(result.error);
+                      toast({
+                        type: "success",
+                        message: `${count} sell order${count === 1 ? "" : "s"} submitted — watching fills.`,
+                      });
+                      try {
+                        const res = await fetch("/api/trader/dashboard");
+                        if (res.ok) setData(await res.json());
+                      } catch {
+                        // Refresh failure is non-fatal
+                      }
+                    },
+                  });
                 }}
               >
                 Flatten All
@@ -1032,21 +1140,39 @@ export default function TraderPage() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={async (e) => {
+                        onClick={(e) => {
                           e.stopPropagation();
-                          if (!confirm(`Sell all ${p.quantity} shares of ${p.symbol} at market?`)) return;
-                          setCmdLoading("flatten");
-                          const result = await sendCommand("flatten", { symbol: p.symbol });
-                          setCmdLoading(null);
-                          if (result.error) {
-                            alert(`Failed: ${result.error}`);
-                          } else {
-                            // Refresh data
-                            try {
-                              const res = await fetch("/api/trader/dashboard");
-                              if (res.ok) setData(await res.json());
-                            } catch { /* silent */ }
-                          }
+                          requestConfirm({
+                            title: `Close ${p.symbol}`,
+                            description: (
+                              <>Market-sells the full position. Its broker stop is cancelled as the sell fills.</>
+                            ),
+                            summary: [
+                              { label: "Shares", value: String(p.quantity ?? 0) },
+                              { label: "Current price", value: `$${(p.currentPrice ?? 0).toFixed(2)}` },
+                              {
+                                label: "Est. proceeds",
+                                value: `$${((p.currentPrice ?? 0) * (p.quantity ?? 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                              },
+                              {
+                                label: "Unrealized P&L",
+                                value: `${(p.unrealizedPnl ?? 0) >= 0 ? "+" : "−"}$${Math.abs(p.unrealizedPnl ?? 0).toFixed(2)}`,
+                                tone: (p.unrealizedPnl ?? 0) >= 0 ? "bullish" : "bearish",
+                              },
+                            ],
+                            confirmLabel: `Sell ${p.quantity} ${p.symbol}`,
+                            onConfirm: async () => {
+                              setCmdLoading("flatten");
+                              const result = await sendCommand("flatten", { symbol: p.symbol });
+                              setCmdLoading(null);
+                              if (result.error) throw new Error(result.error);
+                              toast({ type: "success", message: `Sell order for ${p.symbol} submitted.` });
+                              try {
+                                const res = await fetch("/api/trader/dashboard");
+                                if (res.ok) setData(await res.json());
+                              } catch { /* silent */ }
+                            },
+                          });
                         }}
                         disabled={cmdLoading !== null}
                       >
@@ -1460,24 +1586,41 @@ export default function TraderPage() {
         signals={signals}
         engineRunning={engine?.running === true}
         onClose={() => setDetailSymbol(null)}
-        onClosePosition={async (sym) => {
-          if (!confirm(`Sell all shares of ${sym} at market?`)) return;
-          setCmdLoading("flatten");
-          const result = await sendCommand("flatten", { symbol: sym });
-          setCmdLoading(null);
-          if (result.error) {
-            alert(`Failed: ${result.error}`);
-            return;
-          }
-          try {
-            const res = await fetch("/api/trader/dashboard");
-            if (res.ok) setData(await res.json());
-          } catch {
-            // Refresh failure is non-fatal
-          }
+        onClosePosition={(sym) => {
+          const pos = positions.find((p) => p.symbol === sym);
+          requestConfirm({
+            title: `Close ${sym}`,
+            description: <>Market-sells the full position. Its broker stop is cancelled as the sell fills.</>,
+            summary: pos
+              ? [
+                  { label: "Shares", value: String(pos.quantity ?? 0) },
+                  { label: "Current price", value: `$${(pos.currentPrice ?? 0).toFixed(2)}` },
+                  {
+                    label: "Unrealized P&L",
+                    value: `${(pos.unrealizedPnl ?? 0) >= 0 ? "+" : "−"}$${Math.abs(pos.unrealizedPnl ?? 0).toFixed(2)}`,
+                    tone: (pos.unrealizedPnl ?? 0) >= 0 ? "bullish" : "bearish",
+                  },
+                ]
+              : undefined,
+            confirmLabel: `Sell all ${sym}`,
+            onConfirm: async () => {
+              setCmdLoading("flatten");
+              const result = await sendCommand("flatten", { symbol: sym });
+              setCmdLoading(null);
+              if (result.error) throw new Error(result.error);
+              toast({ type: "success", message: `Sell order for ${sym} submitted.` });
+              try {
+                const res = await fetch("/api/trader/dashboard");
+                if (res.ok) setData(await res.json());
+              } catch {
+                // Refresh failure is non-fatal
+              }
+            },
+          });
         }}
       />
 
+      {confirmDialog}
     </div>
   );
 }

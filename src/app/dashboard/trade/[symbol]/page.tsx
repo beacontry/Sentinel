@@ -27,6 +27,7 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { useConfirmAction } from "@/components/ui/confirm-action-modal";
 
 interface EngineStatus {
   running: boolean;
@@ -65,6 +66,7 @@ export default function TradePage({
   const { symbol: rawSymbol } = use(params);
   const symbol = rawSymbol.toUpperCase();
   const toast = useToast();
+  const { requestConfirm, dialog: confirmDialog } = useConfirmAction();
 
   // Engine + account context
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null);
@@ -216,15 +218,34 @@ export default function TradePage({
       return;
     }
 
-    // Friction on LIVE orders
+    // Friction on LIVE orders — a real modal with the order summary, not the
+    // browser's system dialog (2026-07-15 crisis-path UX pass).
     if (isLive) {
-      const where = sizingMode === "dollars" ? `$${notional}` : `${qty} shares`;
-      const ok = confirm(
-        `LIVE ${side.toUpperCase()}: ${where} of ${symbol}\n\nThis will use REAL money on your live brokerage account. Proceed?`
-      );
-      if (!ok) return;
+      const sizing = sizingMode === "dollars" ? `$${notional}` : `${qty} shares`;
+      requestConfirm({
+        title: `Live ${side.toUpperCase()} — real money`,
+        description: (
+          <>
+            This order goes to your <strong className="text-text-primary">live brokerage account</strong> and
+            uses real capital. Fills happen at market speed and cannot be recalled.
+          </>
+        ),
+        summary: [
+          { label: "Symbol", value: symbol },
+          { label: "Side", value: side.toUpperCase(), tone: side === "buy" ? "bullish" : "bearish" },
+          { label: "Size", value: sizing },
+          { label: "Order type", value: orderType.replace("_", " ").toUpperCase() },
+        ],
+        confirmLabel: `Place live ${side}`,
+        onConfirm: placeOrder,
+      });
+      return;
     }
 
+    await placeOrder();
+  }
+
+  async function placeOrder() {
     setSubmitting(true);
     try {
       const body: Record<string, string | undefined> = {
@@ -276,6 +297,7 @@ export default function TradePage({
 
   return (
     <div className="p-4 lg:p-6 space-y-6 max-w-4xl mx-auto">
+      {confirmDialog}
       <div className="flex items-center gap-3">
         <SmartBackButton fallbackHref="/dashboard/analysis" />
         <div className="min-w-0 flex-1">

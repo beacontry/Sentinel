@@ -147,6 +147,7 @@ Always use existing components — never recreate them:
 - **StatCard** — label/value/subtext, tone coloring, bare icon
 - **Input** (label/error/icon, `rounded-lg min-h-[44px]`), **Select, Textarea, Checkbox, Toggle**
 - **Modal** suite — focus trap, Escape close; **Tabs / TabPanel** — underline, active `text-accent`
+- **ConfirmActionModal / useConfirmAction** — the ONLY way to confirm destructive or money-moving actions (native `confirm()`/`alert()` are banned in dashboard code as of 2026-07-15). Supports summary rows (font-mono), typed-keyword gate for book-wide liquidations, inline error + busy state. `const { requestConfirm, dialog } = useConfirmAction()` → render `{dialog}` once per page
 - **Pagination** (ellipsis), **Skeleton** (shimmer), **EmptyState** (icon/title/desc/CTA)
 - **Toast** (`useToast()`, solid bg), **Dropdown** + **Tooltip** (solid `bg-bg-elevated`, `rounded-lg`)
 - **Avatar, SearchInput, CommandPalette, DataTable**

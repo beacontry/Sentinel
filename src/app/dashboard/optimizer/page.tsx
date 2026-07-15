@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
+import { useToast } from "@/components/ui/toast";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ interface RunDetail {
 // ── Component ───────────────────────────────────────────────────────
 
 export default function OptimizerPage() {
+  const { toast } = useToast();
   const [userRole, setUserRole] = useState<string | null>(null);
   const [runs, setRuns] = useState<OptimizationRun[]>([]);
   const [totalCompleted, setTotalCompleted] = useState(0);
@@ -177,7 +179,7 @@ export default function OptimizerPage() {
       });
       if (!res.ok) {
         const err = await res.json();
-        alert(err.error || "Failed to start");
+        toast({ type: "error", message: err.error || "Failed to start the optimization run." });
         return;
       }
       const data = await res.json();
@@ -662,6 +664,7 @@ function RunDetailView({
   onSortChange: (sort: "return" | "sharpe" | "drawdown") => void;
   onComparisonUpdate: (results: { mode: string; label: string; totalReturn: number; finalValue: number; maxDrawdown: number; sharpe: number; trades: number; timeInMarket: number }[]) => void;
 }) {
+  const { toast } = useToast();
   const { run, generations } = detail;
   const isComplete = run.status === "complete";
 
@@ -769,7 +772,7 @@ function RunDetailView({
                         body: JSON.stringify({ runId: run.id }),
                       });
                       if (res.ok) {
-                        alert("Saved! Mode comparison will refresh automatically (takes ~1 min).");
+                        toast({ type: "success", message: "Saved as the active Optimized preset. Mode comparison refreshes automatically (~1 min)." });
                         // Auto-refresh Compare Modes in background
                         onComparisonUpdate([]); // clear old results to show loading
                         fetch("/api/optimize/compare")
@@ -778,10 +781,10 @@ function RunDetailView({
                           .catch(() => {});
                       } else {
                         const data = await res.json();
-                        alert(data.error || "Failed to save");
+                        toast({ type: "error", message: data.error || "Failed to save the preset." });
                       }
                     } catch {
-                      alert("Failed to save preset");
+                      toast({ type: "error", message: "Failed to save the preset — network error." });
                     }
                   }}
                 >

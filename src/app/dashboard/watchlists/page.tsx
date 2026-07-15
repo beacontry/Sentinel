@@ -19,6 +19,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { useConfirmAction } from "@/components/ui/confirm-action-modal";
 import { PageIntro } from "@/components/layout/page-intro";
 import {
   Plus,
@@ -55,6 +56,7 @@ const MAX_SYMBOLS = 200;
 
 export default function WatchlistsPage() {
   const toast = useToast();
+  const { requestConfirm, dialog: confirmDialog } = useConfirmAction();
   const [lists, setLists] = useState<WatchlistSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [active, setActive] = useState<WatchlistDetail | null>(null);
@@ -188,22 +190,23 @@ export default function WatchlistsPage() {
     }
   }
 
-  async function deleteList(id: string) {
-    if (!confirm("Delete this watchlist? Symbols inside it will be removed.")) return;
-    try {
-      const res = await fetch(`/api/watchlists/${id}`, { method: "DELETE" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        toast.toast({ type: "error", message: typeof data.error === "string" ? data.error : "Could not delete." });
-        return;
-      }
-      toast.toast({ type: "success", message: "Watchlist deleted." });
-      // After delete, fetchLists picks a new active list automatically
-      if (activeId === id) setActiveId(null);
-      await fetchLists();
-    } catch {
-      toast.toast({ type: "error", message: "Could not delete watchlist." });
-    }
+  function deleteList(id: string) {
+    requestConfirm({
+      title: "Delete watchlist",
+      description: <>Deletes this watchlist and every symbol inside it. This cannot be undone.</>,
+      confirmLabel: "Delete watchlist",
+      onConfirm: async () => {
+        const res = await fetch(`/api/watchlists/${id}`, { method: "DELETE" });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(typeof data.error === "string" ? data.error : "Could not delete.");
+        }
+        toast.toast({ type: "success", message: "Watchlist deleted." });
+        // After delete, fetchLists picks a new active list automatically
+        if (activeId === id) setActiveId(null);
+        await fetchLists();
+      },
+    });
   }
 
   async function makeDefault(id: string) {
@@ -544,6 +547,7 @@ export default function WatchlistsPage() {
           )}
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }
@@ -561,6 +565,7 @@ function ShareButton({
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const { requestConfirm, dialog: confirmDialog } = useConfirmAction();
   const [submitting, setSubmitting] = useState(false);
 
   function getUrl(token: string): string {
@@ -601,20 +606,23 @@ function ShareButton({
     }
   }
 
-  async function revoke() {
-    if (!confirm("Revoke the share link? Anyone with the link will lose access.")) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/watchlists/${watchlistId}/share`, { method: "DELETE" });
-      if (!res.ok) {
-        toast.toast({ type: "error", message: "Could not revoke share." });
-        return;
-      }
-      toast.toast({ type: "success", message: "Share link revoked." });
-      onChanged();
-    } finally {
-      setSubmitting(false);
-    }
+  function revoke() {
+    requestConfirm({
+      title: "Revoke share link",
+      description: <>Anyone holding the current link loses access immediately. You can generate a fresh link afterwards.</>,
+      confirmLabel: "Revoke link",
+      onConfirm: async () => {
+        setSubmitting(true);
+        try {
+          const res = await fetch(`/api/watchlists/${watchlistId}/share`, { method: "DELETE" });
+          if (!res.ok) throw new Error("Could not revoke share.");
+          toast.toast({ type: "success", message: "Share link revoked." });
+          onChanged();
+        } finally {
+          setSubmitting(false);
+        }
+      },
+    });
   }
 
   if (!shareToken) {
@@ -632,9 +640,10 @@ function ShareButton({
         <Copy className="w-3.5 h-3.5" />
         Copy link
       </Button>
-      <Button variant="ghost" size="sm" onClick={revoke} loading={submitting}>
+      <Button variant="ghost" size="sm" onClick={revoke} loading={submitting} aria-label="Revoke share link">
         <Link2Off className="w-3.5 h-3.5" />
       </Button>
+      {confirmDialog}
     </div>
   );
 }

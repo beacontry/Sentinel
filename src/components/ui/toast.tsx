@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState, useRef } from "react";
+import { X } from "lucide-react";
 
 type ToastType = "success" | "error" | "warning" | "info";
 
@@ -11,6 +12,11 @@ interface Toast {
 }
 
 interface ToastContextValue {
+  /**
+   * Show a toast. `duration: 0` makes it persistent (dismiss-only) — use for
+   * errors carrying remediation info the user needs time to read. Error
+   * toasts default to 10s (vs 5s for the rest); all toasts are dismissible.
+   */
   toast: (opts: { type: ToastType; message: string; duration?: number }) => void;
 }
 
@@ -27,15 +33,23 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const idRef = useRef(0);
 
+  const dismiss = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   const addToast = useCallback(
-    ({ type, message, duration = 5000 }: { type: ToastType; message: string; duration?: number }) => {
+    ({ type, message, duration }: { type: ToastType; message: string; duration?: number }) => {
       const id = ++idRef.current;
       setToasts((prev) => [...prev, { id, type, message }]);
-      setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, duration);
+      // Errors linger twice as long by default — they usually carry a reason
+      // the user needs to actually read ("Failed: insufficient buying power").
+      // duration 0 = persistent until dismissed.
+      const ms = duration ?? (type === "error" ? 10000 : 5000);
+      if (ms > 0) {
+        setTimeout(() => dismiss(id), ms);
+      }
     },
-    []
+    [dismiss]
   );
 
   return (
@@ -45,9 +59,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`animate-slide-up rounded-lg border px-4 py-3 text-sm shadow-lg ${TOAST_STYLES[t.type]}`}
+            role={t.type === "error" ? "alert" : "status"}
+            className={`animate-slide-up rounded-lg border pl-4 pr-2 py-3 text-sm shadow-lg flex items-start gap-2 ${TOAST_STYLES[t.type]}`}
           >
-            {t.message}
+            <span className="flex-1 leading-snug">{t.message}</span>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => dismiss(t.id)}
+              className="shrink-0 rounded p-1 opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         ))}
       </div>

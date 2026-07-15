@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Bell, Plus, Trash2, Clock, CheckCircle } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
+import { useConfirmAction } from "@/components/ui/confirm-action-modal";
 
 interface AlertRule {
   id: string;
@@ -77,6 +78,7 @@ const thresholdConfig: Record<string, { label: string; placeholder: string }> = 
 };
 
 export default function AlertsPage() {
+  const { requestConfirm, dialog: confirmDialog } = useConfirmAction();
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [history, setHistory] = useState<AlertHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -401,16 +403,17 @@ export default function AlertsPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={async () => {
-                if (!confirm(`Clear all ${history.length} alert history entries?`)) return;
-                try {
-                  const res = await fetch("/api/alerts/history", { method: "DELETE" });
-                  if (res.ok) {
+              onClick={() => {
+                requestConfirm({
+                  title: "Clear alert history",
+                  description: <>Removes all {history.length} history entries. Your alert rules are untouched.</>,
+                  confirmLabel: "Clear history",
+                  onConfirm: async () => {
+                    const res = await fetch("/api/alerts/history", { method: "DELETE" });
+                    if (!res.ok) throw new Error("Could not clear history.");
                     setHistory([]);
-                  }
-                } catch {
-                  /* silent */
-                }
+                  },
+                });
               }}
             >
               Clear all
@@ -444,6 +447,7 @@ export default function AlertsPage() {
           </div>
         )}
       </Card>
+      {confirmDialog}
     </div>
   );
 }
