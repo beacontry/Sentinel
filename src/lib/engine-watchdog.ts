@@ -130,7 +130,13 @@ export async function runWatchdog(): Promise<void> {
     g.__lastZombieSweepAt = now;
     try {
       const cutoff = new Date(now - STALE_STATUS_MS);
-      const inMemory = new Set(snapshots.map((s) => s.userId));
+      // Only RUNNING engines are exempt (2026-07-15 refinement). A
+      // created-but-never-started engine object — e.g. autostart burned its
+      // retries on dead broker creds (401) — sits in memory with
+      // running=false while its trader_status row keeps claiming
+      // connected=true for weeks. In-memory presence isn't liveness;
+      // running is.
+      const inMemory = new Set(snapshots.filter((s) => s.running).map((s) => s.userId));
       const staleRows = await db
         .select({ userId: traderStatus.userId, lastHeartbeat: traderStatus.lastHeartbeat })
         .from(traderStatus)
