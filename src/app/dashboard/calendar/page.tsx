@@ -339,8 +339,8 @@ export default function CalendarPage() {
               )}
             </>
           ) : (
-            <div className="rounded-2xl border border-border bg-bg-secondary p-6 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-bg-elevated text-text-muted">
+            <div className="rounded-xl border border-border bg-bg-secondary p-6 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-bg-elevated text-text-muted">
                 <CalendarDays className="h-6 w-6" />
               </div>
               <p className="text-sm font-medium">Select a day</p>

@@ -277,7 +277,7 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto">
           {messages.length === 0 && !sending ? (
             <div className="flex h-full flex-col items-center justify-center px-4 py-12">
-              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-bg-elevated">
+              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-xl bg-bg-elevated">
                 <Sparkles className="h-7 w-7 text-accent/50" />
               </div>
               <h2 className="mb-2 text-xl font-semibold tracking-tight">
@@ -340,9 +340,9 @@ export default function ChatPage() {
                   <div className="rounded-xl border border-border bg-bg-surface px-4 py-3">
                     <div className="flex items-center gap-2 text-xs text-text-muted">
                       <div className="flex gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-accent/60 animate-bounce" style={{ animationDelay: "0ms" }} />
-                        <span className="h-1.5 w-1.5 rounded-full bg-accent/60 animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <span className="h-1.5 w-1.5 rounded-full bg-accent/60 animate-bounce" style={{ animationDelay: "300ms" }} />
+                        <span className="h-1.5 w-1.5 rounded-full bg-accent/60 animate-pulse" style={{ animationDelay: "0ms" }} />
+                        <span className="h-1.5 w-1.5 rounded-full bg-accent/60 animate-pulse" style={{ animationDelay: "150ms" }} />
+                        <span className="h-1.5 w-1.5 rounded-full bg-accent/60 animate-pulse" style={{ animationDelay: "300ms" }} />
                       </div>
                       Thinking...
                     </div>

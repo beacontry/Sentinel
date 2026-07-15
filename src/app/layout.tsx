@@ -81,10 +81,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
       <head>
         <meta name="theme-color" content="#0d1511" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        {/* Blocking on purpose: applies the theme class BEFORE first paint
+            (dark by default, stored choice wins) — see /public/theme-init.js.
+            suppressHydrationWarning on <html> because this script mutates
+            the class list pre-hydration. */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="/theme-init.js" />
         {/* SW registration extracted to /public/sw-register.js so CSP
             can drop script-src 'unsafe-inline'. */}
         <script src="/sw-register.js" defer />

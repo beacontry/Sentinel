@@ -366,9 +366,9 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
           {!chatOpen ? (
             <button
               onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
-              className="group flex w-full items-center gap-3 rounded-2xl border border-accent/20 bg-accent/10 p-4 text-left transition-all hover:border-accent/30 hover:bg-accent/10"
+              className="group flex w-full items-center gap-3 rounded-xl border border-accent/20 bg-accent/10 p-4 text-left transition-all hover:border-accent/30 hover:bg-accent/10"
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/15 text-accent">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
                 <Sparkles className="h-5 w-5" />
               </div>
               <div>
@@ -381,10 +381,10 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
               </div>
             </button>
           ) : (
-            <div className="rounded-2xl border border-accent/20 bg-accent/10 p-5 space-y-4">
+            <div className="rounded-xl border border-accent/20 bg-accent/10 p-5 space-y-4">
               {/* Header */}
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-accent/15 text-accent">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/15 text-accent">
                   <Sparkles className="h-4 w-4" />
                 </div>
                 <div>
@@ -405,7 +405,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
                         <span className="font-medium text-accent">{msg.content}</span>
                       </div>
                     ) : (
-                      <div key={i} className="rounded-2xl border border-accent/10 bg-bg-secondary p-5 animate-fade-in">
+                      <div key={i} className="rounded-xl border border-accent/10 bg-bg-secondary p-5 animate-fade-in">
                         <div className="text-sm leading-7 text-text-secondary whitespace-pre-wrap">
                           {msg.content}
                         </div>
@@ -413,12 +413,12 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
                     )
                   ))}
                   {chatLoading && (
-                    <div className="rounded-2xl border border-accent/10 bg-bg-secondary p-5">
+                    <div className="rounded-xl border border-accent/10 bg-bg-secondary p-5">
                       <div className="flex items-center gap-2 text-xs text-text-muted">
                         <div className="flex gap-1">
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: "0ms" }} />
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: "150ms" }} />
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-bounce" style={{ animationDelay: "300ms" }} />
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" style={{ animationDelay: "0ms" }} />
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" style={{ animationDelay: "150ms" }} />
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" style={{ animationDelay: "300ms" }} />
                         </div>
                         Reading filing and generating analysis...
                       </div>

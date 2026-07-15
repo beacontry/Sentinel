@@ -161,7 +161,7 @@ export default function DmThreadPage({
                 className={`flex ${fromMe ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[75%] rounded-2xl px-3 py-2 ${
+                  className={`max-w-[75%] rounded-xl px-3 py-2 ${
                     fromMe
                       ? "bg-accent/15 border border-accent/30 text-text-primary"
                       : "bg-bg-elevated border border-border text-text-secondary"

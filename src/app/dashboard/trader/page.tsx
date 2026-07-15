@@ -20,8 +20,6 @@ import { TraderTierRequired } from "@/components/tiers/trader-tier-required";
 import { PostMortemButton } from "@/components/trader/post-mortem-button";
 import {
   Bot,
-  Wifi,
-  WifiOff,
   TrendingUp,
   TrendingDown,
   DollarSign,
@@ -408,9 +406,34 @@ export default function TraderPage() {
   }
 
   if (loading) {
+    // Skeleton of the real layout (status strip + stat grid + two tables)
+    // instead of a bare centered spinner — the most-visited page shouldn't
+    // flash empty. Shapes mirror the loaded page so nothing jumps.
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+      <div className="p-4 lg:p-6 space-y-6" aria-busy="true" aria-label="Loading trader dashboard">
+        <div className="space-y-2">
+          <div className="h-4 w-24 rounded bg-bg-elevated animate-pulse" />
+          <div className="h-8 w-48 rounded bg-bg-elevated animate-pulse" />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-11 w-64 rounded-lg bg-bg-elevated animate-pulse" />
+          <div className="h-11 w-24 rounded-lg bg-bg-elevated animate-pulse" />
+          <div className="h-11 w-24 rounded-lg bg-bg-elevated animate-pulse" />
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-xl border border-border bg-bg-surface p-4 space-y-2">
+              <div className="h-3 w-20 rounded bg-bg-elevated animate-pulse" />
+              <div className="h-7 w-28 rounded bg-bg-elevated animate-pulse" />
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl border border-border bg-bg-surface p-4 space-y-3">
+          <div className="h-4 w-36 rounded bg-bg-elevated animate-pulse" />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-9 rounded bg-bg-elevated/60 animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -433,8 +456,9 @@ export default function TraderPage() {
             No trader data yet
           </h3>
           <p className="text-sm text-text-secondary max-w-sm mx-auto">
-            Start the IBKR Trading Agent with SENTINEL_URL and SENTINEL_SECRET configured
-            to see live data here.
+            Connect a broker under Settings &rarr; Broker Connections, then start the
+            engine here. Live positions, P&amp;L, and trade history appear once the
+            first scan runs.
           </p>
         </div>
       </div>
@@ -468,7 +492,14 @@ export default function TraderPage() {
         description="Monitor the automated trader as a risk system first and an execution engine second."
         stats={[
           { label: "Connection", value: status.connected ? "Online" : "Offline", tone: status.connected ? "bullish" : "bearish" },
-          { label: "Mode", value: status.mode.toUpperCase(), tone: "brand" },
+          // Mode dropped 2026-07-15 — it already lives in the picker and the
+          // Running badge directly below. Today P&L is what a returning
+          // trader actually glances for.
+          {
+            label: "Today P&L",
+            value: `${(todayPnl?.totalPnl ?? 0) >= 0 ? "+" : "−"}$${Math.abs(todayPnl?.totalPnl ?? 0).toFixed(2)}`,
+            tone: (todayPnl?.totalPnl ?? 0) >= 0 ? "bullish" : "bearish",
+          },
           { label: "Positions", value: positions.length },
           { label: "Signals", value: signals.length },
         ]}
@@ -559,58 +590,6 @@ export default function TraderPage() {
           )}
         </div>
       )}
-
-      {/* Tax election (§475(f) MTM) + wash-sale protection status */}
-      <Card className="p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex-1">
-            <div className="text-sm font-semibold text-text-primary">Tax election</div>
-            <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={taxStatus?.hasTraderTaxStatus === true}
-                onChange={(e) => toggleMtm(e.target.checked)}
-                disabled={mtmSaving}
-                className="h-4 w-4 rounded border-border accent-accent cursor-pointer"
-              />
-              <span className="text-sm text-text-secondary">
-                I have elected <span className="font-medium text-text-primary">§475(f) Mark-to-Market</span>
-                {taxStatus?.mtmElectionYear && (
-                  <span className="text-text-muted"> ({taxStatus.mtmElectionYear})</span>
-                )}
-              </span>
-            </label>
-            <div className="text-xs text-text-muted mt-1">
-              Self-attested. MTM traders are exempt from §1091 wash-sale rule. Election deadline was Apr 15 of the prior tax year — Beacontry does not file or validate.
-            </div>
-          </div>
-          <div className="sm:border-l sm:border-border sm:pl-4 sm:min-w-[200px]">
-            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
-              Wash-sale protection
-            </div>
-            <div className="mt-1 flex items-center gap-2">
-              <span
-                className={`inline-block w-2 h-2 rounded-full ${
-                  engine?.washSaleProtectionEnabled ? "bg-bullish" : "bg-text-muted"
-                }`}
-              />
-              <span className="text-sm font-medium">
-                {engine?.washSaleProtectionEnabled ? "On" : "Off"}
-              </span>
-              {(engine?.washSaleBlockedCount ?? 0) > 0 && (
-                <span className="text-xs font-mono text-text-muted">
-                  {engine?.washSaleBlockedCount} symbol{(engine?.washSaleBlockedCount ?? 0) === 1 ? "" : "s"} blocked
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-text-muted mt-1">
-              {engine?.washSaleProtectionEnabled
-                ? "Re-entries blocked for 31 days after any losing close."
-                : "MTM elected — wash sale rule does not apply."}
-            </div>
-          </div>
-        </div>
-      </Card>
 
       {/* Engine controls — each user has their own independent engine */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -718,7 +697,7 @@ export default function TraderPage() {
         </div>
         {engine && (
           <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-3 text-xs text-text-muted">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-text-muted">
               <Badge variant={engine.running ? "bullish" : engine.halted ? "bearish" : "neutral"}>
                 {engine.running ? `Running (${engine.mode ?? "swing"})` : engine.halted ? "Halted" : "Stopped"}
               </Badge>
@@ -727,8 +706,15 @@ export default function TraderPage() {
                   {engine.environment.toUpperCase()}
                 </Badge>
               )}
+              {/* Folded in from the removed status bar (2026-07-15) */}
+              {todayPnl?.halted && !engine.halted && (
+                <Badge variant="bearish">Trading Halted</Badge>
+              )}
               {engine.scanCount > 0 && <span className="font-mono">{engine.scanCount} scans</span>}
               {engine.lastScanAt && <span>Last: {timeAgo(engine.lastScanAt)}</span>}
+              {!engine.lastScanAt && status.lastHeartbeat && (
+                <span>Seen: {timeAgo(status.lastHeartbeat)}</span>
+              )}
               {engine.positionCount > 0 && <span className="font-mono">{engine.positionCount} positions</span>}
               {(engine.dailyLoss ?? 0) !== 0 && (
                 <span className={(engine.dailyLoss ?? 0) < 0 ? "text-bearish" : "text-bullish"}>
@@ -765,35 +751,10 @@ export default function TraderPage() {
         )}
       </div>
 
-      {/* Status bar */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-          status.connected
-            ? "border-bullish/30 bg-bullish/10"
-            : "border-bearish/30 bg-bearish/10"
-        }`}>
-          {status.connected ? (
-            <Wifi className="w-4 h-4 text-bullish" />
-          ) : (
-            <WifiOff className="w-4 h-4 text-bearish" />
-          )}
-          <span className={`text-sm font-medium ${status.connected ? "text-bullish" : "text-bearish"}`}>
-            {status.connected ? "Connected" : "Disconnected"}
-          </span>
-        </div>
-        <Badge variant="neutral">{status.mode.toUpperCase()}</Badge>
-        {status.lastHeartbeat && (
-          <span className="text-xs text-text-muted">
-            Last seen: {timeAgo(status.lastHeartbeat)}
-          </span>
-        )}
-        {todayPnl?.halted && (
-          <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-bearish/30 bg-bearish/10">
-            <AlertTriangle className="w-4 h-4 text-bearish" />
-            <span className="text-sm font-medium text-bearish">Trading Halted</span>
-          </div>
-        )}
-      </div>
+      {/* Status bar removed 2026-07-15 — it was the trader page's third
+          display of mode and second of connection. Its unique items
+          (heartbeat age, halted pill) now live in the engine badge row
+          above; connection lives in PageIntro's stats. One fact, one home. */}
 
       {/* After-halt bleed surface (post-2026-06-11) — when the engine is
           halted, the only thing standing between the user and further
@@ -936,7 +897,7 @@ export default function TraderPage() {
               <DollarSign className="w-4 h-4 text-accent" />
               <span className="text-xs text-text-muted">Total Equity</span>
             </div>
-            <p className="text-xl font-display font-bold text-text-primary">
+            <p className="text-xl font-mono font-bold text-text-primary">
               ${data.brokerAccount.equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </Card>
@@ -945,7 +906,7 @@ export default function TraderPage() {
               <BarChart3 className="w-4 h-4 text-accent" />
               <span className="text-xs text-text-muted">Long Market Value</span>
             </div>
-            <p className="text-xl font-display font-bold text-text-primary">
+            <p className="text-xl font-mono font-bold text-text-primary">
               ${data.brokerAccount.longMarketValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
             {/* When margin is in use (negative cash), show the gap so the
@@ -961,7 +922,7 @@ export default function TraderPage() {
               <DollarSign className="w-4 h-4 text-bullish" />
               <span className="text-xs text-text-muted">Cash</span>
             </div>
-            <p className="text-xl font-display font-bold text-text-primary">
+            <p className="text-xl font-mono font-bold text-text-primary">
               ${data.brokerAccount.cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </Card>
@@ -970,7 +931,7 @@ export default function TraderPage() {
               <TrendingUp className="w-4 h-4 text-bullish" />
               <span className="text-xs text-text-muted">Buying Power</span>
             </div>
-            <p className="text-xl font-display font-bold text-text-primary">
+            <p className="text-xl font-mono font-bold text-text-primary">
               ${data.brokerAccount.buyingPower.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </Card>
@@ -997,7 +958,7 @@ export default function TraderPage() {
               <DollarSign className="w-4 h-4 text-accent" />
               <span className="text-xs text-text-muted">Total P&L</span>
             </div>
-            <p className={`text-xl font-display font-bold ${totalPnlVal >= 0 ? "text-bullish" : "text-bearish"}`}>
+            <p className={`text-xl font-mono font-bold ${totalPnlVal >= 0 ? "text-bullish" : "text-bearish"}`}>
               {formatPnl(totalPnlVal, basis, pnlFormat)}
             </p>
             {lifetimePnl && todayPnl && (
@@ -1011,7 +972,7 @@ export default function TraderPage() {
               <TrendingUp className="w-4 h-4 text-bullish" />
               <span className="text-xs text-text-muted">Realized</span>
             </div>
-            <p className={`text-xl font-display font-bold ${realizedVal >= 0 ? "text-bullish" : "text-bearish"}`}>
+            <p className={`text-xl font-mono font-bold ${realizedVal >= 0 ? "text-bullish" : "text-bearish"}`}>
               {formatPnl(realizedVal, basis, pnlFormat)}
             </p>
             {lifetimePnl && (
@@ -1025,7 +986,7 @@ export default function TraderPage() {
               <TrendingDown className="w-4 h-4 text-warning" />
               <span className="text-xs text-text-muted">Unrealized</span>
             </div>
-            <p className={`text-xl font-display font-bold ${unrealizedVal >= 0 ? "text-bullish" : "text-bearish"}`}>
+            <p className={`text-xl font-mono font-bold ${unrealizedVal >= 0 ? "text-bullish" : "text-bearish"}`}>
               {formatPnl(unrealizedVal, basis, pnlFormat)}
             </p>
           </Card>
@@ -1034,7 +995,7 @@ export default function TraderPage() {
               <BarChart3 className="w-4 h-4 text-accent" />
               <span className="text-xs text-text-muted">Trades Today</span>
             </div>
-            <p className="text-xl font-display font-bold">{todayPnl?.tradesCount ?? 0}</p>
+            <p className="text-xl font-mono font-bold">{todayPnl?.tradesCount ?? 0}</p>
           </Card>
         </div>
         );
@@ -1049,34 +1010,34 @@ export default function TraderPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Net P&L</span>
-              <span className={`text-lg font-display font-bold ${(analytics.netPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
+              <span className={`text-lg font-mono font-bold ${(analytics.netPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
                 {(analytics.netPnl ?? 0) >= 0 ? "+" : ""}${(analytics.netPnl ?? 0).toFixed(2)}
               </span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Win Rate</span>
-              <span className={`text-lg font-display font-bold ${(analytics.winRate ?? 0) >= 50 ? "text-bullish" : "text-bearish"}`}>
+              <span className={`text-lg font-mono font-bold ${(analytics.winRate ?? 0) >= 50 ? "text-bullish" : "text-bearish"}`}>
                 {(analytics.winRate ?? 0).toFixed(1)}%
               </span>
               <span className="text-[10px] text-text-muted block">{analytics.winningTrades}W / {analytics.losingTrades}L</span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Profit Factor</span>
-              <span className={`text-lg font-display font-bold ${(analytics.profitFactor ?? 0) >= 1 ? "text-bullish" : "text-bearish"}`}>
+              <span className={`text-lg font-mono font-bold ${(analytics.profitFactor ?? 0) >= 1 ? "text-bullish" : "text-bearish"}`}>
                 {analytics.profitFactor === 999 ? "∞" : (analytics.profitFactor ?? 0).toFixed(2)}
               </span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Avg Win</span>
-              <span className="text-lg font-display font-bold text-bullish">${(analytics.avgWin ?? 0).toFixed(2)}</span>
+              <span className="text-lg font-mono font-bold text-bullish">${(analytics.avgWin ?? 0).toFixed(2)}</span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Avg Loss</span>
-              <span className="text-lg font-display font-bold text-bearish">${(analytics.avgLoss ?? 0).toFixed(2)}</span>
+              <span className="text-lg font-mono font-bold text-bearish">${(analytics.avgLoss ?? 0).toFixed(2)}</span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Max Drawdown</span>
-              <span className="text-lg font-display font-bold text-bearish">${(analytics.maxDrawdown ?? 0).toFixed(2)}</span>
+              <span className="text-lg font-mono font-bold text-bearish">${(analytics.maxDrawdown ?? 0).toFixed(2)}</span>
             </div>
           </div>
           <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border text-xs text-text-muted">
@@ -1087,6 +1048,61 @@ export default function TraderPage() {
           </div>
         </Card>
       )}
+
+      {/* Tax election (§475(f) MTM) + wash-sale protection status.
+          Moved below the money/analytics fold 2026-07-15 — it's a
+          set-and-forget setting that was pushing the engine controls and
+          equity readout below the fold on the most-visited screen. */}
+      <Card className="p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-text-primary">Tax election</div>
+            <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={taxStatus?.hasTraderTaxStatus === true}
+                onChange={(e) => toggleMtm(e.target.checked)}
+                disabled={mtmSaving}
+                className="h-4 w-4 rounded border-border accent-accent cursor-pointer"
+              />
+              <span className="text-sm text-text-secondary">
+                I have elected <span className="font-medium text-text-primary">§475(f) Mark-to-Market</span>
+                {taxStatus?.mtmElectionYear && (
+                  <span className="text-text-muted"> ({taxStatus.mtmElectionYear})</span>
+                )}
+              </span>
+            </label>
+            <div className="text-xs text-text-muted mt-1">
+              Self-attested. MTM traders are exempt from §1091 wash-sale rule. Election deadline was Apr 15 of the prior tax year — Beacontry does not file or validate.
+            </div>
+          </div>
+          <div className="sm:border-l sm:border-border sm:pl-4 sm:min-w-[200px]">
+            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+              Wash-sale protection
+            </div>
+            <div className="mt-1 flex items-center gap-2">
+              <span
+                className={`inline-block w-2 h-2 rounded-full ${
+                  engine?.washSaleProtectionEnabled ? "bg-bullish" : "bg-text-muted"
+                }`}
+              />
+              <span className="text-sm font-medium">
+                {engine?.washSaleProtectionEnabled ? "On" : "Off"}
+              </span>
+              {(engine?.washSaleBlockedCount ?? 0) > 0 && (
+                <span className="text-xs font-mono text-text-muted">
+                  {engine?.washSaleBlockedCount} symbol{(engine?.washSaleBlockedCount ?? 0) === 1 ? "" : "s"} blocked
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-text-muted mt-1">
+              {engine?.washSaleProtectionEnabled
+                ? "Re-entries blocked for 31 days after any losing close."
+                : "MTM elected — wash sale rule does not apply."}
+            </div>
+          </div>
+        </div>
+      </Card>
 
       {/* Tax-aware trading callouts */}
       <TraderTaxCallouts />

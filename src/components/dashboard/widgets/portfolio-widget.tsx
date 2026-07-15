@@ -78,7 +78,7 @@ export function PortfolioWidget() {
   return (
     <div>
       <div className="text-center py-2">
-        <p className="text-3xl font-display font-bold tracking-tight text-text-primary">
+        <p className="text-3xl font-mono font-bold tracking-tight text-text-primary">
           ${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </p>
         <p

@@ -863,7 +863,7 @@ function StatCard({
         <Icon className={`w-4 h-4 ${color}`} />
         <span className="text-xs text-text-muted">{label}</span>
       </div>
-      <p className={`text-lg font-display font-bold ${color}`}>{value}</p>
+      <p className={`text-lg font-mono font-bold ${color}`}>{value}</p>
     </Card>
   );
 }

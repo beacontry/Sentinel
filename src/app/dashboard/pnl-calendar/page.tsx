@@ -170,7 +170,7 @@ export default function PnlCalendarPage() {
                   <DollarSign className="w-4 h-4 text-accent" />
                   <span className="text-xs text-text-muted">Total P&L</span>
                 </div>
-                <p className={`text-xl font-display font-bold ${
+                <p className={`text-xl font-mono font-bold ${
                   summary.totalPnl >= 0 ? "text-bullish" : "text-bearish"
                 }`}>
                   {summary.totalPnl >= 0 ? "+" : ""}${summary.totalPnl.toFixed(2)}
@@ -181,7 +181,7 @@ export default function PnlCalendarPage() {
                   <TrendingUp className="w-4 h-4 text-bullish" />
                   <span className="text-xs text-text-muted">Profitable Days</span>
                 </div>
-                <p className="text-xl font-display font-bold text-bullish">
+                <p className="text-xl font-mono font-bold text-bullish">
                   {summary.profitDays}
                 </p>
               </Card>
@@ -190,7 +190,7 @@ export default function PnlCalendarPage() {
                   <TrendingDown className="w-4 h-4 text-bearish" />
                   <span className="text-xs text-text-muted">Losing Days</span>
                 </div>
-                <p className="text-xl font-display font-bold text-bearish">
+                <p className="text-xl font-mono font-bold text-bearish">
                   {summary.lossDays}
                 </p>
               </Card>
@@ -201,7 +201,7 @@ export default function PnlCalendarPage() {
                 </div>
                 {summary.bestDay ? (
                   <>
-                    <p className="text-xl font-display font-bold text-bullish">
+                    <p className="text-xl font-mono font-bold text-bullish">
                       +${summary.bestDay.pnl.toFixed(2)}
                     </p>
                     <p className="text-[10px] text-text-muted mt-0.5">
@@ -219,7 +219,7 @@ export default function PnlCalendarPage() {
                 </div>
                 {summary.worstDay ? (
                   <>
-                    <p className="text-xl font-display font-bold text-bearish">
+                    <p className="text-xl font-mono font-bold text-bearish">
                       ${summary.worstDay.pnl.toFixed(2)}
                     </p>
                     <p className="text-[10px] text-text-muted mt-0.5">

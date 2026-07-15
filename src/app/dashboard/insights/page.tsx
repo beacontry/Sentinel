@@ -177,7 +177,7 @@ export default function InsightsPage() {
                   onClick={() => loadFromHistory(item)}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-display font-bold text-text-primary">
+                    <span className="font-mono font-bold text-text-primary">
                       {item.symbol}
                     </span>
                     <Badge variant={SENTIMENT_CONFIG[item.sentiment].variant}>

@@ -386,7 +386,7 @@ export default function StrategiesPage() {
             <Card key={s.id}>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="font-display font-bold text-lg">{s.symbol}</span>
+                  <span className="font-mono font-bold text-lg">{s.symbol}</span>
                   {s.presetName && (
                     <Badge>{PRESET_LABELS[s.presetName as PresetName]?.label ?? s.presetName}</Badge>
                   )}

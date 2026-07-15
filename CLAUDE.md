@@ -93,8 +93,8 @@ Each user has their own broker connection (`brokerConnections` table, scoped by 
 
 ## Design System
 
-### Theme: 5 themes (light, dark, coral, light-blue, gray)
-All tokens defined in `src/app/globals.css` `@theme` block. Light is the implicit default (no class). Each non-default theme = a single class on `<html>`: `dark`, `coral`, `light-blue`, `gray`. Only one applies at a time; the theme provider strips others before adding the new one.
+### Theme: 5 themes (dark default; light, coral, light-blue, gray)
+All tokens defined in `src/app/globals.css` `@theme` block. **Dark is the default for first-time visitors** (2026-07-15 — matches the low-light trading-terminal identity); `light` is the class-less base theme in CSS terms, applied only when explicitly chosen. `/public/theme-init.js` runs blocking in `<head>` and stamps the stored (or default `dark`) class **before first paint** — no theme flash; `<html>` carries `suppressHydrationWarning` for this. Each non-light theme = a single class on `<html>`: `dark`, `coral`, `light-blue`, `gray`. Only one applies at a time; the theme provider strips others before adding the new one.
 
 | Theme | Surface character | Accent |
 |-------|-------------------|--------|

@@ -42,7 +42,7 @@ export function WidgetWrapper({
        * giant empty cards next to a tall widget. Removed so widgets
        * size to their content. Adjacent widgets may not align bottoms
        * exactly; that's the right trade. */}
-      <div className={`rounded-2xl border border-border bg-bg-secondary p-4 ${editMode ? "border-accent/30" : ""}`}>
+      <div className={`rounded-xl border border-border bg-bg-secondary p-4 ${editMode ? "border-accent/30" : ""}`}>
         <div className="mb-4 flex items-center justify-between">
           <div className="text-sm font-semibold text-text-primary">{title}</div>
           <div className="flex items-center gap-1">

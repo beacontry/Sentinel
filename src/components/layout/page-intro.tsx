@@ -55,7 +55,7 @@ export function PageIntro({
       {stats && stats.length > 0 && (
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {stats.map((stat) => (
-            <div key={stat.label} className="rounded-2xl border border-border bg-bg-secondary p-3">
+            <div key={stat.label} className="rounded-xl border border-border bg-bg-secondary p-3">
               <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted">{stat.label}</div>
               <div className={`mt-1 text-lg font-semibold font-mono ${toneClasses[stat.tone ?? "neutral"]}`}>
                 {stat.value}

@@ -145,7 +145,7 @@ export default function PerformancePage() {
             <Target className="w-4 h-4 text-accent" />
             <span className="text-xs text-text-muted">Win Rate</span>
           </div>
-          <p className={`text-xl font-display font-bold ${o.accuracy >= 0.5 ? "text-bullish" : "text-bearish"}`}>
+          <p className={`text-xl font-mono font-bold ${o.accuracy >= 0.5 ? "text-bullish" : "text-bearish"}`}>
             {Math.round(o.accuracy * 100)}%
           </p>
         </Card>
@@ -154,7 +154,7 @@ export default function PerformancePage() {
             <BarChart3 className="w-4 h-4 text-accent" />
             <span className="text-xs text-text-muted">Total Signals</span>
           </div>
-          <p className="text-xl font-display font-bold">{o.totalSignals}</p>
+          <p className="text-xl font-mono font-bold">{o.totalSignals}</p>
         </Card>
         <Card>
           <div className="flex items-center gap-2 mb-1">
@@ -165,7 +165,7 @@ export default function PerformancePage() {
             )}
             <span className="text-xs text-text-muted">Avg Return</span>
           </div>
-          <p className={`text-xl font-display font-bold ${o.avgReturn >= 0 ? "text-bullish" : "text-bearish"}`}>
+          <p className={`text-xl font-mono font-bold ${o.avgReturn >= 0 ? "text-bullish" : "text-bearish"}`}>
             {o.avgReturn >= 0 ? "+" : ""}{o.avgReturn.toFixed(2)}%
           </p>
         </Card>
@@ -174,7 +174,7 @@ export default function PerformancePage() {
             <Target className="w-4 h-4 text-accent" />
             <span className="text-xs text-text-muted">Correct</span>
           </div>
-          <p className="text-xl font-display font-bold text-bullish">
+          <p className="text-xl font-mono font-bold text-bullish">
             {o.correctSignals} / {o.totalSignals}
           </p>
         </Card>
