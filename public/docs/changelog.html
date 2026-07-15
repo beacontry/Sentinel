@@ -232,6 +232,62 @@
     </div>
   </header>
 
+  <!-- ════════════════════════ 2026-07-15 ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-07-15</div>
+    <h2>Crisis-path confirmations, trader IA, dark default, landing cleanup</h2>
+    <p class="summary">Executed the 2026-07-14 design review end-to-end. The automated anti-pattern detector went 5 findings &rarr; 0; <code>tsc</code> clean, 799/799 tests.</p>
+
+    <h3>Crisis-path UX</h3>
+    <ul>
+      <li><strong>ConfirmActionModal replaces all 19 native <code>confirm()</code>/<code>alert()</code> sites.</strong> Emergency halt, flatten-all, close-position, live orders, and admin actions now confirm through a real modal: explicit what-will/won't-happen copy, the numbers being acted on (positions, est. notional, unrealized P&amp;L), inline errors, and a typed-keyword gate on book-wide liquidations (<code>FLATTEN</code>, admin <code>HALT</code>) &mdash; deliberately NOT on the user's own Halt button. Native dialogs are banned in dashboard code going forward.</li>
+      <li><strong>Toasts are dismissible</strong>; errors linger 10s; persistent mode for remediation messages. Start/Stop/Switch failures now surface (previously silent).</li>
+      <li><strong>The halted-state card no longer lies.</strong> Copy branches on halt type: a user emergency halt liquidates (remaining rows = pending fills); a safeguard halt deliberately does not flatten.</li>
+    </ul>
+
+    <h3>Trader page &amp; terminal polish</h3>
+    <ul>
+      <li>Status-bar section removed (mode was displayed 3&times;, connection 2&times;); heartbeat + halted pill fold into the engine badge row; PageIntro's Mode stat became <strong>Today P&amp;L</strong>; tax election card moved below the money fold; skeleton loading replaces the bare spinner.</li>
+      <li><code>font-mono</code> on all 27 financial-numeral sites that rendered the display font; one card radius across the app shell; typing dots pulse instead of bounce; scrollbars token-driven.</li>
+    </ul>
+
+    <h3>Dark by default + landing</h3>
+    <ul>
+      <li><strong>Dark is the default theme.</strong> <code>/public/theme-init.js</code> runs blocking in <code>&lt;head&gt;</code> and stamps the theme class before first paint (no more cold-load light flash). Explicit light choices persist.</li>
+      <li>Landing gradient accent stripes removed (one carried a cyan that existed nowhere else in the product), hover-lift cards grounded, glow shadows tamed, radii normalized.</li>
+    </ul>
+  </article>
+
+  <!-- ════════════════════════ 2026-07-14 ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-07-14</div>
+    <h2>Split-phantom P&amp;L, silent risk-limit outage &amp; sell-signal demotion</h2>
+    <p class="summary">"Prod is drawing down and our gains are gone" unwound into three stacked root causes, each masking the next. Booked all-time net read +$476; the corrected number is <strong>+$3,319.50</strong>.</p>
+
+    <h3>Incident 1 &mdash; corporate-action phantom losses</h3>
+    <ul>
+      <li><strong>CRWD ran a 4:1 split on Jul 2</strong>; the engine held 5 pre-split shares @ $758.89, never adjusted, and its stale stop "realized" <strong>&minus;$2,829 that never happened</strong> &mdash; tripping the daily-loss halt on a phantom. CVNA's 5:1 (May 7) did the same through the reconciler: &minus;$1,882. Both ledger rows corrected in place (backups kept); halt flags left as history.</li>
+      <li><strong>Code:</strong> <code>detectSplitAdjustment()</code> &mdash; qty moved &gt;10% with total basis conserved within 2% = split. Wired into the broker sync (rescale in place + audit), the 1-min exit check (re-verify before firing a stop on a quote &lt; 60% of entry), and the reconciler (integer entry/fill ratio &rarr; basis correction).</li>
+    </ul>
+
+    <h3>Incident 2 &mdash; missing migrations silently disabled every risk control (17 days)</h3>
+    <ul>
+      <li>Migrations 0046/0047 shipped Jun 27 but were never applied to prod. Every <code>loadRiskLimits</code> errored (38,750 PG errors) and fell back to defaults &mdash; all user risk settings ignored since Jun 29. Applied 2026-07-14; <strong>the deploy runbook's migration step must be verified against <code>information_schema</code>, not assumed</strong>.</li>
+      <li>Separately: <strong>wash-sale / losing-reentry refreshes had been failing since 2026-05-17</strong> &mdash; a drizzle Date-param-against-raw-SQL-fragment serialization bug threw client-side before the query ever reached PG. Both blocked sets were empty the whole time; zero gate blocks ever fired. Fixed by binding an ISO string; losing exits now also enter the blocked sets <em>synchronously at exit time</em>, and a refresh failing &gt;15 min raises an error-severity alert instead of warn-log spam.</li>
+    </ul>
+
+    <h3>Incident 3 &mdash; sell-signal exits were a losing exit class</h3>
+    <ul>
+      <li>All-time autopsy: <code>signal_sell</code> market exits went <strong>1-for-30, &minus;$2,717</strong> while trailing stops made +$2,814 on the same book. <strong>Demoted to stop-tighten</strong>: SELL keeps &frac12; of the current dynamic trail, STRONG_SELL &frac13;, floored at 1%, never lowering an existing stop.</li>
+    </ul>
+
+    <h3>Ops hygiene</h3>
+    <ul>
+      <li>Wedged-scan reaper (a stuck scan flag spammed the stop-sync override every 5 min for 7 days); watchdog stall clock clamps to time-since-9:30-ET-open (kills Monday-open weekend false positives); hourly sweep disconnects <code>trader_status</code> rows with &gt;24h-stale heartbeats; DB pool <code>connect_timeout</code> 5s&rarr;15s / <code>idle_timeout</code> 30s&rarr;120s.</li>
+      <li>Optimizer re-run on <code>sp500</code> with post-audit fitness: train +39.5% / OOS +16.0% (40% retention &mdash; healthy), OOS Sharpe 0.67, max DD 12.7%. Saved as the active Optimized preset.</li>
+    </ul>
+  </article>
+
   <!-- ════════════════════════ 2026-05-29 ════════════════════════ -->
   <article class="entry">
     <div class="date">2026-05-29</div>

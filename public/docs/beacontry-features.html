@@ -402,7 +402,7 @@
     <p>Settings → Display Preferences card covers: P&amp;L format, time format (12h/24h), color-blind palette (Wong blue/orange instead of green/red), default landing page after login, daily-digest email opt-in. All localStorage-backed, cross-tab synced.</p>
 
     <h3>Themes (5 options)</h3>
-    <p>Theme picker in the sidebar footer + landing nav lets you choose between <strong>Light</strong> (default — white surfaces, emerald accent), <strong>Dark</strong> (emerald-tinted near-black), <strong>Coral</strong> (warm peach surfaces, coral accent), <strong>Light Blue</strong> (sky-tinted, blue accent), and <strong>Gray</strong> (true neutral grays, emerald accent retained). Each theme is a single class on <code>&lt;html&gt;</code>; trading semantics (bullish/bearish/warning) stay universal red/green across all themes so P&amp;L is recognizable. Preference persists in <code>sentinel-theme</code> localStorage key + updates the PWA <code>theme-color</code> meta tag.</p>
+    <p>Theme picker in the dashboard top bar + landing nav lets you choose between <strong>Dark</strong> (default since 2026-07-15 — emerald-tinted near-black), <strong>Light</strong> (white surfaces, emerald accent), <strong>Coral</strong> (warm peach surfaces, coral accent), <strong>Light Blue</strong> (sky-tinted, blue accent), and <strong>Gray</strong> (true neutral grays, emerald accent retained). Each theme is a single class on <code>&lt;html&gt;</code>; trading semantics (bullish/bearish/warning) stay universal red/green across all themes so P&amp;L is recognizable. Preference persists in <code>sentinel-theme</code> localStorage key + updates the PWA <code>theme-color</code> meta tag.</p>
 
     <h3>Focus mode + chart fullscreen</h3>
     <p><strong>Focus mode</strong> (Analysis page header) collapses the dashboard sidebar to maximize the research workspace. Persists per-device; auto-cleans on page unmount so the sidebar isn't globally hidden when navigating away.</p>
@@ -664,6 +664,9 @@
         <li><strong>5-min stop-sync scheduler</strong> — broker-side protective stops are synced from the engine's in-memory state every 5 minutes independent of scan health. A breakeven-promote that fires on the 1-min poll reaches the broker within 5 min. Previously stops only updated at scan completion; hung scans froze them for the session. <span class="added">Added 2026-05-26 (PR 4).</span></li>
         <li><strong>PDT-rejected exit suppression</strong> — when Alpaca rejects an exit order due to pattern-day-trading protection 5 times in a row, the engine stops retrying for 30 minutes and sends a push notification telling you to flatten manually. Prevents per-minute log-and-Alpaca-call spam on stuck positions. <span class="added">Added 2026-05-26 (PR 3).</span></li>
         <li><strong>client_order_id idempotency</strong> — every order to Alpaca carries a UUID. Network-hiccup retries can't accidentally double-fill — Alpaca rejects the duplicate. <span class="added">Added 2026-05-26 (PR 9).</span></li>
+        <li><strong>Sell-signal stop-tighten</strong> — an analyzer SELL/STRONG_SELL on a held position no longer market-exits; it raises the protective stop to ½ (SELL) or ⅓ (STRONG_SELL) of the current dynamic trail. A genuine breakdown still exits — via the tightened stop — while a whipsaw survives. Historical signal exits went 1-for-30. <span class="added">Added 2026-07-15.</span></li>
+        <li><strong>Corporate-action (split) guard</strong> — a stock split changes your share count but not your total cost basis; the engine detects that signature at broker sync (and re-verifies before any suspiciously deep stop) and rescales entry/stop/take-profit in place instead of booking a phantom loss on the pre-split basis. <span class="added">Added 2026-07-15.</span></li>
+        <li><strong>Instant re-entry blocking</strong> — a losing exit enters the wash-sale + losing-reentry blocked lists at the moment it happens, not on the next 5-minute refresh. If the refresh mechanism itself degrades for &gt;15 min, an error-severity alert fires instead of silent protection loss. <span class="added">Added 2026-07-15.</span></li>
       </ul>
       <div class="gotcha"><strong>Engine-gated:</strong> while running, manual orders and broker switching are refused with a 409 <code>ENGINE_RUNNING</code> response. Stop the engine first.</div>
     </div>
@@ -1241,8 +1244,8 @@
     </div>
 
     <div class="concept">
-      <div class="concept-title">PDT (Pattern Day Trader)</div>
-      <p>FINRA rule: if equity &lt; $25k AND ≥4 day-trades in 5 business days, the broker locks the account. Beacontry auto-detects the equity threshold and blocks new BUYs at 3+ daytrades (one shy of the limit). SELLs are always allowed — exits override PDT.</p>
+      <div class="concept-title">PDT (Pattern Day Trader) — retired</div>
+      <p>FINRA eliminated the Pattern Day Trader designation in 2026 (Rule 4210 amendments): the $25k minimum was replaced by the standard $2k margin floor and per-day trade counting was abolished. Beacontry's preemptive PDT blocking was removed 2026-06-04; only reactive handling of legacy broker rejections remains for transitional accounts. If your broker still enforces PDT-era limits, contact them directly.</p>
     </div>
 
     <div class="concept">

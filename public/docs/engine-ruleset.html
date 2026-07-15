@@ -1852,7 +1852,7 @@
     <ul>
       <li><strong>Why it exists:</strong> a 2026-06-10 review of admin's paper history found COHR re-bought 5 times after losing stops (0W/5L, &minus;$1,466 net), with GLW, AKAM, and CIEN following the same pattern. Wash-sale would have caught all of them but was disabled because admin has MTM elected. The original gate conflated &ldquo;don&rsquo;t claim a tax loss&rdquo; with &ldquo;don&rsquo;t re-buy the falling knife&rdquo;; this split closes that leak.</li>
       <li><strong>Off in <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">tactical</code> mode</strong> &mdash; intentionally all-in/all-out; the cooldown would suppress the next signal entirely.</li>
-      <li><strong>Runs before wash-sale.</strong> Cooldown's 3-day window is a subset of wash-sale's 31-day window. When both would block, the cooldown reason wins so the more specific signal surfaces.</li>
+      <li><strong>Runs before wash-sale.</strong> Cooldown's 5-day window is a subset of wash-sale's 31-day window. When both would block, the cooldown reason wins so the more specific signal surfaces.</li>
       <li><strong>Cached for 5 min</strong> on engine state as <code style="font-family:'JetBrains Mono',monospace;font-size:0.82rem">losingReentryBlockedSymbols: Set&lt;string&gt;</code>. Failed refresh keeps the previous set and does NOT bump the timestamp &mdash; next scan retries.</li>
     </ul>
     <div class="filter-gate">

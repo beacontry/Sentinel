@@ -252,12 +252,14 @@ Trailing stop tightens automatically as profit grows using exponential decay:
 ```
 trail = 2% + (base - 2%) × e^(-3 × profitPct)
 
- 0% profit  → 12% trail (base)
+  0% profit  → 12% trail (base)
 10% profit  →  8.6% trail
 20% profit  →  5.5% trail
 30% profit  →  3.7% trail (locks in ~26%)
 50% profit  →  2.4% trail (locks in ~48%)
 ```
+
+**Sell signals tighten, they don't exit** (2026-07-15): an analyzer SELL/STRONG_SELL on a held position raises the stop to ½ (SELL) or ⅓ (STRONG_SELL) of the current dynamic trail instead of market-exiting — all-time data showed signal exits going 1-for-30 while trailing stops made money on the same book. A genuine breakdown exits via the tightened stop; a whipsaw survives.
 
 ### Safety Features
 
@@ -271,7 +273,11 @@ trail = 2% + (base - 2%) × e^(-3 × profitPct)
 - **Consecutive-loss halt** — tracks losing trades since last winner; halts at threshold
 - **Sector exposure cap** (Phase 4) — refuses BUYs that would push any sector over `maxSectorExposurePct × equity`. Reads live position market values from broker; in-memory check, no extra DB hit
 - **Earnings blackout** (Phase 4) — skips BUYs within N trading days of a symbol's earnings release when `earningsBlackoutDays` is set on the risk profile
-- **MTM-aware wash-sale protection** — blocks BUYs on symbols with a losing exit within 31 calendar days (turned off when user attests §475(f) MTM via Trader page). Refresh runs inside every BUY decision, not just at scan start (Phase 1)
+- **MTM-aware wash-sale protection** — blocks BUYs on symbols with a losing exit within 31 calendar days (turned off when user attests §475(f) MTM via Trader page). Refresh runs inside every BUY decision, not just at scan start (Phase 1). Losing exits also enter the blocked set **synchronously at exit time** (2026-07-15) — no refresh-window gap
+- **Losing-reentry cooldown** — strategy gate blocking re-buys within 5 calendar days of a losing exit on the same symbol (the falling-knife pattern); independent of MTM, off in `tactical` mode only
+- **Corporate-action (split) guard** (2026-07-15) — broker qty moved >10% with total cost basis conserved = stock split, not a trade; entry/stop/TP/peak rescale in place instead of booking phantom P&L. The 1-min exit poll re-verifies with the broker before firing any stop on a quote below 60% of tracked entry
+- **Mark-to-market drawdown halt** — scan-end halt when realized + unrealized loss exceeds 1.5× the daily-loss threshold; catches the bleed before stops convert it to realized losses
+- **Protection-degraded alerting** (2026-07-15) — if the wash-sale/re-entry refresh fails continuously for >15 min, the engine writes an error-severity alert + audit row instead of degrading silently
 - **bootEquity day-boundary re-snapshot** (Phase 1) — the 50% equity-collapse tripwire stays calibrated as the account grows; all 3 scan paths refresh at trading-day boundary
 - **Engine gated to Alpaca** — startEngine refuses non-Alpaca connections until status normalization + signed-qty + broker-side stop replacement land for IBKR/Tradier. Portfolio + manual ordering still work on any broker.
 - **Engine-gated manual operations** — manual orders + broker switching refused while engine runs (UI banner + API 409 `ENGINE_RUNNING`) to prevent position-map drift

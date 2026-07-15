@@ -4,6 +4,28 @@ Dated retrospectives extracted from CLAUDE.md. Day-to-day "when did X land" ques
 
 ---
 
+## 2026-07-15 — Crisis-path confirmations, trader IA, dark default, landing de-slop
+
+Executed the 2026-07-14 design-review plan end-to-end (review scored 31/40 on Nielsen heuristics; the automated anti-pattern detector went 5 findings → 0).
+
+**Crisis-path UX (the P1)**
+- **`ConfirmActionModal` + `useConfirmAction`** replace all 19 browser-native `confirm()`/`alert()` call sites — at the highest-anxiety moments (emergency halt, flatten-all mid-drawdown, live orders) the product's voice used to become the OS's. The modal states exactly what will/won't happen, shows the numbers being acted on (positions, est. notional, unrealized P&L in mono), keeps errors inline, and gates the largest irreversible actions behind a typed keyword (`FLATTEN`; admin `HALT`) — deliberately NOT the user's own Halt button (friction defeats an emergency brake). Native dialogs are now **banned** in dashboard code.
+- Toasts became dismissible; errors linger 10s; `duration: 0` = persistent. Start/Stop/Switch failures surface as toasts (previously swallowed silently).
+- The halted-state card no longer lies: copy branches on `haltReason` — a user emergency halt liquidates (remaining rows = pending fills), a safeguard halt deliberately does not.
+- Trade ticket's live-order friction is a real modal with the order summary; admin live-grant/halt/tier confirmations modernized the same way.
+
+**Trader page information architecture**
+- Removed the status-bar section (3rd display of mode, 2nd of connection); heartbeat + halted pill fold into the engine badge row; PageIntro's Mode stat became **Today P&L**. Tax election card moved below the money fold. Loading is a layout-mirroring skeleton. Stale "IBKR Trading Agent / SENTINEL_URL" empty-state copy replaced (that path was removed 2026-05-28).
+
+**Terminal polish + dark default**
+- `font-mono` on all 27 financial-numeral sites that rendered `font-display` (the stated system rule, now enforced); one card radius (`rounded-xl`) across the app shell; typing dots pulse instead of bounce; scrollbars token-driven (previously light-theme-only hexes).
+- **Dark is the default theme** — `/public/theme-init.js` runs blocking in `<head>` and stamps the stored (or default `dark`) class before first paint; kills the cold-load light flash. Explicit light choices persist.
+
+**Landing de-slop**
+- Gradient accent stripes removed (`top-accent-line` carried a cyan that existed nowhere else in the product), hover-lift translates dropped, floating glow shadows → `shadow-lg`, radii normalized.
+
+`tsc` clean, 799/799 tests, impeccable detector clean.
+
 ## 2026-07-14 — Split-phantom P&L, silent risk-limit outage & sell-signal demotion
 
 Started as "prod is drawing down and our gains are gone" and unwound into three distinct root causes. Full forensic chain below because each layer masked the next.

@@ -121,6 +121,21 @@ Patterns cite the audit finding that motivated them. **Cite symbols/functions, n
 
 > Guard: broker fills with zero/negative/missing prices are rejected; skip correction to avoid fabricated losses.
 
+### **Corporate actions: a split is a rescale, not a trade (2026-07-14 CRWD/CVNA incident)**
+
+A forward/reverse split changes share count and per-share basis while conserving TOTAL cost basis; a partial close, add-on buy, or averaging fill changes total basis. So "broker qty moved >10% while total basis stayed within 2%" is a split signature — `detectSplitAdjustment` (pure, tested). Three integration points, all required:
+- **Broker sync** (`syncPositionMapFromBroker`): detect + rescale entry/stop/TP/peak in place, audit `engine.position_split_adjusted`. Without this, the stale stop sits far above the post-split price and "realizes" a phantom loss against the pre-split basis (CRWD 4:1: fabricated −$2,829 AND tripped the daily-loss halt on it).
+- **1-min exit check**: the split lands overnight and the exit poll runs from the open, possibly before the first scan sync. A quote below 60% of tracked entry re-verifies against the broker BEFORE firing the stop; confirmed split → rescale + skip tick; verification error → protection wins, exit proceeds.
+- **Reconciler** (`reconcileBrokerSideExit`): an entry/fill ratio within 3% of an integer ≥2 (either direction) is a split signature — adjust the basis and note it in the row instead of booking the phantom (CVNA 5:1: −$1,882).
+
+### **ORM param-mapping trap: typed value against a raw SQL fragment (2026-05-17 → 2026-07-15 outage)**
+
+`gt(sql\`COALESCE(${col.a}, ${col.b})\`, someDate)` has NO column driver-mapping for the right-hand param when the left side is a raw fragment — drizzle hands the `Date` object to postgres.js unmapped and it throws **client-side** ("Received an instance of Date") before the query reaches PG. Consequences that made this brutal to find: zero server-side trace; drizzle's wrapper message is just "Failed query: <sql>" (the real reason hides in `err.cause`); and fail-soft catch semantics turned it into silent protection loss for two months. Rules: (1) bind primitives (`date.toISOString()`) whenever the comparison target is a raw fragment — PG infers the type from context; (2) **always log `err.cause`** alongside driver-wrapped errors; (3) a protection that fails to refresh past a grace window must ALERT (engine_alerts + audit), not warn-log — fail-soft without fail-loud is how wash-sale ran dead with zero gate blocks and nobody noticed.
+
+### **Blocked-set writes are synchronous at exit time; the refresh is backfill**
+
+Wash-sale/losing-reentry sets rebuilt from `trader_trades` every 5 min have two windows where a re-buy sneaks through: the refresh interval itself, and (worse) reconciler-inserted broker-side exits that don't exist as rows until the next scan. `recordRealizedExit(engine, pnl, riskLimits, symbol)` adds losing exits to BOTH sets synchronously at every discretionary exit site — the DB-driven refresh is a backfill for restarts, not the primary path.
+
 ### **reconcileBrokerSideExit — GTC stops fire outside scans**
 
 Position disappears → `reconcileBrokerSideExit` queries broker for actual fill and auto-logs to `trader_trades` for tax accuracy. Same **7-day lookback**. Idempotent via unique `(user_id, broker_order_id)`. Feed realized P&L into `engine.dailyLoss` via `recordRealizedExit` so halt accounting sees true losses.

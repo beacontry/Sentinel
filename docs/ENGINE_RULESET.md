@@ -647,7 +647,7 @@ Per-symbol overrides from Strategies page take priority over GA params
 
 ### Screener vs Engine Authority
 
-The screener only pushes BUY/STRONG_BUY signals to the engine — never SELL signals. Once a position is entered, it is managed entirely by the engine's exit logic (stop loss, trailing stop, ATR-based take profit, sell signal from `analyzeHybrid()`, hold period). The screener has no influence on exits.
+The screener only pushes BUY/STRONG_BUY signals to the engine — never SELL signals. Once a position is entered, it is managed entirely by the engine's exit logic (stop loss, trailing stop, ATR-based take profit, hold period; a SELL signal from `analyzeHybrid()` tightens the stop rather than exiting — see Exit Logic #4). The screener has no influence on exits.
 
 ### Which Modes Use Optimizer Params
 
