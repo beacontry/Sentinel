@@ -1730,7 +1730,15 @@ async function maybeRefreshWashSaleSet(engine: EngineState): Promise<void> {
     engine.protectionRefreshFailingSince = null;
   } catch (err) {
     log.warn(
-      { err: err instanceof Error ? err.message : "unknown", userId: engine.userId },
+      {
+        err: err instanceof Error ? err.message : "unknown",
+        // drizzle wraps the driver error as generic "Failed query: <sql>";
+        // the real reason (CONNECT_TIMEOUT, statement timeout, missing
+        // column) lives in err.cause — without it the Jun 29 incident took
+        // a PG-log excavation to diagnose.
+        cause: err instanceof Error && err.cause instanceof Error ? err.cause.message : undefined,
+        userId: engine.userId,
+      },
       "Wash-sale refresh failed — keeping previous set and retrying next scan"
     );
     // INTENTIONAL: do NOT bump washSaleLastRefreshAt, do NOT clear
@@ -1833,7 +1841,11 @@ async function maybeRefreshLosingReentrySet(engine: EngineState): Promise<void> 
     engine.protectionRefreshFailingSince = null;
   } catch (err) {
     log.warn(
-      { err: err instanceof Error ? err.message : "unknown", userId: engine.userId },
+      {
+        err: err instanceof Error ? err.message : "unknown",
+        cause: err instanceof Error && err.cause instanceof Error ? err.cause.message : undefined,
+        userId: engine.userId,
+      },
       "Losing-reentry refresh failed — keeping previous set and retrying next scan"
     );
     void notePersistentProtectionFailure(engine, "losing_reentry", err);

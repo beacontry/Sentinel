@@ -16,8 +16,17 @@ function getClient() {
     }
     return postgres(connectionString, {
       max: 20,
-      idle_timeout: 30,
-      connect_timeout: 5,
+      // 30s idle_timeout churned physical connections constantly, so scan
+      // bursts + engine boot were always opening fresh sockets; with the old
+      // 5s connect_timeout the handshake regularly lost the race on the
+      // shared 4-vCPU droplet and postgres.js threw CONNECT_TIMEOUT —
+      // surfacing as generic drizzle "Failed query" errors with NO
+      // server-side trace (the 2026-07-15 00:11:42 boot failures were
+      // exactly 5.000s after engine start). Keep connections warm longer
+      // and tolerate slow handshakes. max 20 vs the shared instance's
+      // max_connections=100 leaves room for the other tenants.
+      idle_timeout: 120,
+      connect_timeout: 15,
     });
   })();
   return g.__dbClient;
