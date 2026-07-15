@@ -303,7 +303,7 @@ Re-entry occurs when SPY recovers above the 50-day SMA (or above 20-SMA with RSI
 
 Every buy signal passes through a layered gate sequence before an order is placed.
 
-> **Two stages, two scopes.** `runScan()` calls `passesSmartFilters()` (RS + bearish sentiment) BEFORE `canPlaceBuyOrder()`. Tactical and tactical-smart skip the smart-filter step (they have their own scoring) and call `canPlaceBuyOrder()` directly. Both paths run the same risk-side gates inside `canPlaceBuyOrder()`: **earnings blackout → sector exposure → wash-sale → daily notional cap → order rate limit**. First failing gate is what the audit log records. (PDT block was retired 2026-06-04 — see § Tax & PDT Protections below.)
+> **Two stages, two scopes.** `runScan()` calls `passesSmartFilters()` (RS + bearish sentiment) BEFORE `canPlaceBuyOrder()`. Tactical and tactical-smart skip the smart-filter step (they have their own scoring) and call `canPlaceBuyOrder()` directly. Both paths run the same risk-side gates inside `canPlaceBuyOrder()`: **earnings blackout → split blackout → sector exposure → losing-reentry cooldown → wash-sale → daily notional cap → order rate limit** (cheapest first). First failing gate is what the audit log records. (PDT block was retired 2026-06-04 — see § Tax & PDT Protections below.)
 
 Reference list of all gates a main-scan BUY traverses:
 
@@ -321,6 +321,14 @@ Reference list of all gates a main-scan BUY traverses:
 - **Action:** Skip symbol if earnings date is within [-1, +5] days
 - **Source:** Finnhub Earnings Calendar API (cached daily)
 - **Fallback:** Allow trade if Finnhub unavailable
+
+### 3b. Split Blackout (2026-07-15)
+- **Rule:** Don't buy a symbol whose announced split ex-date is within 5 calendar days
+- **Action:** `canPlaceBuyOrder` rejects with reason `split_blackout` (+ ex-date in audit metadata)
+- **Source:** Alpaca corporate-actions announcements API (`getSplitCalendar`, 14-day lookahead), one market-wide call cached daily with keep-previous-on-error semantics; warmed from the scan prelude + 1-min exit check
+- **Fallback:** Gate fails open when no calendar is available (non-Alpaca brokers) — the reactive `detectSplitAdjustment` guards remain
+- **Companion:** held positions exit on the last trading day before the ex-date — see § Exit Logic (`pre_split_exit`)
+- **Status:** deployed + verified 2026-07-15 (first refresh cached 28 live upcoming splits); no live block/exit event yet — first exercise comes when a held/candidate symbol announces
 
 ### 4. Relative Strength
 - **Rule:** Don't buy stocks with negative 60-day momentum (down >5%)
@@ -772,6 +780,10 @@ Two personalized protections that vary by account state and user election. (A th
 
 **Wash-sale protection** — When MTM is unchecked, the engine blocks BUYs on any symbol with a losing exit (`action IN ('SELL','manual_close') AND pnl < 0`) in the last **31 calendar days** (one day past IRS for safety). One batched DISTINCT query per scan, cached on engine state for 5 min, O(1) lookup per BUY. Symbol-level (not lot-level) — partial losing close blocks the whole ticker for 31 days. Does NOT catch: manual buys via Alpaca's UI (not visible at order time), "substantially identical" ETFs (SPY ↔ IVV), different share classes. Audit reason: `wash_sale_protection`.
 
+**Blocked-set freshness (2026-07-15 hardening — applies to wash-sale AND the losing-reentry cooldown):**
+- **Synchronous add at exit time** — every discretionary losing exit (`recordRealizedExit(engine, pnl, riskLimits, symbol)`) inserts the symbol into both blocked sets immediately, including reconciler-inserted broker-side exits. The 5-min DB refresh is backfill for restarts, not the primary path — there is no refresh-window gap.
+- **Fail-loud on persistent refresh failure** — fail-soft "keep the previous set" covers a transient blip, but a refresh failing continuously for >15 min writes an `engine_alerts` row (kind `protection_degraded`, severity error) + hash-chained `engine.protection_degraded` audit event, deduped to once per window. History: both refreshes were silently broken 2026-05-17 → 2026-07-15 (drizzle Date-param serialization against a raw SQL fragment — client-side failure, zero server trace); warn-level logs were the only signal and zero gate blocks ever fired. First real blocks: 2026-07-15 (CRWD ×2, MMM ×2, ADP).
+
 **PDT protection — retired 2026-06-04.** FINRA Rule 4210 was amended; the Pattern Day Trader designation was eliminated, the $25,000 minimum equity requirement for active traders was dropped to the standard $2,000 margin minimum, the 5-day day-trade counter was abolished, and brokers moved from end-of-prior-day buying-power calculations to real-time intraday margin checks. Alpaca aligned the same day (`pattern_day_trader` returns `false`, `daytrade_count` returns `0`, both fields removed from the broker API on 2026-07-06; "Day Trade Buying Power" replaced by "Intraday Buying Power"; orders that would create or increase an Intraday Margin Deficit / IMD are rejected pre-trade).
 
 Sentinel's preemptive PDT block was removed in the same change:
@@ -903,6 +915,13 @@ Migration `0029_engine_intelligence.sql` added three columns to `user_risk_profi
 **Live vs backtest difference:** live mode uses **VIX + SPY only** — `refreshAdaptiveMode()` does NOT fetch breadth (full breadth scan = 50 stocks × N days, kept as a v2 enhancement; the cost would land on every scan tick). The strong-risk-on → `aggressive` bump in the classifier **requires** a breadth score, so in practice live adaptive can resolve only to `conservative`, `moderate`, or `optimized`. Backtest replays VIX + SPY only too. Defensible simplification — if you specifically want `aggressive` sizing in a strong bull, pick it directly instead of relying on adaptive.
 
 See `public/docs/engine-ruleset.html` (web view of this doc, served at `/docs/engine-ruleset.html` on any deployment) for the same content in HTML form. Both files are intentionally kept in sync — edit one, mirror to the other.
+
+## Reliability fixes (2026-07-15)
+
+- **Wedged-scan flag reset** — a `scanStartedAt` older than 60 min (`SCAN_WEDGED_RESET_MS`) is a dead scan, not a slow one: the stop-sync scheduler clears it after running its override, restoring normal gating instead of re-logging the stale-scan override every 5 minutes forever (one halted engine spammed it for 7 days). Safe against a genuinely-alive scan — anything that old is superseded and throws `ScanCancelledError` at its next yield.
+- **Watchdog stall clock clamps to market time** — stall age is `min(now − lastScanAt, msSinceSessionOpen(now))`, so a Friday-afternoon `lastScanAt` read Monday 9:35 counts as 5 minutes of market time, not 65 wall-clock hours. Kills the Monday-open "not scanned in 3,942 min" weekend false positives.
+- **Zombie `trader_status` sweep** — hourly, the watchdog marks rows `connected=false` when the heartbeat is >24h stale and no RUNNING engine exists in memory (in-memory presence isn't liveness: a created-but-never-started engine object from a failed autostart doesn't count). One row had claimed `connected=true` for 35 days.
+- **DB pool tuning** — `idle_timeout` 30s→120s, `connect_timeout` 5s→15s: scan-burst connection churn on the shared droplet was losing the 5s handshake race and surfacing as opaque client-side "Failed query" errors.
 
 ## Reliability fixes (2026-05-13)
 
