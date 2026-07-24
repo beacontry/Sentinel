@@ -1513,6 +1513,11 @@
         <div class="flow-step-desc">Per-symbol strategies take priority</div>
       </div>
     </div>
+    <p><strong>Which run the engine loads:</strong> the global <strong>active preset</strong> (<code>optimization_runs.isActive = true</code>) if one exists, else the engine owner's own latest completed run. <code>isActive</code> is a single global slot &mdash; one preset serves every optimized-mode engine.</p>
+
+    <h3>Auto-optimizer (autonomous promotion, 2026-07-23)</h3>
+    <p><code>GET /api/cron/auto-optimize</code> keeps the active preset fresh with no human in the loop. It's a stateful, idempotent state machine &mdash; a full GA run is minutes of CPU on a worker thread, so the cron never runs it inline. Each tick does one unit of work: a run in-flight &rarr; wait; a completed-but-undecided run &rarr; evaluate; the configured interval has elapsed &rarr; kick off a new GA; otherwise &rarr; idle.</p>
+    <p><strong>Evaluate = margin-gated promotion.</strong> The completed candidate and the current active preset are scored on ONE shared out-of-sample holdout (<code>portfolioBacktest(data, params, "test", eligibleOn)</code> on freshly-built data for the run's universe/split &mdash; stored per-run OOS numbers aren't comparable across runs). <code>decidePromotion()</code> promotes iff <code>candidateOOS &gt; incumbentOOS + margin</code> (strict, so a positive margin adds hysteresis and noise-level wins don't churn the slot). No incumbent &rarr; promote unconditionally; non-finite candidate &rarr; never. Promotion flips <code>isActive</code> &mdash; adopted within the 5-min param cache, no restart. The <code>auto_promotion_decided_at</code> marker (migration <code>0048</code>) ensures each completed run is evaluated exactly once, and every decision writes a hash-chained <code>OPTIMIZER_AUTO_*</code> audit row.</p>
 
     <h3>Screener vs Engine Authority</h3>
     <p>The screener only pushes BUY/STRONG_BUY signals to the engine &mdash; never SELL signals. Once a position is entered, it is managed entirely by the engine's exit logic. The screener has no influence on exits, stop losses, or take profits. If the screener and engine disagree on a stock (they use different signal params), the engine's analysis controls the position.</p>
@@ -1629,6 +1634,26 @@
         </tbody>
       </table>
     </div>
+
+    <h3>Fresh-read confirmation gate (2026-07-23)</h3>
+    <p>Screener signals are up to 30 minutes stale. The <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runScan</code> modes (optimized / adaptive / conservative / moderate / aggressive) re-analyze every candidate at scan time, so the engine holds two opinions per symbol: the <strong>stale external signal</strong> and its <strong>own fresh read</strong>. Previously the entry decision OR'd them &mdash; a stale external BUY entered the position even when the fresh read was HOLD or STRONG_SELL. The admin optimized book (2026-07) opened <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">Entry: HOLD (35%)</code> and even <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">Entry: STRONG_SELL (80%)</code> positions this way and bled them out on trailing-stop noise (2-for-18 on trailing exits).</p>
+    <p><code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">evaluateEntrySignal()</code> now reconciles the two before entry:</p>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Fresh local read</th><th>External signal</th><th>Result</th><th>Reason</th></tr></thead>
+        <tbody>
+          <tr><td>BUY / STRONG_BUY</td><td>any</td><td class="mono" style="color:var(--bullish)">enter</td><td class="mono" style="font-size:0.78rem">local_bullish</td></tr>
+          <tr><td>SELL / STRONG_SELL</td><td>present</td><td class="mono" style="color:var(--bearish)">skip</td><td class="mono" style="font-size:0.78rem">fresh_read_bearish</td></tr>
+          <tr><td>HOLD/other, conf &lt; floor</td><td>present</td><td class="mono" style="color:var(--bearish)">skip</td><td class="mono" style="font-size:0.78rem">confidence_below_floor</td></tr>
+          <tr><td>HOLD/other, conf &ge; floor</td><td>present</td><td class="mono" style="color:var(--bullish)">enter</td><td class="mono" style="font-size:0.78rem">external_confirmed</td></tr>
+          <tr><td>not bullish</td><td>absent</td><td class="mono" style="color:var(--bearish)">skip</td><td class="mono" style="font-size:0.78rem">no_signal</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul>
+      <li><strong>Confidence floor:</strong> <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">EXTERNAL_SIGNAL_CONFIDENCE_FLOOR = 0.55</code> (fresh-read confidence; inclusive). Distinct from the screener's own 0.6 push floor, which is measured at push time on possibly-stale data.</li>
+      <li><strong>Scope:</strong> only the <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">runScan</code> modes. <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">tactical</code> and <code style="font-family:'JetBrains Mono',monospace;font-size:0.84rem;background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">tactical-smart</code> run separate scan functions and are unaffected.</li>
+    </ul>
   </section>
 
   <!-- ===== 14 · MODE × OPTIMIZER MATRIX ===== -->

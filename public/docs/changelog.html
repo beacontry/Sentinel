@@ -232,6 +232,32 @@
     </div>
   </header>
 
+  <!-- ════════════════════════ 2026-07-23 (later) ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-07-23</div>
+    <h2>Autonomous auto-optimizer with margin-gated promotion</h2>
+    <p class="summary">The GA optimizer was manual (admin runs it, reviews, saves the preset), and the live params had gone stale. A new cron closes the loop with no human in the loop.</p>
+    <ul>
+      <li><strong>Stateful, idempotent state machine</strong> &mdash; <code>GET /api/cron/auto-optimize</code>. A full GA run is minutes of CPU on a worker thread, so the cron never runs it inline; each tick does one unit of work (wait for an in-flight run &rarr; evaluate a completed one &rarr; kick off a new one on schedule &rarr; idle).</li>
+      <li><strong>Margin-gated promotion</strong> &mdash; <code>decidePromotion()</code> promotes a completed run only if its <em>out-of-sample</em> excess return beats the current global-active preset by a configured margin. Candidate and incumbent are scored on one shared holdout so the comparison is apples-to-apples; strict <code>&gt;</code> adds hysteresis so noise doesn't churn the slot.</li>
+      <li><strong>Promotion flips <code>optimization_runs.isActive</code></strong> (same one-global-slot semantics as save-preset); the engine adopts it within its 5-min param cache, no restart. Migration <code>0048</code> adds a decision marker so each run is evaluated exactly once.</li>
+      <li><strong>Every decision is audited</strong> &mdash; hash-chained <code>OPTIMIZER_AUTO_RUN_STARTED</code> / <code>OPTIMIZER_AUTO_PROMOTED</code> / <code>OPTIMIZER_AUTO_REJECTED</code> rows with the candidate/incumbent OOS and margin. Configured via env; not yet wired into prod cron.</li>
+    </ul>
+  </article>
+
+  <!-- ════════════════════════ 2026-07-23 ════════════════════════ -->
+  <article class="entry">
+    <div class="date">2026-07-23</div>
+    <h2>Fresh-read confirmation gate on external-signal entries</h2>
+    <p class="summary">Forensics on the admin optimized book (37 closes, 30% win rate, &minus;$403.93 realized) traced the churn to the entry path, not the exits. The engine was buying stale Screener picks its own fresh analysis disagreed with.</p>
+    <ul>
+      <li><strong>The bug:</strong> the entry decision OR'd the Screener external signal in unconditionally, so a Screener BUY (up to 30 min stale) entered a symbol even when the engine's own fresh re-analysis read HOLD-35% or STRONG_SELL. The trade log showed <code>Entry: HOLD (35%)</code> and <code>Entry: STRONG_SELL (80%)</code> entries that then bled out on trailing-stop noise (trailing exits 2-for-18; take-profit 5-for-5 was the only profitable path).</li>
+      <li><strong><code>evaluateEntrySignal()</code></strong> reconciles the stale external signal with the fresh read: the engine's own BUY/STRONG_BUY always enters; an external signal enters only when the fresh read is <em>not bearish</em> and fresh confidence &ge; 0.55. Neither &rarr; skip (logged with the reason).</li>
+      <li><strong>Scope:</strong> the <code>runScan</code> modes (optimized / adaptive / conservative / moderate / aggressive). <code>tactical</code> and <code>tactical-smart</code> run separate scan functions and are untouched.</li>
+      <li>Not an optimizer fix &mdash; the entry gate is hardcoded logic; the GA only tunes exits/sizing, so re-running it would not have closed this.</li>
+    </ul>
+  </article>
+
   <!-- ════════════════════════ 2026-07-15 (later) ════════════════════════ -->
   <article class="entry">
     <div class="date">2026-07-15</div>

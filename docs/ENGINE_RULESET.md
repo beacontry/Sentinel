@@ -595,6 +595,24 @@ The screener (`src/lib/screener.ts`) is a shared, user-independent market scanne
 | Tactical | **No** | Ignores screener — pure SPY timing |
 | Tactical Smart | **Yes** | Boosts candidate scores during stock selection (STRONG_BUY +3pts, BUY +1pt) |
 
+### Fresh-read confirmation gate (2026-07-23)
+
+Screener signals are up to 30 minutes stale. The `runScan` modes (optimized / adaptive / conservative / moderate / aggressive) re-analyze every candidate at scan time, so the engine holds two opinions per symbol: the **stale external signal** and its **own fresh read**. Previously the entry decision OR'd them — a stale external BUY entered the position even when the fresh read was HOLD or STRONG_SELL. The admin optimized book (2026-07) opened `Entry: HOLD (35%)` and even `Entry: STRONG_SELL (80%)` positions this way and bled them out on trailing-stop noise (2-for-18 on trailing exits).
+
+`evaluateEntrySignal()` now reconciles the two before entry:
+
+| Fresh local read | External signal | Result | Reason |
+|---|---|---|---|
+| BUY / STRONG_BUY | any | **enter** | `local_bullish` (own fresh read needs no gate) |
+| SELL / STRONG_SELL | present | **skip** | `fresh_read_bearish` (never enter against a fresh bearish read) |
+| HOLD/other, confidence < floor | present | **skip** | `confidence_below_floor` |
+| HOLD/other, confidence ≥ floor | present | **enter** | `external_confirmed` |
+| not bullish | absent | **skip** | `no_signal` |
+
+- **Confidence floor:** `EXTERNAL_SIGNAL_CONFIDENCE_FLOOR = 0.55` (fresh-read confidence; inclusive). Distinct from the screener's own 0.6 push floor, which is measured at push time on possibly-stale data.
+- **Scope:** only the `runScan` modes. `tactical` and `tactical-smart` run separate scan functions and are unaffected.
+- Skips are logged at `info` (`"External signal not confirmed by fresh read — skipping entry"`) with the reason for prod visibility.
+
 ### Key Properties
 
 - **Long-only:** only BUY and STRONG_BUY are pushed to engines. SELL/STRONG_SELL are dropped at the screener boundary — the engine ignores them anyway, so they were just noise.
@@ -654,6 +672,19 @@ Engine loads latest completed run every 5 minutes (cached)
     ↓
 Per-symbol overrides from Strategies page take priority over GA params
 ```
+
+**Which run the engine loads:** the global **active preset** (`optimization_runs.isActive = true`) if one exists, else the engine owner's own latest completed run. `isActive` is a single global slot — one preset serves every optimized-mode engine.
+
+### Auto-optimizer (autonomous promotion, 2026-07-23)
+
+`GET /api/cron/auto-optimize` keeps the active preset fresh with no human in the loop. It's a stateful, idempotent state machine — a full GA run is minutes of CPU on a worker thread, so the cron never runs it inline. Each tick does one unit of work:
+
+1. A run is in-flight (pending/fetching/optimizing) → wait.
+2. A completed run hasn't been decided → **evaluate** (below).
+3. `OPTIMIZER_CRON_INTERVAL_HOURS` has elapsed since the last run → kick off a new GA via `startOptimization`.
+4. Otherwise → idle.
+
+**Evaluate = margin-gated promotion.** The completed candidate and the current active preset are scored on ONE shared out-of-sample holdout (`portfolioBacktest(data, params, "test", eligibleOn)` on freshly-built `PortfolioData` for the run's universe/split — the stored per-run OOS numbers aren't comparable across runs). `decidePromotion()` promotes iff `candidateOOS > incumbentOOS + OPTIMIZER_PROMOTE_MARGIN` (strict, so a positive margin adds hysteresis and noise-level wins don't churn the slot). No incumbent → promote unconditionally; non-finite candidate score → never. Promotion flips `isActive` (all others false, this run true) — adopted within the 5-min param cache, no restart. The `auto_promotion_decided_at` marker (migration `0048`) ensures each completed run is evaluated exactly once. Every decision writes a hash-chained `OPTIMIZER_AUTO_RUN_STARTED` / `OPTIMIZER_AUTO_PROMOTED` / `OPTIMIZER_AUTO_REJECTED` audit row.
 
 ### Screener vs Engine Authority
 

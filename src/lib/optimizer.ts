@@ -72,6 +72,40 @@ interface ParamRange { min: number; max: number; step?: number }
 
 interface Individual { params: OptimizableParams; fitness: number }
 
+/**
+ * Margin-gated promotion decision for the auto-optimizer (2026-07-23).
+ *
+ * Pure so the money-moving rule is unit-tested away from all the DB / backtest
+ * I/O around it. Both scores must be the candidate-vs-incumbent OUT-OF-SAMPLE
+ * excess return computed on the SAME held-out `PortfolioData` (see the cron's
+ * shared-holdout comparison) — the stored per-run `bestTestReturn`s are NOT
+ * comparable across runs (each run fetches its own data snapshot/split).
+ *
+ * Rules:
+ *   - No incumbent (first-ever active preset)  → promote unconditionally.
+ *   - Non-finite candidate score               → never promote (bad backtest).
+ *   - Otherwise promote iff candidateOOS > incumbentOOS + margin.
+ *
+ * `margin` is in the same units as the OOS score (excess-return percentage
+ * points, e.g. 2 = candidate must beat the incumbent by 2pp). A strictly
+ * positive margin creates hysteresis so noise-level improvements don't churn
+ * the global active slot on every run.
+ */
+export function decidePromotion(input: {
+  candidateOOS: number;
+  incumbentOOS: number | null;
+  margin: number;
+}): { promote: boolean; reason: "no_incumbent" | "beat_margin" | "below_margin" | "invalid_candidate" } {
+  const { candidateOOS, incumbentOOS, margin } = input;
+  if (!Number.isFinite(candidateOOS)) return { promote: false, reason: "invalid_candidate" };
+  if (incumbentOOS === null || !Number.isFinite(incumbentOOS))
+    return { promote: true, reason: "no_incumbent" };
+  const threshold = incumbentOOS + Math.max(0, margin);
+  return candidateOOS > threshold
+    ? { promote: true, reason: "beat_margin" }
+    : { promote: false, reason: "below_margin" };
+}
+
 export interface OptimizationConfig {
   populationSize: number;
   generations: number;

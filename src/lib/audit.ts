@@ -323,6 +323,16 @@ export const AuditAction = {
   BILLING_PAYMENT_FAILED: "billing.payment_failed",
   // Past-due banner cleared on successful renewal payment.
   BILLING_PAYMENT_RECOVERED: "billing.payment_recovered",
+  // Auto-optimizer cron (2026-07-23) kicked off a scheduled GA run.
+  OPTIMIZER_AUTO_RUN_STARTED: "optimizer.auto_run_started",
+  // Auto-optimizer promoted a completed run's params to the global active
+  // slot because its out-of-sample excess return beat the incumbent by the
+  // configured margin. metadata carries candidateOOS/incumbentOOS/margin.
+  OPTIMIZER_AUTO_PROMOTED: "optimizer.auto_promoted",
+  // Auto-optimizer evaluated a completed run and kept the incumbent (candidate
+  // did not clear the margin). Recorded so every autonomous decision — promote
+  // AND reject — leaves a hash-chained trace.
+  OPTIMIZER_AUTO_REJECTED: "optimizer.auto_rejected",
 } as const;
 
 export type AuditActionName = (typeof AuditAction)[keyof typeof AuditAction];

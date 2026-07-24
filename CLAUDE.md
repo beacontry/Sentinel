@@ -6,7 +6,7 @@
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)
-- Drizzle ORM + PostgreSQL (48 migrations as of `0047_alert_last_condition_nullable.sql`) — **verify each migration actually applied on prod post-deploy** (query `information_schema.columns`, don't assume; 0046/0047 sat unapplied Jun 27→Jul 14 and silently disabled all risk limits — see `docs/changelog.md` 2026-07-14)
+- Drizzle ORM + PostgreSQL (49 migrations as of `0048_optimizer_auto_promotion.sql`) — **verify each migration actually applied on prod post-deploy** (query `information_schema.columns`, don't assume; 0046/0047 sat unapplied Jun 27→Jul 14 and silently disabled all risk limits — see `docs/changelog.md` 2026-07-14)
 - Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
@@ -76,6 +76,8 @@ All components share `analyzeBars()` (`src/lib/indicators/analyzer.ts`):
 
 ### Screener (Shared)
 The screener scans market data, shared across users (not per-user). It pushes actionable signals (BUY/STRONG_BUY, confidence ≥ 0.6) to the engine via `pushExternalSignal()` — in-memory, expire after 30 min. Optimization runs are admin-only; results (strategy params) are shared globally.
+
+**Auto-optimizer cron (2026-07-23):** `GET /api/cron/auto-optimize` (`x-cron-secret` vs `CRON_SECRET`) runs the GA on a schedule and auto-promotes the winner with **no human in the loop**. It's a stateful, idempotent state machine — each tick does ONE unit of work (a full GA run is minutes on a worker thread, never run inline): (1) run in-flight → wait; (2) completed-but-undecided run → evaluate; (3) interval elapsed → kick off a new run via `startOptimization`; (4) else idle. **Promotion is margin-gated** (`decidePromotion`, pure/tested): the completed run and the current global-active preset are scored on ONE shared out-of-sample holdout (`portfolioBacktest(data, params, "test", eligibleOn)`), and the candidate replaces the incumbent (flip `optimization_runs.isActive`, picked up within the engine's 5-min param cache) only if its OOS excess return beats the incumbent by `OPTIMIZER_PROMOTE_MARGIN` pp. Every decision (start/promote/reject) writes a hash-chained `OPTIMIZER_AUTO_*` audit row. The `auto_promotion_decided_at` marker (migration `0048`) guarantees one decision per completed run (no re-scoring/re-fetching each tick). Env: `OPTIMIZER_CRON_USER_ID` (required — service identity owning the runs), `OPTIMIZER_CRON_UNIVERSE` (top50/top150/sp500, default top50), `OPTIMIZER_CRON_INTERVAL_HOURS` (default 168), `OPTIMIZER_PROMOTE_MARGIN` (default 2), `OPTIMIZER_CRON_{POPULATION,GENERATIONS,TRAIN_PCT}` (30/25/60). **Not yet wired into prod cron — add the crontab entry + set `OPTIMIZER_CRON_USER_ID`.**
 
 **Concurrency:** `scanAllSymbols`/`scanAllSymbolsIntraday` store the in-flight promise on `cache.scanInFlight`, so concurrent callers await the running scan instead of getting an empty cache. The route surfaces `cache.scanning`; `scannedAt` is `null` until the first scan completes.
 
@@ -353,7 +355,7 @@ Wrap in `div.overflow-x-auto` → `table.w-full text-sm`; header row `border-b b
 Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed` — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
 
 ## Migrations
-Browse `drizzle/*.sql` for the full list (48 migrations as of `0047_alert_last_condition_nullable.sql`). All idempotent (`IF NOT EXISTS`). **Post-deploy, verify each new migration actually applied** (`information_schema.columns`) — the deploy pipeline does NOT run migrations.
+Browse `drizzle/*.sql` for the full list (49 migrations as of `0048_optimizer_auto_promotion.sql`). All idempotent (`IF NOT EXISTS`). **Post-deploy, verify each new migration actually applied** (`information_schema.columns`) — the deploy pipeline does NOT run migrations.
 
 > **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015`; migrations 0016–0045 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` (prod's `__drizzle_migrations` table wasn't built via `drizzle-kit migrate`, so the journal is intentionally not regenerated). Fresh-DB rebuild: `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 

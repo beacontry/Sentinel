@@ -46,6 +46,12 @@ export const optimizationRuns = pgTable("optimization_runs", {
   // Active preset — only one run should be active at a time
   isActive: boolean("is_active").default(false),
 
+  // Auto-optimizer decision marker (migration 0048). Set once the
+  // /api/cron/auto-optimize evaluator has decided promote-or-keep for a
+  // completed run, so it isn't re-evaluated every tick. NULL = not yet decided
+  // (or manually promoted / pre-feature). See the OPTIMIZER_AUTO_* audit rows.
+  autoPromotionDecidedAt: timestamp("auto_promotion_decided_at", { withTimezone: true }),
+
   // Timing
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),

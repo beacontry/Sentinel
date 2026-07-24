@@ -4,6 +4,24 @@ Dated retrospectives extracted from CLAUDE.md. Day-to-day "when did X land" ques
 
 ---
 
+## 2026-07-23 (later) — Autonomous auto-optimizer with margin-gated promotion
+
+The GA optimizer was manual (admin clicks Run, reviews, clicks Save-Preset). The per-symbol/global params had gone stale (predated the June fitness changes), which is the systematic half of the churn story. New `GET /api/cron/auto-optimize` closes the loop with no human in the loop.
+
+- **Stateful, idempotent state machine.** A full GA run is minutes of CPU (~780 portfolio backtests) offloaded to a worker thread — so the cron never runs it inline. Each tick does one unit of work driven by DB state: run in-flight → wait; completed-but-undecided run → evaluate; interval elapsed → kick off a new run; else idle. Safe to call on any cadence.
+- **Margin-gated promotion.** `decidePromotion()` (pure, 9 tests) promotes a completed run only if its **out-of-sample** excess return beats the current global-active preset by `OPTIMIZER_PROMOTE_MARGIN` pp. Candidate and incumbent are scored on ONE shared holdout (`portfolioBacktest(data, params, "test", eligibleOn)`) — the stored per-run OOS numbers aren't comparable across runs (different data snapshots). Strict `>` creates hysteresis so noise-level wins don't churn the single global slot. No incumbent → promote unconditionally; non-finite candidate → never.
+- **Promotion = flip `optimization_runs.isActive`** (same one-global-slot semantics as save-preset); the engine adopts it within its 5-min param cache, no restart. Migration `0048` adds `auto_promotion_decided_at` so each completed run is evaluated exactly once (no re-fetching the universe every tick).
+- **Every decision is audited** — hash-chained `OPTIMIZER_AUTO_RUN_STARTED` / `OPTIMIZER_AUTO_PROMOTED` / `OPTIMIZER_AUTO_REJECTED` rows with the candidate/incumbent OOS and margin.
+- Config via env (`OPTIMIZER_CRON_USER_ID` required, plus universe / interval / margin / GA knobs). **Not yet wired into prod cron** — needs the crontab entry + `OPTIMIZER_CRON_USER_ID`.
+
+## 2026-07-23 — Fresh-read confirmation gate on external-signal entries
+
+Forensics on the admin optimized book (105 orders, Jul 9–23; 37 closes, 30% win rate, −$403.93 realized) traced the churn to the entry path, not the exits. `runScan`'s `shouldBuy` OR'd the Screener external signal in unconditionally — so a Screener BUY (up to 30 min stale, and pushed on possibly-stale data) entered a symbol even when the engine's *own fresh re-analysis* now read HOLD-35% or STRONG_SELL. The log showed it plainly: `Entry: HOLD (35% confidence)`, `Entry: STRONG_SELL (80% confidence)`. Those contra-signal entries then bled out on trailing-stop noise (trailing exits went 2-for-18, −$264; take-profit went 5-for-5, +$118 — the only profitable exit path).
+
+- **`evaluateEntrySignal()`** (pure, exported, unit-tested) reconciles the stale external signal with the fresh read: own BUY/STRONG_BUY always enters; an external signal enters only when the fresh read is **not bearish** (SELL/STRONG_SELL veto) **and** fresh confidence ≥ `EXTERNAL_SIGNAL_CONFIDENCE_FLOOR` (0.55). Neither → skip. Skips log at `info` with the reason (`fresh_read_bearish` / `confidence_below_floor`) for prod visibility.
+- **Scope:** the `runScan` modes only (optimized / adaptive / conservative / moderate / aggressive). `tactical` and `tactical-smart` run separate scan functions and are untouched.
+- Not an optimizer fix — the entry gate is hardcoded control flow; GA params only tune exits/sizing, so re-running the optimizer would not have closed this. 9 new unit tests.
+
 ## 2026-07-15 (later) — Split blackout: don't hold through announced splits
 
 Preventive layer on top of the 07-14 reactive split guards. Splits are announced days-to-weeks ahead (Alpaca ingests announcements the trading day after declaration) — so the engine now simply avoids the event:
