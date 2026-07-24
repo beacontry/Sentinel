@@ -804,6 +804,14 @@ const ORDER_RATE_LIMIT_PER_MIN = 30;             // hard cap orders/minute per e
 const ORDER_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const ACCOUNT_SWITCH_EQUITY_DROP_PCT = 0.5;       // halt if equity drops > 50% from boot snapshot
 const BROKER_FAILURE_HALT_THRESHOLD = 5;          // consecutive failures → engine halt
+// Fresh-read confirmation gate (2026-07-23): minimum fresh-analysis confidence
+// required to act on a Screener external signal that the engine's own current
+// signal does NOT independently confirm. Screener picks are up to 30 min stale;
+// this stops the engine entering on a stale BUY that fresh analysis now reads as
+// low-conviction HOLD. Only applies to the runScan modes (optimized / adaptive /
+// conservative / moderate / aggressive); tactical & tactical-smart run separate
+// scan functions and are unaffected.
+const EXTERNAL_SIGNAL_CONFIDENCE_FLOOR = 0.55;
 // Phase 5: personalized live-trading protections
 const WASH_SALE_WINDOW_DAYS = 31;                 // calendar days; one day past IRS 30-day rule for safety
 const WASH_SALE_REFRESH_MS = 5 * 60 * 1000;       // re-query trader_trades at most every 5 min
@@ -2511,6 +2519,55 @@ export function promoteToGraduationFloor(
   if (pos.stopLoss >= lockStop) return false;
   pos.stopLoss = lockStop;
   return true;
+}
+
+/** Outcome of the fresh-read entry confirmation gate. */
+export type EntryConfirmReason =
+  | "local_bullish"        // engine's own fresh signal is BUY/STRONG_BUY → buy
+  | "external_confirmed"   // stale Screener signal, fresh read agrees (non-bearish, ≥ floor) → buy
+  | "fresh_read_bearish"   // Screener signal, but fresh read is SELL/STRONG_SELL → skip
+  | "confidence_below_floor" // Screener signal, fresh read non-bearish but sub-floor confidence → skip
+  | "no_signal";           // neither a local bullish signal nor a Screener signal → skip
+
+/**
+ * Fresh-read confirmation gate (2026-07-23). Decides whether a symbol should be
+ * entered, reconciling the engine's own *fresh* analysis with the Screener's
+ * *external* signal (which can be up to 30 min stale).
+ *
+ * The bug this closes: `shouldBuy` previously OR'd the external signal in
+ * unconditionally, so a stale Screener BUY entered the position even when the
+ * engine's own current read was HOLD or STRONG_SELL. The admin optimized book
+ * (2026-07) opened HOLD-35% and STRONG_SELL entries this way and bled them out
+ * on trailing-stop noise (2-for-18 on trailing exits).
+ *
+ * Rules:
+ *   - Own fresh BUY/STRONG_BUY  → always confirmed (fresh read, no gate needed).
+ *   - Screener signal present   → confirmed only if the fresh read is NOT
+ *                                 bearish (SELL/STRONG_SELL) AND fresh confidence
+ *                                 ≥ floor.
+ *   - Neither                   → not confirmed.
+ *
+ * Pure + structural so it unit-tests without an engine. Only the runScan modes
+ * call this; tactical / tactical-smart have their own scan functions.
+ */
+export function evaluateEntrySignal(params: {
+  localSignal: SignalType;
+  confidence: number;
+  hasExternalSignal: boolean;
+  confidenceFloor?: number;
+}): { confirmed: boolean; reason: EntryConfirmReason } {
+  const { localSignal, confidence, hasExternalSignal } = params;
+  const floor = params.confidenceFloor ?? EXTERNAL_SIGNAL_CONFIDENCE_FLOOR;
+  const localBullish =
+    localSignal === SignalType.BUY || localSignal === SignalType.STRONG_BUY;
+  if (localBullish) return { confirmed: true, reason: "local_bullish" };
+  if (!hasExternalSignal) return { confirmed: false, reason: "no_signal" };
+  const localBearish =
+    localSignal === SignalType.SELL || localSignal === SignalType.STRONG_SELL;
+  if (localBearish) return { confirmed: false, reason: "fresh_read_bearish" };
+  if (confidence < floor)
+    return { confirmed: false, reason: "confidence_below_floor" };
+  return { confirmed: true, reason: "external_confirmed" };
 }
 
 /**
@@ -5902,7 +5959,33 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
       const extSignal = engine.externalSignals.find(
         (s) => s.symbol === symbol && (s.signal === "STRONG_BUY" || s.signal === "BUY")
       );
-      const shouldBuy = (signal === SignalType.BUY || signal === SignalType.STRONG_BUY || !!extSignal) && marketHealthy;
+      // Fresh-read confirmation gate (2026-07-23) — see evaluateEntrySignal.
+      // Reconciles the (possibly 30-min-stale) Screener signal with the engine's
+      // own fresh read so a stale BUY can't enter a symbol the current analysis
+      // reads as HOLD/STRONG_SELL. The engine's own BUY/STRONG_BUY is unaffected.
+      const entryEval = evaluateEntrySignal({
+        localSignal: signal,
+        confidence,
+        hasExternalSignal: !!extSignal,
+      });
+      if (
+        extSignal &&
+        (entryEval.reason === "fresh_read_bearish" ||
+          entryEval.reason === "confidence_below_floor")
+      ) {
+        log.info(
+          {
+            symbol,
+            extSignal: extSignal.signal,
+            localSignal: signal,
+            confidence: confidence.toFixed(3),
+            floor: EXTERNAL_SIGNAL_CONFIDENCE_FLOOR,
+            reason: entryEval.reason,
+          },
+          "External signal not confirmed by fresh read — skipping entry"
+        );
+      }
+      const shouldBuy = entryEval.confirmed && marketHealthy;
 
       // ── ENTRY LOGIC (if not holding) ─────────────────────────────
       // Allow STRONG_BUY to exceed maxPositions by up to 50% when cash is available
