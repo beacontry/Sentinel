@@ -263,6 +263,18 @@ opening (manual buy on Alpaca, or after a server restart). Fix needs a
 position-map state across restarts. **Defer** — hold-period math is mostly
 cosmetic; most users won't notice the off-by-hours issue.
 
+### Admin live revoke: warn to flatten or confirm protection first
+`POST /api/admin/user-live-trading` flips `users.live_trading_enabled` with no
+warning about the user's open live positions. After a revoke the engine can
+no longer start or scan on the live connection, so nothing re-places or
+ratchets engine-managed stops and the scan-path take-profit and time exits
+stop (the kill switch, safety stops and the exit check keep working through
+the protective resolver). Runbook off-ramp A covers the env-flag path only.
+Add a "flatten or confirm broker-side stops first" warning (and the user's
+open live position count) to the admin revoke UI and route response, and a
+matching runbook step. Deferred from WP01 (lessons 2026-09-23) as outside
+its file list; tracked here so it is not dropped.
+
 ---
 
 ## Operations: deferred
