@@ -197,7 +197,7 @@ Risk settings live on the **Trader page** only (not Settings). Stored in `user_r
 
 ## Live Trading
 
-Live trading is gated behind `ALLOW_LIVE_TRADING=1`. Without it, the engine refuses to start on any `environment="live"` broker connection and emits `engine.live_blocked`. Paper unaffected.
+Live trading is gated behind `ALLOW_LIVE_TRADING=1`. Without it, the engine refuses to start on any `environment="live"` broker connection and emits `engine.live_blocked`. Paper unaffected. The gate (and the per-user `live_trading_enabled` flag) guards **opening only**: halt, safety/disaster stops, stop sync and the exit check use `resolveBrokerClientForProtection`, which skips both gates, so revoking live can never disable the kill switch. Never route a BUY path through it.
 
 **Safeguards on every live engine** (independent of risk profile):
 - Account-switch detection — halt on `account_number` change OR equity drops > 50% from boot snapshot

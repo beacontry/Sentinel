@@ -5,6 +5,7 @@ import {
   stopEngine,
   haltEngine,
   getEngineStatus,
+  HALT_BROKER_UNRESOLVED,
 } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
@@ -143,20 +144,37 @@ export async function POST(request: NextRequest) {
       case "halt": {
         log.warn({ userId: auth.userId }, "Engine emergency halt requested");
         const result = await haltEngine(auth.userId);
-        if (!result.ok) {
-          return NextResponse.json({ error: result.error }, { status: 400 });
-        }
+        // Audit every halt, including one that could not liquidate: the
+        // engine is halted either way, and a failed flatten is the row an
+        // investigation most needs.
         await writeAudit({
           actor: { userId: auth.userId, email: auth.email, role: auth.role },
           action: AuditAction.ENGINE_HALTED,
           resourceType: "engine",
           resourceId: auth.userId,
-          metadata: { reason: "user_requested_flatten_all" },
+          metadata: {
+            reason: "user_requested_flatten_all",
+            ok: result.ok,
+            code: result.code ?? null,
+            failedSymbols: result.failedSymbols ?? [],
+          },
           request,
         });
+        if (!result.ok) {
+          return NextResponse.json(
+            { error: result.error, code: result.code ?? null },
+            { status: result.code === HALT_BROKER_UNRESOLVED ? 503 : 400 }
+          );
+        }
+        const failed = result.failedSymbols ?? [];
         return NextResponse.json({
           data: {
-            message: "Trading engine halted — all positions closed",
+            // Only claim liquidation that was actually submitted.
+            message:
+              failed.length === 0
+                ? "Trading engine halted. Liquidation orders submitted for every open position."
+                : `Trading engine halted. Could not place liquidation orders for: ${failed.join(", ")}. Close these at your broker.`,
+            failedSymbols: failed,
             ...getEngineStatus(auth.userId),
           },
         });

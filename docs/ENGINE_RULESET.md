@@ -762,6 +762,10 @@ The engine code is **100% identical between paper and live**. The only environme
 
 2. **`users.live_trading_enabled === true`** (DB column). Admin-grantable per-user permission. The engine reads this on every live boot attempt; if `false`, emits `engine.live_blocked` with `metadata.reason="user_not_granted_live"`. **Fail-closed**: a DB read failure on this gate also refuses the boot — env-only unlock is not enough.
 
+**The gates guard opening, never protection.** They live in the opening resolver (`resolveBrokerClient`), which `startEngine`, every scan path and every BUY use. Protective paths use `resolveBrokerClientForProtection`, which picks the same connection but skips both live gates: the emergency halt (`haltEngine`), stop-time safety stops (`placeSafetyStops`, also on SIGTERM), boot disaster stops, `syncBrokerStops` and the 1-min exit check (sells only). So clearing `ALLOW_LIVE_TRADING`, revoking a user's live permission, or a failed permission read can stop new live exposure but can never disable the kill switch or the stops over positions that are already open. When a protective action runs against a live connection whose gate is closed it logs a warning and writes an `engine.live_protective_action` audit row (reason as above, or `live_permission_read_failed`; throttled to one per user per reason per hour).
+
+**Halt reports what it did.** If `haltEngine` cannot resolve any broker client it still halts the engine and persists the halt, but returns `{ ok: false, code: "BROKER_UNRESOLVED" }` and pushes an engine error; the route answers 503 and never claims positions were closed. Symbols whose liquidation order could not be placed (for example market orders refused while the market is closed) come back in `failedSymbols` and are named in the response message.
+
 When both gates pass, every live boot fires a warn-level log, captures `metadata.environment="live"` on the `engine.started` audit row, and the Trader UI shows a persistent red **LIVE** banner with last-4 of the broker account number.
 
 **Paper vs live outcomes.** Same code, different broker reality. Live will have lower fill rates on limit BUYs (paper fills aggressively), real slippage on market sells (paper compresses to zero), partial fills on larger orders, more rejections (buying-power strictness, intraday-margin-deficit checks, halted symbols), T+1 settlement timing, and real 18% stop slippage on volatile names. Paper trading is a faithful test of signal quality and risk-profile sizing; it is **not** a test of fill quality or slippage. (PDT lock risk on sub-$25k accounts no longer applies — see § Tax & PDT Protections.)
@@ -853,7 +857,7 @@ Append-only, hash-chained record of every privileged action. Schema in `drizzle/
 
 **Rollback** (cheapest first):
 
-- **A. Env-only**: clear `ALLOW_LIVE_TRADING`, recreate container. Engine refuses live; live broker row stays for re-enable later.
+- **A. Env-only**: first flatten the live positions or confirm their broker-side stops are resting, then clear `ALLOW_LIVE_TRADING` and recreate the container. Engine refuses live; live broker row stays for re-enable later. The kill switch and stops keep working on the live connection after the flag is cleared, but once the paper connection is reactivated the resolver prefers paper, so do the flatten or stop check before that step.
 - **B. Code revert**: `git revert` phase commits in reverse order (4 → 3 → 2). Migrations stay. **Do not revert Phase 1** — it would re-introduce the silent-plaintext decrypt fallback.
 - **C. Migration drop**: `DROP TABLE audit_log` and/or `ALTER TABLE user_risk_profiles DROP COLUMN ...`. Almost never needed. **Must pair with code revert** or `loadRiskLimits()` crashes. For audit_log: `TRUNCATE` is the clean reset (next write becomes genesis). Do NOT `DELETE WHERE id < N` — breaks the chain forever.
 

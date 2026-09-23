@@ -58,6 +58,8 @@ Three off-ramps, cheapest to most invasive. Pick the lightest one that fixes the
 
 Cheapest path. No code changes, no rebuild, no DB changes. Use when the engine made trades you regret but the code is working as designed and you just want to stop trading live.
 
+**Before clearing the flag: flatten, or confirm broker-side stops.** Either close the live positions (Emergency Halt on the Trader page, or at the broker), or open the broker's order list and confirm a resting GTC stop exists for every live position. Clearing `ALLOW_LIVE_TRADING` stops the engine from starting on the live connection, so after the restart nothing re-places or ratchets engine-managed stops for those positions. The kill switch itself keeps working on the live connection (protective actions ignore the live gates), but once you reactivate the paper connection below, halt and stop actions resolve to the paper account instead, because the resolver prefers paper. Do this step first.
+
 ```bash
 # On the droplet — clear the env var
 ssh deploy@<host>
@@ -74,7 +76,7 @@ sudo podman run -d --name sentinel-app --network=host \
   ghcr.io/beacontry/sentinel:latest
 ```
 
-After: engine refuses to start on any live broker connection (emits `engine.live_blocked` audit event on attempts). Re-activate the paper connection (`isActive=true` via Settings or `UPDATE broker_connections SET is_active=true WHERE environment='paper' AND user_id=...`) and start the engine. The live connection row stays in the DB — flipping back later is just reversing this procedure.
+After: engine refuses to start on any live broker connection (emits `engine.live_blocked` audit event on attempts). An Emergency Halt against the live connection still liquidates and writes `engine.live_protective_action`; if it cannot reach any broker it answers `BROKER_UNRESOLVED` rather than claiming the positions were closed. Re-activate the paper connection (`isActive=true` via Settings or `UPDATE broker_connections SET is_active=true WHERE environment='paper' AND user_id=...`) and start the engine. The live connection row stays in the DB — flipping back later is just reversing this procedure.
 
 ### (B) Code revert — "Phase 3 safeguards are causing false halts" / "audit-log writes are slowing routes"
 

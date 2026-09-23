@@ -43,6 +43,7 @@ const ACTION_FILTER_OPTIONS = [
   { value: "engine.halted", label: "engine.halted" },
   { value: "engine.mode_switched", label: "engine.mode_switched" },
   { value: "engine.live_blocked", label: "engine.live_blocked" },
+  { value: "engine.live_protective_action", label: "engine.live_protective_action" },
   { value: "order.placed", label: "order.placed" },
   { value: "order.rejected", label: "order.rejected" },
   { value: "broker.connection.created", label: "broker.connection.created" },

@@ -2854,8 +2854,22 @@ function tradingDaysBetween(from: Date, to: Date): number {
 
 // ─── Broker Client Resolution ────────────────────────────────────────────────
 
+type ResolvedBroker = { client: BrokerClient; connectionId: string; environment: "paper" | "live"; broker: string };
+
 /**
- * Resolve the user's active broker connection into an instantiated client.
+ * Why a resolve is happening. "open" may lead to new exposure (engine start,
+ * scans, buys) and is subject to both live-permission gates. "protect" only
+ * reduces or guards existing exposure (kill switch, safety and disaster
+ * stops, stop ratcheting, the exit check) and skips those two gates, because
+ * a gate that exists to stop the engine opening live exposure must never also
+ * stop it closing or protecting what is already open.
+ */
+type BrokerResolvePurpose = "open" | "protect";
+
+/**
+ * Resolve the user's active broker connection into an instantiated client,
+ * for OPENING exposure. Both live gates apply: ALLOW_LIVE_TRADING and the
+ * per-user live_trading_enabled flag (fail closed on a DB error).
  *
  * Exported as of 2026-05-13 so non-engine surfaces (e.g. the Portfolio
  * summary route) can fetch live positions directly when the in-memory
@@ -2863,9 +2877,47 @@ function tradingDaysBetween(from: Date, to: Date): number {
  * session). Otherwise the Portfolio page shows $0 even though the user
  * has a connected broker — confusing dead-end.
  */
-export async function resolveBrokerClient(
-  userId: string
-): Promise<{ client: BrokerClient; connectionId: string; environment: "paper" | "live"; broker: string } | null> {
+export async function resolveBrokerClient(userId: string): Promise<ResolvedBroker | null> {
+  return resolveBrokerClientFor(userId, "open");
+}
+
+/**
+ * Resolve the same connection as resolveBrokerClient, for PROTECTIVE actions
+ * only: haltEngine, placeSafetyStops, placeDisasterStops, syncBrokerStops and
+ * runExitCheck. It skips the two live-permission gates so that revoking live
+ * permission, clearing ALLOW_LIVE_TRADING, or a failed permission read cannot
+ * turn the kill switch and the stops into silent no-ops while real positions
+ * are open. Never use it on a path that can place a BUY.
+ */
+export async function resolveBrokerClientForProtection(userId: string): Promise<ResolvedBroker | null> {
+  return resolveBrokerClientFor(userId, "protect");
+}
+
+// Throttle for the audit row written when a protective resolve runs against a
+// live connection whose entry gate is closed. The exit check runs every minute,
+// so an unthrottled audit would flood the hash chain. Bounded by users x reasons.
+const PROTECTIVE_LIVE_AUDIT_THROTTLE_MS = 60 * 60 * 1000;
+const _protectiveLiveAuditAt = new Map<string, number>();
+
+async function describeLiveGate(userId: string): Promise<{ open: boolean; reason: string | null; email: string | null }> {
+  if (!isLiveTradingAllowed()) return { open: false, reason: "ALLOW_LIVE_TRADING_not_set", email: null };
+  try {
+    const [u] = await db
+      .select({ liveEnabled: users.liveTradingEnabled, email: users.email })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!u?.liveEnabled) return { open: false, reason: "user_not_granted_live", email: u?.email ?? null };
+    return { open: true, reason: null, email: u.email ?? null };
+  } catch {
+    return { open: false, reason: "live_permission_read_failed", email: null };
+  }
+}
+
+async function resolveBrokerClientFor(
+  userId: string,
+  purpose: BrokerResolvePurpose
+): Promise<ResolvedBroker | null> {
   const connections = await db
     .select()
     .from(brokerConnections)
@@ -2886,7 +2938,29 @@ export async function resolveBrokerClient(
   const conn =
     connections.find((c) => c.environment === "paper") ?? connections[0];
 
-  if (conn.environment === "live") {
+  if (conn.environment === "live" && purpose === "protect") {
+    // Protective actions run regardless of the live-entry gates. Record when
+    // that bypass actually matters (gate closed) so it is visible afterwards.
+    const gate = await describeLiveGate(userId);
+    if (!gate.open) {
+      log.warn(
+        { userId, connectionId: conn.id, broker: conn.broker, reason: gate.reason },
+        "Protective action running against LIVE broker while the live-entry gate is closed"
+      );
+      const key = `${userId}:${gate.reason}`;
+      const last = _protectiveLiveAuditAt.get(key) ?? 0;
+      if (Date.now() - last >= PROTECTIVE_LIVE_AUDIT_THROTTLE_MS) {
+        _protectiveLiveAuditAt.set(key, Date.now());
+        void writeAudit({
+          actor: { userId, email: gate.email, role: null },
+          action: AuditAction.ENGINE_LIVE_PROTECTIVE_ACTION,
+          resourceType: "broker_connection",
+          resourceId: conn.id,
+          metadata: { reason: gate.reason, broker: conn.broker },
+        });
+      }
+    }
+  } else if (conn.environment === "live") {
     // Gate 1 — global infra env flag (server-side kill switch)
     if (!isLiveTradingAllowed()) {
       log.error(
@@ -3129,7 +3203,9 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
   if (!engine.userId || !engine.running) return;
   if (!isMarketOpen()) return;
 
-  const resolved = await resolveBrokerClient(engine.userId);
+  // Sells only: protective resolver, so a mid-session live revocation cannot
+  // strip the stop/trailing exits from positions that are already open.
+  const resolved = await resolveBrokerClientForProtection(engine.userId);
   if (!resolved) return;
 
   const { client } = resolved;
@@ -7305,7 +7381,7 @@ function selectExternalSymbolsForTactical(
 async function syncBrokerStops(userId: string | null): Promise<void> {
   if (!userId) return;
 
-  const resolved = await resolveBrokerClient(userId);
+  const resolved = await resolveBrokerClientForProtection(userId);
   if (!resolved || !resolved.client.replaceOrder) return;
   const { client } = resolved;
 
@@ -7541,7 +7617,7 @@ async function cancelAllAndWait(client: BrokerClient, maxMs = 5000): Promise<voi
 async function placeDisasterStops(userId: string | null): Promise<void> {
   if (!userId) return;
 
-  const resolved = await resolveBrokerClient(userId);
+  const resolved = await resolveBrokerClientForProtection(userId);
   if (!resolved) return;
 
   try {
@@ -7590,11 +7666,14 @@ async function placeDisasterStops(userId: string | null): Promise<void> {
  * Place tighter safety stops when engine is stopping (strategy-level stop loss).
  * These are more protective since the engine won't be managing exits dynamically.
  */
-async function placeSafetyStops(userId: string | null): Promise<void> {
+export async function placeSafetyStops(userId: string | null): Promise<void> {
   if (!userId) return;
 
-  const resolved = await resolveBrokerClient(userId);
-  if (!resolved) return;
+  const resolved = await resolveBrokerClientForProtection(userId);
+  if (!resolved) {
+    log.error({ userId }, "No broker client for safety stops; existing broker-side orders left as they are");
+    return;
+  }
 
   const { client } = resolved;
 
@@ -7629,8 +7708,23 @@ async function placeSafetyStops(userId: string | null): Promise<void> {
   }
 }
 
-export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?: string }> {
+/** Stable code when the kill switch could not reach the broker at all. */
+export const HALT_BROKER_UNRESOLVED = "BROKER_UNRESOLVED";
+
+export async function haltEngine(userId?: string): Promise<{
+  ok: boolean;
+  error?: string;
+  code?: typeof HALT_BROKER_UNRESOLVED;
+  /** Symbols whose liquidation order could not be placed. */
+  failedSymbols?: string[];
+}> {
   const engine = userId ? getEngine(userId) : getEngine();
+  // The kill switch must work on an engine that never started (for example
+  // one refused at boot after live permission was revoked), whose in-memory
+  // userId is still null. Fall back to the caller's userId in that case.
+  const haltUserId = engine.userId ?? userId ?? null;
+  let brokerUnresolved = false;
+  const failedSymbols: string[] = [];
 
   // Stop the loop
   if (engine.intervalId) {
@@ -7654,11 +7748,16 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
   engine.halted = true;
   engine.haltReason = "user_emergency_halt";
 
-  // Close all tracked positions
-  if (engine.userId) {
+  // Close all tracked positions. Protective resolver: the live-entry gates
+  // must never disable the kill switch.
+  if (haltUserId) {
     try {
-      const resolved = await resolveBrokerClient(engine.userId);
-      if (resolved) {
+      const resolved = await resolveBrokerClientForProtection(haltUserId);
+      if (!resolved) {
+        brokerUnresolved = true;
+        log.error({ userId: haltUserId }, "Emergency halt could not resolve a broker client; nothing was liquidated");
+        pushError(engine, "Halt could not reach the broker: no positions were closed. Close them at the broker directly.");
+      } else {
         // Cancel all pending orders first — orphaned stop-loss/take-profit
         // orders from bracket orders will block position sells
         if (resolved.client.cancelAllOrders) {
@@ -7676,7 +7775,7 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
         // are skipped — engine is long-only and the user is responsible for
         // managing those positions on the broker directly.
         const brokerPositions = await resolved.client.getPositions();
-        const positionMap = getPositionMap(engine.userId);
+        const positionMap = getPositionMap(haltUserId);
 
         for (const pos of brokerPositions) {
           if (pos.qty <= 0) {
@@ -7707,7 +7806,7 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
               "Emergency halt — all positions closed",
               haltOrder.id,
               null,
-              engine.userId
+              haltUserId
             );
 
             positionMap.delete(pos.symbol);
@@ -7718,6 +7817,7 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
             );
           } catch (err) {
             const msg = err instanceof Error ? err.message : "unknown";
+            failedSymbols.push(pos.symbol);
             log.error(
               { err: msg, symbol: pos.symbol },
               "Failed to close position on halt"
@@ -7733,7 +7833,10 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
       const msg = err instanceof Error ? err.message : "unknown";
       log.error({ err: msg }, "Failed to resolve broker for halt");
       pushError(engine, `Halt broker resolution failed: ${msg}`);
+      brokerUnresolved = true;
     }
+  } else {
+    brokerUnresolved = true;
   }
 
   // Persist the halt to today's P&L row so autoStartIfNeeded's integrity-halt
@@ -7742,7 +7845,7 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
   // because it clears every interval no later scan would write it either — so a
   // server restart could silently auto-resume a user-halted engine.
   engine.haltContext = { reason: "user_emergency_halt", haltedAt: Date.now() };
-  void upsertDailyPnl(getETDateString(), 0, 0, 0, true, "user_emergency_halt", engine.userId).catch(() => {
+  void upsertDailyPnl(getETDateString(), 0, 0, 0, true, "user_emergency_halt", haltUserId).catch(() => {
     /* DB write failure non-blocking; in-memory halted is already true */
   });
 
@@ -7753,13 +7856,24 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
   // halt. The halt row persisted above is the source of truth for restart
   // suppression, so dropping in-memory state is safe; evictEngineState re-checks
   // running/starting, so an explicit restart in the meantime cancels it.
-  const evictUserId = engine.userId;
+  const evictUserId = haltUserId;
   if (evictUserId) {
     setTimeout(() => evictEngineState(evictUserId), ENGINE_EVICTION_DELAY_MS).unref?.();
   }
 
+  if (brokerUnresolved) {
+    // The engine is halted, but nothing was liquidated. Say so instead of
+    // reporting success over open real-money positions.
+    log.warn("Trading engine emergency halted WITHOUT liquidation (broker unresolved)");
+    return {
+      ok: false,
+      code: HALT_BROKER_UNRESOLVED,
+      error: "Engine halted, but no broker connection could be reached, so no positions were closed. Close them at your broker.",
+    };
+  }
+
   log.warn("Trading engine emergency halted");
-  return { ok: true };
+  return { ok: true, failedSymbols };
 }
 
 /**

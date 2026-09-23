@@ -270,6 +270,10 @@ export const AuditAction = {
   ENGINE_HALT_AUTO_RESUMED: "engine.halt_auto_resumed",
   ENGINE_MODE_SWITCHED: "engine.mode_switched",
   ENGINE_LIVE_BLOCKED: "engine.live_blocked",
+  // A protective action (halt liquidation, safety/disaster stop, stop sync,
+  // exit check) ran against a LIVE connection whose entry gate is closed.
+  // Protection deliberately ignores the entry gates; this records that it did.
+  ENGINE_LIVE_PROTECTIVE_ACTION: "engine.live_protective_action",
   ENGINE_PDT_VULNERABLE: "engine.pdt_vulnerable",
   ENGINE_ADMIN_OVERRIDE: "engine.admin_override",
   ENGINE_POSITION_DISAPPEARED: "engine.position_disappeared",
