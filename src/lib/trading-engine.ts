@@ -7685,38 +7685,108 @@ export async function placeSafetyStops(userId: string | null): Promise<void> {
 
     for (const pos of positions) {
       if (pos.qty <= 0) continue;
-
-      const strategy = await resolveStrategy(userId, pos.symbol);
-      // Clamp below current price (audit #17) — a gapped-down position whose
-      // fixed stop sits above market would otherwise be rejected by Alpaca and
-      // left broker-unprotected.
-      const rawStop = pos.avgEntryPrice * (1 - strategy.stopLossPct);
-      const stopPrice = Math.min(rawStop, pos.currentPrice * (1 - 0.001)).toFixed(2);
-
-      try {
-        await placeEngineOrder(client, {
-          symbol: pos.symbol, side: "sell", qty: String(pos.qty),
-          type: "stop", timeInForce: "gtc", stopPrice,
-        });
-        log.info({ symbol: pos.symbol, stopPrice, qty: pos.qty }, "Safety stop placed");
-      } catch (err) {
-        log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Failed to place safety stop");
-      }
+      await placeSafetyStopForPosition(client, userId, pos);
     }
   } catch (err) {
     log.error({ err: err instanceof Error ? err.message : "unknown" }, "Failed to place safety stops");
   }
 }
 
-/** Stable code when the kill switch could not reach the broker at all. */
+/**
+ * Place one GTC strategy-level safety stop for a long position. Returns true
+ * when the broker accepted it. Never throws.
+ */
+async function placeSafetyStopForPosition(
+  client: BrokerClient,
+  userId: string,
+  pos: BrokerPosition
+): Promise<boolean> {
+  try {
+    const strategy = await resolveStrategy(userId, pos.symbol);
+    // Clamp below current price (audit #17) — a gapped-down position whose
+    // fixed stop sits above market would otherwise be rejected by Alpaca and
+    // left broker-unprotected.
+    const rawStop = pos.avgEntryPrice * (1 - strategy.stopLossPct);
+    const stopPrice = Math.min(rawStop, pos.currentPrice * (1 - 0.001)).toFixed(2);
+
+    await placeEngineOrder(client, {
+      symbol: pos.symbol, side: "sell", qty: String(pos.qty),
+      type: "stop", timeInForce: "gtc", stopPrice,
+    });
+    log.info({ symbol: pos.symbol, stopPrice, qty: pos.qty }, "Safety stop placed");
+    return true;
+  } catch (err) {
+    log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Failed to place safety stop");
+    return false;
+  }
+}
+
+/**
+ * Kill-switch helper: cancel open BUY orders (pending entry exposure) without
+ * touching any SELL order, so the resting disaster and safety stops that
+ * protect open long positions stay in place. Buys on symbols in `keepSymbols`
+ * (held short, where the buy is the protective side) are left alone too. Best
+ * effort: never throws.
+ */
+async function cancelOpenEntryOrders(client: BrokerClient, keepSymbols: Set<string>): Promise<void> {
+  if (!client.cancelOrder) return;
+  const PAGE = 100;
+  try {
+    // status="open" for the same Alpaca default-status reason as
+    // cancelPendingOrdersForSymbol.
+    const orders = await client.getOrders(PAGE, "open");
+    if (orders.length >= PAGE) {
+      log.warn({ count: orders.length }, "Open-order page is full on halt; some pending buys may not have been cancelled");
+    }
+    const entries = orders.filter(
+      (o) =>
+        o.side === "buy" &&
+        !keepSymbols.has(o.symbol) &&
+        ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)
+    );
+    for (const o of entries) {
+      try {
+        await client.cancelOrder(o.id);
+        log.info({ symbol: o.symbol, orderId: o.id }, "Cancelled pending entry order on halt");
+      } catch (err) {
+        log.warn(
+          { symbol: o.symbol, orderId: o.id, err: err instanceof Error ? err.message : "unknown" },
+          "Failed to cancel pending entry order on halt"
+        );
+      }
+    }
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown" },
+      "Could not list open orders on halt; pending entry orders were not cancelled"
+    );
+  }
+}
+
+/**
+ * Stable code when the kill switch could not reach the broker at all. No
+ * order was cancelled and nothing was liquidated.
+ */
 export const HALT_BROKER_UNRESOLVED = "BROKER_UNRESOLVED";
+/**
+ * Stable code when the broker was reached but at least one long position was
+ * not liquidated (market closed, order rejected, or the halt failed part way).
+ */
+export const HALT_LIQUIDATION_FAILED = "LIQUIDATION_FAILED";
 
 export async function haltEngine(userId?: string): Promise<{
   ok: boolean;
   error?: string;
-  code?: typeof HALT_BROKER_UNRESOLVED;
+  code?: typeof HALT_BROKER_UNRESOLVED | typeof HALT_LIQUIDATION_FAILED;
+  /** The account the halt acted on, when a broker client resolved. */
+  environment?: "paper" | "live";
   /** Symbols whose liquidation order could not be placed. */
   failedSymbols?: string[];
+  /**
+   * Subset of failedSymbols whose resting stops may have been cancelled and
+   * for which no replacement stop was confirmed. These need the broker now.
+   */
+  unprotectedSymbols?: string[];
 }> {
   const engine = userId ? getEngine(userId) : getEngine();
   // The kill switch must work on an engine that never started (for example
@@ -7724,7 +7794,14 @@ export async function haltEngine(userId?: string): Promise<{
   // userId is still null. Fall back to the caller's userId in that case.
   const haltUserId = engine.userId ?? userId ?? null;
   let brokerUnresolved = false;
+  let environment: "paper" | "live" | undefined;
+  let marketClosed = false;
+  // Set once the halt starts touching per-symbol orders; a throw after this
+  // point is a partial liquidation, not an unreachable broker.
+  let liquidationStarted = false;
+  let haltIncomplete = false;
   const failedSymbols: string[] = [];
+  const unprotectedSymbols: string[] = [];
 
   // Stop the loop
   if (engine.intervalId) {
@@ -7758,39 +7835,101 @@ export async function haltEngine(userId?: string): Promise<{
         log.error({ userId: haltUserId }, "Emergency halt could not resolve a broker client; nothing was liquidated");
         pushError(engine, "Halt could not reach the broker: no positions were closed. Close them at the broker directly.");
       } else {
-        // Cancel all pending orders first — orphaned stop-loss/take-profit
-        // orders from bracket orders will block position sells
-        if (resolved.client.cancelAllOrders) {
-          try {
-            await resolved.client.cancelAllOrders();
-            log.info("Cancelled all pending orders before halt liquidation");
-          } catch (err) {
-            log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders on halt");
-          }
-        }
+        environment = resolved.environment;
+        const { client } = resolved;
 
+        // Read positions BEFORE touching any order. The halt used to call
+        // cancelAllOrders() first, which removed every resting disaster and
+        // safety stop even when no liquidation order could follow (market
+        // closed, broker rejection, or this read failing), leaving the
+        // positions with no broker-side protection at all.
+        //
         // Source positions from the broker, not the in-memory positionMap.
         // The map only contains long positions the engine is tracking; manual
         // buys outside the engine could be missed otherwise. Shorts (qty <= 0)
         // are skipped — engine is long-only and the user is responsible for
         // managing those positions on the broker directly.
-        const brokerPositions = await resolved.client.getPositions();
+        const brokerPositions = await client.getPositions();
         const positionMap = getPositionMap(haltUserId);
-
-        for (const pos of brokerPositions) {
-          if (pos.qty <= 0) {
-            log.info({ symbol: pos.symbol, qty: pos.qty }, "Halt skipped short position (engine is long-only)");
-            continue;
+        const shortSymbols = new Set(brokerPositions.filter((p) => p.qty < 0).map((p) => p.symbol));
+        const longs = brokerPositions.filter((p) => {
+          if (p.qty <= 0) {
+            log.info({ symbol: p.symbol, qty: p.qty }, "Halt skipped short position (engine is long-only)");
+            return false;
           }
+          return true;
+        });
+
+        // Stop pending entries from filling. With nothing held there is no
+        // protection to preserve, so the broker-wide cancel is safe and
+        // complete; otherwise cancel buys only and leave every sell in place.
+        if (brokerPositions.length === 0 && client.cancelAllOrders) {
           try {
-            const haltOrder = await placeEngineOrder(resolved.client, {
+            await client.cancelAllOrders();
+            log.info("Cancelled all pending orders on halt (no open positions)");
+          } catch (err) {
+            log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders on halt");
+          }
+        } else {
+          await cancelOpenEntryOrders(client, shortSymbols);
+        }
+
+        if (longs.length > 0 && !isMarketOpen()) {
+          // Market orders are refused while the market is closed. Leave the
+          // resting stops exactly where they are and report every long as
+          // not liquidated.
+          marketClosed = true;
+          for (const pos of longs) failedSymbols.push(pos.symbol);
+          log.error(
+            { symbols: failedSymbols, environment },
+            "Emergency halt outside market hours: nothing liquidated, existing broker-side stops left in place"
+          );
+          pushError(
+            engine,
+            `Market closed: could not liquidate ${failedSymbols.join(", ")}. Existing broker stops were left in place.`
+          );
+        }
+
+        liquidationStarted = true;
+        for (const pos of marketClosed ? [] : longs) {
+          // Cancel this symbol's pending orders (bracket legs, resting stops,
+          // take-profits) just before its sell, as runExitCheck does, since
+          // held shares block the sell. Never a broker-wide cancel here.
+          let haltOrder: BrokerOrder;
+          try {
+            await cancelPendingOrdersForSymbol(client, pos.symbol);
+            haltOrder = await placeEngineOrder(client, {
               symbol: pos.symbol,
               side: "sell",
               qty: String(pos.qty),
               type: "market",
               timeInForce: "day",
             });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "unknown";
+            failedSymbols.push(pos.symbol);
+            log.error(
+              { err: msg, symbol: pos.symbol },
+              "Failed to close position on halt"
+            );
+            // Its resting stops may already be cancelled. Put a safety stop
+            // back rather than leave the position bare.
+            const reprotected = await placeSafetyStopForPosition(client, haltUserId, pos);
+            if (!reprotected) unprotectedSymbols.push(pos.symbol);
+            pushError(
+              engine,
+              reprotected
+                ? `Failed to close ${pos.symbol} on halt: ${msg}. A safety stop was placed.`
+                : `Failed to close ${pos.symbol} on halt: ${msg}. Its broker stop may have been cancelled and no replacement was confirmed.`
+            );
+            continue;
+          }
 
+          // The sell is submitted. Bookkeeping failures below must not be
+          // reported as a failed liquidation (or trigger a re-protect stop
+          // against shares that are being sold).
+          positionMap.delete(pos.symbol);
+          try {
             const quote = await getMarketDataProvider().fetchQuote(pos.symbol);
             const closePrice = quote?.price ?? pos.currentPrice ?? pos.avgEntryPrice;
             const pnl = (closePrice - pos.avgEntryPrice) * pos.qty;
@@ -7809,31 +7948,31 @@ export async function haltEngine(userId?: string): Promise<{
               haltUserId
             );
 
-            positionMap.delete(pos.symbol);
-
             log.info(
               { symbol: pos.symbol, pnl: pnl.toFixed(2) },
               "Position closed on halt"
             );
           } catch (err) {
-            const msg = err instanceof Error ? err.message : "unknown";
-            failedSymbols.push(pos.symbol);
             log.error(
-              { err: msg, symbol: pos.symbol },
-              "Failed to close position on halt"
-            );
-            pushError(
-              engine,
-              `Failed to close ${pos.symbol} on halt: ${msg}`
+              { err: err instanceof Error ? err.message : "unknown", symbol: pos.symbol, orderId: haltOrder.id },
+              "Halt liquidation submitted but trade logging failed"
             );
           }
         }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "unknown";
-      log.error({ err: msg }, "Failed to resolve broker for halt");
-      pushError(engine, `Halt broker resolution failed: ${msg}`);
-      brokerUnresolved = true;
+      if (liquidationStarted) {
+        // The broker was reached and per-symbol orders may have been
+        // cancelled. This is a partial liquidation, not an unreachable broker.
+        haltIncomplete = true;
+        log.error({ err: msg }, "Emergency halt failed part way through liquidation");
+        pushError(engine, `Halt failed part way through liquidation: ${msg}. Check every position and its stops at the broker.`);
+      } else {
+        log.error({ err: msg }, "Failed to resolve broker for halt");
+        pushError(engine, `Halt broker resolution failed: ${msg}`);
+        brokerUnresolved = true;
+      }
     }
   } else {
     brokerUnresolved = true;
@@ -7868,12 +8007,48 @@ export async function haltEngine(userId?: string): Promise<{
     return {
       ok: false,
       code: HALT_BROKER_UNRESOLVED,
-      error: "Engine halted, but no broker connection could be reached, so no positions were closed. Close them at your broker.",
+      environment,
+      error:
+        "Engine halted, but the broker could not be reached, so no positions were closed and no orders were cancelled. Close them at your broker.",
     };
   }
 
-  log.warn("Trading engine emergency halted");
-  return { ok: true, failedSymbols };
+  const account = environment ? `${environment} account` : "account";
+  if (failedSymbols.length > 0 || haltIncomplete) {
+    // Never ok:true over a position the halt did not close: the UI treats ok
+    // as "flattened".
+    const parts = [`Engine halted, but not every position on your ${account} was closed.`];
+    if (marketClosed) {
+      parts.push(
+        `The market is closed, so no liquidation orders were placed for ${failedSymbols.join(", ")}. Existing broker-side stops were left in place.`
+      );
+    } else if (failedSymbols.length > 0) {
+      parts.push(`Could not place liquidation orders for: ${failedSymbols.join(", ")}.`);
+      const reprotected = failedSymbols.filter((s) => !unprotectedSymbols.includes(s));
+      if (reprotected.length > 0) parts.push(`A safety stop was placed for: ${reprotected.join(", ")}.`);
+      if (unprotectedSymbols.length > 0) {
+        parts.push(
+          `NO broker stop is confirmed for: ${unprotectedSymbols.join(", ")}. Their stops may have been cancelled.`
+        );
+      }
+    }
+    if (haltIncomplete) {
+      parts.push("The halt failed part way through, so some stops may have been cancelled. Check every position and its stops.");
+    }
+    parts.push("Close these at your broker.");
+    log.warn({ environment, failedSymbols, unprotectedSymbols, marketClosed }, "Trading engine emergency halted with positions left open");
+    return {
+      ok: false,
+      code: HALT_LIQUIDATION_FAILED,
+      environment,
+      failedSymbols,
+      unprotectedSymbols,
+      error: parts.join(" "),
+    };
+  }
+
+  log.warn({ environment }, "Trading engine emergency halted");
+  return { ok: true, environment, failedSymbols, unprotectedSymbols };
 }
 
 /**

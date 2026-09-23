@@ -372,9 +372,9 @@ export default function TraderPage() {
 
   async function handleEngine(
     action: "start" | "stop" | "halt" | "switch"
-  ): Promise<{ ok: boolean; error?: string }> {
+  ): Promise<{ ok: boolean; error?: string; message?: string }> {
     setCmdLoading(action);
-    let outcome: { ok: boolean; error?: string } = { ok: true };
+    let outcome: { ok: boolean; error?: string; message?: string } = { ok: true };
     try {
       const res = await fetch("/api/trader/engine", {
         method: "POST",
@@ -390,6 +390,9 @@ export default function TraderPage() {
             (typeof body?.error === "string" ? body.error : null) ||
             `Engine command failed (${res.status})`,
         };
+      } else {
+        const body = await res.json().catch(() => null);
+        if (typeof body?.data?.message === "string") outcome.message = body.data.message;
       }
       // Refresh
       const [dashRes, engRes] = await Promise.allSettled([
@@ -680,10 +683,13 @@ export default function TraderPage() {
                   if (!r.ok) throw new Error(r.error);
                   toast({
                     type: "warning",
+                    // Prefer the server's message: it names the account
+                    // (paper or live) the liquidation was submitted on.
                     message:
-                      posCount > 0
+                      r.message ??
+                      (posCount > 0
                         ? `Engine halted — ${posCount} liquidation order${posCount === 1 ? "" : "s"} submitted. Watching fills.`
-                        : "Engine halted.",
+                        : "Engine halted."),
                   });
                 },
               });

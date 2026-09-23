@@ -6,6 +6,7 @@ import {
   haltEngine,
   getEngineStatus,
   HALT_BROKER_UNRESOLVED,
+  HALT_LIQUIDATION_FAILED,
 } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
@@ -156,25 +157,36 @@ export async function POST(request: NextRequest) {
             reason: "user_requested_flatten_all",
             ok: result.ok,
             code: result.code ?? null,
+            environment: result.environment ?? null,
             failedSymbols: result.failedSymbols ?? [],
+            unprotectedSymbols: result.unprotectedSymbols ?? [],
           },
           request,
         });
         if (!result.ok) {
           return NextResponse.json(
-            { error: result.error, code: result.code ?? null },
-            { status: result.code === HALT_BROKER_UNRESOLVED ? 503 : 400 }
+            {
+              error: result.error,
+              code: result.code ?? null,
+              environment: result.environment ?? null,
+              failedSymbols: result.failedSymbols ?? [],
+              unprotectedSymbols: result.unprotectedSymbols ?? [],
+            },
+            {
+              status:
+                result.code === HALT_BROKER_UNRESOLVED ? 503 : result.code === HALT_LIQUIDATION_FAILED ? 409 : 400,
+            }
           );
         }
-        const failed = result.failedSymbols ?? [];
+        // Only claim liquidation that was actually submitted, and name the
+        // account it was submitted on: the protective resolver prefers an
+        // active paper connection, so a paper flatten must not read as live.
+        const account = result.environment ? `${result.environment} account` : "account";
         return NextResponse.json({
           data: {
-            // Only claim liquidation that was actually submitted.
-            message:
-              failed.length === 0
-                ? "Trading engine halted. Liquidation orders submitted for every open position."
-                : `Trading engine halted. Could not place liquidation orders for: ${failed.join(", ")}. Close these at your broker.`,
-            failedSymbols: failed,
+            message: `Trading engine halted. Liquidation orders submitted for every open position on your ${account}.`,
+            haltEnvironment: result.environment ?? null,
+            failedSymbols: [],
             ...getEngineStatus(auth.userId),
           },
         });

@@ -11,7 +11,10 @@
  *   - the opening resolver and startEngine still refuse live when gated;
  *   - the protection resolver, haltEngine and placeSafetyStops still reach
  *     the live account when gated;
- *   - haltEngine with no connection at all reports BROKER_UNRESOLVED.
+ *   - haltEngine with no connection at all reports BROKER_UNRESOLVED;
+ *   - haltEngine never strips resting stops it cannot replace with a sell
+ *     (market closed, rejected sell, failed position read) and never
+ *     reports ok:true over a position it did not close.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -25,6 +28,10 @@ const state = vi.hoisted(() => ({
   userReadThrows: false,
   placedOrders: [] as Array<Record<string, unknown>>,
   cancelAllCalls: 0,
+  cancelledOrderIds: [] as string[],
+  openOrders: [] as Array<Record<string, unknown>>,
+  rejectOrderTypes: [] as string[],
+  positionsThrow: false,
   createdEnvironments: [] as string[],
   positions: [] as Array<Record<string, unknown>>,
   marketOpen: true,
@@ -103,12 +110,21 @@ vi.mock("@/lib/brokers", async (importOriginal) => {
       return {
         broker,
         environment,
-        getPositions: async () => state.positions,
-        getOrders: async () => [],
+        getPositions: async () => {
+          if (state.positionsThrow) throw new Error("broker read failed");
+          return state.positions;
+        },
+        getOrders: async () => state.openOrders.filter((o) => !state.cancelledOrderIds.includes(o.id as string)),
+        cancelOrder: async (id: string) => {
+          state.cancelledOrderIds.push(id);
+        },
         cancelAllOrders: async () => {
           state.cancelAllCalls++;
         },
         placeOrder: async (params: Record<string, unknown>) => {
+          if (state.rejectOrderTypes.includes(params.type as string)) {
+            throw new Error(`broker rejected ${params.type as string} order`);
+          }
           state.placedOrders.push({ ...params, environment });
           return { id: `ord-${state.placedOrders.length}`, status: "accepted" };
         },
@@ -124,6 +140,7 @@ import {
   haltEngine,
   placeSafetyStops,
   HALT_BROKER_UNRESOLVED,
+  HALT_LIQUIDATION_FAILED,
 } from "@/lib/trading-engine";
 import { AuditAction } from "@/lib/audit";
 
@@ -149,6 +166,13 @@ function liveConnection(userId: string) {
 
 const LIVE_POSITION = { symbol: "AAPL", qty: 10, avgEntryPrice: 200, currentPrice: 190 };
 
+function openOrder(id: string, symbol: string, side: "buy" | "sell", type: string) {
+  return { id, symbol, side, type, status: "new", qty: 10 };
+}
+// The resting broker-side protection for LIVE_POSITION, and a pending entry.
+const AAPL_STOP = openOrder("stop-aapl", "AAPL", "sell", "stop");
+const MSFT_ENTRY = openOrder("buy-msft", "MSFT", "buy", "limit");
+
 const savedEnv = process.env.ALLOW_LIVE_TRADING;
 
 beforeEach(() => {
@@ -157,6 +181,10 @@ beforeEach(() => {
   state.userReadThrows = false;
   state.placedOrders = [];
   state.cancelAllCalls = 0;
+  state.cancelledOrderIds = [];
+  state.openOrders = [];
+  state.rejectOrderTypes = [];
+  state.positionsThrow = false;
   state.createdEnvironments = [];
   state.positions = [];
   state.marketOpen = true;
@@ -250,8 +278,8 @@ describe("haltEngine", () => {
 
     const res = await haltEngine(userId);
     expect(res.ok).toBe(true);
+    expect(res.environment).toBe("live");
     expect(res.failedSymbols).toEqual([]);
-    expect(state.cancelAllCalls).toBe(1);
     expect(state.placedOrders).toEqual([
       expect.objectContaining({ symbol: "AAPL", side: "sell", qty: "10", type: "market", environment: "live" }),
     ]);
@@ -268,15 +296,107 @@ describe("haltEngine", () => {
     expect(state.placedOrders).toHaveLength(0);
   });
 
-  it("reports the symbols it could not liquidate instead of claiming success for them", async () => {
+  it("market closed: leaves the resting stops in place, cancels only entries, reports ok:false", async () => {
     const userId = freshUser();
     state.connections = [liveConnection(userId)];
     state.positions = [LIVE_POSITION];
+    state.openOrders = [AAPL_STOP, MSFT_ENTRY];
     state.marketOpen = false; // market orders refused by the market-close guard
 
     const res = await haltEngine(userId);
-    expect(res.ok).toBe(true);
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe(HALT_LIQUIDATION_FAILED);
+    expect(res.environment).toBe("live");
     expect(res.failedSymbols).toEqual(["AAPL"]);
+    expect(res.error).toMatch(/market is closed/i);
+    expect(res.error).toMatch(/stops were left in place/i);
+    // The protective stop survives; the pending buy does not.
+    expect(state.cancelAllCalls).toBe(0);
+    expect(state.cancelledOrderIds).toEqual(["buy-msft"]);
+    expect(state.placedOrders).toHaveLength(0);
+  });
+
+  it("market open: cancels a symbol's orders only just before its own sell, and cancels pending entries", async () => {
+    const userId = freshUser();
+    state.connections = [liveConnection(userId)];
+    state.positions = [LIVE_POSITION];
+    state.openOrders = [AAPL_STOP, MSFT_ENTRY];
+
+    const res = await haltEngine(userId);
+    expect(res.ok).toBe(true);
+    expect(state.cancelAllCalls).toBe(0);
+    expect([...state.cancelledOrderIds].sort()).toEqual(["buy-msft", "stop-aapl"]);
+    expect(state.placedOrders).toEqual([expect.objectContaining({ symbol: "AAPL", type: "market" })]);
+  });
+
+  it("with no open positions, still clears pending orders broker-wide", async () => {
+    const userId = freshUser();
+    state.connections = [liveConnection(userId)];
+    state.positions = [];
+
+    const res = await haltEngine(userId);
+    expect(res.ok).toBe(true);
+    expect(state.cancelAllCalls).toBe(1);
+  });
+
+  it("a rejected sell after its stop was cancelled puts a safety stop back and reports ok:false", async () => {
+    const userId = freshUser();
+    state.connections = [liveConnection(userId)];
+    state.positions = [LIVE_POSITION];
+    state.openOrders = [AAPL_STOP];
+    state.rejectOrderTypes = ["market"];
+
+    const res = await haltEngine(userId);
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe(HALT_LIQUIDATION_FAILED);
+    expect(res.failedSymbols).toEqual(["AAPL"]);
+    expect(res.unprotectedSymbols).toEqual([]);
+    expect(res.error).toMatch(/safety stop was placed for: AAPL/i);
+    expect(state.placedOrders).toEqual([
+      expect.objectContaining({ symbol: "AAPL", side: "sell", type: "stop", timeInForce: "gtc", environment: "live" }),
+    ]);
+  });
+
+  it("names a position left with no confirmed stop when the replacement stop also fails", async () => {
+    const userId = freshUser();
+    state.connections = [liveConnection(userId)];
+    state.positions = [LIVE_POSITION];
+    state.openOrders = [AAPL_STOP];
+    state.rejectOrderTypes = ["market", "stop"];
+
+    const res = await haltEngine(userId);
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe(HALT_LIQUIDATION_FAILED);
+    expect(res.unprotectedSymbols).toEqual(["AAPL"]);
+    expect(res.error).toMatch(/no broker stop is confirmed for: AAPL/i);
+  });
+
+  it("a failed position read cancels nothing and reports BROKER_UNRESOLVED", async () => {
+    const userId = freshUser();
+    state.connections = [liveConnection(userId)];
+    state.openOrders = [AAPL_STOP, MSFT_ENTRY];
+    state.positionsThrow = true;
+
+    const res = await haltEngine(userId);
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe(HALT_BROKER_UNRESOLVED);
+    expect(res.error).toMatch(/no orders were cancelled/i);
+    expect(state.cancelAllCalls).toBe(0);
+    expect(state.cancelledOrderIds).toEqual([]);
+  });
+
+  it("reports the environment it acted on when a paper connection is preferred", async () => {
+    const userId = freshUser();
+    state.connections = [
+      liveConnection(userId),
+      { ...liveConnection(userId), id: `conn-paper-${userId}`, environment: "paper" },
+    ];
+    state.positions = [LIVE_POSITION];
+
+    const res = await haltEngine(userId);
+    expect(res.ok).toBe(true);
+    expect(res.environment).toBe("paper");
+    expect(state.placedOrders).toEqual([expect.objectContaining({ environment: "paper" })]);
   });
 });
 
