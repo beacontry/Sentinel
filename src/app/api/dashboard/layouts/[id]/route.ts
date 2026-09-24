@@ -10,6 +10,7 @@ import {
 import { isValidWidgetId } from "@/lib/widget-registry";
 import { createRouteLogger } from "@/lib/logger";
 import { checkTier } from "@/lib/tiers-server";
+import { lockUserLayouts } from "@/lib/dashboard-layouts";
 
 const log = createRouteLogger("dashboard-layout-detail");
 
@@ -164,6 +165,9 @@ export async function PATCH(
 
   try {
     const result = await db.transaction(async (tx) => {
+      // Serialize with the user's other layout writers: this may move the
+      // default (one per user, migration 0053).
+      await lockUserLayouts(tx, auth.userId);
       // Confirm the row belongs to this user before mutating
       const [target] = await tx
         .select({ id: dashboardLayouts.id, isDefault: dashboardLayouts.isDefault })
@@ -243,6 +247,9 @@ export async function DELETE(
 
   try {
     await db.transaction(async (tx) => {
+      // Deleting the default promotes another one; serialize with the
+      // user's other layout writers (one default per user, migration 0053).
+      await lockUserLayouts(tx, auth.userId);
       const [target] = await tx
         .select({
           id: dashboardLayouts.id,

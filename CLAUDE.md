@@ -6,7 +6,7 @@
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)
-- Drizzle ORM + PostgreSQL (53 migrations as of `0052_signal_dedupe.sql`) — **verify each migration actually applied on prod post-deploy** (query `information_schema.columns`, don't assume; 0046/0047 sat unapplied Jun 27→Jul 14 and silently disabled all risk limits — see `docs/changelog.md` 2026-07-14)
+- Drizzle ORM + PostgreSQL (54 migrations as of `0053_dashboard_layout_one_default.sql`) — **verify each migration actually applied on prod post-deploy** (query `information_schema.columns`, don't assume; 0046/0047 sat unapplied Jun 27→Jul 14 and silently disabled all risk limits — see `docs/changelog.md` 2026-07-14)
 - Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
@@ -357,7 +357,7 @@ Wrap in `div.overflow-x-auto` → `table.w-full text-sm`; header row `border-b b
 Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed`: claimed before the handler, deduped only once `completed_at` is set, an uncompleted claim re-claimed after 5 min (migration `0051`) — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user and 409 `CONNECTION_CHANGED` if `expectedConnectionId` is not the active connection, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
 
 ## Migrations
-Browse `drizzle/*.sql` for the full list (53 migrations as of `0052_signal_dedupe.sql`). All idempotent (`IF NOT EXISTS`). **Post-deploy, verify each new migration actually applied** (`information_schema.columns`) — the deploy pipeline does NOT run migrations.
+Browse `drizzle/*.sql` for the full list (54 migrations as of `0053_dashboard_layout_one_default.sql`). All idempotent (`IF NOT EXISTS`). **Post-deploy, verify each new migration actually applied** (`information_schema.columns`) — the deploy pipeline does NOT run migrations.
 
 > **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015`; migrations 0016–0045 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` (prod's `__drizzle_migrations` table wasn't built via `drizzle-kit migrate`, so the journal is intentionally not regenerated). Fresh-DB rebuild: `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 
