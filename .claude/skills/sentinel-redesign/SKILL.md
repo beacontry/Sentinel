@@ -86,7 +86,7 @@ Follow these implementation rules:
 - `text-text-primary`, `text-text-secondary`, `text-text-muted`
 - `border-border`, `border-border-hover`
 - `text-accent`, `bg-accent`, `text-bullish`, `text-bearish`, `text-warning`
-- Muted backgrounds: `bg-accent/10`, `bg-bullish/10`, `bg-bearish/10`
+- Muted backgrounds: `bg-accent-muted` for accent; for trading states use `STATUS_TONE_CLASSES` (`src/lib/status-tone.ts`), never `bg-bullish/10`
 
 **Component patterns:**
 - Cards: `<Card>` with optional `hover` prop for clickable cards

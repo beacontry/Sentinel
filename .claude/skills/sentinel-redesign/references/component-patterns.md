@@ -24,8 +24,8 @@ import { Button } from "@/components/ui/button";
 
 **Size styles:**
 - `sm` — `px-3 py-1.5 text-xs rounded-xl`
-- `md` — `px-4 py-3 text-sm min-h-[44px] rounded-2xl` (default, touch-friendly)
-- `lg` — `px-6 py-3 text-sm min-h-[48px] rounded-2xl`
+- `md` — `px-4 py-3 text-sm min-h-[44px] rounded-lg` (default, touch-friendly)
+- `lg` — `px-6 py-3 text-sm min-h-[48px] rounded-lg`
 
 **Built-in features:** Loading spinner, disabled state, `active:scale-[0.98]`, focus ring
 
@@ -42,7 +42,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 </Card>
 ```
 
-**Card base:** `rounded-3xl border border-border bg-bg-surface p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]`
+**Card base:** `rounded-xl border border-border bg-bg-secondary p-4 lg:p-5 shadow-card`
 **Hover mode:** `hover:border-border-hover hover:bg-bg-elevated cursor-pointer`
 **Selected state (add via className):** `border-accent/50`
 
@@ -55,9 +55,7 @@ import { Badge } from "@/components/ui/badge";
 ```
 
 **Variant styles:**
-- `bullish` — `bg-bullish/10 text-bullish border-bullish/20`
-- `bearish` — `bg-bearish/10 text-bearish border-bearish/20`
-- `warning` — `bg-warning/10 text-warning border-warning/20`
+- `bullish`, `bearish`, `warning` — `STATUS_TONE_CLASSES[tone]` from `src/lib/status-tone.ts` (`border-X-line bg-X-fill text-X-fg`); never an alpha tint
 - `default/neutral` — `bg-bg-elevated text-text-secondary border-border`
 
 **Base:** `rounded-full border px-2.5 py-1 text-xs font-medium`
@@ -84,7 +82,7 @@ import { StatCard } from "@/components/ui/stat-card";
 />
 ```
 
-**Styling:** `rounded-2xl border border-border bg-bg-surface p-4`
+**Styling:** `rounded-xl border border-border bg-bg-surface p-4`
 - Label: `text-xs uppercase tracking-[0.18em] text-text-muted`
 - Value: `text-2xl font-semibold text-text-primary`
 - Subtext tone: positive=`text-bullish`, negative=`text-bearish`, neutral=`text-text-secondary`
@@ -103,7 +101,7 @@ import { Input } from "@/components/ui/input";
 />
 ```
 
-**Styling:** `rounded-2xl border border-border bg-bg-surface px-4 py-3 min-h-[44px]`
+**Styling:** `rounded-lg border border-border-control bg-bg-secondary px-3 min-h-[44px]`
 - Focus: `border-accent/50 ring-1 ring-accent/30`
 - Error: `border-bearish focus:ring-bearish/30`
 - Label: `text-sm font-medium text-text-secondary`
@@ -150,7 +148,7 @@ import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/mod
 ```
 
 **Overlay:** `bg-black/60 backdrop-blur-sm`
-**Content:** `max-w-lg rounded-xl border border-border bg-bg-surface p-6 shadow-2xl animate-scale-in`
+**Content:** `max-w-lg rounded-xl border border-border bg-bg-surface p-6 shadow-modal animate-scale-in`
 **Features:** Focus trap, Escape to close, click-outside to close, body scroll lock
 
 ### Tabs (`src/components/ui/tabs.tsx`)
@@ -328,7 +326,7 @@ if (loading) {
 ### Edit Mode Banner
 ```tsx
 {editMode && (
-  <div className="rounded-2xl bg-accent/10 border border-accent/20 px-4 py-3 flex items-center gap-3">
+  <div className="rounded-xl bg-accent-muted border border-accent/20 px-4 py-3 flex items-center gap-3">
     <Pencil className="w-4 h-4 text-accent shrink-0" />
     <p className="text-sm text-text-secondary">
       <span className="font-medium text-accent">Edit mode</span>
