@@ -27,6 +27,8 @@ interface EmptyStateProps {
   action?: Action;
   /** Heading level for the title, so the page outline stays in order. */
   headingLevel?: 2 | 3 | 4;
+  /** A smaller version for a widget or table body, matching ErrorState's. */
+  compact?: boolean;
   className?: string;
 }
 
@@ -39,23 +41,24 @@ export function EmptyState({
   description,
   action,
   headingLevel = 3,
+  compact = false,
   className = "",
 }: EmptyStateProps) {
   const Heading = `h${headingLevel}` as const;
   const shown = action ?? (kind === "not-connected" ? DEFAULT_NOT_CONNECTED : undefined);
 
   return (
-    <div className={`flex flex-col items-center justify-center px-4 py-16 text-center ${className}`}>
+    <div className={`flex flex-col items-center justify-center text-center ${compact ? "px-3 py-6" : "px-4 py-16"} ${className}`}>
       {icon && (
         <div
           aria-hidden="true"
-          className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-bg-surface text-text-muted"
+          className={`flex items-center justify-center rounded-xl bg-bg-surface text-text-muted ${compact ? "mb-3 h-9 w-9 [&_svg]:h-4 [&_svg]:w-4" : "mb-4 h-14 w-14"}`}
         >
           {icon}
         </div>
       )}
-      <Heading className="mb-1 text-lg font-semibold text-text-primary">{title}</Heading>
-      {description && <p className="mb-6 max-w-sm text-sm text-text-secondary">{description}</p>}
+      <Heading className={`mb-1 font-semibold text-text-primary ${compact ? "text-sm" : "text-lg"}`}>{title}</Heading>
+      {description && <p className={`max-w-sm text-sm text-text-secondary ${compact ? "mb-3" : "mb-6"}`}>{description}</p>}
       {shown &&
         ("href" in shown ? (
           <ButtonLink href={shown.href} variant="secondary">
