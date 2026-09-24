@@ -1,9 +1,10 @@
 import type { Bar } from "@/types";
 import { MARKET_DATA_CONFIG } from "./config";
 import { isMarketOpen } from "./market-hours";
-import { writeFile, readFile, mkdir } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
+import { isCachedBars, readJsonCache, writeJsonCache, type CachedBars } from "./bar-cache";
 
 export type BarResolution = "5m" | "1d";
 
@@ -66,31 +67,38 @@ function barCacheKey(symbol: string, resolution: string): string {
   return join(BAR_CACHE_DIR, `${symbol.replace(/[^A-Z0-9]/g, "_")}_${resolution}.json`);
 }
 
-interface CachedBars { bars: Bar[]; fetchedAt: number; days: number; }
-
+// Reads and writes go through bar-cache.ts: a corrupt, truncated or
+// wrong-shape file is logged and treated as a miss (the fetch below rewrites
+// it), and writes are temp-file-then-rename so a killed process cannot leave a
+// torn file.
 async function getCachedBars(symbol: string, resolution: string, requestedDays: number): Promise<Bar[] | null> {
   try {
     await ensureBarCacheDir();
-    const raw = await readFile(barCacheKey(symbol, resolution), "utf-8");
-    const cached: CachedBars = JSON.parse(raw);
-    const maxAge =
-      resolution === "1d"
-        ? (isMarketOpen() ? BAR_CACHE_MAX_AGE_OPEN_MS : BAR_CACHE_MAX_AGE_CLOSED_MS)
-        : BAR_CACHE_5M_MAX_AGE_MS;
-    if (Date.now() - cached.fetchedAt > maxAge) return null; // stale
-    if (cached.bars.length < 20) return null; // too few
-    // Only serve cache if it covers at least as many days as requested
-    if ((cached.days ?? 0) < requestedDays) return null;
-    return cached.bars;
-  } catch { return null; }
+  } catch {
+    return null; // cache disabled; ensureBarCacheDir already warned once
+  }
+  const cached = await readJsonCache(barCacheKey(symbol, resolution), isCachedBars, `bar-cache:${symbol}:${resolution}`);
+  if (!cached) return null;
+  const maxAge =
+    resolution === "1d"
+      ? (isMarketOpen() ? BAR_CACHE_MAX_AGE_OPEN_MS : BAR_CACHE_MAX_AGE_CLOSED_MS)
+      : BAR_CACHE_5M_MAX_AGE_MS;
+  if (Date.now() - cached.fetchedAt > maxAge) return null; // stale
+  if (cached.bars.length < 20) return null; // too few
+  // Only serve cache if it covers at least as many days as requested
+  if ((cached.days ?? 0) < requestedDays) return null;
+  return cached.bars;
 }
 
 async function setCachedBars(symbol: string, resolution: string, bars: Bar[], days: number): Promise<void> {
   if (bars.length < 20) return;
   try {
     await ensureBarCacheDir();
-    await writeFile(barCacheKey(symbol, resolution), JSON.stringify({ bars, fetchedAt: Date.now(), days }));
-  } catch { /* best effort */ }
+  } catch {
+    return; // cache disabled; ensureBarCacheDir already warned once
+  }
+  const entry: CachedBars = { bars, fetchedAt: Date.now(), days };
+  await writeJsonCache(barCacheKey(symbol, resolution), entry, isCachedBars, `bar-cache:${symbol}:${resolution}`);
 }
 
 /** Yahoo Finance provider — no API key required. */

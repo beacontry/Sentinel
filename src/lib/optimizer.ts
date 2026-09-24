@@ -46,11 +46,12 @@ import {
   optimizationSymbolResults,
 } from "./db/schema";
 import { eq } from "drizzle-orm";
-import { writeFile, readFile, mkdir } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
 import { Worker } from "node:worker_threads";
 import pino from "pino";
+import { isOptimizerCachedBars, readJsonCache, writeJsonCache, type OptimizerCachedBars } from "./bar-cache";
 
 const logger = pino({ name: "optimizer" });
 
@@ -273,31 +274,22 @@ function cacheKey(symbol: string): string {
   return join(CACHE_DIR, `${symbol.replace(/[^A-Z0-9]/g, "_")}.json`);
 }
 
-interface CachedData {
-  bars: Bar[];
-  fetchedAt: string;
-  lastDate: string; // last bar date for incremental updates
-}
-
-async function getCachedData(symbol: string): Promise<CachedData | null> {
-  try {
-    const raw = await readFile(cacheKey(symbol), "utf-8");
-    return JSON.parse(raw) as CachedData;
-  } catch { return null; }
+// Read and written through bar-cache.ts. A corrupt or wrong-shape file is
+// logged and treated as a miss, so fetchSymbolBars does a full fetch and
+// rewrites it. Before, a parseable file of the wrong shape was returned cast
+// to OptimizerCachedBars, `cached.bars.length` threw, and fetchAllBars'
+// allSettled dropped the symbol from every run without refetching or logging.
+// Writes are temp-file-then-rename (lastDate is the last bar's date, used for
+// incremental updates).
+async function getCachedData(symbol: string): Promise<OptimizerCachedBars | null> {
+  return readJsonCache(cacheKey(symbol), isOptimizerCachedBars, `optimizer-cache:${symbol}`);
 }
 
 async function cacheBars(symbol: string, bars: Bar[]) {
   if (bars.length === 0) return;
   const lastDate = bars[bars.length - 1].date.split("T")[0];
-  try {
-    await writeFile(cacheKey(symbol), JSON.stringify({
-      bars,
-      fetchedAt: new Date().toISOString(),
-      lastDate,
-    }));
-  } catch (err) {
-    logger.warn({ symbol, err: (err as Error).message }, "Failed to cache bars");
-  }
+  const entry: OptimizerCachedBars = { bars, fetchedAt: new Date().toISOString(), lastDate };
+  await writeJsonCache(cacheKey(symbol), entry, isOptimizerCachedBars, `optimizer-cache:${symbol}`);
 }
 
 async function fetchSymbolBars(symbol: string): Promise<Bar[]> {
@@ -377,6 +369,14 @@ async function fetchAllBars(
     for (let j = 0; j < batch.length; j++) {
       const r = results[j];
       if (r.status === "fulfilled" && r.value.length > 200) barsMap.set(batch[j], r.value);
+      else if (r.status === "rejected") {
+        // Dropped from this run; say which symbol and why rather than
+        // shrinking the universe silently.
+        logger.warn(
+          { symbol: batch[j], err: r.reason instanceof Error ? r.reason.message : String(r.reason) },
+          "Optimizer dropped symbol: bar fetch failed"
+        );
+      }
       fetched++;
     }
     onProgress(fetched);
