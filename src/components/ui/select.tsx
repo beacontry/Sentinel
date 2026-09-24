@@ -28,6 +28,11 @@ interface SelectProps {
    * layout). See Input component for the same pattern.
    */
   help?: string;
+  /**
+   * The accessible name when there is no visible label, such as a year
+   * picker in a page header. Ignored when `label` is set.
+   */
+  "aria-label"?: string;
 }
 
 export function Select({
@@ -42,6 +47,7 @@ export function Select({
   id,
   name,
   help,
+  "aria-label": ariaLabel,
 }: SelectProps) {
   const autoId = useId();
   const selectId = id ?? (label ? label.toLowerCase().replace(/\s+/g, "-") : autoId);
@@ -63,6 +69,7 @@ export function Select({
       <SelectPrimitive.Root value={value} onValueChange={onChange} disabled={disabled} name={name}>
         <SelectPrimitive.Trigger
           id={selectId}
+          aria-label={label ? undefined : ariaLabel}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedBy(error && errorId)}
           className={`${FIELD_BASE} inline-flex min-h-11 items-center justify-between gap-2 px-3 py-2.5 text-left cursor-pointer
