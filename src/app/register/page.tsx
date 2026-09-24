@@ -176,7 +176,7 @@ function RegisterForm() {
               <span className="text-xl font-semibold text-text-primary">Beacontry</span>
             </Link>
           </div>
-          <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
+          <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-pop">
             <h1 className="text-xl font-semibold text-text-primary">Invalid Invite</h1>
             <p className="mt-2 text-sm text-bearish">{error}</p>
             <p className="mt-4 text-center text-sm text-text-muted">
@@ -212,7 +212,7 @@ function RegisterForm() {
           </Link>
         </div>
 
-        <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
+        <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-pop">
           <h1 className="text-xl font-semibold text-text-primary">
             {isInvitePath
               ? "Create account"

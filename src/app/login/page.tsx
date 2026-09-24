@@ -189,7 +189,7 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
+          <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-pop">
             <div className="text-center mb-5">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent text-xl font-bold mb-3">
                 {lastUser.name.charAt(0).toUpperCase()}
@@ -255,7 +255,7 @@ export default function LoginPage() {
           </Link>
         </div>
 
-        <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
+        <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-pop">
           <h1 className="text-xl font-semibold text-text-primary">Sign in</h1>
           <p className="mt-1 text-sm text-text-secondary">Enter your credentials to access the desk.</p>
 

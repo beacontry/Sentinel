@@ -75,7 +75,7 @@ export function Select({
             position="popper"
             sideOffset={4}
             className="z-[100] w-[var(--radix-select-trigger-width)] max-h-60 overflow-y-auto
-              rounded-lg border border-border bg-bg-surface p-1 shadow-xl animate-scale-in"
+              rounded-lg border border-border bg-bg-surface p-1 shadow-pop animate-scale-in"
           >
             <SelectPrimitive.Viewport>
               {options.map((opt) =>

@@ -87,7 +87,7 @@ export function WorkspacePreview({
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-xl border border-border bg-bg-elevated p-5 shadow-lg">
+          <div className="rounded-xl border border-border bg-bg-elevated p-5 shadow-pop">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-xs uppercase tracking-[0.08em] text-accent">

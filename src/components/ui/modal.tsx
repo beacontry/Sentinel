@@ -27,7 +27,7 @@ export function Modal({ open, onClose, children, className = "" }: ModalProps) {
           onEscapeKeyDown={onClose}
           className={`fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2
             rounded-xl border border-border bg-bg-surface p-6
-            shadow-2xl animate-scale-in
+            shadow-modal animate-scale-in
             focus:outline-none mx-4 sm:mx-0 max-h-[85vh] overflow-y-auto
             ${className}`}
         >

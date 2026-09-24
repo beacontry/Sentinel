@@ -469,7 +469,7 @@ function AnalysisCockpit() {
         }
       />
 
-      <div className="min-h-[760px] flex-1 overflow-hidden rounded-xl border border-border bg-bg-surface shadow-2xl">
+      <div className="min-h-[760px] flex-1 overflow-hidden rounded-xl border border-border bg-bg-surface shadow-modal">
         {/* ─── Mobile ─── */}
         <div className="flex flex-col lg:hidden flex-1 min-h-0 overflow-y-auto">
           <div className="shrink-0 border-b border-border bg-bg-secondary">

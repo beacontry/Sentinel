@@ -145,7 +145,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
       {/* Mobile hamburger */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="fixed top-3 left-3 z-50 lg:hidden flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-bg-secondary text-text-secondary shadow-sm"
+        className="fixed top-3 left-3 z-50 lg:hidden flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-bg-secondary text-text-secondary shadow-card"
         aria-label="Open menu"
       >
         <Menu className="h-5 w-5" />
@@ -229,7 +229,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                     {isOpen && (
                       <div
                         role="menu"
-                        className="absolute left-0 top-full mt-1 z-40 min-w-[200px] rounded-lg border border-border bg-bg-elevated shadow-lg py-1"
+                        className="absolute left-0 top-full mt-1 z-40 min-w-[200px] rounded-lg border border-border bg-bg-elevated shadow-pop py-1"
                         onMouseEnter={cancelHoverClose}
                         onMouseLeave={scheduleHoverClose}
                       >
@@ -308,7 +308,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                 {userMenuOpen && (
                   <div
                     role="menu"
-                    className="absolute right-0 top-full mt-1 z-40 w-[240px] rounded-lg border border-border bg-bg-elevated shadow-lg p-2"
+                    className="absolute right-0 top-full mt-1 z-40 w-[240px] rounded-lg border border-border bg-bg-elevated shadow-pop p-2"
                   >
                     <div className="px-1 pb-1">
                       <SidebarTierBadge />

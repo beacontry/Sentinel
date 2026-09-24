@@ -99,7 +99,7 @@ export function SignalFeed({
                   className={`w-full min-h-[60px] rounded-xl border px-3 py-3 text-left transition-all duration-150
                     ${
                       isSelected
-                        ? "border-accent/30 bg-accent/5 shadow-sm"
+                        ? "border-accent/30 bg-accent/5 shadow-card"
                         : "border-transparent hover:border-border hover:bg-bg-elevated"
                     }`}
                 >

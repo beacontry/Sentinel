@@ -150,7 +150,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
       />
 
       {/* Panel */}
-      <div className="fixed right-0 top-0 bottom-0 z-50 flex w-full flex-col border-l border-border bg-bg-secondary shadow-2xl sm:w-[420px] animate-slide-in-right">
+      <div className="fixed right-0 top-0 bottom-0 z-50 flex w-full flex-col border-l border-border bg-bg-secondary shadow-modal sm:w-[420px] animate-slide-in-right">
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2.5">

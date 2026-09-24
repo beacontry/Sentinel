@@ -190,7 +190,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
       {/* Tooltip */}
       {tooltip && (
         <div
-          className="fixed z-50 pointer-events-none px-3 py-2 rounded-lg bg-bg-elevated border border-border shadow-lg shadow-black/30"
+          className="fixed z-50 pointer-events-none px-3 py-2 rounded-lg bg-bg-elevated border border-border shadow-pop"
           style={{
             left: tooltip.x,
             top: tooltip.y - 8,

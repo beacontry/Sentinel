@@ -169,7 +169,7 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
         aria-label={`${symbol} quick info`}
         tabIndex={-1}
         className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm overflow-y-auto
-          border-l border-border bg-bg-surface shadow-2xl animate-slide-in-right
+          border-l border-border bg-bg-surface shadow-modal animate-slide-in-right
           focus:outline-none"
       >
         {/* Header */}

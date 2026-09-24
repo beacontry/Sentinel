@@ -132,7 +132,7 @@ export default function PublicLearnPage() {
             <Link
               key={guide.slug}
               href={`/learn/guides/${guide.slug}`}
-              className="group block rounded-xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_22px_60px_rgba(0,0,0,0.32)]"
+              className="group block rounded-xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
             >
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="font-mono text-xs uppercase tracking-wider text-ld-accent">
@@ -173,7 +173,7 @@ export default function PublicLearnPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-all"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

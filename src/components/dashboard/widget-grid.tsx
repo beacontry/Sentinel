@@ -392,7 +392,7 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
           />
 
           <div className="relative mx-4 max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border
-            bg-bg-surface shadow-2xl">
+            bg-bg-surface shadow-modal">
             <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-xl border-b border-border bg-bg-surface px-5 py-4">
               <div>
                 <p className="text-xs font-medium uppercase tracking-wider text-accent">
@@ -453,7 +453,7 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
 
       {saving && (
         <div className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-lg
-          border border-border bg-bg-surface px-3 py-2 shadow-lg">
+          border border-border bg-bg-surface px-3 py-2 shadow-pop">
           <div className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
           <span className="text-xs text-text-secondary">Saving...</span>
         </div>

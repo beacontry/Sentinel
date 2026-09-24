@@ -135,7 +135,7 @@ export default async function PublicArticlesPage() {
           {featured && (
             <Link
               href={`/articles/${featured.slug}`}
-              className="group block mb-8 rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_22px_60px_rgba(0,0,0,0.32)]"
+              className="group block mb-8 rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
             >
               <div className="flex items-center gap-3 mb-4 text-xs">
                 <span className="rounded-full bg-ld-accent/14 px-2.5 py-0.5 font-mono uppercase tracking-wider text-ld-accent">
@@ -172,7 +172,7 @@ export default async function PublicArticlesPage() {
                 <Link
                   key={item.slug}
                   href={`/articles/${item.slug}`}
-                  className="group flex flex-col rounded-xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_18px_44px_rgba(0,0,0,0.28)]"
+                  className="group flex flex-col rounded-xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
                 >
                   <div className="flex items-center gap-2 mb-3 text-xs">
                     {item.category && (

@@ -25,7 +25,7 @@ export function StatCard({ label, value, subtext, tone = "neutral", icon: Icon, 
   const iconBg = STATUS_TONE_FILL_CLASSES[tone === "neutral" ? "accent" : TONE[tone]];
 
   return (
-    <div className={`rounded-xl border border-border bg-bg-secondary p-4 shadow-sm ${className}`}>
+    <div className={`rounded-xl border border-border bg-bg-secondary p-4 shadow-card ${className}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">{label}</p>

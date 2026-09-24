@@ -250,7 +250,7 @@ function WatchlistSwitcher({
         <DropdownMenu.Content
           align="start"
           sideOffset={6}
-          className="z-50 min-w-[260px] max-w-[320px] rounded-lg border border-border bg-bg-elevated p-1 animate-scale-in shadow-lg"
+          className="z-50 min-w-[260px] max-w-[320px] rounded-lg border border-border bg-bg-elevated p-1 animate-scale-in shadow-pop"
         >
           {options.map((o) => (
             <div

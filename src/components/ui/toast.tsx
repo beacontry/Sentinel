@@ -78,7 +78,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`animate-slide-up rounded-lg border pl-4 pr-2 py-3 text-sm shadow-lg flex items-start gap-2 ${TOAST_STYLES[t.type]}`}
+            className={`animate-slide-up rounded-lg border pl-4 pr-2 py-3 text-sm shadow-pop flex items-start gap-2 ${TOAST_STYLES[t.type]}`}
           >
             <span className="flex-1 leading-snug">{t.message}</span>
             <button

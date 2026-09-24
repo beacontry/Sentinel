@@ -207,7 +207,7 @@ export default function LandingPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       {/* ── Navbar — exact Dark Moon structure ── */}
-      <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-all duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-lg" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
+      <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-all duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-pop" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
         <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
           <Link href="/" className="flex items-center gap-3 text-lg font-bold tracking-tight">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-ld-on-accent">
@@ -230,7 +230,7 @@ export default function LandingPage() {
             <PWAInstallButton
               className="inline-flex items-center gap-2 rounded-lg border border-ld-accent/40 bg-ld-accent/8 px-4 py-3 text-base font-medium text-ld-accent transition-all duration-200 hover:bg-ld-accent/14"
             />
-            <Link href="/register" className="rounded-lg bg-ld-accent px-5 py-3 text-base font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
+            <Link href="/register" className="rounded-lg bg-ld-accent px-5 py-3 text-base font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-pop">
               Get Started
             </Link>
           </div>
@@ -292,7 +292,7 @@ export default function LandingPage() {
             </p>
 
             <div className="mt-8 flex flex-wrap justify-center gap-4 lg:justify-start">
-              <Link href="/register" className="rounded-lg bg-ld-accent px-6 py-3.5 font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
+              <Link href="/register" className="rounded-lg bg-ld-accent px-6 py-3.5 font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-pop">
                 Get Started Free
               </Link>
               <Link href="/login" className="rounded-lg border border-ld-border bg-white/[0.01] px-6 py-3.5 font-semibold text-ld-text transition-all duration-200 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
@@ -310,7 +310,7 @@ export default function LandingPage() {
           </div>
 
           {/* Hero Card — checklist */}
-          <aside className="animate-fade-in-up stagger-1 top-accent-line rounded-xl border border-ld-border bg-ld-card p-8 shadow-lg transition-all duration-300 hover:border-ld-accent/28 hover:shadow-lg">
+          <aside className="animate-fade-in-up stagger-1 top-accent-line rounded-xl border border-ld-border bg-ld-card p-8 shadow-pop transition-all duration-300 hover:border-ld-accent/28 hover:shadow-pop">
             <h3 className="text-lg font-bold">What Beacontry does</h3>
             <p className="mt-3 text-base text-ld-text-secondary">
               A trading workspace — automated engine for hands-off operation, manual
@@ -368,7 +368,7 @@ export default function LandingPage() {
           {features.map((f, i) => {
             const Icon = f.icon;
             return (
-              <article key={f.title} className={`card-accent-line animate-fade-in-up stagger-${(i % 3) + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-250 hover:border-ld-border-accent hover:bg-ld-card-hover hover:shadow-lg`}>
+              <article key={f.title} className={`card-accent-line animate-fade-in-up stagger-${(i % 3) + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-250 hover:border-ld-border-accent hover:bg-ld-card-hover hover:shadow-pop`}>
                 <div className="mb-4 grid h-[50px] w-[50px] place-items-center rounded-xl bg-ld-accent/[0.16] text-ld-accent">
                   <Icon className="h-6 w-6" />
                 </div>
@@ -401,7 +401,7 @@ export default function LandingPage() {
         <div className="mx-auto grid max-w-[1280px] gap-12 px-4 lg:grid-cols-[1.2fr_0.8fr] lg:items-start lg:px-7">
           <div className="grid gap-8 sm:grid-cols-2">
             {pipeline.map((step, i) => (
-              <article key={step.num} className={`animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-250 hover:border-ld-accent/22 hover:shadow-lg`}>
+              <article key={step.num} className={`animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-250 hover:border-ld-accent/22 hover:shadow-pop`}>
                 <div className="mb-4 grid h-[52px] w-[52px] place-items-center rounded-full border border-ld-border bg-white/[0.02] font-mono font-bold text-ld-accent">
                   {step.num}
                 </div>
@@ -415,7 +415,7 @@ export default function LandingPage() {
               Shows what the engine actually produces (a trending equity
               curve with annotated trade events) instead of describing
               it textually. Inline SVG so no chart-lib dependency. */}
-          <div className="animate-fade-in-up stagger-1 overflow-hidden rounded-xl border border-ld-border bg-[#0c0c14] shadow-lg">
+          <div className="animate-fade-in-up stagger-1 overflow-hidden rounded-xl border border-ld-border bg-[#0c0c14] shadow-pop">
             {/* Window chrome — kept consistent with the previous terminal look */}
             <div className="flex items-center justify-between gap-2 border-b border-ld-border bg-ld-card px-4 py-3">
               <div className="flex items-center gap-2">
@@ -600,7 +600,7 @@ export default function LandingPage() {
           {platform.map((p, i) => {
             const Icon = p.icon;
             return (
-              <article key={p.title} className={`card-accent-line animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-250 hover:border-ld-border-accent hover:bg-ld-card-hover hover:shadow-lg`}>
+              <article key={p.title} className={`card-accent-line animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-250 hover:border-ld-border-accent hover:bg-ld-card-hover hover:shadow-pop`}>
                 <div className="mb-4 grid h-[50px] w-[50px] place-items-center rounded-xl bg-ld-accent/[0.16] text-ld-accent">
                   <Icon className="h-6 w-6" />
                 </div>
@@ -713,7 +713,7 @@ export default function LandingPage() {
           ].map((tier, i) => (
             <article
               key={tier.name}
-              className={`animate-fade-in-up stagger-${i + 1} relative flex flex-col rounded-xl border bg-ld-card p-8 transition-all duration-250 hover:shadow-lg ${
+              className={`animate-fade-in-up stagger-${i + 1} relative flex flex-col rounded-xl border bg-ld-card p-8 transition-all duration-250 hover:shadow-pop ${
                 tier.highlight
                   ? "border-ld-accent/40 ring-1 ring-ld-accent/20"
                   : "border-ld-border hover:border-ld-border-accent"
@@ -750,7 +750,7 @@ export default function LandingPage() {
                 href={tier.name === "Self-Hosted" ? "https://github.com/beacontry/Sentinel" : "/register"}
                 className={`mt-8 inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-base font-semibold transition-all duration-200 ${
                   tier.highlight
-                    ? "bg-ld-accent text-ld-on-accent hover:bg-ld-accent-dim hover:shadow-lg"
+                    ? "bg-ld-accent text-ld-on-accent hover:bg-ld-accent-dim hover:shadow-pop"
                     : "border border-ld-border text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06]"
                 }`}
               >
@@ -806,7 +806,7 @@ export default function LandingPage() {
             return (
               <article
                 key={trust.title}
-                className={`animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-250 hover:border-ld-accent/22 hover:shadow-lg`}
+                className={`animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-250 hover:border-ld-accent/22 hover:shadow-pop`}
               >
                 <div className="mb-4 grid h-[50px] w-[50px] place-items-center rounded-xl bg-ld-accent/[0.16] text-ld-accent">
                   <Icon className="h-6 w-6" />
@@ -832,7 +832,7 @@ export default function LandingPage() {
 
           {/* Existing buttons — go register or log in */}
           <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <Link href="/register" className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-8 py-4 text-base font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
+            <Link href="/register" className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-8 py-4 text-base font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-pop">
               Start Trading <ArrowRight className="h-4 w-4" />
             </Link>
             <Link href="/login" className="rounded-lg border border-ld-border px-8 py-4 text-base font-semibold text-ld-text transition-all duration-200 hover:border-ld-accent hover:bg-ld-accent/[0.06]">

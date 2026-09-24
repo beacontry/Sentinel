@@ -212,7 +212,7 @@ export function FundamentalsPanel({ symbol, currentPrice }: FundamentalsPanelPro
             {/* Current position */}
             {weekPosition !== null && (
               <div
-                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-text-primary rounded-full border-2 border-bg-elevated shadow-sm"
+                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-text-primary rounded-full border-2 border-bg-elevated shadow-card"
                 style={{ left: `calc(${weekPosition}% - 6px)` }}
                 title={currentPrice ? `Current: $${currentPrice.toFixed(2)}` : undefined}
               />
