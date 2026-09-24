@@ -61,10 +61,14 @@ describe("Input in error state", () => {
 });
 
 describe("Button", () => {
-  it("keeps a transparent outline under its ring", () => {
+  // The button draws no ring of its own: the global :focus-visible outline
+  // in globals.css is the one ring, the same on every button, link and
+  // field. A ring-offset painted in the page colour showed as a halo on
+  // cards, whose surface is lighter than the page.
+  it("leaves the global focus outline in place", () => {
     const classes = classesOf(renderToStaticMarkup(createElement(Button, null, "Go")), "button");
-    expect(classes.filter((c) => c.endsWith("outline-none"))).toEqual([]);
-    expect(classes).toContain("focus-visible:outline-hidden");
+    expect(classes.filter((c) => /outline-(none|hidden)$/.test(c))).toEqual([]);
+    expect(classes.filter((c) => c.includes("ring"))).toEqual([]);
   });
 });
 

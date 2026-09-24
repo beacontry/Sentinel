@@ -86,6 +86,25 @@ function resolve(vars: Record<string, string>, name: string, depth = 0): string 
   return v;
 }
 
+/**
+ * `color-mix(in oklch, a p, b)` for two opaque oklch() values: L, C and
+ * H interpolated, hue along the shorter arc, as the CSS spec does.
+ */
+function mixOklch(a: string, b: string, p: number): string {
+  const parts = (v: string) => {
+    const m = /^oklch\(\s*([\d.]+)%\s+([\d.]+)\s+([\d.]+)\s*\)$/.exec(v);
+    if (!m) throw new Error(`not an opaque oklch(): ${v}`);
+    return [Number(m[1]), Number(m[2]), Number(m[3])];
+  };
+  const [la, ca, ha] = parts(a);
+  const [lb, cb, hb] = parts(b);
+  let dh = ha - hb;
+  if (dh > 180) dh -= 360;
+  if (dh < -180) dh += 360;
+  const h = (((hb + dh * p) % 360) + 360) % 360;
+  return `oklch(${lb + (la - lb) * p}% ${cb + (ca - cb) * p} ${h})`;
+}
+
 const SURFACES = ["--color-bg-primary", "--color-bg-secondary", "--color-bg-surface", "--color-bg-elevated"];
 const TEXT_SURFACES = [...SURFACES, "--color-bg-hover"];
 
@@ -159,6 +178,13 @@ describe.each(MODES)("%s", (_mode, vars) => {
     ),
   )("%s on %s is at least 4.5:1", (text, fill) => {
     expect(cr(text, fill)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // The destructive Button's hover fill (button.tsx): 18% of the loss
+  // colour mixed into the surface in OKLCH, under its -fg label.
+  it("the destructive button's label is at least 4.5:1 on its hover fill", () => {
+    const hover = mixOklch(resolve(vars, "--color-bearish"), resolve(vars, "--color-bg-surface"), 0.18);
+    expect(contrastRatio(resolve(vars, "--color-bearish-fg"), hover)).toBeGreaterThanOrEqual(4.5);
   });
 
   it.each([1, 2, 3, 4, 5, 6])("chart series %i is at least 3:1 on the chart background", (n) => {
