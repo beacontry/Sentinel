@@ -1,3 +1,7 @@
+// A client component because buttonClasses lives in button.tsx, which is
+// one; a server page (the landing) can still render it as a component.
+"use client";
+
 import Link from "next/link";
 import type { ComponentProps } from "react";
 import { buttonClasses, type ButtonSize, type ButtonVariant } from "./button";
