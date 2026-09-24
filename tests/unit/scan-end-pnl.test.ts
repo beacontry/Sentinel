@@ -130,3 +130,44 @@ describe("recordScanEndPnl: positions fetch failure (finding #10)", () => {
     expect(engine.halted).toBe(true);
   });
 });
+
+describe("recordScanEndPnl: the fallback leaves out what the scan sold", () => {
+  it("does not count a loser sold this scan twice (realized in dailyLoss and again as unrealized)", async () => {
+    const engine = runningEngine();
+    // The scan sold AAPL at -$150, already accrued to dailyLoss. True MTM is
+    // -$150 + MSFT's -$100 = -$250, inside the $300 threshold. Counting AAPL
+    // again from the start-of-scan list would make it -$400 and halt.
+    engine.dailyLoss = -150;
+
+    await recordScanEndPnl(
+      engine,
+      failing,
+      [position("AAPL", -150), position("MSFT", -100)],
+      EQUITY,
+      "2026-09-23",
+      -150,
+      1,
+      new Set(["AAPL"]),
+    );
+
+    expect(engine.halted).toBe(false);
+  });
+
+  it("still halts on the positions it kept", async () => {
+    const engine = runningEngine();
+    engine.dailyLoss = -150;
+
+    await recordScanEndPnl(
+      engine,
+      failing,
+      [position("AAPL", -150), position("MSFT", -200)],
+      EQUITY,
+      "2026-09-23",
+      -150,
+      1,
+      new Set(["AAPL"]),
+    );
+
+    expect(engine.halted).toBe(true);
+  });
+});

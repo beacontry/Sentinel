@@ -1762,9 +1762,10 @@ async function enforceUnrealizedLossHalt(
  *   - the failure is logged;
  *   - upsertDailyPnl gets null, which preserves the stored value;
  *   - the halt runs against the start-of-scan positions the scan already
- *     read from the broker (the scan aborts without them). That figure can
- *     still carry a loser the scan just sold, whose loss is also in
- *     dailyLoss, so it errs toward halting, never toward a fabricated 0.
+ *     read from the broker (the scan aborts without them), leaving out the
+ *     symbols the scan sold. Their P&L is already in dailyLoss as realized,
+ *     and counting it again as unrealized could halt the engine for the
+ *     rest of the day on one transient fetch failure.
  */
 export async function recordScanEndPnl(
   engine: EngineState,
@@ -1774,6 +1775,8 @@ export async function recordScanEndPnl(
   today: string,
   realizedDelta: number,
   tradesDelta: number,
+  /** Symbols this scan sold in full; their P&L is already in dailyLoss. */
+  soldThisScan: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   let totalUnrealizedPnl: number | null = null;
   try {
@@ -1791,7 +1794,9 @@ export async function recordScanEndPnl(
   let unrealizedForHalt = totalUnrealizedPnl;
   if (unrealizedForHalt === null) {
     unrealizedForHalt = 0;
-    for (const bp of startOfScanPositions) unrealizedForHalt += bp.unrealizedPnl;
+    for (const bp of startOfScanPositions) {
+      if (!soldThisScan.has(bp.symbol)) unrealizedForHalt += bp.unrealizedPnl;
+    }
   }
   // Mark-to-market drawdown halt (post-2026-06-10). See
   // enforceUnrealizedLossHalt() for full rationale.
@@ -5020,6 +5025,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
   // flatten previously recorded neither realized P&L nor any halt signal).
   let tacticalRealized = 0;
   let tacticalExits = 0;
+  const soldThisScan = new Set<string>();
 
   if (isInvested && confirmedBelow && spyPrice < smaExit) {
     // ── EXIT: Confirmed weakness → sell everything (simple, no graduated) ──
@@ -5035,6 +5041,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
         accrueRealizedPnl(engine, pos.unrealizedPnl);
         tacticalRealized += pos.unrealizedPnl;
         tacticalExits++;
+        soldThisScan.add(pos.symbol);
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -5141,7 +5148,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
 
   // Update daily P&L from broker positions, then the MTM drawdown halt. An
   // unknown unrealized figure is never written or checked as 0.
-  await recordScanEndPnl(engine, client, currentPositions, account.equity, today, tacticalRealized, tacticalExits);
+  await recordScanEndPnl(engine, client, currentPositions, account.equity, today, tacticalRealized, tacticalExits, soldThisScan);
 
   // Update status — scan completed, clear in-flight marker
   engine.lastScanAt = new Date();
@@ -5310,6 +5317,8 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
   // when the next scan runs, so without these counters the dashboard sees zero.
   let realizedPnlThisScan = 0;
   let tradesThisScan = 0;
+  // Symbols sold in full this scan, left out of the scan-end MTM fallback.
+  const soldThisScan = new Set<string>();
 
   // Pending buy orders — symbols with an open buy that hasn't filled yet must
   // be treated as "already held" so the next scan doesn't re-buy them. This
@@ -5373,6 +5382,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         tsFlattenRealized += pos.unrealizedPnl;
         tsFlattenExits++;
         tradesThisScan++;
+        soldThisScan.add(pos.symbol);
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -5695,6 +5705,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         // Discretionary single-position exit → counts toward the streak (audit #2).
         recordRealizedExit(engine, bp.unrealizedPnl, riskLimits, weak.symbol);
         tradesThisScan++;
+        soldThisScan.add(weak.symbol);
         positionMap.delete(weak.symbol);
         heldSymbols.delete(weak.symbol);
       } catch (err) {
@@ -5843,7 +5854,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
 
   // Update daily P&L from broker positions, then the MTM drawdown halt. An
   // unknown unrealized figure is never written or checked as 0.
-  await recordScanEndPnl(engine, client, currentPositions, account.equity, today, realizedPnlThisScan, tradesThisScan);
+  await recordScanEndPnl(engine, client, currentPositions, account.equity, today, realizedPnlThisScan, tradesThisScan, soldThisScan);
 
   engine.lastScanAt = new Date();
   engine.scanCount++;
