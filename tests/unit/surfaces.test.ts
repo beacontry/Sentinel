@@ -33,6 +33,13 @@ describe("Inset", () => {
     expect(html).not.toMatch(/\bborder\b/);
   });
 
+  // A Modal or sheet is itself bg-surface, where a raised Inset is 1.00:1.
+  it("sinks to bg-primary inside a bg-surface container", () => {
+    const sunken = renderToStaticMarkup(createElement(Inset, { level: "sunken" }, "x"));
+    expect(sunken).toContain("bg-bg-primary");
+    expect(sunken).not.toContain("bg-bg-surface");
+  });
+
   it("can render as another element", () => {
     expect(renderToStaticMarkup(createElement(Inset, { as: "section" }, "x"))).toMatch(/^<section\b/);
   });

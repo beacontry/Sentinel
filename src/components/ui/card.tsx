@@ -5,9 +5,13 @@ import type { ElementType, HTMLAttributes, ReactNode } from "react";
  *
  * - `Card`: a bordered container on bg-secondary. One level only; a card
  *   inside a card reads as a template tell and doubles every edge.
- * - `Inset`: a borderless block on bg-surface, for a group inside a card
- *   (a stat tile in a panel, an order summary, a code block). Depth comes
- *   from the one lightness step, not from another border.
+ * - `Inset`: a borderless block one lightness step from its container,
+ *   for a group inside a card (a stat tile in a panel, an order summary,
+ *   a code block). Depth comes from that step, not from another border.
+ *   The default `raised` step is bg-surface, which is right on a card
+ *   (bg-secondary). On a container that is itself bg-surface (a Modal, a
+ *   sheet) bg-surface would be 1.00:1 and draw no boundary at all, so use
+ *   `level="sunken"` there: bg-primary, one step down in every theme.
  *
  * Dividers inside either use `divide-[var(--color-hairline-inner)]` (or
  * `border-[var(--color-hairline-inner)]`), which stays even over tints,
@@ -38,15 +42,25 @@ export function Card({ children, hover = false, className = "", ...props }: Card
   );
 }
 
-/** A group inside a card: one surface step up, no border. */
+const INSET_LEVEL = {
+  raised: "bg-bg-surface",
+  sunken: "bg-bg-primary",
+} as const;
+
+/**
+ * A group inside a container, one surface step from it, no border.
+ * `raised` (default) inside a card; `sunken` inside a bg-surface
+ * container such as a Modal or a sheet.
+ */
 export function Inset({
   children,
   className = "",
   as: Tag = "div",
+  level = "raised",
   ...props
-}: HTMLAttributes<HTMLElement> & { children?: ReactNode; as?: ElementType }) {
+}: HTMLAttributes<HTMLElement> & { children?: ReactNode; as?: ElementType; level?: keyof typeof INSET_LEVEL }) {
   return (
-    <Tag className={`rounded-lg bg-bg-surface p-3 ${className}`} {...props}>
+    <Tag className={`rounded-lg ${INSET_LEVEL[level]} p-3 ${className}`} {...props}>
       {children}
     </Tag>
   );

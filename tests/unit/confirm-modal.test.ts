@@ -32,6 +32,14 @@ describe("ConfirmActionModal", () => {
     expect(src).not.toMatch(/tone === "bullish" \? "gain"/);
   });
 
+  // The dialog is bg-surface; a summary on the same fill has no boundary.
+  it("sets its summary apart from the bg-surface dialog", () => {
+    const dl = /<dl className="([^"]*)"/.exec(src)?.[1] ?? "";
+    expect(dl).not.toContain("bg-bg-surface");
+    expect(dl).toContain("bg-bg-primary");
+    expect(dl).toMatch(/\bborder-border\b/);
+  });
+
   it("uses the loss triplet, not an alpha tint, for its warning tile", () => {
     expect(src).not.toMatch(/bg-bearish\/\d/);
     expect(src).toContain("bg-bearish-fill");

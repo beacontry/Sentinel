@@ -114,7 +114,11 @@ export function ConfirmActionModal({
           </div>
 
           {spec.summary && spec.summary.length > 0 && (
-            <dl className="my-4 divide-y divide-[var(--color-hairline-inner)] rounded-lg bg-bg-surface">
+            // The modal is bg-surface, so the summary sinks one step to
+            // bg-primary and keeps a container edge: these rows are the
+            // quantity and price of an irreversible action and must read
+            // as one bounded group, which a same-fill block cannot.
+            <dl className="my-4 divide-y divide-[var(--color-hairline-inner)] rounded-lg border border-border bg-bg-primary">
               {spec.summary.map((row) => (
                 <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                   <dt className="text-text-secondary">{row.label}</dt>
