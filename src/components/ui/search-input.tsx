@@ -56,7 +56,7 @@ export function SearchInput({
         className="w-full min-h-[44px] rounded-lg border border-border-control bg-bg-elevated pl-10 pr-10 py-2.5
           text-sm text-text-primary placeholder:text-text-muted
           transition-colors duration-150
-          focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
+          outline-hidden focus:border-accent focus-visible:ring-2 focus-visible:ring-accent"
         {...props}
       />
       {internalValue && (

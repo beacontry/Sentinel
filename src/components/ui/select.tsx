@@ -61,9 +61,9 @@ export function Select({
           id={selectId}
           className={`inline-flex min-h-[44px] w-full items-center justify-between rounded-lg border bg-bg-elevated px-3 py-2.5
             text-sm text-text-primary transition-colors duration-150 cursor-pointer
-            focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30
+            outline-hidden focus:border-accent focus-visible:ring-2
             disabled:pointer-events-none disabled:opacity-50
-            ${error ? "border-bearish focus:border-bearish focus:ring-bearish/30" : "border-border-control"}`}
+            ${error ? "border-bearish focus:border-bearish focus-visible:ring-bearish" : "border-border-control focus-visible:ring-accent"}`}
         >
           <SelectPrimitive.Value placeholder={placeholder} />
           <SelectPrimitive.Icon>

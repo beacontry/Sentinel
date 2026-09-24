@@ -381,6 +381,24 @@
 
   ::selection { background-color: rgba(16, 185, 129, 0.20); color: var(--color-text-primary); }
   input, textarea, select, button { font-family: var(--font-body); }
+
+  /* Default keyboard focus indicator. A component that draws its own ring
+     (Button, the form primitives) overrides this with utilities. */
+  :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* Forced colours (Windows High Contrast) drop box-shadow rings and
+   background changes, so a focused control is only visible through its
+   outline. Unlayered on purpose: it has to beat every outline-none
+   utility in the app, and the browser repaints the colour itself. */
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
 }
 
 /* ── Keyframes ── */
@@ -435,7 +453,9 @@
 .stagger-8 { animation-delay: 0.40s; }
 
 .focus-ring {
-  outline: none;
+  /* Transparent rather than none, so forced colours still paint it. */
+  outline: 2px solid transparent;
+  outline-offset: 2px;
   box-shadow: 0 0 0 2px var(--color-bg-secondary), 0 0 0 4px var(--color-accent);
 }
 

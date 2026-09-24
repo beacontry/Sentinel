@@ -46,9 +46,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             className={`w-full min-h-[44px] rounded-lg border bg-bg-secondary px-3 py-2.5
               text-sm text-text-primary placeholder:text-text-muted
               transition-colors duration-150
-              focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30
+              outline-hidden focus:border-accent focus-visible:ring-2
               disabled:pointer-events-none disabled:opacity-50
-              ${error ? "border-bearish focus:border-bearish focus:ring-bearish/30" : "border-border-control"}
+              ${error ? "border-bearish focus:border-bearish focus-visible:ring-bearish" : "border-border-control focus-visible:ring-accent"}
               ${className}`}
             {...props}
           />
