@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { usePolling } from "@/hooks/usePolling";
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -229,31 +230,44 @@ export default function ScreenerPage() {
 
   // ─── Analysis modal ─────────────────────────────────────────────
 
+  // Opening a second symbol (or closing the modal) while the first is
+  // still loading must not let the first response, error or finally
+  // land in the modal now titled for another symbol.
+  const analysisRequest = useLatestRequest();
+
   const openAnalysis = useCallback(async (symbol: string) => {
+    const ticket = analysisRequest.begin();
     setSelectedSymbol(symbol);
     setAnalysisData(null);
     setAnalysisLoading(true);
     setAnalysisError(null);
     try {
       // Use same timeframe as screener scan (90 days, daily bars) for consistency
-      const res = await fetch(`/api/analyze/${encodeURIComponent(symbol)}?days=90&resolution=1d`);
+      const res = await fetch(
+        `/api/analyze/${encodeURIComponent(symbol)}?days=90&resolution=1d`,
+        { signal: ticket.signal },
+      );
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error ?? "Analysis failed");
       }
       const data: AnalysisResult = await res.json();
+      if (!ticket.isCurrent()) return;
       setAnalysisData(data);
     } catch (err) {
+      if (!ticket.isCurrent()) return;
       setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
-      setAnalysisLoading(false);
+      if (ticket.isCurrent()) setAnalysisLoading(false);
     }
-  }, []);
+  }, [analysisRequest]);
 
   const closeAnalysis = () => {
+    analysisRequest.cancel();
     setSelectedSymbol(null);
     setAnalysisData(null);
     setAnalysisError(null);
+    setAnalysisLoading(false);
   };
 
   // ─── Custom filter management ───────────────────────────────────
