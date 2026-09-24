@@ -1,9 +1,9 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SignedValue } from "@/components/ui/signed-value";
+import { SignedValue, signedValueCh } from "@/components/ui/signed-value";
 import type { FilingStatus } from "@/lib/tax-engine";
 import { filingStatusOptions, formatCurrency } from "./tax-format";
 
@@ -37,11 +37,15 @@ interface ReportEstimateProps {
   onIncomeCommit: () => void;
 }
 
+// Each figure is its own container and steps down from text-xl until the
+// row's widest figure fits its column (figure-fit in globals.css), so two
+// long amounts on a phone keep the column gap between them instead of
+// running into each other. --figure-ch is set once on the row.
 function Figure({ label, children, loading }: { label: string; children: ReactNode; loading: boolean }) {
   return (
-    <div className="min-w-0">
+    <div className="@container min-w-0">
       <dt className="text-sm text-text-secondary">{label}</dt>
-      <dd className="mt-1 font-mono text-xl font-semibold tabular-nums text-text-primary">
+      <dd className="mt-1 figure-fit font-mono font-semibold tabular-nums text-text-primary [--figure-max:var(--text-xl)]">
         {loading ? <Skeleton className="h-7 w-24" /> : children}
       </dd>
     </div>
@@ -60,6 +64,14 @@ export function ReportEstimate({
 }: ReportEstimateProps) {
   // A failed load prints a dash, not a zero: nothing is known yet.
   const unknown = <span className="text-text-muted">&mdash;</span>;
+  const rowCh = figures
+    ? Math.max(
+        signedValueCh(figures.totalGainLoss),
+        [...formatCurrency(figures.estimatedTax)].length,
+        String(figures.lotCount).length,
+        String(figures.washSaleCount).length,
+      )
+    : 1;
 
   return (
     <section
@@ -71,7 +83,10 @@ export function ReportEstimate({
         <h2 id="tax-report-estimate" className="text-base font-semibold text-text-primary">
           {year} capital gains
         </h2>
-        <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
+        <dl
+          className="mt-4 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4"
+          style={{ "--figure-ch": rowCh } as CSSProperties}
+        >
           <Figure label="Total gain or loss" loading={loading}>
             {figures ? <SignedValue value={figures.totalGainLoss} /> : unknown}
           </Figure>
