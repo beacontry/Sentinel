@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { usePolling } from "@/hooks/usePolling";
 import { useLatestRequest } from "@/hooks/use-latest-request";
 import { POLLING_INTERVALS } from "@/lib/config";
+import { selectionAfterFailedLoad } from "@/lib/run-selection";
 import {
   Play,
   Loader2,
@@ -127,22 +128,46 @@ export default function OptimizerPage() {
   // interval would never land.
   const detailInFlightRef = useRef(false);
 
+  // The run whose detail is on screen. Kept beside selectedRun so a failed
+  // load can hand the selection back to it.
+  const shownRunIdRef = useRef<string | null>(null);
+
   const fetchRunDetail = useCallback(async (id: string) => {
     if (latestRequestedIdRef.current !== id) return;
     const ticket = runDetailRequest.begin();
     detailInFlightRef.current = true;
+    let loaded = false;
     try {
       const res = await fetch(`/api/optimize/${id}`, { signal: ticket.signal });
-      if (!res.ok) return;
-      const data: RunDetail = await res.json();
-      if (!ticket.isCurrent() || latestRequestedIdRef.current !== id || data.run?.id !== id) return;
-      setSelectedRun(data);
+      if (res.ok) {
+        const data: RunDetail = await res.json();
+        if (!ticket.isCurrent() || latestRequestedIdRef.current !== id) return;
+        if (data.run?.id === id) {
+          shownRunIdRef.current = id;
+          setSelectedRun(data);
+          loaded = true;
+        }
+      }
     } catch {
-      // Silently fail (includes a superseded request's abort)
+      // Handled below; a superseded request's abort is not current.
     } finally {
-      if (ticket.isCurrent()) detailInFlightRef.current = false;
+      if (ticket.isCurrent()) {
+        detailInFlightRef.current = false;
+        // A failed load of a newly clicked run leaves the previous run on
+        // screen. Say so, and point the selection back at that run, or the
+        // poll (which only refreshes the run last asked for) would freeze
+        // it. A failed poll refresh of the run on screen stays silent and
+        // retries on the next tick.
+        const undo = loaded
+          ? null
+          : selectionAfterFailedLoad(id, latestRequestedIdRef.current, shownRunIdRef.current);
+        if (undo) {
+          latestRequestedIdRef.current = undo.revertTo;
+          toast({ type: "error", message: "Couldn't load that optimization run. Try again." });
+        }
+      }
     }
-  }, [runDetailRequest]);
+  }, [runDetailRequest, toast]);
 
   // Initial load
   useEffect(() => {
