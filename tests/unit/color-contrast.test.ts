@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { contrastRatio, deltaEOK, parseColor, toHex } from "@/lib/color-contrast";
+import { contrastRatio, deltaEOK, flatten, parseColor, toHex } from "@/lib/color-contrast";
 
 describe("parseColor", () => {
   it("reads 6- and 3-digit hex", () => {
@@ -38,6 +38,20 @@ describe("toHex", () => {
     expect(toHex("oklch(62.8% 0.2577 29.23)")).toBe("#ff0000");
     expect(toHex("oklch(17% 0.020 163)")).toBe("#07120d");
     expect(toHex("#10b981")).toBe("#10b981");
+  });
+});
+
+describe("flatten", () => {
+  it("composites a translucent colour over an opaque backdrop", () => {
+    // Black at 40% over white blends in gamma-encoded sRGB, as browsers do:
+    // 255 * 0.6 = 153 per channel, not the darker linear-light mix.
+    expect(flatten("rgba(0, 0, 0, 0.4)", "#ffffff")).toBe("#999999");
+    expect(flatten("oklch(50% 0.12 163 / 0)", "#10b981")).toBe("#10b981");
+    expect(flatten("#123456", "#ffffff")).toBe("#123456");
+  });
+
+  it("refuses a translucent backdrop", () => {
+    expect(() => flatten("#000000", "rgba(255, 255, 255, 0.5)")).toThrow();
   });
 });
 

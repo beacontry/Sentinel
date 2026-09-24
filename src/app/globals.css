@@ -92,9 +92,11 @@
   --color-text-muted: oklch(47% 0.020 163);
 
   /* ── Accent ── the fill moved dark enough for a white label, rather
-     than tinting the label (white on the old #10b981 was 2.5:1). */
-  --color-accent: oklch(50% 0.12 163);
-  --color-accent-hover: oklch(45% 0.11 163);
+     than tinting the label (white on the old #10b981 was 2.5:1). It sits
+     at 47% rather than 50% because it is also text: an active pill puts
+     text-accent on bg-accent/15, which measured 4.09:1 at 50%. */
+  --color-accent: oklch(47% 0.12 163);
+  --color-accent-hover: oklch(42% 0.11 163);
   --color-on-accent: oklch(99.5% 0.003 163);
   --color-accent-muted: color-mix(in oklch, var(--color-accent) 12%, transparent);
   --color-focus: var(--color-accent);

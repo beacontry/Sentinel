@@ -104,7 +104,21 @@ export function contrastRatio(foreground: string, background: string): number {
 
 /** `#rrggbb` for an opaque colour, for meta theme-color and the manifest. */
 export function toHex(value: string): string {
-  const c = parseColor(value);
+  return hexOf(parseColor(value));
+}
+
+/**
+ * A translucent colour composited over an opaque backdrop, as `#rrggbb`:
+ * what a tint such as `bg-accent/15` renders as on a given surface, so
+ * text placed on it can be measured.
+ */
+export function flatten(top: string, backdrop: string): string {
+  const bg = parseColor(backdrop);
+  if (bg.a < 1) throw new Error(`backdrop must be opaque: ${backdrop}`);
+  return hexOf(over(parseColor(top), bg));
+}
+
+function hexOf(c: LinearRgba): string {
   return (
     "#" +
     [c.r, c.g, c.b]

@@ -15,11 +15,13 @@
  * - A form control's edge must clear 3:1 (WCAG 1.4.11) on every surface.
  * - Gain and loss text must clear 4.5:1 on a card, and each chip's
  *   foreground must clear 4.5:1 on its own fill.
+ * - Accent text (a link, an active pill) must clear 4.5:1 on every
+ *   surface, on the hover row, and on its own tint at the strongest
+ *   alpha the markup uses (bg-accent/15).
  * - Two colours that mean different things must look different: the
  *   accent (and its hover) against a loss, the danger fill and a
- *   warning, a loss
- *   and a warning against the body text, and in colour-blind mode a loss
- *   against a warning. Measured as deltaE OK,
+ *   warning, a loss and a warning against the body text, and in
+ *   colour-blind mode a loss against a warning. Measured as deltaE OK,
  *   floor 0.10. Contrast ratio cannot catch this: two reds of equal
  *   lightness are 1.0:1 whatever their hue.
  */
@@ -27,7 +29,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { contrastRatio, deltaEOK, parseColor, toHex } from "@/lib/color-contrast";
+import { contrastRatio, deltaEOK, flatten, parseColor, toHex } from "@/lib/color-contrast";
 
 const CSS = readFileSync(join(__dirname, "..", "..", "src", "app", "globals.css"), "utf8");
 
@@ -114,6 +116,21 @@ describe.each(MODES)("%s", (_mode, vars) => {
   )("%s on %s is at least 4.5:1", (text, surface) => {
     expect(cr(text, surface)).toBeGreaterThanOrEqual(4.5);
   });
+
+  it.each(TEXT_SURFACES)("accent text is at least 4.5:1 on %s", (surface) => {
+    expect(cr("--color-accent", surface)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // The active-pill pattern: text-accent on bg-accent/10 to /15 (and on
+  // accent-muted, 12-15%). The strongest tint is the darkest backdrop.
+  it.each(["--color-bg-primary", "--color-bg-secondary"])(
+    "accent text is at least 4.5:1 on its /15 tint over %s",
+    (surface) => {
+      const accent = resolve(vars, "--color-accent");
+      const tint = flatten(accent.replace(/\)$/, " / 0.15)"), resolve(vars, surface));
+      expect(contrastRatio(accent, tint)).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 
   it.each(SURFACES)("control border is at least 3:1 on %s", (surface) => {
     expect(cr("--color-border-control", surface)).toBeGreaterThanOrEqual(3);

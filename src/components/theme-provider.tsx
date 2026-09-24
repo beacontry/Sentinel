@@ -25,7 +25,7 @@ export const THEME_META: Record<
     label: "Light",
     isDark: false,
     pwaColor: "#f0f5f2",
-    swatch: "#00784f", // emerald accent, light fill
+    swatch: "#006f47", // emerald accent, light fill
     description: "Classic white surfaces, emerald accent",
   },
   dark: {
