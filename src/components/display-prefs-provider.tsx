@@ -27,7 +27,8 @@ import {
 
 const STORAGE_KEY = "sentinel-display-prefs";
 
-export type PnlFormat = "dollar" | "percent" | "both";
+import type { PnlFormat } from "@/lib/format-pnl";
+export type { PnlFormat };
 export type TimeFormat = "12h" | "24h";
 
 // Allowed landing pages. Keep the set small — covers what users actually
@@ -232,26 +233,8 @@ export function useDisplayPrefs(): DisplayPrefsContextValue {
 }
 
 /**
- * Format a P&L value according to the user's preference. Pass the dollar
- * amount + a basis (cost basis, equity at start of day, etc.) to derive
- * the percent.
- *
- * If `basis` is undefined or zero, falls back to dollar-only regardless of
- * the user's chosen format — percentage is undefined without a basis.
+ * Format a P&L value according to the user's preference. The formatter
+ * lives in src/lib/format-pnl.ts, where it is unit-tested; it is
+ * re-exported here because every caller already imports it from here.
  */
-export function formatPnl(
-  amountUsd: number,
-  basis: number | undefined,
-  format: PnlFormat
-): string {
-  const sign = amountUsd >= 0 ? "+" : "";
-  const dollar = `${sign}$${Math.abs(amountUsd).toFixed(2)}`;
-  if (!basis || basis === 0 || format === "dollar") {
-    return amountUsd >= 0 ? dollar : `-$${Math.abs(amountUsd).toFixed(2)}`;
-  }
-  const pct = (amountUsd / basis) * 100;
-  const pctStr = `${sign}${pct.toFixed(2)}%`;
-  if (format === "percent") return pctStr;
-  // "both"
-  return `${dollar} (${pctStr})`;
-}
+export { formatPnl } from "@/lib/format-pnl";
