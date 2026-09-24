@@ -9,6 +9,9 @@
  * - A label on an accent fill (primary Button, landing CTAs) must clear
  *   4.5:1 on the fill at rest and on its hover fill. White on #10b981 was
  *   2.5:1 (finding #18).
+ * - A form control's edge must clear 3:1 (WCAG 1.4.11) against every
+ *   surface it sits on. The shared --color-border hairline was 1.56:1 in
+ *   the dark default and 1.2:1 in light (finding #20).
  */
 
 import { describe, it, expect } from "vitest";
@@ -75,4 +78,13 @@ describe.each(Object.keys(THEMES))("%s theme", (theme) => {
   ])("label %s on fill %s is at least 4.5:1", (label, fill) => {
     expect(contrast(token(theme, label), token(theme, fill))).toBeGreaterThanOrEqual(4.5);
   });
+
+  // Inputs sit on bg-secondary, selects and textareas on bg-elevated, and
+  // any of them can be placed in a card or on the page background.
+  it.each(["--color-bg-primary", "--color-bg-secondary", "--color-bg-surface", "--color-bg-elevated"])(
+    "control border is at least 3:1 on %s",
+    (surface) => {
+      expect(contrast(token(theme, "--color-border-control"), token(theme, surface))).toBeGreaterThanOrEqual(3);
+    },
+  );
 });

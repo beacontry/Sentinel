@@ -48,7 +48,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
               transition-colors duration-150
               focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30
               disabled:pointer-events-none disabled:opacity-50
-              ${error ? "border-bearish focus:border-bearish focus:ring-bearish/30" : "border-border"}
+              ${error ? "border-bearish focus:border-bearish focus:ring-bearish/30" : "border-border-control"}
               ${className}`}
             {...props}
           />

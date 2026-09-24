@@ -15,6 +15,10 @@
   /* ── Borders ── */
   --color-border: #e2e8f0;
   --color-border-hover: #cbd5e1;
+  /* Edge of a form control. --color-border is a decorative hairline
+     (1.2:1 here); WCAG 1.4.11 wants 3:1 against every surface a control
+     sits on, so inputs and selects use this instead. */
+  --color-border-control: #7c8aa0;
 
   /* ── Text ── Dark on light, maximum contrast */
   --color-text-primary: #0f172a;
@@ -89,6 +93,7 @@
     --color-bg-hover: #25382f;
     --color-border: #2d4038;
     --color-border-hover: #3d5349;
+    --color-border-control: #678376;
     --color-text-primary: #edf3f0;
     --color-text-secondary: #8da69c;
     /* v3.1 — bumped from #607b71 to #7f9389 to clear WCAG AA (≥4.5:1)
@@ -173,6 +178,7 @@
     --color-bg-hover: #f5d0c5;
     --color-border: #f0c8bd;
     --color-border-hover: #e3a796;
+    --color-border-control: #b07060;
     --color-text-primary: #4a1e0f;
     --color-text-secondary: #6a3322;
     --color-text-muted: #8a5240;
@@ -226,6 +232,7 @@
     --color-bg-hover: #c7e2ff;
     --color-border: #bdd9f5;
     --color-border-hover: #94c0e8;
+    --color-border-control: #6488ac;
     --color-text-primary: #0c2340;
     --color-text-secondary: #1e3a5f;
     --color-text-muted: #4a6580;
@@ -280,6 +287,7 @@
     --color-bg-hover: #3f3f46;
     --color-border: #3f3f46;
     --color-border-hover: #52525b;
+    --color-border-control: #7a7a84;
     --color-text-primary: #fafafa;
     --color-text-secondary: #a1a1aa;
     /* v3.1 — bumped from #71717a to #8d8d96 for AA on bg-surface
