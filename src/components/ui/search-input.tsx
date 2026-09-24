@@ -47,8 +47,13 @@ export function SearchInput({
   };
 
   return (
+    // The icon and the clear button are pinned to the 44px field row, not
+    // centred on the wrapper: in a grid row the wrapper stretches to the
+    // tallest cell, and a top-1/2 icon then floats below the field.
     <div className={`relative ${className}`}>
-      <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-text-muted" />
+      <span aria-hidden="true" className="pointer-events-none absolute left-3 top-0 z-10 flex h-11 items-center text-text-muted">
+        <Search className="h-4 w-4" />
+      </span>
       <input
         type="text"
         value={internalValue}
@@ -61,7 +66,7 @@ export function SearchInput({
         <button
           type="button"
           onClick={clear}
-          className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-text-muted
+          className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-lg text-text-muted
             hover:text-text-primary transition-colors cursor-pointer"
           aria-label="Clear search"
         >
