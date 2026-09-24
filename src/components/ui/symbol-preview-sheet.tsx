@@ -17,8 +17,9 @@
  *   - Trade (→ /dashboard/trade/…)
  *   - Add to watchlist (POST /api/watchlist, optimistic toast)
  *
- * Data fetched from /api/analyze/[symbol] (already exists, cached
- * server-side for 60s). Closes on overlay click, X, or Escape.
+ * Data fetched from /api/analyze/[symbol]. There is no server-side cache:
+ * each open runs the full analysis (the response carries a 60s private
+ * browser cache header, nothing more). Closes on overlay click, X, or Escape.
  *
  * Render once per page near the root; show by setting the controlled
  * `symbol` prop. `null` hides it.
@@ -70,8 +71,10 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
   const [adding, setAdding] = useState(false);
 
   // Fetch on open. Reset on close so a re-open of the same symbol re-fetches
-  // (price may have moved). The /api/analyze cache (60s server-side) keeps
-  // this cheap.
+  // (price may have moved). The route has no server-side cache, so every open
+  // re-runs the analysis and counts against the per-user analyze rate limit.
+  // Its signal row is stored once per bar (migration 0052), so re-opening
+  // does not add rows or re-send Discord and trader notifications.
   useEffect(() => {
     if (!symbol) {
       setData(null);
