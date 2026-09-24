@@ -239,7 +239,7 @@ function RegisterForm() {
 
           <form onSubmit={handleSubmit} className="mt-5 space-y-4">
             {error && (
-              <div className="rounded-lg border border-bearish/25 bg-bearish/10 px-3 py-2 text-sm text-bearish">
+              <div className="rounded-lg border border-bearish-line bg-bearish-fill px-3 py-2 text-sm text-bearish">
                 {error}
               </div>
             )}

@@ -266,8 +266,8 @@ export function QuarterlyTaxEstimatorCalculator() {
       <div
         className={`rounded-xl border p-4 ${
           result.meetsSafeHarbor
-            ? "border-bullish/30 bg-bullish/10"
-            : "border-warning/30 bg-warning/10"
+            ? "border-bullish-line bg-bullish-fill"
+            : "border-warning-line bg-warning-fill"
         }`}
       >
         {result.meetsSafeHarbor ? (

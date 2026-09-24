@@ -73,7 +73,7 @@ export function UpgradeButton({
     return (
       <button
         disabled
-        className={`inline-flex items-center justify-center gap-2 rounded-lg border border-bullish/30 bg-bullish/10 px-5 py-3 text-sm font-semibold text-bullish ${widthCls} ${className}`}
+        className={`inline-flex items-center justify-center gap-2 rounded-lg border border-bullish-line bg-bullish-fill px-5 py-3 text-sm font-semibold text-bullish ${widthCls} ${className}`}
       >
         <Check className="h-4 w-4" />
         <span>Current plan</span>

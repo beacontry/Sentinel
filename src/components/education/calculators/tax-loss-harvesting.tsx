@@ -226,7 +226,7 @@ export function TaxLossHarvestingCalculator() {
         </table>
       </div>
 
-      <div className="rounded-lg border border-warning/20 bg-warning/10 p-3 text-xs leading-relaxed text-text-secondary">
+      <div className="rounded-lg border border-warning-line bg-warning-fill p-3 text-xs leading-relaxed text-text-secondary">
         <span className="font-semibold text-text-primary">Wash-sale warning:</span>{" "}
         Buying back the &quot;substantially identical&quot; security within 30
         days before or after the loss sale disallows the loss for that year (it

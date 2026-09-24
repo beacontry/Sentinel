@@ -639,7 +639,7 @@ export default function TraderPage() {
             </div>
           </>
         ) : (
-          <div role="alert" className="rounded-xl border border-bearish/40 bg-bearish/5 p-8 text-center">
+          <div role="alert" className="rounded-xl border border-bearish-line bg-bearish-fill p-8 text-center">
             <AlertTriangle className="w-10 h-10 text-bearish mx-auto mb-3" />
             <h3 className="font-display text-lg font-semibold mb-2">Could not load trader data</h3>
             <p className="text-sm text-text-secondary max-w-sm mx-auto">
@@ -696,7 +696,7 @@ export default function TraderPage() {
       {dashLoad.status === "error" && (
         <div
           role="status"
-          className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-2 text-sm text-text-secondary flex flex-wrap items-center gap-x-3 gap-y-1"
+          className="rounded-xl border border-warning-line bg-warning-fill px-4 py-2 text-sm text-text-secondary flex flex-wrap items-center gap-x-3 gap-y-1"
         >
           <span>
             <span className="font-semibold text-warning">
@@ -720,7 +720,7 @@ export default function TraderPage() {
       {engine && engine.running === false && positions.length > 0 && (
         <div
           role="alert"
-          className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+          className="rounded-xl border border-warning-line bg-warning-fill px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
         >
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
@@ -757,7 +757,7 @@ export default function TraderPage() {
       {data?.unprotectedSymbols && data.unprotectedSymbols.length > 0 && (
         <div
           role="alert"
-          className="rounded-xl border border-bearish/40 bg-bearish/10 px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"
+          className="rounded-xl border border-bearish-line bg-bearish-fill px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"
         >
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-bearish shrink-0 mt-0.5" />
@@ -781,7 +781,7 @@ export default function TraderPage() {
       {engine?.running && engine?.environment === "live" && (
         <div
           role="alert"
-          className="rounded-xl border border-bearish/40 bg-bearish/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+          className="rounded-xl border border-bearish-line bg-bearish-fill px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
         >
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 rounded-full bg-bearish/20 border border-bearish/40 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-[0.12em] text-bearish">
@@ -1000,7 +1000,7 @@ export default function TraderPage() {
         const openUnrealized = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
         const losers = positions.filter((p) => p.unrealizedPnl < 0).sort((a, b) => a.unrealizedPnl - b.unrealizedPnl);
         return (
-          <Card className="border-bearish/40 bg-bearish/5">
+          <Card className="border-bearish-line bg-bearish-fill">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="w-5 h-5 text-bearish flex-shrink-0 mt-0.5" />

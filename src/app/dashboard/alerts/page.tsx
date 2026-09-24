@@ -372,7 +372,7 @@ export default function AlertsPage() {
                   size="sm"
                   onClick={() => toggleRule(rule.id, rule.enabled)}
                   className={rule.enabled
-                    ? "bg-bullish/20 text-bullish hover:bg-bullish/30"
+                    ? "bg-bullish-fill text-bullish-fg hover:bg-bullish/30"
                     : "bg-bg-surface text-text-muted hover:bg-bg-elevated"
                   }
                 >

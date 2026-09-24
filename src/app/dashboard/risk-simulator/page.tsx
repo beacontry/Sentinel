@@ -202,7 +202,7 @@ export default function RiskSimulatorPage() {
 
       {/* Results */}
       {simulated && selectedScenario && (
-        <Card className={`border ${simulated.totalImpact >= 0 ? "border-bullish/20 bg-bullish/5" : "border-bearish/20 bg-bearish/5"}`}>
+        <Card className={`border ${simulated.totalImpact >= 0 ? "border-bullish-line bg-bullish-fill" : "border-bearish-line bg-bearish-fill"}`}>
           <div className="flex items-center gap-3 mb-4">
             <Zap className={`w-5 h-5 ${simulated.totalImpact >= 0 ? "text-bullish" : "text-bearish"}`} />
             <div>

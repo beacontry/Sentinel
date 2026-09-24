@@ -463,7 +463,7 @@ export default function TradePage({
 
       {/* Engine running banner — blocks ticket use */}
       {engineBlocked && (
-        <div className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4">
+        <div className="flex items-start gap-3 rounded-lg border border-warning-line bg-warning-fill p-4">
           <ShieldAlert className="w-5 h-5 shrink-0 text-warning mt-0.5" />
           <div className="text-sm">
             <p className="font-semibold text-warning mb-1">Engine is running</p>
@@ -482,7 +482,7 @@ export default function TradePage({
 
       {/* Live-account banner */}
       {isLive && (
-        <div className="flex items-start gap-3 rounded-lg border border-bearish/30 bg-bearish/10 p-4">
+        <div className="flex items-start gap-3 rounded-lg border border-bearish-line bg-bearish-fill p-4">
           <AlertCircle className="w-5 h-5 shrink-0 text-bearish mt-0.5" />
           <div className="text-sm">
             <p className="font-semibold text-bearish mb-1">LIVE ACCOUNT — real money</p>
@@ -550,7 +550,7 @@ export default function TradePage({
                 disabled={engineBlocked}
                 className={`min-h-[44px] rounded-lg border-2 px-4 py-2.5 text-sm font-semibold transition-colors
                   ${side === "buy"
-                    ? "border-bullish bg-bullish/10 text-bullish"
+                    ? "border-bullish bg-bullish-fill text-bullish-fg"
                     : "border-border text-text-secondary hover:border-border-hover"
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
@@ -561,7 +561,7 @@ export default function TradePage({
                 disabled={engineBlocked}
                 className={`min-h-[44px] rounded-lg border-2 px-4 py-2.5 text-sm font-semibold transition-colors
                   ${side === "sell"
-                    ? "border-bearish bg-bearish/10 text-bearish"
+                    ? "border-bearish bg-bearish-fill text-bearish-fg"
                     : "border-border text-text-secondary hover:border-border-hover"
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
               >

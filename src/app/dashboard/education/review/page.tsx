@@ -191,8 +191,8 @@ export default function GlossaryReviewPage() {
                       onClick={() => handleGrade(q)}
                       className={`flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 text-xs transition-colors disabled:opacity-50 ${
                         isWrong
-                          ? "border-bearish/30 bg-bearish/5 hover:bg-bearish/15 text-text-secondary hover:text-bearish"
-                          : "border-bullish/30 bg-bullish/5 hover:bg-bullish/15 text-text-secondary hover:text-bullish"
+                          ? "border-bearish-line bg-bearish-fill hover:bg-bearish/15 text-text-secondary hover:text-bearish"
+                          : "border-bullish-line bg-bullish-fill hover:bg-bullish/15 text-text-secondary hover:text-bullish"
                       }`}
                       title={cfg.description}
                     >

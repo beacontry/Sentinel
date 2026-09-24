@@ -129,7 +129,7 @@ export default function SentimentPage() {
       />
 
       {unconfigured && (
-        <Card className="border border-warning/20 bg-warning/5">
+        <Card className="border border-warning-line bg-warning-fill">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-warning shrink-0" />
             <p className="text-sm text-text-secondary">

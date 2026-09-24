@@ -228,7 +228,7 @@ export default function StrategyBuilderPage() {
           </Button>
 
           {error && (
-            <Card className="border border-bearish/20 bg-bearish/5">
+            <Card className="border border-bearish-line bg-bearish-fill">
               <p className="text-sm text-bearish">{error}</p>
             </Card>
           )}

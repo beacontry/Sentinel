@@ -145,7 +145,7 @@ export function TaxStatusCard() {
           </ModalHeader>
 
           <div className="space-y-5 px-1">
-            <div className="rounded-lg border border-warning/20 bg-warning/10 p-3 text-xs leading-relaxed text-text-secondary">
+            <div className="rounded-lg border border-warning-line bg-warning-fill p-3 text-xs leading-relaxed text-text-secondary">
               <strong className="text-text-primary">Self-attestation only.</strong>{" "}
               Beacontry records what you tell it but does not file Form 3115,
               attach the §475(f) election statement to your return, or validate

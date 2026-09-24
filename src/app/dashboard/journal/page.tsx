@@ -434,9 +434,9 @@ function JournalPage() {
               const isBetter = p.deviation > 0.05;
               const isWorse = p.deviation < -0.05;
               const tone = isBetter
-                ? "border-bullish/30 bg-bullish/5 text-bullish"
+                ? "border-bullish-line bg-bullish-fill text-bullish-fg"
                 : isWorse
-                  ? "border-bearish/30 bg-bearish/5 text-bearish"
+                  ? "border-bearish-line bg-bearish-fill text-bearish-fg"
                   : "border-border bg-bg-elevated text-text-secondary";
               return (
                 <button

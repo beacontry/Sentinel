@@ -65,6 +65,7 @@ describe("primitives read the map", () => {
     ["src/components/ui/badge.tsx"],
     ["src/components/ui/stat-card.tsx"],
     ["src/components/layout/page-intro.tsx"],
+    ["src/components/ui/toast.tsx"],
   ])("%s keeps no alpha-tint state strings of its own", (file) => {
     const src = readFileSync(join(__dirname, "..", "..", file), "utf8");
     expect(src).not.toMatch(/(?:bg|border)-(?:bullish|bearish|warning)\/\d+/);

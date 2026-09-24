@@ -145,7 +145,7 @@ export function PinSetupBanner() {
 
   if (done) {
     return (
-      <div className="mx-4 mt-3 lg:mx-6 rounded-lg border border-bullish/20 bg-bullish/10 px-4 py-3 flex items-center gap-3 text-sm text-bullish">
+      <div className="mx-4 mt-3 lg:mx-6 rounded-lg border border-bullish-line bg-bullish-fill px-4 py-3 flex items-center gap-3 text-sm text-bullish">
         <Check className="h-4 w-4 shrink-0" />
         PIN set. You can now unlock with your PIN next time.
       </div>

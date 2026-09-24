@@ -120,10 +120,10 @@ export function WhatIfSlider({
       {(computed.hitStop || computed.hitTP) && (
         <div className="text-xs">
           {computed.hitStop && (
-            <span className="px-2.5 py-1 rounded-full bg-bearish/10 text-bearish font-medium border border-bearish/20">Stop Loss Hit</span>
+            <span className="px-2.5 py-1 rounded-full bg-bearish-fill text-bearish-fg font-medium border border-bearish/20">Stop Loss Hit</span>
           )}
           {computed.hitTP && (
-            <span className="px-2.5 py-1 rounded-full bg-bullish/10 text-bullish font-medium border border-bullish/20">Take Profit Hit</span>
+            <span className="px-2.5 py-1 rounded-full bg-bullish-fill text-bullish-fg font-medium border border-bullish/20">Take Profit Hit</span>
           )}
         </div>
       )}

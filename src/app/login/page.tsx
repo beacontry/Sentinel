@@ -51,7 +51,7 @@ function LoginError({ id, error }: { id: string; error: string }) {
     <div
       id={id}
       role="alert"
-      className={error ? "rounded-lg border border-bearish/25 bg-bearish/10 px-3 py-2 text-sm text-bearish" : "sr-only"}
+      className={error ? "rounded-lg border border-bearish-line bg-bearish-fill px-3 py-2 text-sm text-bearish" : "sr-only"}
     >
       {error}
     </div>

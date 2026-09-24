@@ -64,7 +64,7 @@ export function BillingStatusBanner() {
   if (dismissed) return null;
 
   return (
-    <div className="border-b border-warning/30 bg-warning/10">
+    <div className="border-b border-warning-line bg-warning-fill">
       <div className="mx-auto max-w-7xl px-4 lg:px-6 py-2.5 flex items-start gap-3">
         <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
         <div className="flex-1 text-sm">

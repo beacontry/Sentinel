@@ -19,9 +19,9 @@ const categoryColors: Record<string, string> = {
 
 const categoryBadge: Record<string, string> = {
   fomc: "border-accent/30 bg-accent/10 text-accent",
-  cpi: "border-warning/30 bg-warning/10 text-warning",
-  jobs: "border-bullish/30 bg-bullish/10 text-bullish",
-  gdp: "border-warning/30 bg-warning/10 text-warning",
+  cpi: "border-warning-line bg-warning-fill text-warning-fg",
+  jobs: "border-bullish-line bg-bullish-fill text-bullish-fg",
+  gdp: "border-warning-line bg-warning-fill text-warning-fg",
   earnings: "border-accent/30 bg-accent/10 text-accent",
   other: "border-border bg-bg-elevated text-text-muted",
 };

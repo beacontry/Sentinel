@@ -81,8 +81,8 @@ export function GuideQuiz({
           <div
             className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
               passed
-                ? "border-bullish/30 bg-bullish/10 text-bullish"
-                : "border-warning/30 bg-warning/10 text-warning"
+                ? "border-bullish-line bg-bullish-fill text-bullish-fg"
+                : "border-warning-line bg-warning-fill text-warning-fg"
             }`}
           >
             {passed ? (
@@ -123,9 +123,9 @@ export function GuideQuiz({
                       disabled={submitted}
                       className={`w-full text-left flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                         showCorrect
-                          ? "border-bullish/40 bg-bullish/10 text-text-primary"
+                          ? "border-bullish-line bg-bullish-fill text-text-primary"
                           : showWrong
-                          ? "border-bearish/40 bg-bearish/10 text-text-primary"
+                          ? "border-bearish-line bg-bearish-fill text-text-primary"
                           : selected
                           ? "border-accent/40 bg-accent/10 text-text-primary"
                           : "border-border bg-bg-secondary text-text-secondary hover:border-border-hover hover:text-text-primary"
@@ -160,8 +160,8 @@ export function GuideQuiz({
                 <div
                   className={`rounded-lg border p-3 text-xs leading-relaxed ${
                     isCorrect
-                      ? "border-bullish/20 bg-bullish/5 text-text-secondary"
-                      : "border-bearish/20 bg-bearish/5 text-text-secondary"
+                      ? "border-bullish-line bg-bullish-fill text-text-secondary"
+                      : "border-bearish-line bg-bearish-fill text-text-secondary"
                   }`}
                 >
                   <span className="font-semibold text-text-primary">

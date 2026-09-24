@@ -108,8 +108,8 @@ export function InsiderActivity({ symbol }: InsiderActivityProps) {
       {summary && (
         <div className={`rounded-lg px-2.5 py-1.5 text-xs font-medium ${
           summary.netDirection === "buying"
-            ? "bg-bullish/10 text-bullish"
-            : "bg-bearish/10 text-bearish"
+            ? "bg-bullish-fill text-bullish-fg"
+            : "bg-bearish-fill text-bearish-fg"
         }`}>
           Net insider {summary.netDirection}: {formatCurrency(summary.netAmount)}
         </div>

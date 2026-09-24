@@ -285,7 +285,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
             {isStreaming ? (
               <button
                 onClick={handleStop}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-bearish/15 text-bearish transition-colors hover:bg-bearish/25"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-bearish-fill text-bearish-fg transition-colors hover:bg-bearish/25"
                 title="Stop generating"
               >
                 <Square className="h-3 w-3 fill-current" />

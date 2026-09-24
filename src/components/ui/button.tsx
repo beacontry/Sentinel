@@ -19,7 +19,7 @@ const variantStyles: Record<Variant, string> = {
   ghost:
     "text-text-secondary hover:text-text-primary hover:bg-bg-elevated",
   destructive:
-    "bg-bearish/10 text-bearish border border-bearish/20 hover:bg-bearish/15",
+    "bg-bearish-fill text-bearish-fg border border-bearish/20 hover:bg-bearish/15",
   outline:
     "border border-border bg-bg-secondary text-text-secondary hover:border-border-hover hover:text-text-primary shadow-card",
 };

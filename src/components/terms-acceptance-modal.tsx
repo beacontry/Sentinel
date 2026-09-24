@@ -69,7 +69,7 @@ export function TermsAcceptanceModal() {
       </ModalHeader>
       <div className="px-5 pb-2 space-y-4">
         {hasOlderVersion && (
-          <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs">
+          <div className="flex items-start gap-2 rounded-lg border border-warning-line bg-warning-fill p-3 text-xs">
             <AlertTriangle className="w-4 h-4 shrink-0 text-warning mt-0.5" />
             <p className="text-text-secondary m-0">
               The terms have been updated since you last accepted ({status.version}).

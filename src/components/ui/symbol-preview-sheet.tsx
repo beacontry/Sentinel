@@ -56,11 +56,11 @@ interface AnalysisResponse {
 }
 
 const SIGNAL_TONE: Record<string, { label: string; cls: string }> = {
-  STRONG_BUY: { label: "Strong Buy", cls: "bg-bullish/15 text-bullish border-bullish/30" },
-  BUY: { label: "Buy", cls: "bg-bullish/10 text-bullish border-bullish/20" },
+  STRONG_BUY: { label: "Strong Buy", cls: "bg-bullish-fill text-bullish-fg border-bullish/30" },
+  BUY: { label: "Buy", cls: "bg-bullish-fill text-bullish-fg border-bullish/20" },
   HOLD: { label: "Hold", cls: "bg-text-muted/10 text-text-muted border-border" },
-  SELL: { label: "Sell", cls: "bg-bearish/10 text-bearish border-bearish/20" },
-  STRONG_SELL: { label: "Strong Sell", cls: "bg-bearish/15 text-bearish border-bearish/30" },
+  SELL: { label: "Sell", cls: "bg-bearish-fill text-bearish-fg border-bearish/20" },
+  STRONG_SELL: { label: "Strong Sell", cls: "bg-bearish-fill text-bearish-fg border-bearish/30" },
 };
 
 export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps) {

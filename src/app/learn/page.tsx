@@ -39,7 +39,7 @@ const TOPIC_TABS: { id: "all" | GuideTopic; label: string }[] = [
 const DIFFICULTY_COLOR: Record<GuideDifficulty, string> = {
   intro: "bg-ld-green/10 text-ld-green border-ld-green/30",
   intermediate: "bg-ld-amber/10 text-ld-amber border-ld-amber/30",
-  advanced: "bg-bearish/10 text-bearish border-bearish/30",
+  advanced: "bg-bearish-fill text-bearish-fg border-bearish/30",
 };
 
 export default function PublicLearnPage() {

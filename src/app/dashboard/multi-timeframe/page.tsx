@@ -41,9 +41,9 @@ const confluenceColor: Record<string, string> = {
 };
 
 const confluenceBg: Record<string, string> = {
-  confirmed: "bg-bullish/10 border-bullish/20",
-  divergent: "bg-bearish/10 border-bearish/20",
-  mixed: "bg-warning/10 border-warning/20",
+  confirmed: "bg-bullish-fill border-bullish-line",
+  divergent: "bg-bearish-fill border-bearish-line",
+  mixed: "bg-warning-fill border-warning-line",
 };
 
 export default function MultiTimeframePage() {

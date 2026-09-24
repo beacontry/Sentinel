@@ -169,7 +169,7 @@ export function BrokerSwitcher() {
     return (
       <Link
         href="/dashboard/settings"
-        className="mx-2 mb-2 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-1.5
+        className="mx-2 mb-2 flex items-center gap-2 rounded-lg border border-warning-line bg-warning-fill px-2.5 py-1.5
           text-xs text-warning hover:bg-warning/15 transition-colors"
       >
         <AlertCircle className="h-3.5 w-3.5 shrink-0" />

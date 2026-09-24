@@ -371,7 +371,7 @@ export default function ChatPage() {
             {sending ? (
               <button
                 onClick={handleStop}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-bearish/15 text-bearish transition-colors hover:bg-bearish/25"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-bearish-fill text-bearish-fg transition-colors hover:bg-bearish/25"
               >
                 <Square className="h-3 w-3 fill-current" />
               </button>

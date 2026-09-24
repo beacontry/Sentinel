@@ -38,7 +38,7 @@ export default function RiskPage() {
           </p>
         </div>
 
-        <div className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4">
+        <div className="flex items-start gap-3 rounded-lg border border-warning-line bg-warning-fill p-4">
           <AlertTriangle className="w-5 h-5 shrink-0 text-warning mt-0.5" />
           <p className="text-sm text-text-secondary m-0">
             Trading involves substantial risk. You can lose more than your initial

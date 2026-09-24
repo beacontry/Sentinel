@@ -800,7 +800,7 @@ function RunDetailView({
           </div>
 
           {/* Survivorship + realism caveat */}
-          <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs leading-relaxed text-text-secondary">
+          <div className="rounded-lg border border-warning-line bg-warning-fill p-3 text-xs leading-relaxed text-text-secondary">
             <span className="font-semibold text-warning">Read these as relative scores, not live expectations.</span>{" "}
             {run.universe === "sp500"
               ? "S&P 500 runs use point-in-time membership (only trades stocks that were in the index on each date), but fully-delisted companies have no free price data — so survivorship bias is reduced, not eliminated."

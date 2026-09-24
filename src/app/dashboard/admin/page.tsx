@@ -1043,7 +1043,7 @@ export default function AdminPage() {
                                 }}
                                 className={`text-xs px-1.5 py-0.5 rounded font-mono uppercase tracking-wider transition-colors ${
                                   r.user.liveTradingEnabled
-                                    ? "bg-bullish/10 text-bullish hover:bg-bullish/20"
+                                    ? "bg-bullish-fill text-bullish-fg hover:bg-bullish/20"
                                     : "bg-bg-elevated text-text-muted hover:bg-bg-hover"
                                 }`}
                                 title={r.user.liveTradingEnabled ? "Click to revoke live trading" : "Click to grant live trading"}

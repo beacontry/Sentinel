@@ -33,17 +33,17 @@ const CALLOUT_STYLES: Record<
     iconColor: "text-accent",
   },
   tip: {
-    wrap: "border-bullish/20 bg-bullish/10",
+    wrap: "border-bullish-line bg-bullish-fill",
     icon: Lightbulb,
     iconColor: "text-bullish",
   },
   warning: {
-    wrap: "border-warning/20 bg-warning/10",
+    wrap: "border-warning-line bg-warning-fill",
     icon: AlertTriangle,
     iconColor: "text-warning",
   },
   danger: {
-    wrap: "border-bearish/20 bg-bearish/10",
+    wrap: "border-bearish-line bg-bearish-fill",
     icon: ShieldAlert,
     iconColor: "text-bearish",
   },

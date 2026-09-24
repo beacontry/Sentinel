@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useState, useRef } from "react";
 import { X } from "lucide-react";
+import { STATUS_TONE_CLASSES } from "@/lib/status-tone";
 
 type ToastType = "success" | "error" | "warning" | "info";
 
@@ -23,9 +24,9 @@ interface ToastContextValue {
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const TOAST_STYLES: Record<ToastType, string> = {
-  success: "bg-bullish/10 border-bullish/30 text-bullish",
-  error: "bg-bearish/10 border-bearish/30 text-bearish",
-  warning: "bg-warning/10 border-warning/30 text-warning",
+  success: STATUS_TONE_CLASSES.bullish,
+  error: STATUS_TONE_CLASSES.bearish,
+  warning: STATUS_TONE_CLASSES.warning,
   info: "bg-bg-elevated border-border text-text-primary",
 };
 

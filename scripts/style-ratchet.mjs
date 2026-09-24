@@ -42,6 +42,10 @@ export const PATTERNS = {
   "-[#hex]": { re: /-\[#[0-9a-fA-F]{3,8}\]/g },
   "rgb()/rgba() in tsx": { re: /\brgba?\(\s*\d/g },
   "bg-white/ or bg-black/": { re: /(?<![\w-])(?:[a-z0-9-]+:)*bg-(?:white|black)\/[\d.[\]]+/g },
+  // State colour through alpha instead of the -fill/-fg/-line triplet
+  // (src/lib/status-tone.ts). Solid bars at /60-/90 count too: each is a
+  // shade no theme or contrast test controls.
+  "state colour alpha tint": { re: /(?<![\w-])(?:[a-z0-9-]+:)*(?:bg|border|text|ring)-(?:bullish|bearish|warning)\/[\d.]+/g },
   "border-l-2/4 stripe": { re: /(?<![\w-])(?:[a-z0-9-]+:)*border-l-(?:2|4)(?![\w-])/g },
   "inline fontSize 8-11": { re: /fontSize:\s*(?:["'`](?:[89]|1[01])px["'`]|(?:[89]|1[01])\b)/g },
   "text-3xl and up (off scale)": { re: /(?<![\w-])(?:[a-z0-9-]+:)*text-(?:3xl|4xl|5xl|6xl|7xl|8xl|9xl)(?![\w-])/g, zero: true },

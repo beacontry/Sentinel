@@ -491,7 +491,7 @@ export default function ScreenerPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-xl border border-bearish/30 bg-bearish/10 p-4 text-sm text-bearish">
+        <div className="rounded-xl border border-bearish-line bg-bearish-fill p-4 text-sm text-bearish">
           {error}
         </div>
       )}
@@ -818,7 +818,7 @@ export default function ScreenerPage() {
         {analysisLoading ? (
           <AnalysisModalSkeleton />
         ) : analysisError ? (
-          <div className="rounded-lg border border-bearish/30 bg-bearish/10 p-4 text-sm text-bearish">
+          <div className="rounded-lg border border-bearish-line bg-bearish-fill p-4 text-sm text-bearish">
             {analysisError}
           </div>
         ) : analysisData ? (
