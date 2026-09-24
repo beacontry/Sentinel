@@ -40,6 +40,10 @@ const state = vi.hoisted(() => ({
   hangReplace: new Set<string>(),
   /** Called when a cancelOrder lands, so a test can abort at that moment. */
   onCancel: null as null | ((id: string) => void),
+  /** Delay before a placed order shows up at the broker (a slow POST). */
+  placeDelayMs: 0,
+  /** A replaceOrder that changes qty is rejected (shares held by another sell). */
+  rejectQtyReplace: false,
   seq: 0,
 }));
 
@@ -114,6 +118,7 @@ vi.mock("@/lib/brokers", async (importOriginal) => {
         },
         placeOrder: async (params: { symbol: string; side: "buy" | "sell"; type: string; qty: string; stopPrice?: string }) => {
           state.calls.push(`place:${params.symbol}`);
+          if (state.placeDelayMs > 0) await new Promise((r) => setTimeout(r, state.placeDelayMs));
           const o: FakeOrder = {
             id: `new-${++state.seq}`,
             symbol: params.symbol,
@@ -132,6 +137,9 @@ vi.mock("@/lib/brokers", async (importOriginal) => {
           const o = state.orders.find((x) => x.id === id)!;
           state.calls.push(`replace:${o.symbol}:${updates.stopPrice ?? "-"}:${updates.qty ?? "-"}`);
           if (state.hangReplace.has(o.symbol)) return new Promise(() => {});
+          if (updates.qty && state.rejectQtyReplace) {
+            return Promise.reject(new Error("order 403: insufficient qty available (held_for_orders)"));
+          }
           if (updates.stopPrice) o.stopPrice = updates.stopPrice;
           if (updates.qty) o.qty = Number(updates.qty);
           return Promise.resolve({ ...o });
@@ -190,6 +198,9 @@ beforeEach(() => {
   state.cancelAllCalls = 0;
   state.hangReplace = new Set();
   state.onCancel = null;
+  state.placeDelayMs = 0;
+  state.rejectQtyReplace = false;
+  vi.restoreAllMocks();
 });
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -283,6 +294,62 @@ describe("placeSafetyStops", () => {
     expect(liveStops("MSFT").map((o) => o.stopPrice)).toEqual(["106.00"]);
   });
 
+  describe("stop qty differs from the position", () => {
+    it("raises the price even when the qty change is rejected", async () => {
+      const userId = freshUser();
+      state.positions = [pos("AAPL")];
+      // Stop covers 6 of 10 shares; a take-profit limit holds the other 4.
+      state.orders = [
+        stop("s-aapl", "AAPL", 50, 6),
+        { id: "tp-aapl", symbol: "AAPL", side: "sell", type: "limit", status: "new", qty: 4 },
+      ];
+      setMemoryStop(userId, "AAPL", 105);
+      state.rejectQtyReplace = true;
+
+      await placeSafetyStops(userId);
+      expect(state.calls).toEqual(["replace:AAPL:105.00:-", "replace:AAPL:-:10"]);
+      expect(liveStops("AAPL").map((o) => o.stopPrice)).toEqual(["105.00"]);
+    });
+
+    it("matches the qty on its own when the price is already high enough", async () => {
+      const userId = freshUser();
+      state.positions = [pos("AAPL")];
+      state.orders = [stop("s-aapl", "AAPL", 110, 6)];
+
+      await placeSafetyStops(userId);
+      expect(state.calls).toEqual(["replace:AAPL:-:10"]);
+      expect(liveStops("AAPL").map((o) => [o.stopPrice, o.qty])).toEqual([["110.00", 10]]);
+    });
+  });
+
+  describe("a position with no stop but another open sell", () => {
+    it("cancels the sell, then places the stop", async () => {
+      const userId = freshUser();
+      state.positions = [pos("AAPL")];
+      state.orders = [{ id: "lx-aapl", symbol: "AAPL", side: "sell", type: "limit", status: "new", qty: 10 }];
+
+      await placeSafetyStops(userId);
+      expect(state.calls).toEqual(["cancel:AAPL", "place:AAPL"]);
+      expect(liveStops("AAPL")).toHaveLength(1);
+    });
+
+    it("does not return before the stop lands when the deadline fires after the cancel", async () => {
+      const userId = freshUser();
+      state.positions = [pos("AAPL")];
+      state.orders = [{ id: "lx-aapl", symbol: "AAPL", side: "sell", type: "limit", status: "new", qty: 10 }];
+      state.placeDelayMs = 50; // a slow stop POST
+
+      const ac = new AbortController();
+      state.onCancel = () => ac.abort(new Error("shutdown deadline"));
+      await placeSafetyStops(userId, ac.signal);
+
+      // handleShutdown exits as soon as the drain returns, so the stop must
+      // already be at the broker by then.
+      expect(state.calls).toEqual(["cancel:AAPL", "place:AAPL"]);
+      expect(liveStops("AAPL")).toHaveLength(1);
+    });
+  });
+
   describe("orders that are no longer working", () => {
     // getOrders(..., "open") is not honoured by every broker (Tradier returns
     // the whole day). A dead stop must not stand in for protection.
@@ -352,6 +419,29 @@ describe("placeSafetyStops", () => {
       state.onCancel = () => ac.abort(new Error("shutdown deadline"));
       await placeSafetyStops(userId, ac.signal);
 
+      expect(state.calls).toEqual(["cancel:AAPL", "place:AAPL"]);
+      expect(liveStops("AAPL").map((o) => o.stopPrice)).toEqual(["105.00"]);
+      expect(liveStops("MSFT").map((o) => o.stopPrice)).toEqual(["50.00"]);
+    });
+
+    it("starts no new cancel late in the drain, so a replacement cannot outlive the force exit", async () => {
+      const userId = freshUser();
+      state.withReplace = false;
+      state.positions = [pos("AAPL"), pos("MSFT")];
+      state.orders = [stop("s-aapl", "AAPL", 50), stop("s-msft", "MSFT", 50)];
+      setMemoryStop(userId, "AAPL", 105);
+      setMemoryStop(userId, "MSFT", 106);
+
+      // Once AAPL's cancel lands, the clock jumps 10 s: past the cutoff but
+      // still inside the 15 s budget, so only the cutoff can stop MSFT.
+      const realNow = Date.now.bind(Date);
+      let skew = 0;
+      vi.spyOn(Date, "now").mockImplementation(() => realNow() + skew);
+      state.onCancel = () => {
+        skew = 10_000;
+      };
+
+      await placeSafetyStops(userId);
       expect(state.calls).toEqual(["cancel:AAPL", "place:AAPL"]);
       expect(liveStops("AAPL").map((o) => o.stopPrice)).toEqual(["105.00"]);
       expect(liveStops("MSFT").map((o) => o.stopPrice)).toEqual(["50.00"]);
