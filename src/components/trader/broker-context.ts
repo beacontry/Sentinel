@@ -25,7 +25,7 @@ export function brokerName(broker: string): string {
  * a label that only restates the environment ("Paper account", "Live"),
  * add nothing next to a chip that already says paper or live.
  */
-function meaningfulLabel(label: unknown): string | null {
+export function meaningfulLabel(label: unknown): string | null {
   if (typeof label !== "string") return null;
   const t = label.trim();
   if (!t || t === "Default" || /^(paper|live)( account| trading)?$/i.test(t)) return null;
