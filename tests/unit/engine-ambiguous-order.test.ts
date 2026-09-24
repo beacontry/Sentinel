@@ -58,7 +58,7 @@ import {
   getEngineStatus,
   type EngineState,
 } from "@/lib/trading-engine";
-import { BrokerError, type BrokerClient, type BrokerOrder } from "@/lib/brokers";
+import { BrokerError, ORDER_LOOKUP_TIMEOUT_MS, type BrokerClient, type BrokerOrder } from "@/lib/brokers";
 
 const g = globalThis as typeof globalThis & { __tradingEngines?: Map<string, EngineState> };
 
@@ -157,6 +157,65 @@ describe("placeEngineOrder: ambiguous outcome", () => {
 
     await expect(placeEngineOrder(client, BUY, engine)).rejects.toBe(refusal);
     expect(calls.lookups).toHaveLength(0);
+  });
+
+  it("bounds a hung lookup at ORDER_LOOKUP_TIMEOUT_MS instead of a second full fetch timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const engine = runningEngine();
+      const original = timeoutError();
+      const { client, calls } = fakeClient({
+        place: async () => { throw original; },
+        lookup: () => new Promise<BrokerOrder | null>(() => {}), // never answers
+      });
+
+      let settled: unknown = "pending";
+      const p = placeEngineOrder(client, BUY, engine).then(
+        () => { settled = "resolved"; },
+        (e: unknown) => { settled = e; }
+      );
+      await vi.advanceTimersByTimeAsync(ORDER_LOOKUP_TIMEOUT_MS - 1);
+      expect(settled).toBe("pending");
+      await vi.advanceTimersByTimeAsync(1);
+      await p;
+
+      expect(ORDER_LOOKUP_TIMEOUT_MS).toBeLessThanOrEqual(3_000);
+      expect(calls.lookups).toHaveLength(1);
+      expect(settled).toBe(original);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("skips the lookup when the caller's deadline has already passed", async () => {
+    const original = timeoutError();
+    const { client, calls } = fakeClient({
+      place: async () => { throw original; },
+      lookup: async () => brokerOrder("should-not-be-used"),
+    });
+    const ac = new AbortController();
+    ac.abort(new Error("drain deadline"));
+
+    const sell = { symbol: "NVDA", side: "sell" as const, qty: "10", type: "stop" as const, timeInForce: "gtc" as const, stopPrice: "90.00" };
+    await expect(placeEngineOrder(client, sell, undefined, { lookupSignal: ac.signal })).rejects.toBe(original);
+    expect(calls.lookups).toHaveLength(0);
+  });
+
+  it("stops waiting for the lookup when the caller's deadline fires", async () => {
+    const original = timeoutError();
+    const { client, calls } = fakeClient({
+      place: async () => { throw original; },
+      lookup: () => new Promise<BrokerOrder | null>(() => {}),
+    });
+    const ac = new AbortController();
+    const sell = { symbol: "NVDA", side: "sell" as const, qty: "10", type: "stop" as const, timeInForce: "gtc" as const, stopPrice: "90.00" };
+
+    const p = placeEngineOrder(client, sell, undefined, { lookupSignal: ac.signal });
+    await new Promise((r) => setTimeout(r, 10));
+    ac.abort(new Error("drain deadline"));
+
+    await expect(p).rejects.toBe(original);
+    expect(calls.lookups).toHaveLength(1);
   });
 
   it("still refuses a BUY on a halted engine before anything is sent", async () => {

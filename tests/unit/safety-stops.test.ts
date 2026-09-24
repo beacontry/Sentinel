@@ -44,6 +44,8 @@ const state = vi.hoisted(() => ({
   placeDelayMs: 0,
   /** A replaceOrder that changes qty is rejected (shares held by another sell). */
   rejectQtyReplace: false,
+  /** placeOrder reaches the broker but its response is lost (a 504). */
+  ambiguousPlace: false,
   seq: 0,
 }));
 
@@ -129,7 +131,16 @@ vi.mock("@/lib/brokers", async (importOriginal) => {
             stopPrice: params.stopPrice,
           };
           state.orders.push(o);
+          if (state.ambiguousPlace) {
+            throw new actual.BrokerError("Connection timed out", 504, "Connection timed out", true, null, "unknown");
+          }
           return { ...o };
+        },
+        // Answers only after a hung broker would: a lookup that is started
+        // is visible in the call log and holds the drain until it gives up.
+        getOrderByClientId: (id: string) => {
+          state.calls.push(`lookup:${id.length > 0 ? "id" : "none"}`);
+          return new Promise(() => {});
         },
       };
       if (state.withReplace) {
@@ -200,6 +211,7 @@ beforeEach(() => {
   state.onCancel = null;
   state.placeDelayMs = 0;
   state.rejectQtyReplace = false;
+  state.ambiguousPlace = false;
   vi.restoreAllMocks();
 });
 
@@ -422,6 +434,26 @@ describe("placeSafetyStops", () => {
       expect(state.calls).toEqual(["cancel:AAPL", "place:AAPL"]);
       expect(liveStops("AAPL").map((o) => o.stopPrice)).toEqual(["105.00"]);
       expect(liveStops("MSFT").map((o) => o.stopPrice)).toEqual(["50.00"]);
+    });
+
+    it("does not look up an ambiguous replacement once the drain deadline has passed", async () => {
+      const userId = freshUser();
+      state.withReplace = false;
+      state.positions = [pos("AAPL")];
+      state.orders = [stop("s-aapl", "AAPL", 50)];
+      setMemoryStop(userId, "AAPL", 105);
+      state.ambiguousPlace = true;
+
+      const ac = new AbortController();
+      state.onCancel = () => ac.abort(new Error("shutdown deadline"));
+      const started = Date.now();
+      await placeSafetyStops(userId, ac.signal);
+
+      // The stop POST is still sent after the cancel, but its lost response
+      // is not chased with a second broker call past the deadline: the
+      // lookup is what would push the pair past FORCE_EXIT_MS.
+      expect(state.calls).toEqual(["cancel:AAPL", "place:AAPL"]);
+      expect(Date.now() - started).toBeLessThan(1_000);
     });
 
     it("starts no new cancel late in the drain, so a replacement cannot outlive the force exit", async () => {

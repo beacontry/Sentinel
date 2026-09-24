@@ -212,24 +212,59 @@ export function isAmbiguousOrderError(err: unknown): err is BrokerError {
 }
 
 /**
+ * Upper bound on the lookup after an ambiguous submit. The lookup is a second
+ * broker call on the order path, and every engine order goes through it,
+ * including the kill switch's flatten sells and the shutdown safety stops, so
+ * it must not add a second full FETCH_TIMEOUT_MS to them. A lookup that runs
+ * out is "unknown", like one that finds nothing.
+ */
+export const ORDER_LOOKUP_TIMEOUT_MS = 3_000;
+
+/**
  * Look an order up by client_order_id after an ambiguous placeOrder failure.
  * Returns the order, or null when it cannot be confirmed: the broker has no
- * lookup, the lookup found nothing, or the lookup itself failed. Null means
+ * lookup, the lookup found nothing, the lookup itself failed, or it did not
+ * answer within `timeoutMs` (default ORDER_LOOKUP_TIMEOUT_MS) or before
+ * `signal` aborted. An already aborted signal skips the lookup. Null means
  * "unknown", never "rejected": the original POST may still be in flight.
  */
 export async function lookupOrderByClientId(
   client: BrokerClient,
-  clientOrderId: string
+  clientOrderId: string,
+  opts: { timeoutMs?: number; signal?: AbortSignal } = {}
 ): Promise<BrokerOrder | null> {
   if (!client.getOrderByClientId) return null;
+  const { timeoutMs = ORDER_LOOKUP_TIMEOUT_MS, signal } = opts;
+  if (signal?.aborted) {
+    log.warn({ clientOrderId }, "Order lookup by client_order_id skipped: past the caller's deadline; outcome stays unknown");
+    return null;
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const outOfTime = new Promise<"out_of_time">((resolve) => {
+    timer = setTimeout(() => resolve("out_of_time"), timeoutMs);
+    onAbort = () => resolve("out_of_time");
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
   try {
-    return await client.getOrderByClientId(clientOrderId);
+    const result = await Promise.race([client.getOrderByClientId(clientOrderId), outOfTime]);
+    if (result === "out_of_time") {
+      log.warn(
+        { clientOrderId, timeoutMs, deadlinePassed: signal?.aborted ?? false },
+        "Order lookup by client_order_id ran out of time; outcome stays unknown"
+      );
+      return null;
+    }
+    return result;
   } catch (err) {
     log.warn(
       { clientOrderId, err: err instanceof Error ? err.message : "unknown" },
       "Order lookup by client_order_id failed; outcome stays unknown"
     );
     return null;
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
   }
 }
 

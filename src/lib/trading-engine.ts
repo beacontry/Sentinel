@@ -1754,11 +1754,18 @@ export class EngineClosedForEntriesError extends Error {
  * or on an engine that is halted or not running, is refused (fail closed).
  * This backs up the per-scan halt checks, because a scan already past them
  * when the kill switch fires would otherwise keep buying (finding #43).
+ *
+ * After an ambiguous failure the order is looked up by its client_order_id,
+ * bounded by ORDER_LOOKUP_TIMEOUT_MS. `opts.lookupSignal` bounds it further:
+ * the shutdown safety stops pass their drain deadline, so the lookup never
+ * runs past it (and is skipped once it has passed) and cannot push a
+ * cancel-then-place pair past the force exit.
  */
 export async function placeEngineOrder(
   client: BrokerClient,
   params: Omit<PlaceOrderParams, "positionIntent">,
-  engine?: EngineState
+  engine?: EngineState,
+  opts: { lookupSignal?: AbortSignal } = {}
 ): Promise<BrokerOrder> {
   if (params.side === "buy" && (!engine || engine.halted || !engine.running)) {
     log.warn(
@@ -1809,7 +1816,7 @@ export async function placeEngineOrder(
     // FAILED and skips the notional and rate counters for a live order.
     if (!isAmbiguousOrderError(err)) throw err;
     err.clientOrderId = clientOrderId;
-    const found = await lookupOrderByClientId(client, clientOrderId);
+    const found = await lookupOrderByClientId(client, clientOrderId, { signal: opts.lookupSignal });
     if (!found) {
       log.warn(
         { symbol: params.symbol, side: params.side, clientOrderId, outcome: err.orderOutcome, err: err.message },
@@ -7988,7 +7995,9 @@ const PROTECTIVE_SELL_TYPES = new Set(["stop", "stop_limit", "trailing_stop"]);
  * cancel starts once SAFETY_CANCEL_CUTOFF_MS of the drain has passed, and the
  * wait for released shares is capped at SAFETY_CANCEL_WAIT_MS. That leaves
  * 8 s of the drain budget plus the 5 s force-exit headroom for the cancel,
- * the wait and the place.
+ * the wait and the place. The client_order_id lookup after an ambiguous
+ * place gets the drain deadline as its lookupSignal, so it never runs past
+ * DRAIN_BUDGET_MS and adds nothing to that worst case (7 + 2 + 10 = 19 s).
  */
 const SAFETY_CANCEL_WAIT_MS = 2_000;
 const SAFETY_CANCEL_CUTOFF_MS = DRAIN_BUDGET_MS - 8_000;
@@ -8145,7 +8154,7 @@ export async function placeSafetyStops(userId: string | null, signal?: AbortSign
             await placeEngineOrder(client, {
               symbol: pos.symbol, side: "sell", qty: String(pos.qty),
               type: "stop", timeInForce: "gtc", stopPrice: targetStr,
-            });
+            }, undefined, { lookupSignal: deadline });
           } catch (err) {
             engine.unprotectedSymbols.add(pos.symbol);
             throw err;
@@ -8162,7 +8171,7 @@ export async function placeSafetyStops(userId: string | null, signal?: AbortSign
             placeEngineOrder(client, {
               symbol: pos.symbol, side: "sell", qty: String(pos.qty),
               type: "stop", timeInForce: "gtc", stopPrice: targetStr,
-            }),
+            }, undefined, { lookupSignal: deadline }),
             deadline
           );
           markProtected(target);
@@ -8225,7 +8234,7 @@ export async function placeSafetyStops(userId: string | null, signal?: AbortSign
           await placeEngineOrder(client, {
             symbol: pos.symbol, side: "sell", qty: String(pos.qty),
             type: "stop", timeInForce: "gtc", stopPrice: raise ? targetStr : existing.stopPrice!,
-          });
+          }, undefined, { lookupSignal: deadline });
           markProtected(raise ? target : existingStop);
           log.info({ symbol: pos.symbol, oldStop: existing.stopPrice, newStop: targetStr }, "Safety stop replaced");
         } catch (err) {
