@@ -809,7 +809,7 @@ The MTM halt fires at scan-end when `engine.dailyLoss + totalUnrealizedPnl < -1.
 
 **Does NOT call `cancelAllOrders`.** The bleed-out scenario typically has protective stops sitting in the broker queue — cancelling them while positions are bleeding would strip the protection that's actively limiting further losses. `engine.halted` blocks new BUYs from the next scan onward; existing stops keep firing.
 
-Wired into all three scan paths (`runScan`, `runTacticalScan`, `runTacticalSmartScan`) after `totalUnrealizedPnl` is computed, before `upsertDailyPnl`.
+Wired into all three scan paths (`runScan`, `runTacticalScan`, `runTacticalSmartScan`) after `totalUnrealizedPnl` is computed, before `upsertDailyPnl`. In the two tactical scans this is `recordScanEndPnl`. When its scan-end `getPositions()` fails, the unrealized figure is unknown, not 0: the failure is logged, `upsertDailyPnl` gets `null` (the stored value is kept), and the halt runs against the start-of-scan broker positions the scan already read. That figure can still include a loser the scan just sold, so it errs toward halting.
 
 ## Losing-Reentry Cooldown (post-2026-06-10 review)
 

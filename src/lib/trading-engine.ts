@@ -1752,6 +1752,54 @@ async function enforceUnrealizedLossHalt(
 }
 
 /**
+ * Scan-end mark-to-market step shared by the tactical scans: fetch the
+ * broker's unrealized P&L, run the MTM drawdown halt, write the daily row.
+ *
+ * A failed scan-end positions fetch leaves the unrealized figure UNKNOWN, not
+ * zero. It used to be summed into a 0 inside a silent catch, so a 429 or a
+ * timeout overwrote today's stored unrealized P&L with 0 and ran the MTM halt
+ * as if there were no open loss, letting the next scan's BUYs through. Now:
+ *   - the failure is logged;
+ *   - upsertDailyPnl gets null, which preserves the stored value;
+ *   - the halt runs against the start-of-scan positions the scan already
+ *     read from the broker (the scan aborts without them). That figure can
+ *     still carry a loser the scan just sold, whose loss is also in
+ *     dailyLoss, so it errs toward halting, never toward a fabricated 0.
+ */
+export async function recordScanEndPnl(
+  engine: EngineState,
+  client: BrokerClient,
+  startOfScanPositions: BrokerPosition[],
+  equity: number,
+  today: string,
+  realizedDelta: number,
+  tradesDelta: number,
+): Promise<void> {
+  let totalUnrealizedPnl: number | null = null;
+  try {
+    const brokerPositions = await client.getPositions();
+    let sum = 0;
+    for (const bp of brokerPositions) sum += bp.unrealizedPnl;
+    totalUnrealizedPnl = sum;
+  } catch (err) {
+    log.warn(
+      { userId: engine.userId, err: err instanceof Error ? err.message : "unknown" },
+      "Scan-end positions fetch failed: unrealized P&L unknown, keeping the stored value and checking the MTM halt against start-of-scan positions"
+    );
+  }
+
+  let unrealizedForHalt = totalUnrealizedPnl;
+  if (unrealizedForHalt === null) {
+    unrealizedForHalt = 0;
+    for (const bp of startOfScanPositions) unrealizedForHalt += bp.unrealizedPnl;
+  }
+  // Mark-to-market drawdown halt (post-2026-06-10). See
+  // enforceUnrealizedLossHalt() for full rationale.
+  await enforceUnrealizedLossHalt(engine, equity, unrealizedForHalt, today);
+  await upsertDailyPnl(today, realizedDelta, totalUnrealizedPnl, tradesDelta, engine.halted, undefined, engine.userId);
+}
+
+/**
  * Thrown by placeEngineOrder for a BUY when the engine is halted or not
  * running. Sells are never refused by this check.
  */
@@ -4938,19 +4986,9 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
     log.info({ positions: positionMap.size }, "Tactical entry complete");
   }
 
-  // Update daily P&L from broker positions
-  let totalUnrealizedPnl = 0;
-  try {
-    const brokerPositions = await client.getPositions();
-    for (const bp of brokerPositions) {
-      totalUnrealizedPnl += bp.unrealizedPnl;
-    }
-  } catch { /* use 0 */ }
-  // Mark-to-market drawdown halt (post-2026-06-10) — fires when
-  // realized+unrealized exceeds 1.5× the realized threshold. See
-  // enforceUnrealizedLossHalt() for full rationale.
-  await enforceUnrealizedLossHalt(engine, account.equity, totalUnrealizedPnl, today);
-  await upsertDailyPnl(today, tacticalRealized, totalUnrealizedPnl, tacticalExits, engine.halted, undefined, engine.userId);
+  // Update daily P&L from broker positions, then the MTM drawdown halt. An
+  // unknown unrealized figure is never written or checked as 0.
+  await recordScanEndPnl(engine, client, currentPositions, account.equity, today, tacticalRealized, tacticalExits);
 
   // Update status — scan completed, clear in-flight marker
   engine.lastScanAt = new Date();
@@ -5649,18 +5687,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
     }
   }
 
-  // Update daily P&L from broker positions
-  let totalUnrealizedPnl = 0;
-  try {
-    const brokerPositions = await client.getPositions();
-    for (const bp of brokerPositions) {
-      totalUnrealizedPnl += bp.unrealizedPnl;
-    }
-  } catch { /* use 0 */ }
-  // Mark-to-market drawdown halt (post-2026-06-10) — fires when
-  // realized+unrealized exceeds 1.5× the realized threshold.
-  await enforceUnrealizedLossHalt(engine, account.equity, totalUnrealizedPnl, today);
-  await upsertDailyPnl(today, realizedPnlThisScan, totalUnrealizedPnl, tradesThisScan, engine.halted, undefined, engine.userId);
+  // Update daily P&L from broker positions, then the MTM drawdown halt. An
+  // unknown unrealized figure is never written or checked as 0.
+  await recordScanEndPnl(engine, client, currentPositions, account.equity, today, realizedPnlThisScan, tradesThisScan);
 
   engine.lastScanAt = new Date();
   engine.scanCount++;
