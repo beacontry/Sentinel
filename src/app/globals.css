@@ -84,6 +84,16 @@
   --color-sell: var(--color-bearish);
   --color-strong-sell: var(--color-bearish-fg);
 
+  /* ── Chart series ── a categorical palette for indicator lines: one
+     lightness per theme, hues spread so no two neighbours read alike.
+     3:1 or better on bg-surface. */
+  --color-series-1: oklch(52% 0.12 180);
+  --color-series-2: oklch(52% 0.12 250);
+  --color-series-3: oklch(52% 0.12 305);
+  --color-series-4: oklch(52% 0.12 50);
+  --color-series-5: oklch(52% 0.12 100);
+  --color-series-6: oklch(52% 0.12 350);
+
   /* ── Loading shimmer ── */
   --color-skeleton-sheen: color-mix(in oklch, var(--color-text-primary) 6%, transparent);
 
@@ -163,6 +173,12 @@
     --color-bearish-solid: oklch(55% 0.19 25);
     --color-on-bearish: oklch(98% 0.005 25);
     --color-neutral: oklch(60% 0.020 165);
+    --color-series-1: oklch(74% 0.12 180);
+    --color-series-2: oklch(74% 0.12 250);
+    --color-series-3: oklch(74% 0.12 305);
+    --color-series-4: oklch(74% 0.12 50);
+    --color-series-5: oklch(74% 0.12 100);
+    --color-series-6: oklch(74% 0.12 350);
   }
 
   /* ── Gray: the dark ladder with the tint taken out ("true neutral").
@@ -203,6 +219,12 @@
     --color-bearish-solid: oklch(55% 0.19 25);
     --color-on-bearish: oklch(98% 0.005 25);
     --color-neutral: oklch(60% 0.004 286);
+    --color-series-1: oklch(74% 0.12 180);
+    --color-series-2: oklch(74% 0.12 250);
+    --color-series-3: oklch(74% 0.12 305);
+    --color-series-4: oklch(74% 0.12 50);
+    --color-series-5: oklch(74% 0.12 100);
+    --color-series-6: oklch(74% 0.12 350);
   }
 
   /* ── Coral: the light ladder turned to a warm hue 30, coral accent ── */

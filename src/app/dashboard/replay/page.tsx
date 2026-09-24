@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
 import { Play, BarChart3, Maximize2, Minimize2 } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
+import { getChartTheme } from "@/lib/chart-theme";
 
 interface Trade {
   id?: string;
@@ -121,6 +122,9 @@ export default function ReplayPage() {
     async function renderChart() {
       const lc = await import("lightweight-charts");
       if (!chartContainerRef.current) return;
+      // Colours come from the theme tokens, read once per render, so the
+      // light themes and colour-blind mode reach the replay candles too.
+      const palette = getChartTheme();
 
       // Clean up previous
       if (chartRef.current) {
@@ -132,24 +136,24 @@ export default function ReplayPage() {
         width: chartContainerRef.current.clientWidth,
         height: 450,
         layout: {
-          background: { type: lc.ColorType.Solid, color: "#0d0f0e" },
-          textColor: "#a3a8a5",
+          background: { type: lc.ColorType.Solid, color: palette.background },
+          textColor: palette.textColor,
           fontFamily: "var(--font-geist-mono), monospace",
         },
         grid: {
-          vertLines: { color: "#1a1d1b" },
-          horzLines: { color: "#1a1d1b" },
+          vertLines: { color: palette.gridColor },
+          horzLines: { color: palette.gridColor },
         },
         crosshair: { mode: lc.CrosshairMode.Normal },
-        timeScale: { borderColor: "#2a2d2b" },
-        rightPriceScale: { borderColor: "#2a2d2b" },
+        timeScale: { borderColor: palette.gridColor },
+        rightPriceScale: { borderColor: palette.gridColor },
       });
 
       const candleSeries = chart.addSeries(lc.CandlestickSeries, {
-        upColor: "#22c55e",
-        downColor: "#ef4444",
-        wickUpColor: "#22c55e",
-        wickDownColor: "#ef4444",
+        upColor: palette.bullish,
+        downColor: palette.bearish,
+        wickUpColor: palette.bullish,
+        wickDownColor: palette.bearish,
         borderVisible: false,
       });
 
@@ -169,7 +173,7 @@ export default function ReplayPage() {
         const isBuy = trade.action === "BUY" || trade.action === "buy";
         candleSeries.createPriceLine({
           price: trade.fillPrice,
-          color: isBuy ? "#22c55e" : "#ef4444",
+          color: isBuy ? palette.bullish : palette.bearish,
           lineWidth: 1,
           lineStyle: 2,
           axisLabelVisible: true,

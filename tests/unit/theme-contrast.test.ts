@@ -113,6 +113,10 @@ describe.each(MODES)("%s", (_mode, vars) => {
     expect(cr(`--color-${state}-fg`, `--color-${state}-fill`)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it.each([1, 2, 3, 4, 5, 6])("chart series %i is at least 3:1 on the chart background", (n) => {
+    expect(cr(`--color-series-${n}`, "--color-bg-surface")).toBeGreaterThanOrEqual(3);
+  });
+
   it.each(["bullish", "bearish", "warning"])("%s-line is at least 3:1 on bg-secondary", (state) => {
     expect(cr(`--color-${state}-line`, "--color-bg-secondary")).toBeGreaterThanOrEqual(3);
   });
