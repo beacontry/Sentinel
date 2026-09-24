@@ -82,28 +82,79 @@ interface Individual { params: OptimizableParams; fitness: number }
  * comparable across runs (each run fetches its own data snapshot/split).
  *
  * Rules:
- *   - No incumbent (first-ever active preset)  → promote unconditionally.
+ *   - Empty holdout (zero test dates)          → never promote. Both scores
+ *     come out as a finite 0 on no data, which is not a result.
  *   - Non-finite candidate score               → never promote (bad backtest).
+ *   - No incumbent (first-ever active preset, or a legacy incumbent that
+ *     can't be scored) → promote only on a strictly positive candidate score.
+ *     There is nothing to beat, so the bar is "beat buy-and-hold at all".
  *   - Otherwise promote iff candidateOOS > incumbentOOS + margin.
  *
  * `margin` is in the same units as the OOS score (excess-return percentage
  * points, e.g. 2 = candidate must beat the incumbent by 2pp). A strictly
  * positive margin creates hysteresis so noise-level improvements don't churn
  * the global active slot on every run.
+ *
+ * `testDates` is the length of the shared holdout's test segment. The cron
+ * already defers below HOLDOUT_MIN_TEST_DATES; the zero check here is the
+ * rule's own floor so no caller can promote on an empty holdout.
  */
 export function decidePromotion(input: {
   candidateOOS: number;
   incumbentOOS: number | null;
   margin: number;
-}): { promote: boolean; reason: "no_incumbent" | "beat_margin" | "below_margin" | "invalid_candidate" } {
-  const { candidateOOS, incumbentOOS, margin } = input;
+  testDates: number;
+}): {
+  promote: boolean;
+  reason:
+    | "no_incumbent"
+    | "no_incumbent_not_positive"
+    | "beat_margin"
+    | "below_margin"
+    | "invalid_candidate"
+    | "empty_holdout";
+} {
+  const { candidateOOS, incumbentOOS, margin, testDates } = input;
+  if (!(testDates > 0)) return { promote: false, reason: "empty_holdout" };
   if (!Number.isFinite(candidateOOS)) return { promote: false, reason: "invalid_candidate" };
-  if (incumbentOOS === null || !Number.isFinite(incumbentOOS))
-    return { promote: true, reason: "no_incumbent" };
+  if (incumbentOOS === null || !Number.isFinite(incumbentOOS)) {
+    return candidateOOS > 0
+      ? { promote: true, reason: "no_incumbent" }
+      : { promote: false, reason: "no_incumbent_not_positive" };
+  }
   const threshold = incumbentOOS + Math.max(0, margin);
   return candidateOOS > threshold
     ? { promote: true, reason: "beat_margin" }
     : { promote: false, reason: "below_margin" };
+}
+
+/** Minimum share of the symbols the GA trained on that the auto-optimizer's
+ *  holdout must also fetch before it may decide a run. */
+export const HOLDOUT_MIN_COVERAGE = 0.8;
+/** Minimum test-segment length (trading dates) for a decidable holdout. */
+export const HOLDOUT_MIN_TEST_DATES = 60;
+
+/**
+ * Is the auto-optimizer's freshly fetched holdout complete enough to decide a
+ * run on? A promotion decision is permanent (autoPromotionDecidedAt), so a
+ * holdout built while the data provider was throttled or down must defer, not
+ * decide. Pure so the floor is tested away from the fetch loop.
+ *
+ * `expected` is the number of symbols the GA itself trained on when known
+ * (the run's totalSymbols), else the universe size. Measuring against what the
+ * GA actually had keeps a universe with permanently unfetchable names (the
+ * sp500 point-in-time union includes delisted members) from deferring forever.
+ */
+export function assessHoldoutCoverage(input: {
+  expected: number;
+  fetched: number;
+  testDates: number;
+}): { ok: boolean; coverage: number; reason: "ok" | "low_coverage" | "short_holdout" } {
+  const { expected, fetched, testDates } = input;
+  const coverage = expected > 0 ? fetched / expected : 0;
+  if (!(coverage >= HOLDOUT_MIN_COVERAGE)) return { ok: false, coverage, reason: "low_coverage" };
+  if (!(testDates >= HOLDOUT_MIN_TEST_DATES)) return { ok: false, coverage, reason: "short_holdout" };
+  return { ok: true, coverage, reason: "ok" };
 }
 
 export interface OptimizationConfig {

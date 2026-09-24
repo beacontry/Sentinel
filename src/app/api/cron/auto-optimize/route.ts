@@ -13,6 +13,7 @@ import {
   buildPortfolioData,
   portfolioBacktest,
   decidePromotion,
+  assessHoldoutCoverage,
   TOP_50,
   TOP_150,
   type OptimizableParams,
@@ -42,7 +43,8 @@ const g = globalThis as typeof globalThis & { __autoOptimizeCronRunning?: boolea
  * tick does exactly ONE unit of work, driven by DB state:
  *
  *   1. A run is in-flight (pending/fetching/optimizing)  → wait, return.
- *   2. A completed run hasn't been decided yet           → evaluate + promote/keep.
+ *   2. A completed run hasn't been decided yet           → evaluate + promote/keep,
+ *      or defer (no decision written) when the holdout fetch came back thin.
  *   3. Enough time has elapsed since the last run        → kick off a new GA.
  *   4. Otherwise                                         → idle.
  *
@@ -115,6 +117,7 @@ export async function GET(request: NextRequest) {
           bestParams: optimizationRuns.bestParams,
           universe: optimizationRuns.universe,
           trainPct: optimizationRuns.trainPct,
+          totalSymbols: optimizationRuns.totalSymbols,
         })
         .from(optimizationRuns)
         .where(
@@ -130,7 +133,8 @@ export async function GET(request: NextRequest) {
 
     if (pending) {
       const outcome = await evaluateAndDecide(serviceUserId, pending);
-      return NextResponse.json({ status: "ok", phase: "evaluated", ...outcome });
+      const phase = outcome.decision === "deferred" ? "deferred" : "evaluated";
+      return NextResponse.json({ status: "ok", phase, ...outcome });
     }
 
     // ── 3. Time to kick off a new run? ──────────────────────────────────
@@ -171,13 +175,28 @@ export async function GET(request: NextRequest) {
 /**
  * Score the completed candidate against the current global active preset on a
  * shared out-of-sample holdout, and promote iff it clears the margin. Marks the
- * run decided either way so it's never re-evaluated. All heavy I/O (universe
- * fetch + 2 backtests) lives here; the promote/keep RULE is decidePromotion().
+ * run decided either way so it's never re-evaluated, EXCEPT when the holdout
+ * fetch was too thin to judge (assessHoldoutCoverage): that returns "deferred"
+ * with nothing written, so the next tick fetches again. A decision is
+ * permanent, so a throttled or failing data provider must not make one. All
+ * heavy I/O (universe fetch + 2 backtests) lives here; the promote/keep RULE is
+ * decidePromotion().
  */
 async function evaluateAndDecide(
   serviceUserId: string,
-  run: { id: string; bestParams: unknown; universe: string; trainPct: number }
-): Promise<{ decision: string; candidateOOS: number | null; incumbentOOS: number | null }> {
+  run: {
+    id: string;
+    bestParams: unknown;
+    universe: string;
+    trainPct: number;
+    totalSymbols: number | null;
+  }
+): Promise<{
+  decision: string;
+  reason?: string;
+  candidateOOS: number | null;
+  incumbentOOS: number | null;
+}> {
   const margin = envFloat("OPTIMIZER_PROMOTE_MARGIN", 2);
 
   const candidateParams = asGaParams(run.bestParams);
@@ -209,19 +228,60 @@ async function evaluateAndDecide(
   const { universe, eligibleOn } = await resolveUniverse(run.universe);
   const allBars = new Map<string, Bar[]>();
   const provider = getMarketDataProvider();
+  const failed: string[] = [];
+  let shortHistory = 0;
   for (const sym of universe) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const bars = await Promise.race([
         provider.fetchBars(sym, 1825, "1d"),
-        new Promise<Bar[]>((_, rej) => setTimeout(() => rej(new Error("timeout")), 10000)),
+        new Promise<Bar[]>((_, rej) => {
+          timer = setTimeout(() => rej(new Error("timeout")), 10000);
+        }),
       ]);
       if (bars.length > 200) allBars.set(sym, bars);
+      else shortHistory++;
     } catch {
-      /* skip unfetchable symbol */
+      failed.push(sym);
+    } finally {
+      clearTimeout(timer);
     }
     await new Promise((r) => setTimeout(r, 1)); // yield
   }
   const data = buildPortfolioData(allBars, run.trainPct);
+  const testDates = Math.max(0, data.dates.length - data.trainEnd);
+
+  // Coverage floor. Measured against what the GA trained on when known (its
+  // totalSymbols), never more than the universe itself.
+  const expected =
+    run.totalSymbols && run.totalSymbols > 0
+      ? Math.min(run.totalSymbols, universe.length)
+      : universe.length;
+  const cov = assessHoldoutCoverage({ expected, fetched: allBars.size, testDates });
+  const coverage = {
+    attempted: universe.length,
+    expected,
+    fetched: allBars.size,
+    failed: failed.length,
+    shortHistory,
+    coverage: Number(cov.coverage.toFixed(3)),
+    testDates,
+  };
+  if (failed.length > 0) {
+    log.warn(
+      { runId: run.id, failedCount: failed.length, failedSample: failed.slice(0, 20) },
+      "Auto-optimizer: holdout symbols failed to fetch"
+    );
+  }
+  if (!cov.ok) {
+    // No markDecided and no audit row: nothing was decided. The next tick
+    // re-fetches and tries again.
+    log.warn(
+      { runId: run.id, reason: cov.reason, ...coverage },
+      "Auto-optimizer: holdout too thin to decide on, deferring to the next tick"
+    );
+    return { decision: "deferred", reason: cov.reason, candidateOOS: null, incumbentOOS: null };
+  }
 
   const candidateOOS = portfolioBacktest(data, candidateParams, "test", eligibleOn).excessReturn;
   const incumbentParams = incumbent ? asGaParams(incumbent.bestParams) : null;
@@ -229,7 +289,7 @@ async function evaluateAndDecide(
     ? portfolioBacktest(data, incumbentParams, "test", eligibleOn).excessReturn
     : null;
 
-  const decision = decidePromotion({ candidateOOS, incumbentOOS, margin });
+  const decision = decidePromotion({ candidateOOS, incumbentOOS, margin, testDates });
 
   if (decision.promote) {
     // Flip the single global active slot — identical semantics to save-preset.
@@ -255,6 +315,7 @@ async function evaluateAndDecide(
         reason: decision.reason,
         universe: run.universe,
         demotedRunId: incumbent?.id ?? null,
+        coverage,
       },
     });
     log.info(
@@ -265,12 +326,12 @@ async function evaluateAndDecide(
   }
 
   await markDecided(run.id);
-  await auditReject(serviceUserId, run.id, decision.reason, candidateOOS, incumbentOOS, margin);
+  await auditReject(serviceUserId, run.id, decision.reason, candidateOOS, incumbentOOS, margin, coverage);
   log.info(
     { runId: run.id, candidateOOS, incumbentOOS, margin, reason: decision.reason },
     "Auto-optimizer kept the incumbent (candidate did not clear the margin)"
   );
-  return { decision: "rejected", candidateOOS, incumbentOOS };
+  return { decision: "rejected", reason: decision.reason, candidateOOS, incumbentOOS };
 }
 
 async function markDecided(runId: string): Promise<void> {
@@ -286,14 +347,15 @@ async function auditReject(
   reason: string,
   candidateOOS: number | null,
   incumbentOOS: number | null,
-  margin: number
+  margin: number,
+  coverage?: Record<string, number>
 ): Promise<void> {
   await writeAudit({
     actor: { userId: serviceUserId, email: null, role: "system" },
     action: AuditAction.OPTIMIZER_AUTO_REJECTED,
     resourceType: "optimization_run",
     resourceId: runId,
-    metadata: { reason, candidateOOS, incumbentOOS, margin },
+    metadata: { reason, candidateOOS, incumbentOOS, margin, ...(coverage ? { coverage } : {}) },
   });
 }
 
