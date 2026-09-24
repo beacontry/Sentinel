@@ -401,93 +401,89 @@
   }
 }
 
-/* ── Keyframes ── */
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(24px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes scale-in {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes slide-in-left {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
-}
-@keyframes slide-in-right {
-  from { opacity: 0; transform: translateX(24px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3); }
-  50% { box-shadow: 0 0 10px 3px rgba(16, 185, 129, 0.1); }
+/* Animation classes, the landing grid and the legacy accent-line hooks.
+   In @layer components rather than unlayered: an unlayered rule beats
+   every Tailwind utility regardless of specificity, so `motion-reduce:
+   animate-none` or an `opacity-*` utility on the same element used to
+   lose silently. Components sit below utilities, so a utility now wins.
+   These stay plain classes (not @utility) because callers build some of
+   the names at runtime (`stagger-${i + 1}`), which Tailwind's scanner
+   cannot see. */
+@layer components {
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slide-in-left {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(24px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  /* One exponential ease-out for every entrance, as the design notes say. */
+  .animate-fade-in { animation: fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-fade-in-up { animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-scale-in { animation: scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-slide-up { animation: slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-slide-in-left { animation: slide-in-left 0.25s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-slide-in-right { animation: slide-in-right 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.10s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.20s; }
+  .stagger-5 { animation-delay: 0.25s; }
+  .stagger-6 { animation-delay: 0.30s; }
+  .stagger-7 { animation-delay: 0.35s; }
+  .stagger-8 { animation-delay: 0.40s; }
+
+  /* ── Landing page ── */
+  .landing-grid-bg {
+    background-image:
+      linear-gradient(var(--color-ld-border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-ld-border) 1px, transparent 1px);
+    background-size: 62px 62px;
+    opacity: 0.28;
+    mask-image: radial-gradient(ellipse at center, black 36%, transparent 72%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 36%, transparent 72%);
+  }
+
+  /* card-accent-line / top-accent-line: the animated accent stripes were
+     removed 2026-07-15 as a template tell. The names stay as positioning
+     hooks so existing markup keeps its containing block. */
+  .card-accent-line,
+  .top-accent-line {
+    position: relative;
+  }
 }
 
-.animate-fade-in { animation: fade-in 0.2s ease-out both; }
-.animate-fade-in-up { animation: fade-in-up 0.5s ease-out both; }
-.animate-scale-in { animation: scale-in 0.2s ease-out both; }
-.animate-slide-up { animation: slide-up 0.25s ease-out both; }
-.animate-slide-in-left { animation: slide-in-left 0.25s ease-out both; }
-.animate-slide-in-right { animation: slide-in-right 0.35s ease-out both; }
-.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
-
-.stagger-1 { animation-delay: 0.05s; }
-.stagger-2 { animation-delay: 0.10s; }
-.stagger-3 { animation-delay: 0.15s; }
-.stagger-4 { animation-delay: 0.20s; }
-.stagger-5 { animation-delay: 0.25s; }
-.stagger-6 { animation-delay: 0.30s; }
-.stagger-7 { animation-delay: 0.35s; }
-.stagger-8 { animation-delay: 0.40s; }
-
-.focus-ring {
-  /* Transparent rather than none, so forced colours still paint it. */
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-  box-shadow: 0 0 0 2px var(--color-bg-secondary), 0 0 0 4px var(--color-accent);
-}
-
-/* ── Landing page styles ── */
-
-.landing-grid-bg {
-  background-image:
-    linear-gradient(var(--color-ld-border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--color-ld-border) 1px, transparent 1px);
-  background-size: 62px 62px;
-  opacity: 0.28;
-  mask-image: radial-gradient(ellipse at center, black 36%, transparent 72%);
-  -webkit-mask-image: radial-gradient(ellipse at center, black 36%, transparent 72%);
-}
-
-/* card-accent-line / top-accent-line removed 2026-07-15 (design review):
-   animated gradient accent stripes were a recognizable template tell, and
-   top-accent-line introduced a cyan that exists nowhere else in the product.
-   The classes are kept as no-ops so any straggler markup degrades silently. */
-.card-accent-line,
-.top-accent-line {
-  position: relative;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-.animate-pulse-dot {
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
+/* Last unlayered rules on purpose: the blanket reduced-motion override
+   covers every animation and transition added later, and print must beat
+   the themes. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
