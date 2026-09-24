@@ -58,6 +58,27 @@ const SUMMARY_TONE: Record<NonNullable<ConfirmActionSpec["summary"]>[number]["to
   bearish: "text-bearish",
 };
 
+type SummaryRow = NonNullable<ConfirmActionSpec["summary"]>[number];
+
+/**
+ * The numbers being acted on. The dialog is bg-surface, so the summary
+ * sinks one step to bg-primary and keeps a container edge: these rows are
+ * the quantity and price of an irreversible action and must read as one
+ * bounded group, which a same-fill block cannot.
+ */
+export function ConfirmSummary({ rows }: { rows: SummaryRow[] }) {
+  return (
+    <dl className="my-4 divide-y divide-[var(--color-hairline-inner)] rounded-lg border border-border bg-bg-primary">
+      {rows.map((row) => (
+        <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+          <dt className="text-text-secondary">{row.label}</dt>
+          <dd className={`font-mono font-medium tabular-nums ${SUMMARY_TONE[row.tone ?? "default"]}`}>{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function ConfirmActionModal({
   spec,
   onClose,
@@ -113,22 +134,7 @@ export function ConfirmActionModal({
             </div>
           </div>
 
-          {spec.summary && spec.summary.length > 0 && (
-            // The modal is bg-surface, so the summary sinks one step to
-            // bg-primary and keeps a container edge: these rows are the
-            // quantity and price of an irreversible action and must read
-            // as one bounded group, which a same-fill block cannot.
-            <dl className="my-4 divide-y divide-[var(--color-hairline-inner)] rounded-lg border border-border bg-bg-primary">
-              {spec.summary.map((row) => (
-                <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                  <dt className="text-text-secondary">{row.label}</dt>
-                  <dd className={`font-mono font-medium tabular-nums ${SUMMARY_TONE[row.tone ?? "default"]}`}>
-                    {row.value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          )}
+          {spec.summary && spec.summary.length > 0 && <ConfirmSummary rows={spec.summary} />}
 
           {spec.typedKeyword && (
             <div className="my-4">

@@ -1,0 +1,288 @@
+#!/usr/bin/env node
+// Redesign verification captures (docs/design/redesign-plan.md, section
+// "Verification tooling"). Two targets:
+//
+//   --kit   The UI kit gallery rendered WITHOUT the app: the gallery is
+//           server-rendered to static HTML (scripts/render-ui-kit.tsx) and
+//           styled with globals.css compiled through Tailwind, so it needs
+//           no database, no session and no dev server. Besides the
+//           screenshots it runs the Stage 2 checks and exits non-zero on a
+//           failure:
+//             - keyboard pass: Tab through every stop, each shows a 2px
+//               outline (on itself or on a focus-within wrapper);
+//             - hit areas: every control is at least 44px tall, counting a
+//               ::before / ::after hit-area pseudo-element;
+//             - the primary button hover paints accent-hover (not struck
+//               through by a later class);
+//             - a positioned sm Button keeps its absolute position;
+//             - the confirm summary is a different fill from its dialog.
+//
+//   (default) The app routes, against a running instance (BASE_URL,
+//           default http://localhost:3000) with a session cookie in
+//           BEACONTRY_SESSION, as in capture-readme-assets.mjs. Never point
+//           this at production.
+//
+// Both capture 390x844 and 1440x900 at fullPage in every theme plus
+// colour-blind mode, assert scrollWidth <= innerWidth on every capture,
+// and write shots/<stage>/<route>-<theme>-<width>.png (shots/ is ignored).
+//
+// Usage:
+//   node scripts/capture-redesign.mjs --kit [--stage stage2]
+//   BEACONTRY_SESSION=... node scripts/capture-redesign.mjs [--stage stage3a] [--routes /,/login]
+//
+// Needs @playwright/test (a devDependency) and a Chromium build:
+//   npx playwright install chromium
+
+import { chromium } from "playwright";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const args = process.argv.slice(2);
+const flag = (name) => args.includes(name);
+const opt = (name, fallback) => {
+  const i = args.indexOf(name);
+  return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
+};
+
+const KIT = flag("--kit");
+const STAGE = opt("--stage", KIT ? "kit" : "current");
+const OUT = path.join(ROOT, "shots", STAGE);
+const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
+
+// The <html> classes for each capture. Light is the class-less base.
+const THEMES = [
+  ["light", ""],
+  ["dark", "dark"],
+  ["coral", "coral"],
+  ["light-blue", "light-blue"],
+  ["gray", "gray"],
+  ["colorblind-light", "colorblind"],
+  ["colorblind-dark", "colorblind dark"],
+];
+const VIEWPORTS = [
+  { width: 390, height: 844 },
+  { width: 1440, height: 900 },
+];
+const ROUTES = opt(
+  "--routes",
+  "/,/login,/dashboard,/dashboard/trader,/dashboard/trade/AAPL,/dashboard/watchlists,/dashboard/tax-center,/dashboard/tax,/dashboard/admin/ui-kit",
+).split(",");
+
+const slug = (route) => (route === "/" ? "home" : route.replace(/^\//, "").replace(/[^\w-]+/g, "_"));
+const failures = [];
+const fail = (where, what) => failures.push(`${where}: ${what}`);
+
+async function compiledCss() {
+  const { default: postcss } = await import("postcss");
+  const twModule = await import("@tailwindcss/postcss");
+  const tw = twModule.default ?? twModule;
+  const from = path.join(ROOT, "src", "app", "globals.css");
+  const res = await postcss([tw({ base: ROOT })]).process(fs.readFileSync(from, "utf8"), { from });
+  return res.css;
+}
+
+function renderKit() {
+  const tsx = path.join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
+  return execFileSync(
+    process.execPath,
+    [tsx, "--tsconfig", path.join(ROOT, "scripts", "tsconfig.render.json"), path.join(ROOT, "scripts", "render-ui-kit.tsx")],
+    { cwd: ROOT, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+  );
+}
+
+function kitDocument(css, body) {
+  // The class is set per capture; `<main id="main">` matches the shell.
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI kit</title><style>${css}</style></head>
+<body class="min-h-screen bg-bg-primary text-text-primary antialiased"><main id="main">${body}</main></body></html>`;
+}
+
+async function assertNoSideScroll(page, where) {
+  const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  if (over > 0) fail(where, `scrolls sideways by ${over}px`);
+}
+
+/** Tab through the page: every stop must draw a 2px outline. */
+async function keyboardPass(page, where) {
+  await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+  let stops = 0;
+  for (let i = 0; i < 400; i++) {
+    await page.keyboard.press("Tab");
+    const r = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return null;
+      // Mark each stop: class strings are long, so markup prefixes collide.
+      const seenBefore = el.hasAttribute("data-kstop");
+      el.setAttribute("data-kstop", "");
+      const visible = (color) => !/rgba?\([^)]*,\s*0\)$|transparent/.test(color.trim());
+      // A 2px ring is either a visible outline or a solid box-shadow ring
+      // (the field primitives draw ring-2 over a transparent outline).
+      const ok = (node) => {
+        const s = getComputedStyle(node);
+        if (s.outlineStyle !== "none" && parseFloat(s.outlineWidth) >= 2 && visible(s.outlineColor)) return true;
+        for (const part of s.boxShadow.split(/,(?![^(]*\))/)) {
+          const color = /(rgba?|oklch|oklab|color)\([^)]*\)/.exec(part)?.[0] ?? "";
+          const lengths = [...part.replace(color, "").matchAll(/(-?[\d.]+)px/g)].map((m) => parseFloat(m[1]));
+          if (color && visible(color) && lengths.length === 4 && lengths[2] === 0 && lengths[3] >= 2) return true;
+        }
+        return false;
+      };
+      // A composite field (SearchInput) paints the ring on its wrapper.
+      let node = el;
+      let good = false;
+      for (let d = 0; d < 3 && node; d++, node = node.parentElement) {
+        if (ok(node)) {
+          good = true;
+          break;
+        }
+      }
+      const name = (el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 40);
+      return { seenBefore, good, label: `${el.tagName.toLowerCase()} ${name}`.trim() };
+    });
+    if (!r || r.seenBefore) break;
+    stops++;
+    if (!r.good) fail(where, `focus stop "${r.label}" has no 2px ring`);
+  }
+  return stops;
+}
+
+/** Every interactive control reaches 44px, counting a hit-area pseudo-element. */
+async function hitAreas(page, where) {
+  const short = await page.evaluate(() => {
+    const out = [];
+    const sel = 'button, a[href], input:not([type="hidden"]), select, textarea, [role="switch"], [role="tab"]';
+    for (const el of document.querySelectorAll(sel)) {
+      const rect = el.getBoundingClientRect();
+      // Not a target: hidden, or a visually hidden native mirror (the
+      // Radix Select keeps a 1px <select aria-hidden> for forms).
+      if (rect.width <= 1 || rect.height <= 1 || el.closest('[aria-hidden="true"]')) continue;
+      let h = rect.height;
+      for (const pseudo of ["::before", "::after"]) {
+        const s = getComputedStyle(el, pseudo);
+        if (s.content === "none" || s.position !== "absolute") continue;
+        const top = parseFloat(s.top);
+        const bottom = parseFloat(s.bottom);
+        const own = parseFloat(s.height);
+        if (Number.isFinite(own)) h = Math.max(h, own);
+        else if (Number.isFinite(top) && Number.isFinite(bottom)) h = Math.max(h, rect.height - top - bottom);
+      }
+      // A label wrapping the control counts (Toggle).
+      const label = el.closest("label");
+      if (label) h = Math.max(h, label.getBoundingClientRect().height);
+      if (h < 44 - 0.5) out.push(`${(el.getAttribute("aria-label") || el.textContent || el.tagName).trim().slice(0, 30)} (${h.toFixed(1)}px)`);
+    }
+    return out;
+  });
+  for (const s of short) fail(where, `hit area under 44px: ${s}`);
+}
+
+async function kitChecks(page, where) {
+  // Primary hover: the painted fill must be accent-hover.
+  const primary = page.locator("button", { hasText: /^Primary$/ }).first();
+  await primary.hover();
+  await page.waitForTimeout(250);
+  const hover = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Primary");
+    const probe = document.createElement("div");
+    probe.style.background = "var(--color-accent-hover)";
+    document.body.append(probe);
+    const want = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return { got: getComputedStyle(btn).backgroundColor, want };
+  });
+  if (hover.got !== hover.want) fail(where, `primary hover paints ${hover.got}, expected accent-hover ${hover.want}`);
+  await page.mouse.move(0, 0);
+
+  const kit = await page.evaluate(() => {
+    const rm = document.querySelector('[data-kit="tile-remove"]');
+    const dialog = document.querySelector('[data-kit="dialog-surface"]');
+    const dl = dialog?.querySelector("dl");
+    return {
+      removePosition: rm ? getComputedStyle(rm).position : "missing",
+      dialogFill: dialog ? getComputedStyle(dialog).backgroundColor : "missing",
+      summaryFill: dl ? getComputedStyle(dl).backgroundColor : "missing",
+    };
+  });
+  if (kit.removePosition !== "absolute") fail(where, `tile Remove button is position:${kit.removePosition}, not absolute`);
+  if (kit.dialogFill === kit.summaryFill) fail(where, `confirm summary fill equals its dialog (${kit.summaryFill})`);
+}
+
+async function main() {
+  fs.mkdirSync(OUT, { recursive: true });
+  const browser = await chromium.launch();
+  const report = [];
+  try {
+    if (KIT) {
+      const html = kitDocument(await compiledCss(), renderKit());
+      for (const [themeName, cls] of THEMES) {
+        for (const vp of VIEWPORTS) {
+          const where = `ui-kit ${themeName} ${vp.width}`;
+          const page = await browser.newPage({ viewport: vp });
+          await page.setContent(html.replace('<html lang="en">', `<html lang="en" class="${cls}">`), { waitUntil: "load" });
+          await assertNoSideScroll(page, where);
+          await page.screenshot({ path: path.join(OUT, `ui-kit-${themeName}-${vp.width}.png`), fullPage: true });
+          const stops = await keyboardPass(page, where);
+          await hitAreas(page, where);
+          await kitChecks(page, where);
+          report.push({ where, stops });
+          await page.close();
+        }
+      }
+    } else {
+      const session = process.env.BEACONTRY_SESSION;
+      if (!session) {
+        console.error("BEACONTRY_SESSION is required for the app routes (or pass --kit).");
+        process.exitCode = 2;
+        return;
+      }
+      const url = new URL(BASE_URL);
+      for (const [themeName, cls] of THEMES) {
+        for (const vp of VIEWPORTS) {
+          const ctx = await browser.newContext({ viewport: vp });
+          await ctx.addCookies([{ name: "sentinel-session", value: session, domain: url.hostname, path: "/" }]);
+          // The app applies both before first paint from storage: the theme
+          // from sentinel-theme (theme-init.js), colour-blind mode from the
+          // display-prefs key (display-prefs-provider.tsx).
+          await ctx.addInitScript((c) => {
+            try {
+              const parts = c.split(" ");
+              localStorage.setItem("sentinel-theme", parts.filter((x) => x !== "colorblind")[0] || "light");
+              const prefs = JSON.parse(localStorage.getItem("sentinel-display-prefs") || "{}");
+              prefs.colorBlindMode = parts.includes("colorblind");
+              localStorage.setItem("sentinel-display-prefs", JSON.stringify(prefs));
+            } catch {}
+          }, cls);
+          const page = await ctx.newPage();
+          for (const route of ROUTES) {
+            const where = `${route} ${themeName} ${vp.width}`;
+            await page.goto(BASE_URL + route, { waitUntil: "networkidle" });
+            await page.waitForTimeout(400);
+            await assertNoSideScroll(page, where);
+            await page.screenshot({ path: path.join(OUT, `${slug(route)}-${themeName}-${vp.width}.png`), fullPage: true });
+            report.push({ where });
+          }
+          await ctx.close();
+        }
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+  fs.writeFileSync(path.join(OUT, "report.json"), JSON.stringify({ report, failures }, null, 2));
+  console.log(`${report.length} captures in ${path.relative(ROOT, OUT)}`);
+  if (KIT) console.log(`keyboard stops per capture: ${[...new Set(report.map((r) => r.stops))].join(", ")}`);
+  if (failures.length) {
+    console.error(`${failures.length} failures:`);
+    for (const f of failures) console.error(`  ${f}`);
+    process.exitCode = 1;
+  } else {
+    console.log("all checks passed");
+  }
+}
+
+await main();

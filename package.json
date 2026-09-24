@@ -10,6 +10,8 @@
     "lint": "eslint .",
     "docs:check": "node scripts/check-doc-staleness.mjs",
     "lint:style": "node scripts/style-ratchet.mjs",
+    "capture:kit": "node scripts/capture-redesign.mjs --kit",
+    "capture:redesign": "node scripts/capture-redesign.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
@@ -50,6 +52,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.60.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/adm-zip": "^0.5.8",
     "@types/bcryptjs": "^2.4.6",
