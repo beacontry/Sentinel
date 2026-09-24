@@ -106,7 +106,7 @@ All tokens live in `src/app/globals.css`, in OKLCH: the `@theme` block is the li
 | light-blue | cool light ladder | blue, white label |
 | gray | the dark ladder with no tint | emerald |
 
-**Colour-blind mode** is a second `<html>` class, `colorblind`, that swaps only the state colours to blue (gain) / vermillion orange (loss) / yellow (warning), so loss and warning stay apart. **`tests/unit/theme-contrast.test.ts` measures every meaningful pair in all 5 themes × colour-blind mode** — change a value, run it.
+**Colour-blind mode** is a second `<html>` class, `colorblind`, that replaces the state colours (gain, loss, warning and their `-fg`/`-fill`/`-line`) and the accent with **one fixed set per luminance family**, whatever the theme (`html.colorblind` for light/coral/light-blue, `html.colorblind.dark, .gray` for the dark two): blue gain, vermillion-to-amber loss, yellow warning, neutral-blue accent (every theme's own accent collided with the set under simulated deuteranopia or protanopia). Never tune a per-theme colour-blind variant. **`tests/unit/theme-contrast.test.ts` measures every meaningful pair in all 5 themes × colour-blind mode** — change a value, run it.
 
 **ThemeProvider** (`src/components/theme-provider.tsx`): persists to `localStorage("sentinel-theme")`, sets `<html>` class, updates PWA `theme-color` (hex copies of each theme's `--color-bg-primary`, pinned by `tests/unit/theme-meta.test.ts`). `useTheme()` → `{ theme, setTheme, toggleTheme }`. `isDarkTheme(theme)` (true for `dark`/`gray`) exported for TradingView embed.
 

@@ -324,11 +324,10 @@
      Coral puts a warm accent among a loss and a warning that are warm
      too, so its semantic colours are chosen as one set rather than a
      pair at a time: accent, hover, gain, loss, warning and the text
-     ladder, in plain coral and in colour-blind coral (below), which
-     share the accent and the text. Each state keeps 0.10 deltaE OK or
-     more from every other state, from the accent and hover, and from
-     the text; theme-contrast.test.ts measures the whole set, and in
-     colour-blind mode under simulated deuteranopia and protanopia too.
+     ladder. Each state keeps 0.10 deltaE OK or more from every other
+     state, from the accent and hover, and from the text;
+     theme-contrast.test.ts measures the whole set. Colour-blind mode
+     replaces all of it with the shared light set (below).
 
      - The accent is a terracotta (hue 29), not an orange. Orange reads
        as yellow to a deuteranope, the colour of the warning; every
@@ -388,64 +387,62 @@
     --color-neutral: oklch(66% 0.040 250);
   }
 
-  /* ── Colour-blind mode ── a class beside the theme class. Red/green
-     become blue/orange (after Bang Wong's deuteranopia-safe pair), moved
-     in lightness until each passes 4.5:1: the published #E69F00 orange is
-     2.1:1 on white. Light themes first, then the two dark ones. */
-  /* Warning moves to yellow in this mode. The theme's amber warning sat
-     beside the orange loss (1.07:1, a deltaE of about 0.02), so a rejected
-     order and a partial fill differed only by their words, for exactly
-     the readers this mode is for. Loss leans vermillion (hue 45-60) and
-     warning yellow (hue 100); the test holds them 0.10 deltaE OK apart. */
+  /* ── Colour-blind mode ── a class beside the theme class. It replaces
+     the theme's state colours with ONE fixed set per luminance family:
+     html.colorblind for the light themes (light, coral, light-blue) and
+     html.colorblind.dark / .gray for the dark ones. The set does not
+     follow the theme, because a deuteranope or protanope keeps only
+     lightness and the blue-yellow axis, and tuning a variant per theme
+     kept moving a collision from one pair to the next.
+
+     - Gain is blue, loss is vermillion-to-amber, warning is yellow
+       (after Bang Wong's deuteranopia-safe palette), spread in lightness
+       as well as hue so the three stay apart once red-green is gone.
+     - Each -fg is the state colour itself: it already clears 4.5:1 on
+       its -fill, and one value per state is one value to keep distinct
+       from the text.
+     - The accent is overridden too, to a neutral blue. Every theme's own
+       accent collided with this set under simulation: the emerald reads
+       as the olive of the warning, coral's terracotta as the loss, and
+       light-blue's blue as the gain. The neutral blue sits apart from
+       the gain in chroma and lightness.
+
+     theme-contrast.test.ts measures every theme with this mode on, as
+     typical, deuteranope and protanope vision see it. */
   html.colorblind {
-    --color-bullish: oklch(48% 0.13 245);
-    --color-bearish: oklch(52% 0.15 45);
-    --color-warning: oklch(50% 0.11 100);
-    --color-bullish-fg: oklch(38% 0.10 245);
-    --color-bullish-fill: oklch(95% 0.025 245);
-    --color-bullish-line: oklch(62% 0.11 245);
-    --color-bearish-fg: oklch(43% 0.13 42);
-    --color-bearish-fill: oklch(95% 0.030 50);
-    --color-bearish-line: oklch(64% 0.13 48);
-    --color-warning-fg: oklch(38% 0.085 102);
-    --color-warning-fill: oklch(95% 0.060 100);
-    --color-warning-line: oklch(66% 0.12 100);
+    --color-bullish: oklch(52% 0.20 265);
+    --color-bearish: oklch(40% 0.14 40);
+    --color-warning: oklch(50% 0.11 108);
+    --color-bullish-fg: oklch(52% 0.20 265);
+    --color-bullish-fill: oklch(95% 0.025 265);
+    --color-bullish-line: oklch(62% 0.14 265);
+    --color-bearish-fg: oklch(40% 0.14 40);
+    --color-bearish-fill: oklch(95% 0.030 45);
+    --color-bearish-line: oklch(58% 0.13 42);
+    --color-warning-fg: oklch(50% 0.11 108);
+    --color-warning-fill: oklch(95% 0.060 105);
+    --color-warning-line: oklch(66% 0.11 105);
+    --color-accent: oklch(46% 0.10 245);
+    --color-accent-hover: oklch(41% 0.10 245);
+    --color-on-accent: oklch(99.5% 0.003 245);
   }
   html.colorblind.dark,
   html.colorblind.gray {
-    --color-bullish: oklch(70% 0.13 240);
-    --color-bearish: oklch(74% 0.15 58);
-    --color-warning: oklch(86% 0.15 100);
-    --color-bullish-fg: oklch(84% 0.08 240);
-    --color-bullish-fill: oklch(27% 0.050 240);
-    --color-bullish-line: oklch(72% 0.11 240);
-    --color-bearish-fg: oklch(82% 0.11 52);
-    --color-bearish-fill: oklch(28% 0.045 58);
-    --color-bearish-line: oklch(74% 0.12 58);
-    --color-warning-fg: oklch(90% 0.11 100);
-    --color-warning-fill: oklch(28% 0.045 100);
-    --color-warning-line: oklch(82% 0.13 100);
-  }
-  /* Colour-blind coral: the gain, loss and warning of the set chosen
-     with plain coral above. A deuteranope or protanope keeps lightness
-     and the blue-yellow axis only, so the three warm meanings (accent,
-     loss, warning) are spread along lightness: a deep rust loss (27%),
-     the terracotta accent (41%) and a yellow warning (52%), with the
-     blue gain darker (39%) and more saturated than the shared one so it
-     stays clear of the text under both simulations. */
-  html.colorblind.coral {
-    --color-bullish: oklch(39% 0.19 264);
-    --color-bullish-fg: oklch(38% 0.15 264);
-    --color-bullish-fill: oklch(95% 0.025 264);
-    --color-bullish-line: oklch(60% 0.14 262);
-    --color-bearish: oklch(27% 0.09 40);
-    --color-bearish-fg: oklch(27% 0.09 40);
-    --color-bearish-fill: oklch(95% 0.030 50);
-    --color-bearish-line: oklch(52% 0.11 45);
-    --color-warning: oklch(52% 0.107 96);
-    --color-warning-fg: oklch(40% 0.085 100);
-    --color-warning-fill: oklch(95% 0.060 100);
-    --color-warning-line: oklch(64% 0.12 100);
+    --color-bullish: oklch(69% 0.16 265);
+    --color-bearish: oklch(78% 0.16 65);
+    --color-warning: oklch(94% 0.15 105);
+    --color-bullish-fg: oklch(69% 0.16 265);
+    --color-bullish-fill: oklch(27% 0.050 265);
+    --color-bullish-line: oklch(66% 0.13 265);
+    --color-bearish-fg: oklch(78% 0.16 65);
+    --color-bearish-fill: oklch(28% 0.045 62);
+    --color-bearish-line: oklch(72% 0.14 62);
+    --color-warning-fg: oklch(94% 0.15 105);
+    --color-warning-fill: oklch(28% 0.045 102);
+    --color-warning-line: oklch(86% 0.14 102);
+    --color-accent: oklch(76% 0.12 228);
+    --color-accent-hover: oklch(82% 0.11 228);
+    --color-on-accent: oklch(17% 0.020 228);
   }
   /* The -muted mixes are declared once per theme and resolve on <html>,
      so each picks up the swapped colour without being repeated here. */

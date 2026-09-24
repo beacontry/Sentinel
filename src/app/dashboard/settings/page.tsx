@@ -898,8 +898,9 @@ Any trade you place will use real money. The engine remains stopped — you must
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-text-primary">Color-blind palette</div>
               <p className="text-xs text-text-muted mt-0.5">
-                Swap bullish/bearish to a deuteranopia-friendly blue/orange (Wong palette).
-                Affects every $/%, badge, and chart color across the app.
+                Swap bullish/bearish to a deuteranopia-friendly blue/orange (Wong palette),
+                with a yellow warning and a blue accent. Affects every $/%, badge, and chart
+                color across the app.
               </p>
             </div>
             <Toggle

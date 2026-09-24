@@ -4,9 +4,9 @@
  * in src/app/globals.css.
  *
  * The light theme is the @theme block. dark, coral, light-blue and gray
- * are `html.<name>` blocks that override it, and colour-blind mode is
- * `html.colorblind` (light themes) or `html.colorblind.dark, .gray` on top
- * of that. The tokens are OKLCH; src/lib/color-contrast.ts converts them.
+ * are `html.<name>` blocks that override it, and colour-blind mode is one
+ * fixed set per luminance family on top of that: `html.colorblind` for
+ * the light themes, `html.colorblind.dark, .gray` for the dark ones. The tokens are OKLCH; src/lib/color-contrast.ts converts them.
  *
  * - A label on an accent fill must clear 4.5:1 at rest and on hover.
  *   White on the old #10b981 was 2.5:1.
@@ -28,8 +28,10 @@
  *   against every text colour, and the accent against the gain and the
  *   secondary text. Fixing one pair at a time is how coral kept moving
  *   its collision from one pair to the next.
- * - In colour-blind mode the same set is measured again as a
- *   deuteranope and a protanope see it (Machado 2009 simulation).
+ * - In colour-blind mode every theme is measured again as typical,
+ *   deuteranope and protanope vision see it (Machado 2009 simulation):
+ *   the states and their -fg tokens against each other, against the
+ *   three text colours, and against the accent and its hover.
  */
 
 import { describe, it, expect } from "vitest";
@@ -54,7 +56,6 @@ function block(opener: RegExp): Record<string, string> {
 const base = block(/@theme\s*\{/);
 const colorblindLight = block(/^\s*html\.colorblind\s*\{/m);
 const colorblindDark = block(/^\s*html\.colorblind\.dark,\s*html\.colorblind\.gray\s*\{/m);
-const colorblindCoral = block(/^\s*html\.colorblind\.coral\s*\{/m);
 
 const THEMES: Record<string, Record<string, string>> = {
   light: base,
@@ -65,11 +66,15 @@ const THEMES: Record<string, Record<string, string>> = {
 };
 const DARK = new Set(["dark", "gray"]);
 
-/** A theme with colour-blind mode on: the shared block, then coral's own. */
+/**
+ * A theme with colour-blind mode on. The dark block is written as
+ * `html.colorblind.dark`, so on a dark theme both blocks apply, the dark
+ * one winning.
+ */
 const withColorblind = (name: string): Record<string, string> => ({
   ...THEMES[name],
-  ...(DARK.has(name) ? colorblindDark : colorblindLight),
-  ...(name === "coral" ? colorblindCoral : {}),
+  ...colorblindLight,
+  ...(DARK.has(name) ? colorblindDark : {}),
 });
 
 const MODES: [string, Record<string, string>][] = Object.entries(THEMES).flatMap(([name, vars]) => [
@@ -239,45 +244,58 @@ describe.each(MODES)("%s", (_mode, vars) => {
 
 /** The trading states: gain, loss, warning. */
 const STATES = ["--color-bullish", "--color-bearish", "--color-warning"];
+const FGS = STATES.map((s) => `${s}-fg`);
 const TEXTS = ["--color-text-primary", "--color-text-secondary", "--color-text-muted"];
+const VISIONS: Vision[] = ["normal", "deuteranopia", "protanopia"];
 
 /**
  * Modes whose accent is the gain green on purpose (the emerald brand):
  * there a filled button and a gain figure share a hue by design, and the
- * button's shape and label carry the difference.
+ * button's shape and label carry the difference. Colour-blind mode is not
+ * one of them: it swaps the accent to a neutral blue kept apart from the
+ * blue gain.
  */
 const ACCENT_IS_GAIN = new Set(["light", "dark", "gray"]);
 
 /**
- * Pairs below the 0.10 floor today in themes not yet reworked as a set,
- * held at what they measure: a ratchet, so none can get worse. Coral and
- * colour-blind coral have no entry; they were chosen as one set and hold
- * 0.10 everywhere. Raise or delete an entry when a palette improves;
+ * Pairs below the 0.10 floor, held at what they measure: a ratchet, so
+ * none can get worse. Raise or delete an entry when a palette improves;
  * never lower one. Keyed "mode | vision | a | b".
  */
 const KNOWN_GAPS: Record<string, number> = {
   "light | normal | --color-bullish | --color-text-muted": 0.094,
-  "light-blue + colour-blind | normal | --color-bullish | --color-text-muted": 0.088,
-  // light-blue's accent is blue, and so is the colour-blind gain.
-  "light-blue + colour-blind | normal | --color-accent | --color-bullish": 0.077,
-  "light-blue + colour-blind | normal | --color-accent-hover | --color-bullish": 0.082,
-  // The shared light colour-blind loss (vermillion) and warning (yellow)
-  // sit at one lightness, so a dichromat sees one orange.
-  "light + colour-blind | deuteranopia | --color-bearish | --color-warning": 0.028,
-  "light + colour-blind | protanopia | --color-bearish | --color-warning": 0.039,
-  "light-blue + colour-blind | deuteranopia | --color-bearish | --color-warning": 0.028,
-  "light-blue + colour-blind | protanopia | --color-bearish | --color-warning": 0.039,
-  "light + colour-blind | deuteranopia | --color-accent | --color-bearish": 0.098,
-  "light + colour-blind | deuteranopia | --color-accent | --color-warning": 0.077,
-  "light + colour-blind | protanopia | --color-accent | --color-bearish": 0.07,
-  "light + colour-blind | protanopia | --color-accent | --color-warning": 0.054,
-  "light + colour-blind | protanopia | --color-accent-hover | --color-bearish": 0.048,
-  "light + colour-blind | protanopia | --color-accent-hover | --color-warning": 0.067,
-  "dark + colour-blind | deuteranopia | --color-accent-hover | --color-bearish": 0.097,
-  "dark + colour-blind | protanopia | --color-accent | --color-bearish": 0.083,
-  "gray + colour-blind | deuteranopia | --color-accent-hover | --color-bearish": 0.097,
-  "gray + colour-blind | protanopia | --color-accent | --color-bearish": 0.083,
-  "gray + colour-blind | protanopia | --color-bullish | --color-text-secondary": 0.099,
+  // Colour-blind mode on the light themes. A dichromat sees these as
+  // lightness plus the blue-yellow axis only, and every warm colour dark
+  // enough to be text on bg-hover (L 51% or less) has to fit between text
+  // at L 18-24%, 36-38.5% and 47%. A search of the whole in-gamut space
+  // (loss hue 40-85, warning 85-110, any lightness that passes 4.5:1)
+  // tops out near 0.08 for the loss against the secondary text; this set
+  // is that optimum with a vermillion rather than a brown loss. Gain and
+  // accent clear 0.10 everywhere; the dark set clears it outright.
+  "light + colour-blind | deuteranopia | --color-bearish | --color-warning": 0.093,
+  "light + colour-blind | deuteranopia | --color-bearish-fg | --color-warning-fg": 0.093,
+  "coral + colour-blind | deuteranopia | --color-bearish | --color-warning": 0.093,
+  "coral + colour-blind | deuteranopia | --color-bearish-fg | --color-warning-fg": 0.093,
+  "light-blue + colour-blind | deuteranopia | --color-bearish | --color-warning": 0.093,
+  "light-blue + colour-blind | deuteranopia | --color-bearish-fg | --color-warning-fg": 0.093,
+  "light + colour-blind | deuteranopia | --color-bearish | --color-text-secondary": 0.088,
+  "light + colour-blind | deuteranopia | --color-bearish-fg | --color-text-secondary": 0.088,
+  "light + colour-blind | deuteranopia | --color-bearish | --color-text-muted": 0.099,
+  "light + colour-blind | deuteranopia | --color-bearish-fg | --color-text-muted": 0.099,
+  "light + colour-blind | protanopia | --color-bearish | --color-text-secondary": 0.081,
+  "light + colour-blind | protanopia | --color-bearish-fg | --color-text-secondary": 0.081,
+  "light + colour-blind | protanopia | --color-warning | --color-text-muted": 0.096,
+  "light + colour-blind | protanopia | --color-warning-fg | --color-text-muted": 0.096,
+  "coral + colour-blind | deuteranopia | --color-bearish | --color-text-secondary": 0.083,
+  "coral + colour-blind | deuteranopia | --color-bearish-fg | --color-text-secondary": 0.083,
+  "coral + colour-blind | deuteranopia | --color-bearish | --color-text-muted": 0.093,
+  "coral + colour-blind | deuteranopia | --color-bearish-fg | --color-text-muted": 0.093,
+  "coral + colour-blind | deuteranopia | --color-warning | --color-text-muted": 0.094,
+  "coral + colour-blind | deuteranopia | --color-warning-fg | --color-text-muted": 0.094,
+  "coral + colour-blind | protanopia | --color-bearish | --color-text-secondary": 0.08,
+  "coral + colour-blind | protanopia | --color-bearish-fg | --color-text-secondary": 0.08,
+  "coral + colour-blind | protanopia | --color-warning | --color-text-muted": 0.099,
+  "coral + colour-blind | protanopia | --color-warning-fg | --color-text-muted": 0.099,
 };
 const floorFor = (mode: string, vision: Vision, a: string, b: string) =>
   KNOWN_GAPS[`${mode} | ${vision} | ${a} | ${b}`] ?? DISTINCT;
@@ -327,31 +345,48 @@ describe("colour-blind pair", () => {
       deltaEOK(resolve(cb, `--color-bearish${suffix}`), resolve(cb, `--color-warning${suffix}`)),
     ).toBeGreaterThanOrEqual(DISTINCT);
   });
+
+  // The set is fixed per luminance family, not tuned per theme.
+  it.each([
+    ["light", ["coral", "light-blue"]],
+    ["dark", ["gray"]],
+  ] as [string, string[]][])("%s shares its colour-blind set with %j", (first, others) => {
+    const set = [...STATES, ...FGS, "--color-accent", "--color-accent-hover"];
+    for (const other of others) {
+      for (const name of set) expect(resolve(withColorblind(other), name)).toBe(resolve(withColorblind(first), name));
+    }
+  });
 });
 
 /**
- * Colour-blind mode as its readers see it. A deuteranope or protanope
- * keeps lightness and the blue-yellow axis, so two colours 0.13 apart to
- * typical vision can be one colour to them: coral's old orange accent
- * and yellow warning measured 0.007 for a deuteranope. The states, the
- * secondary text, and the accent and its hover against a loss or a
- * warning, measured as each would see them. Floors as in KNOWN_GAPS.
+ * Colour-blind mode as its readers see it, on every theme. A deuteranope
+ * or protanope keeps lightness and the blue-yellow axis, so two colours
+ * 0.13 apart to typical vision can be one colour to them: coral's old
+ * orange accent and yellow warning measured 0.007 for a deuteranope.
+ * Every state and every -fg token against each other, against the three
+ * text colours, and against the accent and its hover, as typical,
+ * deuteranope and protanope vision see them. Floors as in KNOWN_GAPS.
  */
-describe.each(
-  Object.keys(THEMES).flatMap((theme) =>
-    (["deuteranopia", "protanopia"] as Vision[]).map((vision) => [theme, vision] as [string, Vision]),
+const CB_PAIRS: [string, string][] = [
+  [STATES[0], STATES[1]],
+  [STATES[0], STATES[2]],
+  [STATES[1], STATES[2]],
+  [FGS[0], FGS[1]],
+  [FGS[0], FGS[2]],
+  [FGS[1], FGS[2]],
+  ...[...STATES, ...FGS].flatMap((s) => TEXTS.map((t) => [s, t] as [string, string])),
+  ...["--color-accent", "--color-accent-hover"].flatMap((a) =>
+    [...STATES, ...FGS].map((s) => [a, s] as [string, string]),
   ),
-)("%s + colour-blind, seen with %s", (theme, vision) => {
+];
+
+describe.each(
+  Object.keys(THEMES).flatMap((theme) => VISIONS.map((vision) => [theme, vision] as [string, Vision])),
+)("%s + colour-blind, seen with %s vision", (theme, vision) => {
   const cb = withColorblind(theme);
   const mode = `${theme} + colour-blind`;
 
-  it.each([
-    [STATES[0], STATES[1]],
-    [STATES[0], STATES[2]],
-    [STATES[1], STATES[2]],
-    ...STATES.map((s) => [s, "--color-text-secondary"]),
-    ...["--color-accent", "--color-accent-hover"].flatMap((a) => [STATES[1], STATES[2]].map((s) => [a, s])),
-  ])("%s is distinct from %s", (a, b) => {
+  it.each(CB_PAIRS)("%s is distinct from %s", (a, b) => {
     expect(deltaEOK(resolve(cb, a), resolve(cb, b), vision)).toBeGreaterThanOrEqual(floorFor(mode, vision, a, b));
   });
 });

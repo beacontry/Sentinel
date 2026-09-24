@@ -12,7 +12,7 @@ Every value lives in `src/app/globals.css` (Tailwind CSS 4). The `@theme` block 
 | light-blue | `light-blue` | cool light ladder, hue 250 | blue, white label |
 | gray | `gray` | the dark ladder with no tint | emerald |
 
-Colour-blind mode is a second class, `colorblind`, beside the theme class. It swaps only the state colours: gain becomes blue, loss a vermillion orange and warning yellow, each moved in lightness until it clears 4.5:1. Warning moves too because the theme's amber sat on top of the orange loss; the contrast test holds loss and warning at least 0.10 deltaE OK apart.
+Colour-blind mode is a second class, `colorblind`, beside the theme class. It replaces the state colours (gain, loss, warning and their `-fg`, `-fill`, `-line`) and the accent with one fixed set per luminance family, not a variant per theme: `html.colorblind` covers light, coral and light-blue, `html.colorblind.dark, html.colorblind.gray` the dark two. Gain is blue, loss vermillion (light) or amber (dark), warning yellow, each `-fg` equal to its state colour, and the accent a neutral blue kept apart from the gain, because every theme's own accent collided with the set as a deuteranope or protanope sees it. The contrast test measures every theme in this mode under typical, deuteranope and protanope vision; the light set's few pairs under 0.10 deltaE OK are the in-gamut ceiling and are held as a ratchet.
 
 Each block sets its own `color-scheme`, so native controls, scrollbars and the select popup follow the theme. `meta theme-color`, `public/manifest.json` and `THEME_META.pwaColor` are hex copies of each theme's `--color-bg-primary`; `tests/unit/theme-meta.test.ts` keeps them in step.
 
