@@ -31,3 +31,13 @@ export const filingStatusOptions: { value: FilingStatus; label: string }[] = [
   { value: "married_separate", label: "Married Filing Separately" },
   { value: "head_of_household", label: "Head of Household" },
 ];
+
+/** The five tax years both tax pages offer, newest first. */
+export const CURRENT_TAX_YEAR = String(new Date().getFullYear());
+
+export const TAX_YEAR_OPTIONS: { value: string; label: string }[] = Array.from({ length: 5 }, (_, i) => {
+  const y = String(Number(CURRENT_TAX_YEAR) - i);
+  return { value: y, label: y };
+});
+
+export const TAX_YEAR_VALUES = TAX_YEAR_OPTIONS.map((o) => o.value);

@@ -29,7 +29,14 @@ import { useLatestRequest } from "@/hooks/use-latest-request";
 import { ErrorState } from "@/components/ui/error-state";
 import { SignedValue } from "@/components/ui/signed-value";
 import { Spinner } from "@/components/ui/button";
-import { filingStatusOptions, formatCurrency } from "@/components/tax/tax-format";
+import {
+  CURRENT_TAX_YEAR,
+  TAX_YEAR_OPTIONS,
+  TAX_YEAR_VALUES,
+  filingStatusOptions,
+  formatCurrency,
+} from "@/components/tax/tax-format";
+import { NoLotsForYear } from "@/components/tax/no-lots-for-year";
 import { Form8949View, ScheduleDView } from "@/components/tax/tax-report-views";
 import {
   DEFAULT_ORDINARY_INCOME,
@@ -48,14 +55,6 @@ interface Form8949Response {
 
 // ─── Constants ────────────────────────────────────────────────────
 
-const currentYear = new Date().getFullYear();
-
-const yearOptions = Array.from({ length: 5 }, (_, i) => ({
-  value: String(currentYear - i),
-  label: String(currentYear - i),
-}));
-
-const YEAR_VALUES = yearOptions.map((o) => o.value);
 
 
 const FILING_STATUSES = filingStatusOptions.map((o) => o.value);
@@ -102,7 +101,7 @@ function TaxReportPage() {
   const { toast } = useToast();
   // View and filing inputs live in the URL, so a reload or the 401
   // redirect back from /login shows the same report.
-  const [year, setYear] = useUrlParam("year", String(currentYear), YEAR_VALUES);
+  const [year, setYear] = useUrlParam("year", CURRENT_TAX_YEAR, TAX_YEAR_VALUES);
   const [filingStatus, setFilingStatus] = useUrlParam<FilingStatus>("filing", "single", FILING_STATUSES);
   const [ordinaryIncome, setOrdinaryIncome] = useUrlParam(
     "income",
@@ -212,7 +211,7 @@ function TaxReportPage() {
         actions={
           <div className="flex items-center gap-3 flex-wrap">
             <Select
-              options={yearOptions}
+              options={TAX_YEAR_OPTIONS}
               value={year}
               onChange={(v) => setYear(v)}
               className="w-28"
@@ -333,11 +332,9 @@ function TaxReportPage() {
           />
         </div>
       ) : data.lines.length === 0 ? (
-        <EmptyState
-          icon={<Receipt className="h-7 w-7" />}
-          title={`No matched lots for ${year}`}
-          description={`No buy and sell pair closed in ${year}. Trades from both your portfolios and the engine are included; pick another year above to check it.`}
-        />
+        <div className="rounded-xl border border-border bg-bg-secondary">
+          <NoLotsForYear year={year} onYearChange={setYear} />
+        </div>
       ) : activeTab === "form8949" ? (
         <Form8949View
           shortTermLines={shortTermLines}

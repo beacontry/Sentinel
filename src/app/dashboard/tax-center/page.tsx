@@ -23,7 +23,14 @@ import { useLatestRequest } from "@/hooks/use-latest-request";
 import { useUrlParam } from "@/hooks/use-url-param";
 import { ErrorState } from "@/components/ui/error-state";
 import { SignedValue } from "@/components/ui/signed-value";
-import { formatCurrency, type TaxSummary } from "@/components/tax/tax-format";
+import {
+  CURRENT_TAX_YEAR,
+  TAX_YEAR_OPTIONS,
+  TAX_YEAR_VALUES,
+  formatCurrency,
+  type TaxSummary,
+} from "@/components/tax/tax-format";
+import { NoLotsForYear } from "@/components/tax/no-lots-for-year";
 import { PersonalizedTaxEducation } from "@/components/tax/tax-education";
 
 
@@ -40,12 +47,6 @@ interface HarvestingSuggestion {
 }
 
 
-const currentYear = new Date().getFullYear();
-const yearOptions = Array.from({ length: 5 }, (_, i) => ({
-  value: String(currentYear - i),
-  label: String(currentYear - i),
-}));
-const YEAR_VALUES = yearOptions.map((o) => o.value);
 
 // useUrlParam reads useSearchParams, which needs a Suspense boundary so
 // the SSR shell can render while the client hydrates.
@@ -61,7 +62,7 @@ function TaxCenterPage() {
   const { toast } = useToast();
   // The year lives in the URL, like the Tax Report's, so a reload or a
   // shared link shows the same year.
-  const [year, setYear] = useUrlParam("year", String(currentYear), YEAR_VALUES);
+  const [year, setYear] = useUrlParam("year", CURRENT_TAX_YEAR, TAX_YEAR_VALUES);
   // The summary is stored with the year it was fetched for and shown only
   // while that year is selected, so a slower response for the previous
   // year cannot paint over this one. A failed fetch is its own state, not
@@ -165,7 +166,7 @@ function TaxCenterPage() {
         actions={
           <div className="flex items-center gap-3">
             <Select
-              options={yearOptions}
+              options={TAX_YEAR_OPTIONS}
               value={year}
               onChange={(value) => setYear(value)}
               className="w-32"
@@ -196,7 +197,7 @@ function TaxCenterPage() {
             <Skeleton key={i} className="h-28" rounded="lg" />
           ))}
         </div>
-      ) : summary ? (
+      ) : summary && summary.tradeCount > 0 ? (
         <section aria-labelledby="tax-summary" className="rounded-xl border border-border bg-bg-secondary p-2 shadow-card">
           <h2 id="tax-summary" className="sr-only">{year} summary</h2>
           <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -253,15 +254,13 @@ function TaxCenterPage() {
           />
         </div>
       ) : (
-        <EmptyState
-          icon={<Receipt className="w-12 h-12" />}
-          title="No Trade Data"
-          description="Create a portfolio and make some trades to see your tax report."
-        />
+        <div className="rounded-xl border border-border bg-bg-secondary">
+          <NoLotsForYear year={year} onYearChange={setYear} />
+        </div>
       )}
 
       {/* Gains Breakdown */}
-      {summary && (
+      {summary && summary.tradeCount > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Gains & Losses Breakdown</CardTitle>
