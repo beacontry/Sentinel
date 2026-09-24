@@ -237,7 +237,7 @@ Gate ordering inside `canPlaceBuyOrder()`: earnings blackout → **split blackou
 Manual orders go through `/dashboard/trade` (index: symbol search + recently-viewed + watchlist quick-trade + open-orders) → `/dashboard/trade/[symbol]` (the ticket). Tier-gated at `trader`. Engine-gated at THREE layers:
 
 1. **API** — `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` via `peekEngineStatus(userId).running` (hard block).
-2. **Ticket UI** — `validate()` blocks submit with "Stop the engine before placing manual orders."
+2. **Ticket UI** — `validateTicket()` (`src/lib/order-ticket.ts`) blocks submit with "Stop the engine before placing manual orders."
 3. **Index UI** — warning banner when the engine runs, linking to `/dashboard/trader` to stop it.
 
 The block prevents position-map drift: the engine's in-memory map lags the broker by up to one scan interval, risking a protective stop sized for the wrong quantity.
