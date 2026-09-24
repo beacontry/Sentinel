@@ -19,8 +19,11 @@ import { usd } from "./types";
  *
  * Every gain or loss goes through SignedValue, so direction is printed,
  * not only coloured. Tile values size to their tile (a container query),
- * so a six-figure balance steps down a size rather than breaking across
- * two lines on a phone.
+ * so a six-figure balance steps down a size before it has to wrap. When a
+ * figure still does not fit (the "both" P&L format, "+$1,234.57 (+10.00%)",
+ * in a half-width phone tile) it wraps inside the tile, at the space before
+ * the percent first: a tile that runs past the page edge cuts the figure
+ * off and scrolls the whole desk sideways.
  */
 
 type Account = NonNullable<TraderData["brokerAccount"]>;
@@ -30,10 +33,10 @@ function Tile({ label, children, sub }: { label: string; children: ReactNode; su
   return (
     <Inset className="@container min-w-0">
       <dt className="eyebrow text-text-muted">{label}</dt>
-      <dd className="mt-1 whitespace-nowrap font-mono text-base font-semibold text-text-primary tabular-nums @min-[9.5rem]:text-lg @min-[11.5rem]:text-xl">
+      <dd className="mt-1 wrap-anywhere font-mono text-base font-semibold text-text-primary tabular-nums @min-[9.5rem]:text-lg @min-[11.5rem]:text-xl">
         {children}
       </dd>
-      {sub && <dd className="mt-0.5 font-mono text-xs text-text-muted tabular-nums">{sub}</dd>}
+      {sub && <dd className="mt-0.5 wrap-anywhere font-mono text-xs text-text-muted tabular-nums">{sub}</dd>}
     </Inset>
   );
 }
