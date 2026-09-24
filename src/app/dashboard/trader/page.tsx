@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePolling } from "@/hooks/usePolling";
 import { useRecoveryPoll } from "@/hooks/useRecoveryPoll";
+import { accessRegained } from "@/lib/recovery-poll";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { isMarketOpen } from "@/lib/market-hours";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -374,8 +375,15 @@ export default function TraderPage() {
     setData(null);
     setEngine(null);
     setTaxStatus(null);
+    // The loads go back to not-loaded with the data, so the MTM checkbox and
+    // the risk form stay disabled until they are read again. Left "ready"
+    // over an empty snapshot, a tick of the checkbox would send the current
+    // year and overwrite a prior election year, and the form would show
+    // every stored cap as engine-decided.
+    setTaxLoad(initialLoadState());
     setRiskForm(emptyRiskForm());
     setRiskLoaded(emptyRiskForm());
+    setRiskLoad(initialLoadState());
     setSummaryByTradeId({});
     setDetailSymbol(null);
     setTierRequired(code === 402);
@@ -485,6 +493,20 @@ export default function TraderPage() {
     loadRiskProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Access came back (a good load() after a denial): the tax election and
+  // the risk profile were cleared on the way out and nothing else reloads
+  // them, and a load dropped by the generation fence mid-flight never
+  // finished. Read both again.
+  const prevAccessLostRef = useRef<AccessLoss | null>(null);
+  useEffect(() => {
+    const prev = prevAccessLostRef.current;
+    prevAccessLostRef.current = accessLost;
+    if (!accessRegained(prev, accessLost)) return;
+    loadTaxStatus();
+    loadRiskProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessLost]);
 
   async function handleEngine(
     action: "start" | "stop" | "halt" | "switch",
