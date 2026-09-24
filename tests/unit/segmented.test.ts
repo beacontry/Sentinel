@@ -44,6 +44,24 @@ describe("Segmented", () => {
     expect(html).toContain("before:-inset-y-1");
   });
 
+  // A neutral choice (Shares/Dollars) has no tone to lean on: its edge
+  // is the indicator, on the control border that clears 3:1.
+  it("edges a neutral chosen option with the control border", () => {
+    const units = renderToStaticMarkup(
+      createElement(Segmented, {
+        options: [
+          { value: "shares", label: "Shares" },
+          { value: "dollars", label: "Dollars" },
+        ],
+        value: "shares",
+        onChange: noop,
+        label: "Size in",
+      }),
+    );
+    expect(units).toContain("aria-pressed:border-border-control");
+    expect(units).not.toMatch(/aria-pressed:border-border(?!-)/);
+  });
+
   it("is disabled and busy until its value has loaded", () => {
     const busy = renderToStaticMarkup(
       createElement(Segmented, { options: side, value: null, onChange: noop, label: "Order side", busy: true }),

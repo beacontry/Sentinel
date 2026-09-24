@@ -7,9 +7,9 @@ import type { ReactNode } from "react";
  * order type, engine mode, a chart range.
  *
  * A sunken track (bg-primary) holding transparent buttons; the chosen one
- * is raised onto the card fill with an edge and the card shadow, in full
- * text colour and semibold, so the choice reads by weight and edge as
- * well as fill. Styled from aria-pressed, never from a parallel class.
+ * is raised onto the card fill with a control edge (3:1 on the track) and
+ * the card shadow, in full text colour and semibold, so the choice reads
+ * by its edge first, not by weight alone. Styled from aria-pressed, never from a parallel class.
  * Radii are concentric: an 8px track with 4px padding gives 4px buttons.
  *
  * Buttons are 40px drawn with the hit area padded to 48px vertically.
@@ -43,7 +43,11 @@ interface SegmentedProps<T extends string> {
 }
 
 const PRESSED_TONE: Record<Tone | "neutral", string> = {
-  neutral: "aria-pressed:border-border aria-pressed:bg-bg-secondary aria-pressed:text-text-primary",
+  // The edge is what marks the choice: fill and text alone measure about
+  // 1.1:1 and 1.8:1 against the track and the unchosen labels, and dark
+  // themes have no card shadow. border-control is held at 3:1 or better
+  // on bg-primary by theme-contrast.test.ts.
+  neutral: "aria-pressed:border-border-control aria-pressed:bg-bg-secondary aria-pressed:text-text-primary",
   bullish: "aria-pressed:border-bullish-line aria-pressed:bg-bullish-fill aria-pressed:text-bullish-fg",
   bearish: "aria-pressed:border-bearish-line aria-pressed:bg-bearish-fill aria-pressed:text-bearish-fg",
 };

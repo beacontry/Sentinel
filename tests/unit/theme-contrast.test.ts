@@ -195,6 +195,16 @@ describe.each(MODES)("%s", (_mode, vars) => {
     expect(cr(`--color-${state}-line`, "--color-bg-secondary")).toBeGreaterThanOrEqual(3);
   });
 
+  // Segmented (segmented.tsx): the chosen option sits in a bg-primary
+  // track, and its edge is the indicator that must clear 3:1 (WCAG
+  // 1.4.11). The raised fill alone is about 1.1:1 on the track.
+  it.each(["--color-border-control", "--color-bullish-line", "--color-bearish-line"])(
+    "segmented chosen edge %s is at least 3:1 on its bg-primary track",
+    (edge) => {
+      expect(cr(edge, "--color-bg-primary")).toBeGreaterThanOrEqual(3);
+    },
+  );
+
   // The primary action must not be the colour of a loss, of the
   // irreversible danger fill, or of a warning. Coral once measured 0.02
   // against the loss, and then 0.05 against the warning once its accent
