@@ -10,6 +10,7 @@ import { SymbolLink } from "@/components/ui/symbol-link";
 import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 import { PnlCalendarGrid } from "@/components/dashboard/pnl-calendar-grid";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SignedValue } from "@/components/ui/signed-value";
 import {
   CalendarDays,
   TrendingUp,
@@ -136,8 +137,7 @@ export default function PnlCalendarPage() {
         stats={[
           {
             label: "Total P&L",
-            value: summary ? `${summary.totalPnl >= 0 ? "+" : ""}$${summary.totalPnl.toFixed(2)}` : "--",
-            tone: summary ? (summary.totalPnl >= 0 ? "bullish" : "bearish") : "neutral",
+            value: summary ? <SignedValue value={summary.totalPnl} /> : "--",
           },
           { label: "Profit Days", value: summary ? String(summary.profitDays) : "--", tone: "bullish" },
           { label: "Loss Days", value: summary ? String(summary.lossDays) : "--", tone: "bearish" },

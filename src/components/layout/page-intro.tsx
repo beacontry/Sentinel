@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { STATUS_TONE_TEXT_CLASSES } from "@/lib/status-tone";
 import { DirectionGlyph, DirectionWord } from "@/components/ui/signed-value";
+import type { PnlDirection } from "@/lib/format-pnl";
 
 type IntroTone = "brand" | "bullish" | "bearish" | "neutral";
 
@@ -8,12 +9,16 @@ interface PageIntroStat {
   label: string;
   /** A preformatted value, or a SignedValue / StatusChip for a gain or state. */
   value: ReactNode;
-  /**
-   * bullish and bearish on a plain string value also print ▲ or ▼ and a
-   * hidden "gain" or "loss", so the tone is never colour alone. A value
-   * that is already a SignedValue carries its own glyph; leave tone off.
-   */
+  /** Colour only. The label and the printed value carry the meaning. */
   tone?: IntroTone;
+  /**
+   * Set only when the value really is a gain or a loss (a P&L, a signed
+   * return). It prints ▲, ▼ or – and a hidden "gain" or "loss", so the
+   * direction never rests on colour. Never inferred from tone: a risk
+   * level, a count or a "--" placeholder is coloured without being a gain
+   * or a loss. A value that is already a SignedValue carries its own.
+   */
+  direction?: PnlDirection;
 }
 
 interface PageIntroProps {
@@ -35,8 +40,6 @@ const toneClasses: Record<IntroTone, string> = {
   bearish: STATUS_TONE_TEXT_CLASSES.bearish,
   neutral: STATUS_TONE_TEXT_CLASSES.neutral,
 };
-
-const DIRECTION: Partial<Record<IntroTone, "gain" | "loss">> = { bullish: "gain", bearish: "loss" };
 
 export function PageIntro({
   eyebrow,
@@ -72,7 +75,7 @@ export function PageIntro({
       {stats && stats.length > 0 && (
         <dl className="mt-6 grid grid-cols-2 gap-2 rounded-xl border border-border bg-bg-secondary p-2 shadow-card sm:grid-cols-4">
           {stats.map((stat) => {
-            const direction = typeof stat.value === "string" ? DIRECTION[stat.tone ?? "neutral"] : undefined;
+            const direction = stat.direction;
             return (
               <div key={stat.label} className="min-w-0 rounded-lg bg-bg-surface p-3">
                 <dt className="eyebrow text-text-muted">{stat.label}</dt>

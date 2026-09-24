@@ -1,4 +1,4 @@
-import { formatPnl, pnlDirection, type PnlFormat } from "@/lib/format-pnl";
+import { formatPnl, pnlDirection, type PnlDirection, type PnlFormat } from "@/lib/format-pnl";
 
 /**
  * A gain or loss, printed so it reads without colour:
@@ -33,8 +33,12 @@ const GLYPH = { gain: "▲", loss: "▼", flat: "–" } as const;
  * The glyph and hidden word for a value whose direction is known but which
  * arrives as a preformatted string (a stat tile, an intro readout). Put
  * the value between them: glyph, value, word.
+ *
+ * The direction is always passed by the caller, never read off a colour
+ * tone: a risk figure, a count or a placeholder can be painted red or
+ * green without being a loss or a gain. Flat draws "–" and says nothing.
  */
-export function DirectionGlyph({ direction }: { direction: "gain" | "loss" }) {
+export function DirectionGlyph({ direction }: { direction: PnlDirection }) {
   return (
     <span aria-hidden="true" className="mr-1 leading-none">
       {GLYPH[direction]}
@@ -42,7 +46,8 @@ export function DirectionGlyph({ direction }: { direction: "gain" | "loss" }) {
   );
 }
 
-export function DirectionWord({ direction }: { direction: "gain" | "loss" }) {
+export function DirectionWord({ direction }: { direction: PnlDirection }) {
+  if (direction === "flat") return null;
   return <span className="sr-only"> {direction}</span>;
 }
 

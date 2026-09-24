@@ -1,9 +1,10 @@
-import type { ElementType } from "react";
+import type { ElementType, ReactNode } from "react";
 import {
   STATUS_TONE_FILL_CLASSES,
   STATUS_TONE_TEXT_CLASSES,
   type StatusTone,
 } from "@/lib/status-tone";
+import type { PnlDirection } from "@/lib/format-pnl";
 import { DirectionGlyph, DirectionWord } from "./signed-value";
 
 const TONE: Record<"positive" | "negative" | "neutral", StatusTone> = {
@@ -12,25 +13,34 @@ const TONE: Record<"positive" | "negative" | "neutral", StatusTone> = {
   neutral: "neutral",
 };
 
-const DIRECTION = { positive: "gain", negative: "loss" } as const;
-
 interface StatCardProps {
   label: string;
-  value: string;
+  /** A preformatted string, or a SignedValue for a gain or loss. */
+  value: ReactNode;
   subtext?: string;
-  /**
-   * positive and negative colour the value and also print ▲ or ▼ with a
-   * hidden "gain" or "loss", so the tone never rests on colour alone.
-   */
+  /** Colour only. The label and the printed value carry the meaning. */
   tone?: "positive" | "negative" | "neutral";
+  /**
+   * Set only when the value really is a gain or a loss. It prints ▲, ▼
+   * or – and a hidden "gain" or "loss". Never inferred from tone: a
+   * drawdown or a placeholder is coloured without being a loss.
+   */
+  direction?: PnlDirection;
   icon?: ElementType;
   className?: string;
 }
 
-export function StatCard({ label, value, subtext, tone = "neutral", icon: Icon, className = "" }: StatCardProps) {
+export function StatCard({
+  label,
+  value,
+  subtext,
+  tone = "neutral",
+  direction,
+  icon: Icon,
+  className = "",
+}: StatCardProps) {
   const toneColor = STATUS_TONE_TEXT_CLASSES[TONE[tone]];
   const iconBg = STATUS_TONE_FILL_CLASSES[tone === "neutral" ? "accent" : TONE[tone]];
-  const direction = tone === "neutral" ? null : DIRECTION[tone];
 
   return (
     <div className={`rounded-xl border border-border bg-bg-secondary p-4 shadow-card ${className}`}>

@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { formatPnl, formatSignedPercent, formatSignedUsd, MINUS, pnlDirection } from "@/lib/format-pnl";
+import { formatPnl, formatSignedPercent, formatSignedUsd, MINUS, percentDirection, pnlDirection } from "@/lib/format-pnl";
 import { formatPnl as reExported } from "@/components/display-prefs-provider";
 
 describe("formatPnl", () => {
@@ -57,5 +57,21 @@ describe("pnlDirection", () => {
     expect(pnlDirection(-0.01)).toBe("loss");
     expect(pnlDirection(0.004)).toBe("flat");
     expect(pnlDirection(Number.NaN)).toBe("flat");
+  });
+});
+
+describe("percentDirection", () => {
+  it("follows the percent as printed at the given precision", () => {
+    expect(percentDirection(0.05, 1)).toBe("gain");
+    expect(percentDirection(0.04, 1)).toBe("flat");
+    expect(percentDirection(-0.04, 1)).toBe("flat");
+    expect(percentDirection(-0.06, 1)).toBe("loss");
+    expect(percentDirection(0)).toBe("flat");
+  });
+
+  it("has no direction for an unknown percent", () => {
+    expect(percentDirection(null)).toBeUndefined();
+    expect(percentDirection(undefined)).toBeUndefined();
+    expect(percentDirection(Number.NaN)).toBeUndefined();
   });
 });

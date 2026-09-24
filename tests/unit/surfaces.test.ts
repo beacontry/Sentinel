@@ -51,9 +51,11 @@ describe("PageIntro stats", () => {
       title: "Trader",
       description: "d",
       stats: [
-        { label: "Today", value: "+$12.00", tone: "bullish" },
-        { label: "Open", value: "−$3.00", tone: "bearish" },
+        { label: "Today", value: "+$12.00", tone: "bullish", direction: "gain" },
+        { label: "Open", value: "−$3.00", tone: "bearish", direction: "loss" },
         { label: "Connection", value: "Connected", tone: "neutral" },
+        { label: "Risk Level", value: "HIGH", tone: "bearish" },
+        { label: "Advancers", value: "--", tone: "bullish" },
       ],
     }),
   );
@@ -61,10 +63,10 @@ describe("PageIntro stats", () => {
   it("is one bordered strip of borderless tiles, as a description list", () => {
     expect(html.match(/border-border/g)).toHaveLength(1);
     expect(html).toContain("<dl");
-    expect(html.match(/<dt/g)).toHaveLength(3);
+    expect(html.match(/<dt/g)).toHaveLength(5);
   });
 
-  it("prints a direction glyph and hidden word beside a toned figure", () => {
+  it("prints a direction glyph and hidden word when the caller names one", () => {
     expect(html).toMatch(/▲<\/span>\+\$12\.00<span class="sr-only"> gain<\/span>/);
     expect(html).toMatch(/▼<\/span>−\$3\.00<span class="sr-only"> loss<\/span>/);
   });
@@ -72,13 +74,34 @@ describe("PageIntro stats", () => {
   it("adds no glyph to a neutral word", () => {
     expect(html).toMatch(/text-text-primary">Connected<\/dd>/);
   });
+
+  // A red risk level or a green placeholder is not a loss or a gain.
+  it("never reads a direction off the colour tone", () => {
+    expect(html).toMatch(/">HIGH<\/dd>/);
+    expect(html).toMatch(/">--<\/dd>/);
+    expect(html.match(/sr-only/g)).toHaveLength(2);
+  });
 });
 
 describe("StatCard", () => {
-  it("prints ▼ and a hidden loss beside a negative value", () => {
-    const html = renderToStaticMarkup(createElement(StatCard, { label: "Drawdown", value: "−12%", tone: "negative" }));
+  it("prints ▼ and a hidden loss when the value is a loss", () => {
+    const html = renderToStaticMarkup(
+      createElement(StatCard, { label: "Return", value: "−12%", tone: "negative", direction: "loss" }),
+    );
     expect(html).toContain("▼");
     expect(html).toContain('<span class="sr-only"> loss</span>');
     expect(html).toContain("text-xl");
+  });
+
+  it("colours a negative tone without claiming a loss", () => {
+    const html = renderToStaticMarkup(createElement(StatCard, { label: "Max drawdown", value: "12%", tone: "negative" }));
+    expect(html).not.toContain("▼");
+    expect(html).not.toContain("sr-only");
+  });
+
+  it("draws a flat figure with – and no word", () => {
+    const html = renderToStaticMarkup(createElement(StatCard, { label: "Return", value: "0.0%", direction: "flat" }));
+    expect(html).toContain("–");
+    expect(html).not.toContain("sr-only");
   });
 });

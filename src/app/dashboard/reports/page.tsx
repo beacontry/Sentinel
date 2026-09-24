@@ -7,6 +7,7 @@ import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SignedValue } from "@/components/ui/signed-value";
 import { FileBarChart } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -162,7 +163,7 @@ function ReportsPage() {
         description="Deep analytics on your trading performance across multiple dimensions."
         stats={[
           { label: "Win Rate", value: analytics ? `${(analytics.winRate * 100).toFixed(0)}%` : `${((perf?.overall.accuracy ?? 0) * 100).toFixed(0)}%`, tone: (analytics?.winRate ?? perf?.overall.accuracy ?? 0) >= 0.5 ? "bullish" : "bearish" },
-          { label: "Expectancy", value: analytics ? `$${analytics.expectancy.toFixed(0)}` : "--", tone: (analytics?.expectancy ?? 0) > 0 ? "bullish" : "bearish" },
+          { label: "Expectancy", value: analytics ? <SignedValue value={analytics.expectancy} /> : "--" },
           { label: "Profit Factor", value: analytics ? (analytics.profitFactor === Infinity ? "∞" : analytics.profitFactor.toFixed(2)) : "--", tone: "brand" },
           { label: "Win Streak", value: analytics ? String(analytics.maxWinStreak) : "--", tone: "bullish" },
         ]}

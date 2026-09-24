@@ -28,7 +28,6 @@ import {
   Shield,
 } from "lucide-react";
 import { PRESET_LABELS } from "@/lib/strategy-presets";
-import { formatSignedUsd } from "@/lib/format-pnl";
 import { SignedValue } from "@/components/ui/signed-value";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoadingRegion } from "@/components/ui/live-region";
@@ -499,8 +498,7 @@ export default function TraderPage() {
         { label: "Est. proceeds", value: usd((p.currentPrice ?? 0) * (p.quantity ?? 0)) },
         {
           label: "Unrealized P&L",
-          value: formatSignedUsd(p.unrealizedPnl ?? 0),
-          tone: (p.unrealizedPnl ?? 0) >= 0 ? "bullish" : "bearish",
+          value: <SignedValue value={p.unrealizedPnl} />,
         },
       ],
       confirmLabel: `Sell ${p.quantity} ${p.symbol}`,
@@ -838,8 +836,7 @@ export default function TraderPage() {
                         },
                         {
                           label: "Unrealized P&L",
-                          value: formatSignedUsd(unreal),
-                          tone: unreal >= 0 ? "bullish" : "bearish",
+                          value: <SignedValue value={unreal} />,
                         },
                       ]
                     : [{ label: "Open positions", value: "0" }],
@@ -993,8 +990,7 @@ export default function TraderPage() {
                       },
                       {
                         label: "Unrealized P&L",
-                        value: formatSignedUsd(openUnrealized),
-                        tone: openUnrealized >= 0 ? "bullish" : "bearish",
+                        value: <SignedValue value={openUnrealized} />,
                       },
                     ],
                     // The one action that liquidates the whole book gets the
@@ -1434,8 +1430,7 @@ export default function TraderPage() {
                   { label: "Current price", value: `$${(pos.currentPrice ?? 0).toFixed(2)}` },
                   {
                     label: "Unrealized P&L",
-                    value: formatSignedUsd(pos.unrealizedPnl ?? 0),
-                    tone: (pos.unrealizedPnl ?? 0) >= 0 ? "bullish" : "bearish",
+                    value: <SignedValue value={pos.unrealizedPnl} />,
                   },
                 ]
               : undefined,

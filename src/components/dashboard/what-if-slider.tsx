@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import type { AnalysisResult } from "@/types";
 import { StatCard } from "@/components/ui/stat-card";
+import { SignedValue } from "@/components/ui/signed-value";
 import { Badge } from "@/components/ui/badge";
 
 interface WhatIfSliderProps {
@@ -94,9 +95,8 @@ export function WhatIfSlider({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <StatCard
           label="Projected P/L"
-          value={`${computed.pnl >= 0 ? "+" : ""}$${computed.pnl.toFixed(0)}`}
+          value={<SignedValue value={computed.pnl} />}
           subtext={`${computed.movePct.toFixed(2)}% move`}
-          tone={computed.pnl >= 0 ? "positive" : "negative"}
         />
         <StatCard
           label="Win Prob"

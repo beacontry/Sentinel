@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SignedValue } from "@/components/ui/signed-value";
 import { Play, BarChart3, Maximize2, Minimize2 } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 import { getChartTheme } from "@/lib/chart-theme";
@@ -235,7 +236,7 @@ export default function ReplayPage() {
         stats={[
           { label: "Total Trades", value: String(totalTrades) },
           { label: "Win Rate", value: `${winRate}%`, tone: winRate >= 50 ? "bullish" : "bearish" },
-          { label: "Best Trade", value: bestTrade ? `$${(bestTrade.pnl ?? 0).toFixed(2)}` : "--", tone: "bullish" },
+          { label: "Best Trade", value: bestTrade ? <SignedValue value={bestTrade.pnl} /> : "--" },
           { label: "Symbols", value: String(symbols.length) },
         ]}
       />

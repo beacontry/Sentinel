@@ -5,7 +5,6 @@ import { AlertTriangle } from "lucide-react";
 import { Modal, ModalTitle, ModalDescription, ModalFooter } from "./modal";
 import { Button } from "./button";
 import { Input } from "./input";
-import { DirectionGlyph, DirectionWord } from "./signed-value";
 
 /**
  * Crisis-path confirmation (2026-07-15). Replaces the browser-native
@@ -31,8 +30,13 @@ export interface ConfirmActionSpec {
   title: string;
   /** What will and won't happen. Be explicit — this is the contract. */
   description: ReactNode;
-  /** Rows of the numbers being acted on. Values render font-mono. */
-  summary?: { label: string; value: string; tone?: "default" | "bullish" | "bearish" }[];
+  /**
+   * Rows of the numbers being acted on. Values render font-mono. `tone`
+   * colours a string value and states nothing; a gain or loss row passes
+   * a SignedValue as its value instead, which prints the glyph and word
+   * from the figure itself (flat has neither, unknown prints n/a).
+   */
+  summary?: { label: string; value: ReactNode; tone?: "default" | "bullish" | "bearish" }[];
   /** Label for the confirm button, e.g. "Flatten 11 positions". */
   confirmLabel: string;
   /**
@@ -111,19 +115,14 @@ export function ConfirmActionModal({
 
           {spec.summary && spec.summary.length > 0 && (
             <dl className="my-4 divide-y divide-[var(--color-hairline-inner)] rounded-lg bg-bg-surface">
-              {spec.summary.map((row) => {
-                const direction = row.tone === "bullish" ? "gain" : row.tone === "bearish" ? "loss" : null;
-                return (
-                  <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                    <dt className="text-text-secondary">{row.label}</dt>
-                    <dd className={`font-mono font-medium tabular-nums ${SUMMARY_TONE[row.tone ?? "default"]}`}>
-                      {direction && <DirectionGlyph direction={direction} />}
-                      {row.value}
-                      {direction && <DirectionWord direction={direction} />}
-                    </dd>
-                  </div>
-                );
-              })}
+              {spec.summary.map((row) => (
+                <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <dt className="text-text-secondary">{row.label}</dt>
+                  <dd className={`font-mono font-medium tabular-nums ${SUMMARY_TONE[row.tone ?? "default"]}`}>
+                    {row.value}
+                  </dd>
+                </div>
+              ))}
             </dl>
           )}
 

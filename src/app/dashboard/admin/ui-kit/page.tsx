@@ -173,10 +173,11 @@ export default function UiKitPage() {
         </Inset>
       </Section>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Win rate" value="58%" subtext="Last 30 days" />
-        <StatCard label="Best day" value="+$412.00" tone="positive" />
+        <StatCard label="Best day" value="+$412.00" tone="positive" direction="gain" />
         <StatCard label="Max drawdown" value={"−8.4%"} tone="negative" />
+        <StatCard label="Open P&L" value={<SignedValue value={0} />} subtext="Flat, so no direction word" />
       </div>
 
       <Section title="Empty, error and loading">

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SignedValue } from "@/components/ui/signed-value";
 import { Briefcase, TrendingUp, TrendingDown, PieChart, ArrowRight, Plus } from "lucide-react";
 import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 import { getSymbolSector } from "@/lib/sectors";
@@ -220,8 +221,7 @@ export default function PortfolioPage() {
           { label: "Broker (Live)", value: `$${summary.broker.total.toFixed(2)}` },
           {
             label: "Unrealized P&L",
-            value: formatPnl(totalUnrealized, summary.broker.total, pnlFormat),
-            tone: totalUnrealized >= 0 ? "bullish" : "bearish",
+            value: <SignedValue value={totalUnrealized} basis={summary.broker.total} format={pnlFormat} />,
           },
         ]}
       />

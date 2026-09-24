@@ -48,10 +48,20 @@ export function formatSignedUsd(amountUsd: number): string {
   return `${signOf(direction)}${dollars(direction === "flat" ? 0 : Math.abs(amountUsd))}`;
 }
 
+/**
+ * The direction a percent displays as at `digits` decimals. A null or
+ * non-finite percent has none: it prints as unknown, not as flat.
+ */
+export function percentDirection(pct: number | null | undefined, digits = 2): PnlDirection | undefined {
+  if (pct === null || pct === undefined || !Number.isFinite(pct)) return undefined;
+  const rounded = Math.round(pct * 10 ** digits);
+  if (rounded === 0) return "flat";
+  return rounded > 0 ? "gain" : "loss";
+}
+
 export function formatSignedPercent(pct: number): string {
   if (!Number.isFinite(pct)) return UNAVAILABLE;
-  const rounded = Math.round(pct * 100);
-  const direction: PnlDirection = !Number.isFinite(rounded) || rounded === 0 ? "flat" : rounded > 0 ? "gain" : "loss";
+  const direction = percentDirection(pct) ?? "flat";
   return `${signOf(direction)}${direction === "flat" ? "0.00" : Math.abs(pct).toFixed(2)}%`;
 }
 

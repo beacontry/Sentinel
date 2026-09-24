@@ -24,6 +24,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
+import { MINUS, UNAVAILABLE, percentDirection, type PnlDirection } from "@/lib/format-pnl";
+
+/**
+ * A return tile: signed to one decimal, its direction taken from the
+ * figure as printed. A missing return is unknown (n/a, no direction),
+ * and one that rounds to 0.0% is flat, never a loss.
+ */
+function returnStat(pct: number | null | undefined): {
+  value: string;
+  direction: PnlDirection | undefined;
+  tone: "positive" | "negative" | "neutral";
+} {
+  const direction = percentDirection(pct, 1);
+  if (direction === undefined || pct == null) return { value: UNAVAILABLE, direction, tone: "neutral" };
+  const sign = direction === "gain" ? "+" : direction === "loss" ? MINUS : "";
+  return {
+    value: `${sign}${direction === "flat" ? "0.0" : Math.abs(pct).toFixed(1)}%`,
+    direction,
+    tone: direction === "gain" ? "positive" : direction === "loss" ? "negative" : "neutral",
+  };
+}
 import { EmptyState } from "@/components/ui/empty-state";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 import { useToast } from "@/components/ui/toast";
@@ -739,38 +760,30 @@ function RunDetailView({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard
               label="Optimized Return"
-              value={`${run.bestTrainReturn?.toFixed(1) ?? "—"}%`}
+              {...returnStat(run.bestTrainReturn)}
               subtext="Portfolio return (train)"
-              tone={run.bestTrainReturn && run.bestTrainReturn > 0 ? "positive" : "negative"}
               icon={TrendingUp}
             />
             <StatCard
               label="Test Return"
-              value={`${run.bestTestReturn?.toFixed(1) ?? "—"}%`}
+              {...returnStat(run.bestTestReturn)}
               subtext="Out-of-sample validation"
-              tone={run.bestTestReturn && run.bestTestReturn > 0 ? "positive" : "negative"}
               icon={Target}
             />
             <StatCard
               label="Baseline Return"
-              value={`${run.baselineTrainReturn?.toFixed(1) ?? "—"}%`}
+              {...returnStat(run.baselineTrainReturn)}
               subtext="Moderate preset (train)"
-              tone={run.baselineTrainReturn && run.baselineTrainReturn > 0 ? "positive" : "negative"}
               icon={BarChart3}
             />
             <StatCard
               label="Improvement"
-              value={
+              {...returnStat(
                 run.bestTrainReturn != null && run.baselineTrainReturn != null
-                  ? `${(run.bestTrainReturn - run.baselineTrainReturn).toFixed(1)}%`
-                  : "—"
-              }
+                  ? run.bestTrainReturn - run.baselineTrainReturn
+                  : null,
+              )}
               subtext="Over baseline (train)"
-              tone={
-                run.bestTrainReturn != null && run.baselineTrainReturn != null && run.bestTrainReturn > run.baselineTrainReturn
-                  ? "positive"
-                  : "negative"
-              }
               icon={Zap}
             />
           </div>

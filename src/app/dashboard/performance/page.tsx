@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { SymbolLink } from "@/components/ui/symbol-link";
 import { BarChart3, Target, TrendingUp, TrendingDown, PieChart } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
+import { formatSignedPercent, percentDirection } from "@/lib/format-pnl";
 import { usePolling } from "@/hooks/usePolling";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
@@ -133,7 +134,7 @@ export default function PerformancePage() {
         stats={[
           { label: "Win Rate", value: `${Math.round(o.accuracy * 100)}%`, tone: o.accuracy >= 0.5 ? "bullish" : "bearish" },
           { label: "Total Signals", value: String(o.totalSignals) },
-          { label: "Avg Return", value: `${o.avgReturn >= 0 ? "+" : ""}${o.avgReturn.toFixed(2)}%`, tone: o.avgReturn >= 0 ? "bullish" : "bearish" },
+          { label: "Avg Return", value: formatSignedPercent(o.avgReturn), tone: o.avgReturn >= 0 ? "bullish" : "bearish", direction: percentDirection(o.avgReturn) },
           { label: "Correct", value: `${o.correctSignals} / ${o.totalSignals}`, tone: "bullish" },
         ]}
       />

@@ -25,9 +25,11 @@ describe("ConfirmActionModal", () => {
     expect(src).toMatch(/<p role="alert"[^>]*>\s*\{error \?\? ""\}/);
   });
 
-  it("prints a direction beside a toned summary figure", () => {
-    expect(src).toContain("<DirectionGlyph");
-    expect(src).toContain("<DirectionWord");
+  // A tone colours a row; it does not state a gain or loss. A zero or
+  // unknown P&L once read "▲ $0.00 gain" because the glyph came from tone.
+  it("never infers a direction from a row tone", () => {
+    expect(src).not.toContain("DirectionGlyph");
+    expect(src).not.toMatch(/tone === "bullish" \? "gain"/);
   });
 
   it("uses the loss triplet, not an alpha tint, for its warning tile", () => {
