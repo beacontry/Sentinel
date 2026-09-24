@@ -41,6 +41,7 @@ import {
   accessLossStatus,
   applyEngineResponse,
   connectionStat,
+  createResponseSequencer,
   diffRiskProfile,
   emptyRiskForm,
   engineControls,
@@ -274,6 +275,8 @@ export default function TraderPage() {
   // response already in flight cannot repaint it.
   const [accessLost, setAccessLost] = useState<AccessLoss | null>(null);
   const genRef = useRef(0);
+  // Orders dashboard loads; see load().
+  const [loadSeq] = useState(createResponseSequencer);
   const [cmdLoading, setCmdLoading] = useState<string | null>(null);
   const [engineMode, setEngineMode] = useState<string>("optimized");
   // The picker follows the running engine's mode until the user picks one,
@@ -404,6 +407,12 @@ export default function TraderPage() {
   async function load() {
     const gen = genRef.current;
     const stale = () => gen !== genRef.current;
+    // The poll and the post-command refresh share one generation, so the
+    // fence alone does not order them: a poll issued before Start/Stop/Halt
+    // can resolve after the refresh and repaint the pre-command engine
+    // state. Each load takes a sequence number and one older than the newest
+    // already applied is dropped whole.
+    const seq = loadSeq.next();
     try {
       const [dashRes, engRes] = await Promise.allSettled([
         fetch("/api/trader/dashboard"),
@@ -413,15 +422,20 @@ export default function TraderPage() {
       const lost =
         accessLossStatus(dashRes.status === "fulfilled" ? dashRes.value.status : null) ??
         accessLossStatus(engRes.status === "fulfilled" ? engRes.value.status : null);
+      // Bodies are read before anything is applied, so the sequence check
+      // below covers the whole response rather than half of it.
+      const dashJson =
+        !lost && dashRes.status === "fulfilled" && dashRes.value.ok ? await dashRes.value.json() : undefined;
+      const engJson =
+        !lost && engRes.status === "fulfilled" && engRes.value.ok ? await engRes.value.json() : undefined;
+      if (stale() || !loadSeq.accept(seq)) return;
       if (lost) {
         loseAccess(lost);
         return;
       }
       let failure: string | null = null;
-      if (dashRes.status === "fulfilled" && dashRes.value.ok) {
-        const json = await dashRes.value.json();
-        if (stale()) return;
-        setData(json);
+      if (dashJson !== undefined) {
+        setData(dashJson);
         setTierRequired(false);
         setAccessLost(null);
       } else {
@@ -430,10 +444,8 @@ export default function TraderPage() {
           dashRes.status === "fulfilled" ? dashRes.value.status : null,
         );
       }
-      if (engRes.status === "fulfilled" && engRes.value.ok) {
-        const json = await engRes.value.json();
-        if (stale()) return;
-        setEngine(applyEngineResponse<EngineStatus>(json));
+      if (engJson !== undefined) {
+        setEngine(applyEngineResponse<EngineStatus>(engJson));
       } else {
         failure ??= refreshFailureMessage(
           "Engine status",
@@ -442,7 +454,9 @@ export default function TraderPage() {
       }
       setDashLoad((s) => (failure ? loadFailed(s, failure) : loadSucceeded(s, Date.now())));
     } catch {
-      if (!stale()) setDashLoad((s) => loadFailed(s, refreshFailureMessage("Dashboard", null)));
+      if (!stale() && loadSeq.accept(seq)) {
+        setDashLoad((s) => loadFailed(s, refreshFailureMessage("Dashboard", null)));
+      }
     } finally {
       if (!stale()) setLoading(false);
     }

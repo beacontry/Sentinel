@@ -9,6 +9,7 @@ import {
   accessLossStatus,
   applyEngineResponse,
   connectionStat,
+  createResponseSequencer,
   diffRiskProfile,
   emptyRiskForm,
   engineControls,
@@ -120,6 +121,40 @@ describe("resume mode for the engine-offline banner (#31)", () => {
     expect(resumeModeFor({ mode: "paper", lastMode: null }, "tactical", "optimized")).toBe("tactical");
     expect(resumeModeFor({ mode: "paper:tactical-smart" }, undefined, "optimized")).toBe("tactical-smart");
     expect(resumeModeFor({ mode: "unknown", lastMode: "garbage" }, undefined, "adaptive")).toBe("adaptive");
+  });
+});
+
+describe("createResponseSequencer (#30)", () => {
+  it("drops a poll that resolves after the post-command refresh", () => {
+    const seq = createResponseSequencer();
+    const poll = seq.next(); // poll in flight when Stop is pressed
+    const refresh = seq.next(); // post-command load()
+    expect(seq.accept(refresh)).toBe(true);
+    expect(seq.accept(poll)).toBe(false);
+  });
+
+  it("applies both when they resolve in order", () => {
+    const seq = createResponseSequencer();
+    const poll = seq.next();
+    const refresh = seq.next();
+    expect(seq.accept(poll)).toBe(true);
+    expect(seq.accept(refresh)).toBe(true);
+  });
+
+  it("never applies the same response twice", () => {
+    const seq = createResponseSequencer();
+    const n = seq.next();
+    expect(seq.accept(n)).toBe(true);
+    expect(seq.accept(n)).toBe(false);
+  });
+
+  it("keeps separate screens independent", () => {
+    const a = createResponseSequencer();
+    const b = createResponseSequencer();
+    a.next();
+    const a2 = a.next();
+    expect(a.accept(a2)).toBe(true);
+    expect(b.accept(b.next())).toBe(true);
   });
 });
 

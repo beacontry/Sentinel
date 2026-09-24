@@ -106,6 +106,32 @@ export function engineControls(
   };
 }
 
+// ─── Response ordering ──────────────────────────────────────────────
+
+/**
+ * Orders overlapping loads of one screen. Each request takes a number from
+ * next(); accept(n) is true only when n is newer than every response
+ * already applied, so a slow response that lands after a newer one is
+ * dropped instead of repainting older state.
+ */
+export interface ResponseSequencer {
+  next(): number;
+  accept(seq: number): boolean;
+}
+
+export function createResponseSequencer(): ResponseSequencer {
+  let issued = 0;
+  let applied = 0;
+  return {
+    next: () => ++issued,
+    accept(seq) {
+      if (!(seq > applied)) return false;
+      applied = seq;
+      return true;
+    },
+  };
+}
+
 // ─── Load state ─────────────────────────────────────────────────────
 
 /**
