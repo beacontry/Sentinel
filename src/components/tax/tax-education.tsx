@@ -110,13 +110,12 @@ export function PersonalizedTaxEducation({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <BookOpen className="w-4 h-4 text-accent" aria-hidden="true" />
-          Tax Education
+          Guides for your numbers
         </CardTitle>
-        <span className="text-xs text-text-muted">
-          Personalized to your data
-        </span>
       </CardHeader>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* Two up when the card spans the page, one column in the Tax
+          Center's side rail from xl. */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
         {top.map((link) => {
           const Icon = link.icon;
           return (
@@ -126,7 +125,7 @@ export function PersonalizedTaxEducation({
               className="flex min-h-11 items-start gap-3 rounded-lg bg-bg-surface p-3 transition-colors hover:bg-bg-hover"
             >
               <Icon className="w-4 h-4 text-accent shrink-0 mt-0.5" aria-hidden="true" />
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-medium text-text-primary">
                   {link.title}
                 </p>

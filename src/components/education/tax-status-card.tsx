@@ -101,9 +101,9 @@ export function TaxStatusCard() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             <Scale className="h-4 w-4 text-accent" aria-hidden="true" />
-            <span className="text-sm font-semibold text-text-primary">
-              Tax Status
-            </span>
+            <h2 className="text-base font-semibold text-text-primary">
+              Tax status
+            </h2>
             {status.hasTraderTaxStatus && (
               <Badge variant="accent">Trader Tax Status</Badge>
             )}
@@ -121,8 +121,11 @@ export function TaxStatusCard() {
             {status.hasTraderTaxStatus || hasMtm ? "Edit" : "Declare"}
           </Button>
         </div>
+        {/* The sentence and its link are one flex item, so they wrap as
+            prose in a narrow column instead of as three columns. */}
         <p className="mt-3 text-xs text-text-muted leading-relaxed flex items-start gap-1.5">
-          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
           Self-attested. Beacontry does not file or validate election with the
           IRS — record-keeping only.{" "}
           <Link
@@ -132,6 +135,7 @@ export function TaxStatusCard() {
             Read the guide
           </Link>
           .
+          </span>
         </p>
       </Card>
 
