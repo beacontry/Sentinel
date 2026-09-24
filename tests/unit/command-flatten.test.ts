@@ -150,6 +150,14 @@ beforeEach(() => {
   state.cancelAllCalls = 0;
   state.cancelOrderCalls = [];
   state.sells = [];
+  // The route starts a reconcile pass 3 s after a market-hours flatten. Fake
+  // setTimeout (advancing with real time, so the cancel polls still run) and
+  // drop that timer at teardown, so it cannot fire after the test has ended.
+  vi.useFakeTimers({ toFake: ["setTimeout"], shouldAdvanceTime: true });
+  return () => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  };
 });
 
 describe("flatten waits for cancelled stops to release (finding #42)", () => {

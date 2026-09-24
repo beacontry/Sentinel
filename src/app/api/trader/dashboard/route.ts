@@ -6,7 +6,7 @@ import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
 import { resolveActiveConnection } from "@/lib/broker-connection";
 import { decrypt } from "@/lib/crypto";
-import { getBrokerPositionCache, getTrackedPositionData, getUnprotectedSymbols } from "@/lib/trading-engine";
+import { getBrokerPositionCache, getTrackedPositionData, getUnprotectedSymbols, reconcileManualClosesIfEngineStopped } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 import { rateLimit } from "@/lib/rate-limiter";
 import { checkTier } from "@/lib/tiers-server";
@@ -63,6 +63,10 @@ export async function GET() {
       brokerEnv = conn.environment;
       try {
         const client = createBrokerClient(conn.broker, decrypt(conn.apiKey), decrypt(conn.apiSecret), conn.environment);
+        // With the engine stopped nothing else settles a manual flatten's
+        // PENDING row. Throttled, fire-and-forget, and a no-op while the
+        // engine runs.
+        reconcileManualClosesIfEngineStopped(client, session.userId);
         const [acct, pos, orders] = await Promise.allSettled([client.getAccount(), client.getPositions(), client.getOrders(50)]);
         if (acct.status === "fulfilled") {
           const a = acct.value;

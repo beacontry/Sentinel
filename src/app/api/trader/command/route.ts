@@ -251,11 +251,13 @@ export async function POST(request: NextRequest) {
         // One reconcile pass once the market sells have had time to fill, so
         // the rows reach FILLED with their real price even when the engine is
         // stopped (its scans and exit check are the usual reconcile callers).
-        // Anything still open is picked up by the engine's next reconcile.
+        // Manual-close rows only: engine SELL rows are left to the engine.
+        // Anything still open is picked up by the engine's next reconcile or,
+        // with the engine stopped, by the dashboard's.
         if (flattenSold.length > 0 && !queuedForOpen) {
           const userId = auth.userId;
           setTimeout(() => {
-            reconcilePendingTrades(client, userId).catch((err) => {
+            reconcilePendingTrades(client, userId, { manualCloseOnly: true }).catch((err) => {
               log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Post-flatten reconcile failed");
             });
           }, FLATTEN_RECONCILE_DELAY_MS);

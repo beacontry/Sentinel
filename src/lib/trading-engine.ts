@@ -47,7 +47,7 @@ import {
   users,
   engineAlerts,
 } from "./db/schema";
-import { eq, and, desc, gt, inArray, lt, isNotNull, isNull, sql } from "drizzle-orm";
+import { eq, and, or, desc, gt, inArray, lt, isNotNull, isNull, sql } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
 import { DRAIN_BUDGET_MS } from "./shutdown-config";
 import { isShuttingDown, SHUTTING_DOWN_CODE, SHUTTING_DOWN_MESSAGE } from "./shutdown-state";
@@ -4529,25 +4529,84 @@ async function recordManualCloseDailyPnl(userId: string, date: string, realizedP
  * Idempotent — re-running on the same row just no-ops (status already FILLED etc).
  * Never throws — per-row failures log and continue.
  *
- * Concurrency: the scans, runExitCheck's throttled call and startEngine can
- * all run this for one user at once, and each pass reads the same PENDING
- * rows before its broker round trip. Two guards keep a fill's delta from
- * being applied to engine.dailyLoss twice:
- *   - a per-user in-flight claim, taken synchronously before the first
- *     await, so an overlapping call returns at once;
+ * Concurrency: the scans, runExitCheck's throttled call, startEngine, the
+ * flatten route and the dashboard can all run this for one user at once, and
+ * each pass reads the same PENDING rows before its broker round trip. Two
+ * guards keep a fill's delta from being applied to engine.dailyLoss twice:
+ *   - a per-user in-flight claim on globalThis, taken synchronously before
+ *     the first await. An overlapping call gets the running pass's promise,
+ *     so awaiting it still means the pass is done. A full pass that finds
+ *     only a manual-close pass running queues behind it instead;
  *   - the UPDATE is fenced on owner and a still-open status, and the delta
  *     and the journal stub are applied only when it returned the row. The
  *     fence is the control; the claim saves the broker round trip.
+ *
+ * `manualCloseOnly` limits the pass to manual flatten (manual_close) rows.
+ * The flatten route and the dashboard use it, so a pass run outside the
+ * engine never settles an engine SELL, whose fill delta belongs in the
+ * dailyLoss of the engine that accrued its placeholder.
  * Exported for tests.
  */
-const reconcileInFlight = new Set<string>();
+type ReconcileClaim = { manualCloseOnly: boolean; promise: Promise<void> };
 
-export async function reconcilePendingTrades(client: BrokerClient, userId: string): Promise<void> {
-  if (reconcileInFlight.has(userId)) {
-    log.debug({ userId }, "reconcilePendingTrades already running for this user, skipping");
-    return;
+const reconcileGlobal = globalThis as typeof globalThis & {
+  __reconcileInFlight?: Map<string, ReconcileClaim>;
+  __manualCloseReconcileAt?: Map<string, number>;
+};
+
+export function reconcilePendingTrades(
+  client: BrokerClient,
+  userId: string,
+  opts: { manualCloseOnly?: boolean } = {}
+): Promise<void> {
+  const manualCloseOnly = opts.manualCloseOnly === true;
+  const claims = (reconcileGlobal.__reconcileInFlight ??= new Map());
+  const running = claims.get(userId);
+  // A running full pass covers any request; a running manual-close pass
+  // covers only another manual-close request.
+  if (running && (!running.manualCloseOnly || manualCloseOnly)) {
+    log.debug({ userId }, "reconcilePendingTrades already running for this user, joining it");
+    return running.promise;
   }
-  reconcileInFlight.add(userId);
+  const claim: ReconcileClaim = { manualCloseOnly, promise: Promise.resolve() };
+  const pass = running
+    ? running.promise.then(() => runReconcilePass(client, userId, manualCloseOnly))
+    : runReconcilePass(client, userId, manualCloseOnly);
+  claim.promise = pass.finally(() => {
+    if (claims.get(userId) === claim) claims.delete(userId);
+  });
+  claims.set(userId, claim);
+  return claim.promise;
+}
+
+/** Minimum spacing between the dashboard's manual-close reconcile passes. */
+const MANUAL_CLOSE_RECONCILE_THROTTLE_MS = 60 * 1000;
+
+/**
+ * Settle PENDING manual flatten rows while the engine is stopped. The
+ * engine's scans, exit check and startEngine are the usual reconcile
+ * callers, so without this a user who flattens and then stops the engine
+ * (or flattens after hours, when the route skips its own pass) keeps those
+ * rows PENDING until the next Start: out of the tax report, performance and
+ * the daily P&L. Called by the dashboard GET; throttled per user, and a
+ * no-op while the engine runs, since it reconciles for itself.
+ */
+export function reconcileManualClosesIfEngineStopped(client: BrokerClient, userId: string): void {
+  if (g.__tradingEngines?.get(userId)?.running) return;
+  const lastRun = (reconcileGlobal.__manualCloseReconcileAt ??= new Map());
+  const now = Date.now();
+  if (now - (lastRun.get(userId) ?? 0) < MANUAL_CLOSE_RECONCILE_THROTTLE_MS) return;
+  // Bounded: drop stamps past the throttle window before adding one.
+  if (lastRun.size >= 1000) {
+    for (const [id, at] of lastRun) if (now - at >= MANUAL_CLOSE_RECONCILE_THROTTLE_MS) lastRun.delete(id);
+  }
+  lastRun.set(userId, now);
+  void reconcilePendingTrades(client, userId, { manualCloseOnly: true }).catch((err) => {
+    log.warn({ userId, err: err instanceof Error ? err.message : "unknown" }, "Manual-close reconcile failed");
+  });
+}
+
+async function runReconcilePass(client: BrokerClient, userId: string, manualCloseOnly: boolean): Promise<void> {
   try {
     // Find PENDING rows from the last 7d that have a broker_order_id.
     //
@@ -4558,6 +4617,12 @@ export async function reconcilePendingTrades(client: BrokerClient, userId: strin
     // 7d covers any realistic halted-engine window without flooding the
     // broker fetch — and getOrders(200) below caps the broker pull
     // regardless.
+    //
+    // Manual flatten rows are exempt from the window. Only the engine and
+    // the dashboard reconcile them, a flatten is often followed by stopping
+    // the engine, and a row left PENDING is missing from the tax report and
+    // the daily P&L. Newest first, so rows whose orders the broker purged
+    // (they stay PENDING) cannot crowd recent ones out of the limit.
     const sinceMs = Date.now() - RECONCILE_LOOKBACK_MS;
     const pending = await db
       .select()
@@ -4567,9 +4632,12 @@ export async function reconcilePendingTrades(client: BrokerClient, userId: strin
           eq(traderTrades.userId, userId),
           eq(traderTrades.status, "PENDING"),
           isNotNull(traderTrades.brokerOrderId),
-          gt(traderTrades.createdAt, new Date(sinceMs))
+          manualCloseOnly
+            ? eq(traderTrades.action, "manual_close")
+            : or(gt(traderTrades.createdAt, new Date(sinceMs)), eq(traderTrades.action, "manual_close"))
         )
       )
+      .orderBy(desc(traderTrades.createdAt))
       .limit(200);
 
     if (pending.length === 0) return;
@@ -4744,8 +4812,6 @@ export async function reconcilePendingTrades(client: BrokerClient, userId: strin
     }
   } catch (err) {
     log.error({ userId, err: err instanceof Error ? err.message : "unknown" }, "reconcilePendingTrades failed");
-  } finally {
-    reconcileInFlight.delete(userId);
   }
 }
 

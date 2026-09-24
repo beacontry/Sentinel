@@ -32,6 +32,9 @@ const state = vi.hoisted(() => ({
   selectTrades: (() => []) as () => Array<Record<string, unknown>>,
   failTradeInsert: false,
   errors: [] as Array<{ obj: unknown; msg: unknown }>,
+  /** Every .where(...) argument, with the statement kind and table. */
+  wheres: [] as Array<{ kind: string; table: string; where: unknown }>,
+  getOrdersCalls: 0,
 }));
 
 vi.mock("@/lib/logger", () => {
@@ -104,6 +107,7 @@ vi.mock("@/lib/db", async () => {
           return (...args: unknown[]) => {
             if (prop === "from") table = getTableName(args[0] as never);
             if (prop === "set") setPayload = args[0] as Record<string, unknown>;
+            if (prop === "where") state.wheres.push({ kind, table, where: args[0] });
             if (prop === "values") {
               const values = args[0] as Record<string, unknown>;
               state.inserts.push({ table, values });
@@ -135,7 +139,10 @@ function fakeClient() {
     broker: "alpaca",
     environment: "paper",
     getPositions: async () => state.positions,
-    getOrders: async () => state.brokerOrders.map((o) => ({ ...o })),
+    getOrders: async () => {
+      state.getOrdersCalls++;
+      return state.brokerOrders.map((o) => ({ ...o }));
+    },
     getOrder: async (id: string) => state.brokerOrders.find((o) => o.id === id) ?? null,
     cancelOrder: async () => {},
     cancelAllOrders: async () => {},
@@ -147,8 +154,23 @@ function fakeClient() {
 }
 
 import { POST } from "@/app/api/trader/command/route";
-import { reconcilePendingTrades, reconcileBrokerSideExit } from "@/lib/trading-engine";
+import {
+  reconcilePendingTrades,
+  reconcileBrokerSideExit,
+  reconcileManualClosesIfEngineStopped,
+  getEngineStatus,
+  type EngineState,
+} from "@/lib/trading-engine";
 import type { BrokerClient } from "@/lib/brokers";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+
+/** The SQL text and params of the last .where(...) of one kind on one table. */
+function lastWhere(kind: string, table: string): { sql: string; params: unknown[] } {
+  const w = [...state.wheres].reverse().find((x) => x.kind === kind && x.table === table);
+  if (!w) throw new Error(`no ${kind} where on ${table}`);
+  return new PgDialect().sqlToQuery(w.where as SQL);
+}
 
 let seq = 0;
 
@@ -184,6 +206,8 @@ beforeEach(() => {
   state.selectTrades = () => [];
   state.failTradeInsert = false;
   state.errors = [];
+  state.wheres = [];
+  state.getOrdersCalls = 0;
   return () => { vi.useRealTimers(); };
 });
 
@@ -291,5 +315,135 @@ describe("reconciling a manual flatten row", () => {
     );
 
     expect(tradeInserts()).toHaveLength(before);
+  });
+});
+
+// ─── Manual flatten rows settle without the engine (WP06 review) ────────────
+
+const PENDING_ROWS = () => state.tradeRows.filter((r) => r.status === "PENDING").map((r) => ({ ...r }));
+
+describe("the route's post-flatten reconcile pass", () => {
+  it("during regular hours, runs one manual-close pass after 3 s", async () => {
+    await POST(flattenRequest("AAPL"));
+    state.selectTrades = PENDING_ROWS;
+    state.brokerOrders = [
+      { id: "ord-AAPL", symbol: "AAPL", side: "sell", status: "filled", filledPrice: 189, filledAt: new Date().toISOString() },
+    ];
+    const callsAfterSubmit = state.getOrdersCalls;
+
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(state.getOrdersCalls).toBe(callsAfterSubmit);
+    await vi.advanceTimersByTimeAsync(1);
+    // Join the pass the timer started, so the assertions see it finished.
+    await reconcilePendingTrades(fakeClient() as unknown as BrokerClient, state.userId, { manualCloseOnly: true });
+
+    expect(state.getOrdersCalls).toBe(callsAfterSubmit + 1);
+    expect(state.tradeRows[0]).toMatchObject({ status: "FILLED", fillPrice: 189 });
+    expect(lastWhere("select", "trader_trades").params).toContain("manual_close");
+  });
+
+  it("outside regular hours (queued for the open), schedules nothing", async () => {
+    state.marketOpen = false;
+    await POST(flattenRequest("AAPL"));
+    const callsAfterSubmit = state.getOrdersCalls;
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(state.getOrdersCalls).toBe(callsAfterSubmit);
+    expect(state.tradeRows[0]).toMatchObject({ status: "PENDING" });
+  });
+});
+
+describe("engine stopped, after-hours flatten", () => {
+  it("the dashboard's pass settles the row and books the fill once the sell fills", async () => {
+    state.marketOpen = false;
+    await POST(flattenRequest());
+    expect(state.tradeRows.map((r) => r.status)).toEqual(["PENDING", "PENDING"]);
+
+    // The engine is not running. The sells fill at the next open.
+    state.selectTrades = PENDING_ROWS;
+    state.brokerOrders = [
+      { id: "ord-AAPL", symbol: "AAPL", side: "sell", status: "filled", filledPrice: 185, filledAt: "2026-09-24T13:30:05Z" },
+      { id: "ord-MSFT", symbol: "MSFT", side: "sell", status: "filled", filledPrice: 412, filledAt: "2026-09-24T13:30:06Z" },
+    ];
+    const client = fakeClient() as unknown as BrokerClient;
+    reconcileManualClosesIfEngineStopped(client, state.userId);
+    await reconcilePendingTrades(client, state.userId, { manualCloseOnly: true });
+
+    expect(state.tradeRows.map((r) => r.status)).toEqual(["FILLED", "FILLED"]);
+    expect(dailyPnlInserts()).toEqual([
+      expect.objectContaining({ date: "2026-09-24", realizedPnl: -150, tradesCount: 1 }),
+      expect.objectContaining({ date: "2026-09-24", realizedPnl: 60, tradesCount: 1 }),
+    ]);
+
+    // The pass selects manual_close rows with no createdAt cutoff, so a row
+    // older than the 7-day lookback is still reached.
+    const select = lastWhere("select", "trader_trades");
+    expect(select.sql).toContain('"action" = ');
+    expect(select.sql).not.toContain('"created_at"');
+    expect(select.params).toContain("manual_close");
+  });
+
+  it("is throttled per user, and does nothing while the engine runs", async () => {
+    const client = fakeClient() as unknown as BrokerClient;
+    reconcileManualClosesIfEngineStopped(client, state.userId);
+    await reconcilePendingTrades(client, state.userId, { manualCloseOnly: true });
+    const selects = () => state.wheres.filter((w) => w.kind === "select" && w.table === "trader_trades").length;
+    const afterFirst = selects();
+
+    reconcileManualClosesIfEngineStopped(client, state.userId);
+    expect(selects()).toBe(afterFirst);
+
+    const other = `${state.userId.slice(0, -1)}f`;
+    getEngineStatus(other);
+    const engine = (globalThis as typeof globalThis & { __tradingEngines?: Map<string, EngineState> })
+      .__tradingEngines!.get(other)!;
+    engine.running = true;
+    try {
+      reconcileManualClosesIfEngineStopped(client, other);
+      expect(selects()).toBe(afterFirst);
+    } finally {
+      engine.running = false;
+    }
+  });
+});
+
+describe("reconcile select and fence", () => {
+  it("a full pass keeps the 7-day cutoff for engine rows but exempts manual_close", async () => {
+    await reconcilePendingTrades(fakeClient() as unknown as BrokerClient, state.userId);
+
+    const select = lastWhere("select", "trader_trades");
+    expect(select.sql).toMatch(/\("trader_trades"\."created_at" > \$\d+ or "trader_trades"\."action" = \$\d+\)/);
+    expect(select.params).toContain("manual_close");
+  });
+
+  it("the UPDATE is fenced on id, owner and a still-open status", async () => {
+    await POST(flattenRequest("AAPL"));
+    state.selectTrades = PENDING_ROWS;
+    state.brokerOrders = [
+      { id: "ord-AAPL", symbol: "AAPL", side: "sell", status: "filled", filledPrice: 185, filledAt: new Date().toISOString() },
+    ];
+    await reconcilePendingTrades(fakeClient() as unknown as BrokerClient, state.userId, { manualCloseOnly: true });
+
+    const update = lastWhere("update", "trader_trades");
+    expect(update.sql).toMatch(/"trader_trades"\."id" = \$\d+/);
+    expect(update.sql).toMatch(/"trader_trades"\."user_id" = \$\d+/);
+    expect(update.sql).toMatch(/"trader_trades"\."status" in \(\$\d+, \$\d+\)/);
+    expect(update.params).toEqual(expect.arrayContaining(["row-1", state.userId, "PENDING", "PARTIAL_FILLED"]));
+  });
+
+  it("a full pass that meets a running manual-close pass runs after it; a second manual call joins", async () => {
+    const client = fakeClient() as unknown as BrokerClient;
+    const manual = reconcilePendingTrades(client, state.userId, { manualCloseOnly: true });
+    const manualAgain = reconcilePendingTrades(client, state.userId, { manualCloseOnly: true });
+    const full = reconcilePendingTrades(client, state.userId);
+    await Promise.all([manual, manualAgain, full]);
+
+    const selects = state.wheres
+      .filter((w) => w.kind === "select" && w.table === "trader_trades")
+      .map((w) => new PgDialect().sqlToQuery(w.where as SQL).sql);
+    expect(selects).toHaveLength(2);
+    expect(selects[0]).not.toContain('"created_at"');
+    expect(selects[1]).toContain('"created_at"');
   });
 });
