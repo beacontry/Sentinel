@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, type InputHTMLAttributes } from "react";
 import { Search, X } from "lucide-react";
+import { FIELD_BASE, fieldStateClasses } from "./input";
 
 interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> {
   value?: string;
@@ -47,24 +48,21 @@ export function SearchInput({
 
   return (
     <div className={`relative ${className}`}>
-      <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-text-muted" />
+      <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-text-muted" />
       <input
         type="text"
         value={internalValue}
         onChange={(e) => handleChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full min-h-[44px] rounded-lg border border-border-control bg-bg-elevated pl-10 pr-10 py-2.5
-          text-sm text-text-primary placeholder:text-text-muted
-          transition-colors duration-150
-          outline-hidden focus:border-accent focus-visible:ring-2 focus-visible:ring-accent"
+        className={`${FIELD_BASE} min-h-11 pl-10 pr-11 py-2.5 ${fieldStateClasses(false)}`}
         {...props}
       />
       {internalValue && (
         <button
           type="button"
           onClick={clear}
-          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-text-muted
-            hover:text-text-secondary transition-colors cursor-pointer"
+          className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-text-muted
+            hover:text-text-primary transition-colors cursor-pointer"
           aria-label="Clear search"
         >
           <X className="h-3.5 w-3.5" />

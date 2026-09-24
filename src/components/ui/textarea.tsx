@@ -1,6 +1,7 @@
 "use client";
 
-import { forwardRef, type TextareaHTMLAttributes } from "react";
+import { forwardRef, useId, type TextareaHTMLAttributes } from "react";
+import { describedBy, FIELD_BASE, FieldError, fieldStateClasses } from "./input";
 
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
@@ -8,8 +9,10 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ label, error, className = "", id, rows = 3, ...props }, ref) => {
-    const textareaId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
+  ({ label, error, className = "", id, rows = 3, "aria-describedby": ariaDescribedBy, ...props }, ref) => {
+    const autoId = useId();
+    const textareaId = id ?? (label ? label.toLowerCase().replace(/\s+/g, "-") : autoId);
+    const errorId = `${textareaId}-error`;
 
     return (
       <div className="space-y-1.5">
@@ -25,16 +28,12 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           ref={ref}
           id={textareaId}
           rows={rows}
-          className={`w-full rounded-lg border border-border-control bg-bg-elevated px-3 py-2.5
-            text-sm text-text-primary placeholder:text-text-muted
-            transition-colors duration-150 resize-y
-            outline-hidden focus:border-accent focus-visible:ring-2
-            disabled:opacity-50 disabled:cursor-not-allowed
-            ${error ? "border-bearish focus:border-bearish focus-visible:ring-bearish" : "focus-visible:ring-accent"}
-            ${className}`}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy(ariaDescribedBy, error && errorId)}
+          className={`${FIELD_BASE} px-3 py-2.5 resize-y ${fieldStateClasses(Boolean(error))} ${className}`}
           {...props}
         />
-        {error && <p className="text-xs text-bearish">{error}</p>}
+        {error && <FieldError id={errorId}>{error}</FieldError>}
       </div>
     );
   }
