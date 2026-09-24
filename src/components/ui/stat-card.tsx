@@ -13,6 +13,18 @@ const TONE: Record<"positive" | "negative" | "neutral", StatusTone> = {
   neutral: "neutral",
 };
 
+/**
+ * card: a standalone tile on the page, bordered on bg-secondary.
+ * inset: a tile inside a panel or card. It renders as an Inset (bg-surface,
+ * no border, no shadow), so a panel of tiles is not cards nested in a card.
+ */
+export type StatCardSurface = "card" | "inset";
+
+const SURFACE: Record<StatCardSurface, string> = {
+  card: "rounded-xl border border-border bg-bg-secondary p-4 shadow-card",
+  inset: "rounded-lg bg-bg-surface p-3",
+};
+
 interface StatCardProps {
   label: string;
   /** A preformatted string, or a SignedValue for a gain or loss. */
@@ -26,6 +38,7 @@ interface StatCardProps {
    * drawdown or a placeholder is coloured without being a loss.
    */
   direction?: PnlDirection;
+  surface?: StatCardSurface;
   icon?: ElementType;
   className?: string;
 }
@@ -36,6 +49,7 @@ export function StatCard({
   subtext,
   tone = "neutral",
   direction,
+  surface = "card",
   icon: Icon,
   className = "",
 }: StatCardProps) {
@@ -43,7 +57,7 @@ export function StatCard({
   const iconBg = STATUS_TONE_FILL_CLASSES[tone === "neutral" ? "accent" : TONE[tone]];
 
   return (
-    <div className={`rounded-xl border border-border bg-bg-secondary p-4 shadow-card ${className}`}>
+    <div className={`${SURFACE[surface]} ${className}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="eyebrow text-text-muted">{label}</p>

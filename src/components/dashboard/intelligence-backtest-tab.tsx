@@ -222,6 +222,8 @@ export function IntelligenceBacktestTab({ symbol }: IntelligenceBacktestTabProps
   );
 }
 
+// A tile in the bg-secondary intelligence pane: one step up (bg-surface),
+// as an Inset is, not two (bg-elevated).
 function StatCard({
   label,
   value,
@@ -232,7 +234,7 @@ function StatCard({
   valueClass: string;
 }) {
   return (
-    <div className="px-3 py-2 rounded-lg bg-bg-elevated">
+    <div className="px-3 py-2 rounded-lg bg-bg-surface">
       <p className="text-xs text-text-muted uppercase tracking-wider leading-none mb-1">
         {label}
       </p>

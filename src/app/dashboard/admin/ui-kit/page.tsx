@@ -180,6 +180,15 @@ export default function UiKitPage() {
         <StatCard label="Open P&L" value={<SignedValue value={0} />} subtext="Flat, so no direction word" />
       </div>
 
+      <Section title="Stat tiles inside a panel">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <StatCard surface="inset" label="Trades" value="42" />
+          <StatCard surface="inset" label="Return" value="+3.1%" tone="positive" direction="gain" />
+          <StatCard surface="inset" label="Max DD" value="6.2%" tone="negative" />
+          <StatCard surface="inset" label="Sharpe" value="n/a" />
+        </div>
+      </Section>
+
       <Section title="Empty, error and loading">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Inset>

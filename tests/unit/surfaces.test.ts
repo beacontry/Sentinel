@@ -100,6 +100,20 @@ describe("StatCard", () => {
     expect(html).toContain("text-xl");
   });
 
+  // Inside a panel a tile is an Inset, never a card in a card.
+  it("renders as an Inset inside a panel", () => {
+    const html = renderToStaticMarkup(createElement(StatCard, { label: "Trades", value: "42", surface: "inset" }));
+    expect(html).toContain("bg-bg-surface");
+    expect(html).not.toMatch(/\bborder\b/);
+    expect(html).not.toContain("shadow-card");
+  });
+
+  it("is a bordered card on its own", () => {
+    const html = renderToStaticMarkup(createElement(StatCard, { label: "Trades", value: "42" }));
+    expect(html).toContain("border-border");
+    expect(html).toContain("bg-bg-secondary");
+  });
+
   it("colours a negative tone without claiming a loss", () => {
     const html = renderToStaticMarkup(createElement(StatCard, { label: "Max drawdown", value: "12%", tone: "negative" }));
     expect(html).not.toContain("▼");
