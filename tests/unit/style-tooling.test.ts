@@ -190,8 +190,10 @@ describe("style-ratchet: counts", () => {
     expect(files.some((f) => f.endsWith(".d.ts"))).toBe(false);
   });
 
+  // The ratchet reads every source file: about 3.5s alone, and past the 5s
+  // default once the full suite shares the machine, so it gets its own budget.
   it("passes against the committed baseline", () => {
     const root = join(__dirname, "..", "..");
     expect(() => execFileSync(process.execPath, [join(root, "scripts", "style-ratchet.mjs")], { cwd: root })).not.toThrow();
-  });
+  }, 30_000);
 });
