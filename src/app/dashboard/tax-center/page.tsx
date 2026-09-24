@@ -5,14 +5,10 @@ import { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   Receipt,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
   AlertTriangle,
   Download,
   Leaf,
@@ -24,16 +20,11 @@ import { TaxStatusCard } from "@/components/education/tax-status-card";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 import { useToast } from "@/components/ui/toast";
 import { useLatestRequest } from "@/hooks/use-latest-request";
+import { ErrorState } from "@/components/ui/error-state";
+import { SignedValue } from "@/components/ui/signed-value";
+import { formatCurrency, type TaxSummary } from "@/components/tax/tax-format";
+import { PersonalizedTaxEducation } from "@/components/tax/tax-education";
 
-interface TaxSummary {
-  shortTermGains: number;
-  shortTermLosses: number;
-  longTermGains: number;
-  longTermLosses: number;
-  netGain: number;
-  estimatedTax: number;
-  tradeCount: number;
-}
 
 interface HarvestingSuggestion {
   symbol: string;
@@ -47,13 +38,6 @@ interface HarvestingSuggestion {
   holdingPeriodKnown: boolean;
 }
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(value);
-}
 
 const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: 5 }, (_, i) => ({
@@ -162,7 +146,6 @@ export default function TaxCenterPage() {
     <div className="p-4 lg:p-6 space-y-6">
       <PaywallBanner minTier="trader" featureName="Tax Center" description="Realized gains + harvesting candidates merged from manual + engine trades." />
       <PageIntro
-        eyebrow="Record"
         title="Tax Center"
         description="Monitor your realized gains, estimated tax liability, and harvesting opportunities."
         actions={
@@ -185,10 +168,10 @@ export default function TaxCenterPage() {
           </div>
         }
         stats={[
-          { label: "Net Gain", value: summary ? formatCurrency(summary.netGain) : "--", tone: summary ? (summary.netGain >= 0 ? "bullish" : "bearish") : "neutral" },
+          { label: "Net Gain", value: summary ? <SignedValue value={summary.netGain} /> : "--" },
           { label: "Estimated Tax", value: summary ? formatCurrency(summary.estimatedTax) : "--" },
           { label: "Total Trades", value: summary ? String(summary.tradeCount) : "--" },
-          { label: "Harvest Opps", value: harvestLoading || harvestError ? "--" : String(suggestions.length), tone: suggestions.length > 0 ? "bullish" : "neutral" },
+          { label: "Harvest Opps", value: harvestLoading || harvestError ? "--" : String(suggestions.length) },
         ]}
       />
 
@@ -200,86 +183,46 @@ export default function TaxCenterPage() {
           ))}
         </div>
       ) : summary ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                  Short-Term Gains
-                </p>
-                <p className="text-xl font-bold text-bullish mt-1">
-                  {formatCurrency(summary.shortTermGains)}
-                </p>
-                <p className="text-xs text-text-muted mt-1">22% tax rate</p>
-              </div>
-              <div className="p-2 rounded-lg bg-bullish/10">
-                <TrendingUp className="w-4 h-4 text-bullish" />
-              </div>
+        <section aria-labelledby="tax-summary" className="rounded-xl border border-border bg-bg-secondary p-2 shadow-card">
+          <h2 id="tax-summary" className="sr-only">{year} summary</h2>
+          <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg bg-bg-surface p-3">
+              <dt className="eyebrow text-text-muted">Short-term gains</dt>
+              <dd className="mt-1 text-xl font-semibold"><SignedValue value={summary.shortTermGains} /></dd>
+              <dd className="mt-1 text-xs text-text-muted">22% tax rate</dd>
             </div>
-          </Card>
-
-          <Card>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                  Long-Term Gains
-                </p>
-                <p className="text-xl font-bold text-bullish mt-1">
-                  {formatCurrency(summary.longTermGains)}
-                </p>
-                <p className="text-xs text-text-muted mt-1">15% tax rate</p>
-              </div>
-              <div className="p-2 rounded-lg bg-bullish/10">
-                <TrendingUp className="w-4 h-4 text-bullish" />
-              </div>
+            <div className="rounded-lg bg-bg-surface p-3">
+              <dt className="eyebrow text-text-muted">Long-term gains</dt>
+              <dd className="mt-1 text-xl font-semibold"><SignedValue value={summary.longTermGains} /></dd>
+              <dd className="mt-1 text-xs text-text-muted">15% tax rate</dd>
             </div>
-          </Card>
-
-          <Card>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                  Total Losses
-                </p>
-                <p className="text-xl font-bold text-bearish mt-1">
-                  {formatCurrency(summary.shortTermLosses + summary.longTermLosses)}
-                </p>
-                <p className="text-xs text-text-muted mt-1">
-                  {summary.tradeCount} trades
-                </p>
-              </div>
-              <div className="p-2 rounded-lg bg-bearish/10">
-                <TrendingDown className="w-4 h-4 text-bearish" />
-              </div>
+            <div className="rounded-lg bg-bg-surface p-3">
+              <dt className="eyebrow text-text-muted">Total losses</dt>
+              <dd className="mt-1 text-xl font-semibold">
+                <SignedValue value={-(summary.shortTermLosses + summary.longTermLosses)} />
+              </dd>
+              <dd className="mt-1 text-xs text-text-muted">{summary.tradeCount} trades</dd>
             </div>
-          </Card>
-
-          <Card>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                  Estimated Tax
-                </p>
-                <p className="text-xl font-bold text-warning mt-1">
-                  {formatCurrency(summary.estimatedTax)}
-                </p>
-                <p className="text-xs text-text-muted mt-1">
-                  Net: {formatCurrency(summary.netGain)}
-                </p>
+            <div className="rounded-lg bg-bg-surface p-3">
+              <dt className="eyebrow text-text-muted">Estimated tax</dt>
+              <dd className="mt-1 font-mono text-xl font-semibold tabular-nums text-text-primary">
+                {formatCurrency(summary.estimatedTax)}
+              </dd>
+              <dd className="mt-1 text-xs text-text-muted">
+                Net: <SignedValue value={summary.netGain} glyph={false} />
+              </dd>
+              <dd>
                 <Link
                   href="/dashboard/education/guides/quarterly-estimated-taxes-for-traders"
-                  className="mt-2 inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                  className="mt-2 inline-flex min-h-11 items-center gap-1 text-xs text-accent hover:underline"
                 >
-                  <BookOpen className="w-3 h-3" />
+                  <BookOpen className="w-3 h-3" aria-hidden="true" />
                   Owe quarterly?
                 </Link>
-              </div>
-              <div className="p-2 rounded-lg bg-warning/10">
-                <DollarSign className="w-4 h-4 text-warning" />
-              </div>
+              </dd>
             </div>
-          </Card>
-        </div>
+          </dl>
+        </section>
       ) : failed?.locked ? (
         <EmptyState
           icon={<Receipt className="w-12 h-12" />}
@@ -287,12 +230,14 @@ export default function TaxCenterPage() {
           description="Upgrade to see realized gains and estimated tax from your trades."
         />
       ) : failed ? (
-        <EmptyState
-          icon={<AlertTriangle className="w-12 h-12" />}
-          title="Couldn't Load the Tax Report"
-          description={`The ${year} summary did not load, so nothing here reflects your trades yet.`}
-          action={{ label: "Retry", onClick: retryReport }}
-        />
+        <div className="rounded-xl border border-border bg-bg-secondary">
+          <ErrorState
+            headingLevel={2}
+            title="Could not load the tax report"
+            description={`The ${year} summary did not load, so nothing here reflects your trades yet.`}
+            onRetry={retryReport}
+          />
+        </div>
       ) : (
         <EmptyState
           icon={<Receipt className="w-12 h-12" />}
@@ -312,29 +257,17 @@ export default function TaxCenterPage() {
               <h4 className="text-sm font-semibold text-text-secondary">
                 Short-Term (held &lt; 1 year)
               </h4>
-              <div className="flex items-center justify-between py-2 border-b border-border">
+              <div className="flex items-center justify-between py-2 border-b border-[var(--color-hairline-inner)]">
                 <span className="text-sm text-text-secondary">Gains</span>
-                <span className="text-sm font-medium text-bullish">
-                  +{formatCurrency(summary.shortTermGains)}
-                </span>
+                <SignedValue value={summary.shortTermGains} glyph={false} className="text-sm font-medium" />
               </div>
-              <div className="flex items-center justify-between py-2 border-b border-border">
+              <div className="flex items-center justify-between py-2 border-b border-[var(--color-hairline-inner)]">
                 <span className="text-sm text-text-secondary">Losses</span>
-                <span className="text-sm font-medium text-bearish">
-                  -{formatCurrency(summary.shortTermLosses)}
-                </span>
+                <SignedValue value={-summary.shortTermLosses} glyph={false} className="text-sm font-medium" />
               </div>
               <div className="flex items-center justify-between py-2">
                 <span className="text-sm font-medium text-text-primary">Net</span>
-                <span
-                  className={`text-sm font-bold ${
-                    summary.shortTermGains - summary.shortTermLosses >= 0
-                      ? "text-bullish"
-                      : "text-bearish"
-                  }`}
-                >
-                  {formatCurrency(summary.shortTermGains - summary.shortTermLosses)}
-                </span>
+                <SignedValue value={summary.shortTermGains - summary.shortTermLosses} className="text-sm font-bold" />
               </div>
             </div>
 
@@ -342,29 +275,17 @@ export default function TaxCenterPage() {
               <h4 className="text-sm font-semibold text-text-secondary">
                 Long-Term (held &gt; 1 year)
               </h4>
-              <div className="flex items-center justify-between py-2 border-b border-border">
+              <div className="flex items-center justify-between py-2 border-b border-[var(--color-hairline-inner)]">
                 <span className="text-sm text-text-secondary">Gains</span>
-                <span className="text-sm font-medium text-bullish">
-                  +{formatCurrency(summary.longTermGains)}
-                </span>
+                <SignedValue value={summary.longTermGains} glyph={false} className="text-sm font-medium" />
               </div>
-              <div className="flex items-center justify-between py-2 border-b border-border">
+              <div className="flex items-center justify-between py-2 border-b border-[var(--color-hairline-inner)]">
                 <span className="text-sm text-text-secondary">Losses</span>
-                <span className="text-sm font-medium text-bearish">
-                  -{formatCurrency(summary.longTermLosses)}
-                </span>
+                <SignedValue value={-summary.longTermLosses} glyph={false} className="text-sm font-medium" />
               </div>
               <div className="flex items-center justify-between py-2">
                 <span className="text-sm font-medium text-text-primary">Net</span>
-                <span
-                  className={`text-sm font-bold ${
-                    summary.longTermGains - summary.longTermLosses >= 0
-                      ? "text-bullish"
-                      : "text-bearish"
-                  }`}
-                >
-                  {formatCurrency(summary.longTermGains - summary.longTermLosses)}
-                </span>
+                <SignedValue value={summary.longTermGains - summary.longTermLosses} className="text-sm font-bold" />
               </div>
             </div>
           </div>
@@ -391,8 +312,8 @@ export default function TaxCenterPage() {
         </CardHeader>
 
         {!harvestLoading && unpricedSymbols.length > 0 && (
-          <div className="mb-3 flex items-start gap-2 rounded-lg bg-warning/10 border border-warning/20 px-3 py-2 text-xs text-warning">
-            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <div role="status" className="mb-3 flex items-start gap-2 rounded-lg border border-warning-line bg-warning-fill px-3 py-2 text-xs text-warning-fg">
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
             <span>
               No current price for {unpricedSymbols.join(", ")}. These positions
               are left out of the suggestions below; reload to try again.
@@ -407,15 +328,13 @@ export default function TaxCenterPage() {
             ))}
           </div>
         ) : harvestError ? (
-          <div className="py-8 text-center space-y-3">
-            <p className="text-sm text-bearish">
-              Couldn&apos;t load harvesting suggestions. This is not the same as
-              having none.
-            </p>
-            <Button variant="secondary" size="sm" onClick={() => setHarvestNonce((n) => n + 1)}>
-              Retry
-            </Button>
-          </div>
+          <ErrorState
+            compact
+            headingLevel={3}
+            title="Could not load harvesting suggestions"
+            description="This is not the same as having none."
+            onRetry={() => setHarvestNonce((n) => n + 1)}
+          />
         ) : suggestions.length === 0 ? (
           <div className="py-8 text-center space-y-3">
             <p className="text-sm text-text-muted">
@@ -438,10 +357,10 @@ export default function TaxCenterPage() {
             {suggestions.map((s) => (
               <div
                 key={s.symbol}
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-bg-elevated border border-border"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-bg-surface"
               >
                 <div className="flex items-center gap-3">
-                  <Badge variant="bearish">{s.symbol}</Badge>
+                  <span className="font-mono font-semibold text-text-primary">{s.symbol}</span>
                   <div>
                     <p className="text-sm font-medium text-text-primary">
                       {s.quantity} shares at {formatCurrency(s.entryPrice)}
@@ -454,8 +373,8 @@ export default function TaxCenterPage() {
 
                 <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <p className="text-sm font-semibold text-bearish">
-                      -{formatCurrency(s.currentLoss)}
+                    <p className="text-sm font-semibold">
+                      <SignedValue value={-Math.abs(s.currentLoss)} />
                     </p>
                     <p className="text-xs text-bullish">
                       Save ~{formatCurrency(s.potentialSavings)}
@@ -476,7 +395,7 @@ export default function TaxCenterPage() {
                   </div>
 
                   <div className="flex items-center gap-1.5 text-xs text-warning">
-                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
                       Wash sale until {s.washSaleDate}
@@ -512,138 +431,5 @@ export default function TaxCenterPage() {
         suggestionsCount={suggestions.length}
       />
     </div>
-  );
-}
-
-// ─── Personalized Education Footer ──────────────────────────────────────
-
-interface EducationLink {
-  href: string;
-  title: string;
-  blurb: string;
-  /** Higher score = more prominent (sorted desc). */
-  score: number;
-  icon: typeof BookOpen;
-}
-
-function PersonalizedTaxEducation({
-  summary,
-  suggestionsCount,
-}: {
-  summary: TaxSummary | null;
-  suggestionsCount: number;
-}) {
-  // Score education links based on user state. Each adds its baseline score
-  // plus context-specific bumps; we surface the top 4.
-  const links: EducationLink[] = [];
-
-  // Wash sale guide — bumped if user has any harvesting opportunities (most
-  // common reason wash sales become relevant).
-  links.push({
-    href: "/dashboard/education/guides/wash-sale-rules-deep-dive",
-    title: "Wash Sale Rules: A Deep Dive",
-    blurb: suggestionsCount > 0
-      ? `You have ${suggestionsCount} harvesting candidate${suggestionsCount === 1 ? "" : "s"} — read this BEFORE selling`
-      : "Cross-account traps, IRA disasters, ETF swap pairs that work",
-    score: 50 + (suggestionsCount > 0 ? 30 : 0),
-    icon: BookOpen,
-  });
-
-  // TLH calculator — directly actionable when there are opportunities
-  links.push({
-    href: "/dashboard/education#calculators",
-    title: "Tax-Loss Harvesting Calculator",
-    blurb: suggestionsCount > 0
-      ? "Estimate this year's tax savings from your harvestable losses"
-      : "Run hypothetical numbers — no opportunities yet",
-    score: 40 + (suggestionsCount > 0 ? 25 : 0),
-    icon: DollarSign,
-  });
-
-  // MTM guide — bumped for users who appear to be active traders (proxied by
-  // high trade count or substantial short-term gains)
-  const looksLikeActiveTrader =
-    !!summary &&
-    (summary.tradeCount > 50 || summary.shortTermGains > 50_000);
-  links.push({
-    href: "/dashboard/education/guides/trader-tax-status-and-mtm-election",
-    title: "Trader Tax Status & §475(f) MTM",
-    blurb: looksLikeActiveTrader
-      ? "You look like an active trader — MTM election may apply"
-      : "Who qualifies, what it does, and the irreversible commitment",
-    score: 30 + (looksLikeActiveTrader ? 35 : 0),
-    icon: BookOpen,
-  });
-
-  // Quarterly estimates — bumped when estimated tax > $1,000 (the trigger
-  // threshold per IRS rules)
-  const owesEstimates = !!summary && summary.estimatedTax > 1_000;
-  links.push({
-    href: "/dashboard/education/guides/quarterly-estimated-taxes-for-traders",
-    title: "Quarterly Estimated Taxes",
-    blurb: owesEstimates
-      ? `Estimated tax: ${formatCurrency(summary.estimatedTax)} — you likely owe quarterly`
-      : "Safe harbors, deadlines, and the withholding hack",
-    score: 25 + (owesEstimates ? 35 : 0),
-    icon: BookOpen,
-  });
-
-  // Asset location — bumped when there are mixed gain/loss patterns
-  const hasMixedGains =
-    !!summary && summary.shortTermGains > 0 && summary.longTermGains > 0;
-  links.push({
-    href: "/dashboard/education/guides/asset-location-strategy",
-    title: "Asset Location Strategy",
-    blurb: hasMixedGains
-      ? "Mixed S/T and L/T gains — placing assets in the right account saves 30-100 bps/yr"
-      : "Putting the right asset in the right account",
-    score: 20 + (hasMixedGains ? 15 : 0),
-    icon: BookOpen,
-  });
-
-  // Estate planning — always present at low priority
-  links.push({
-    href: "/dashboard/education/guides/estate-planning-basics",
-    title: "Estate Planning Basics",
-    blurb: "Wills, beneficiary designations, the step-up trick",
-    score: 10,
-    icon: BookOpen,
-  });
-
-  links.sort((a, b) => b.score - a.score);
-  const top = links.slice(0, 4);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-accent" />
-          Tax Education
-        </CardTitle>
-        <span className="text-xs text-text-muted">
-          Personalized to your data
-        </span>
-      </CardHeader>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {top.map((link) => {
-          const Icon = link.icon;
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
-            >
-              <Icon className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-text-primary">
-                  {link.title}
-                </p>
-                <p className="text-xs text-text-muted mt-0.5">{link.blurb}</p>
-              </div>
-            </Link>
-          );
-        })}
-      </div>
-    </Card>
   );
 }
