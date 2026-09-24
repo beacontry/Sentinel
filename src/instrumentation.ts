@@ -71,16 +71,27 @@ export async function register() {
     // engine so placeSafetyStops() runs before the process dies. Without this,
     // a container rebuild leaves positions with whatever stop was last replaced —
     // the bug that left INTC unprotected for 2 days during the Apr 28–30 outage.
+    //
+    // This handler must be the ONLY one that exits. Next's standalone server
+    // registers its own SIGTERM/SIGINT cleanup, which ends in process.exit(0)
+    // after a few local closes, well before the drain has touched the broker.
+    // The Dockerfile sets NEXT_MANUAL_SIG_HANDLE=true to switch that off; the
+    // listener count check below says so loudly if it is ever missing.
+    // Timings (drain budget, force exit, container grace) live in
+    // lib/shutdown-config.ts and are checked against the Dockerfile and
+    // compose file by tests/unit/shutdown-config.test.ts.
     const g = globalThis as typeof globalThis & { __shutdownRegistered?: boolean };
     if (!g.__shutdownRegistered) {
       g.__shutdownRegistered = true;
+
+      const { FORCE_EXIT_MS } = await import("./lib/shutdown-config");
 
       const handleShutdown = async (sig: string) => {
         console.log(`[shutdown] ${sig} received — stopping engines`);
         const forceExit = setTimeout(() => {
           console.error("[shutdown] timeout exceeded, forcing exit");
           process.exit(1);
-        }, 8000); // under podman's default 10s grace period
+        }, FORCE_EXIT_MS); // above the drain budget, below the container stop grace
 
         try {
           const { shutdownAllEngines } = await import("./lib/trading-engine");
@@ -96,6 +107,17 @@ export async function register() {
 
       process.on("SIGTERM", () => void handleShutdown("SIGTERM"));
       process.on("SIGINT", () => void handleShutdown("SIGINT"));
+
+      // Any other SIGTERM listener (Next's own cleanup, when
+      // NEXT_MANUAL_SIG_HANDLE is unset) races this one to process.exit and
+      // wins, so the safety stops are never placed.
+      const sigtermListeners = process.listenerCount("SIGTERM");
+      if (process.env.NODE_ENV === "production" && sigtermListeners > 1) {
+        console.error(
+          `[shutdown] ${sigtermListeners} SIGTERM listeners registered; another handler can exit ` +
+            "before the engine drain places safety stops. Set NEXT_MANUAL_SIG_HANDLE=true."
+        );
+      }
     }
   }
 }

@@ -425,7 +425,8 @@ Reference list of all gates a main-scan BUY traverses:
 
 ### Graceful Shutdown
 - SIGTERM and SIGINT handlers in `instrumentation.ts` call `shutdownAllEngines()` — for each running engine: clear scan/exit-check intervals, then run `placeSafetyStops()` so every position has a tighter GTC stop on Alpaca before the process exits
-- Hard 8s budget (under podman's 10s grace period) — if the broker is slow, force-exit rather than block the rebuild
+- **One signal owner.** Next's standalone server registers its own SIGTERM/SIGINT cleanup that ends in `process.exit(0)` after a few local closes, long before the drain reaches the broker. The Dockerfile runner stage sets `NEXT_MANUAL_SIG_HANDLE=true` to switch it off, so the app handler is the only one that exits. At registration the handler logs an error in production when `process.listenerCount("SIGTERM") > 1`
+- **Nested timing budget** (`src/lib/shutdown-config.ts`): `DRAIN_BUDGET_MS` (15s, broker calls in the drain) < `FORCE_EXIT_MS` (drain + 5s, the handler's hard exit) < container stop grace (`CONTAINER_STOP_GRACE_S` = 30s: compose `stop_grace_period`, `podman stop -t 30` in `rotate-secrets.sh` and the deploy workflow). Podman's default 10s grace would SIGKILL mid-drain. `tests/unit/shutdown-config.test.ts` reads the Dockerfile, compose file and stop commands and fails when the ordering breaks
 
 ### Halt Semantics — What Halt Blocks And What It Doesn't
 Halt (`engine.halted = true`) is a **buy-side circuit breaker, not a global engine freeze**. The intent is "stop digging deeper" — block new positions while continuing to manage the ones already open. A halt that simultaneously stripped exit protection from losing positions would be the inverse of safe.

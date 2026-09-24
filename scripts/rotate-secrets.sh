@@ -90,7 +90,7 @@ ${C_BOLD}What rotation does:${C_RESET}
   1. Generates fresh JWT_SECRET (48-byte base64) + CRON_SECRET (32-byte base64)
   2. Backs up $ENV_FILE → $ENV_FILE.bak.<timestamp>
   3. Replaces both keys in $ENV_FILE (in-place)
-  4. podman stop + rm + run (env-file is only re-read on \`run\`)
+  4. podman stop -t 30 + rm + run (env-file is only re-read on \`run\`)
   5. Polls $HEALTH_URL until 200 (timeout: 30s)
   6. Prints the new CRON_SECRET so you can update external schedulers
 
@@ -102,7 +102,7 @@ ${C_BOLD}Effects on users:${C_RESET}
 ${C_BOLD}Rollback:${C_RESET}
   If the new container fails health checks:
     sudo cp $ENV_FILE.bak.<timestamp> $ENV_FILE
-    podman stop $CONTAINER_NAME; podman rm $CONTAINER_NAME
+    podman stop -t 30 $CONTAINER_NAME; podman rm $CONTAINER_NAME
     # re-run the original podman run command from before this script
 EOF
 }
@@ -162,7 +162,7 @@ cmd_rotate() {
     printf '%sThis will:%s\n' "$C_BOLD" "$C_RESET"
     printf '  • Invalidate all existing user sessions (forced log-out)\n'
     printf '  • Break every running cron job until you update its x-cron-secret\n'
-    printf '  • Briefly stop %s during the restart (~5-10s)\n\n' "$CONTAINER_NAME"
+    printf '  • Briefly stop %s during the restart (up to ~30s while engines place safety stops)\n\n' "$CONTAINER_NAME"
     read -p "Proceed? Type 'rotate' to confirm: " confirm
     [[ "$confirm" == "rotate" ]] || die "Aborted."
   fi
@@ -187,7 +187,10 @@ cmd_rotate() {
   ok "Env file updated"
 
   info "Restarting container as $APP_USER (rootless Podman; restart doesn't reload --env-file)"
-  $PODMAN stop "$CONTAINER_NAME" 2>/dev/null || warn "Container was not running"
+  # -t 30: the SIGTERM drain places safety stops on the broker and may take up
+  # to FORCE_EXIT_MS (src/lib/shutdown-config.ts). podman's default 10s grace
+  # would SIGKILL it mid-drain.
+  $PODMAN stop -t 30 "$CONTAINER_NAME" 2>/dev/null || warn "Container was not running"
   $PODMAN rm "$CONTAINER_NAME" 2>/dev/null || warn "Container did not exist"
 
   $PODMAN run -d --name "$CONTAINER_NAME" --network=host \
@@ -213,7 +216,7 @@ cmd_rotate() {
   if [[ "$status" != "200" ]]; then
     warn "Health check did not pass within 30s (last status: $status)"
     warn "Inspect logs:  sudo -u $APP_USER -i podman logs $CONTAINER_NAME --tail 50"
-    warn "Rollback:      sudo cp $backup_file $ENV_FILE && $PODMAN stop $CONTAINER_NAME && $PODMAN rm $CONTAINER_NAME && <re-run with old env>"
+    warn "Rollback:      sudo cp $backup_file $ENV_FILE && $PODMAN stop -t 30 $CONTAINER_NAME && $PODMAN rm $CONTAINER_NAME && <re-run with old env>"
     die "Rotation completed but container is not healthy."
   fi
 
