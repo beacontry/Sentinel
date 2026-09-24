@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { parseUrlParam, withUrlParam, type UrlParamAllowed } from "@/lib/url-param";
+import { parseUrlParam, replaceUrlParam, type UrlParamAllowed } from "@/lib/url-param";
 
 /**
  * View state (a tab, a year, a filter) held in the query string instead of
@@ -12,7 +12,9 @@ import { parseUrlParam, withUrlParam, type UrlParamAllowed } from "@/lib/url-par
  * The value is validated against `allowed` on every read and falls back
  * when the URL names something else. Updates use history.replaceState,
  * which Next.js keeps in sync with useSearchParams, so switching a tab
- * does not add a history entry or trigger a server round trip.
+ * does not add a history entry or trigger a server round trip. That sync
+ * only happens when the call does not pass Next's own history state; see
+ * replaceUrlParam.
  *
  * useSearchParams needs a <Suspense> boundary above the component that
  * calls this hook (see the Journal page wrapper).
@@ -26,13 +28,7 @@ export function useUrlParam<T extends string>(
   const value = parseUrlParam(searchParams.get(name), fallback, allowed);
 
   const setValue = useCallback(
-    (next: T) => {
-      // Read the live location rather than the searchParams snapshot, so
-      // two params set in the same tick do not overwrite each other.
-      const { pathname, search, hash } = window.location;
-      const query = withUrlParam(search, name, next, fallback);
-      window.history.replaceState(window.history.state, "", `${pathname}${query}${hash}`);
-    },
+    (next: T) => replaceUrlParam(window, name, next, fallback),
     [name, fallback],
   );
 

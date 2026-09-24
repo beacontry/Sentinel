@@ -42,3 +42,34 @@ export function withUrlParam(
   const qs = params.toString();
   return qs ? `?${qs}` : "";
 }
+
+/** The slice of window that replaceUrlParam touches, so tests can fake it. */
+export interface UrlParamWindow {
+  location: { pathname: string; search: string; hash: string };
+  history: { replaceState(data: unknown, unused: string, url?: string | URL | null): void };
+}
+
+/**
+ * Set one parameter on the current URL with history.replaceState.
+ *
+ * It reads the live location rather than a searchParams snapshot, so two
+ * params set in the same tick do not overwrite each other.
+ *
+ * The state passed is a fresh object, never window.history.state. Once
+ * the App Router has hydrated, that object carries Next's `__NA` marker,
+ * and Next's patched replaceState treats any call carrying it as one of
+ * its own: the URL changes but the router is never told, so
+ * useSearchParams keeps the old value and nothing re-renders. A fresh
+ * object makes Next copy its internal state across itself and sync the
+ * router (the Billing page does the same).
+ */
+export function replaceUrlParam(
+  win: UrlParamWindow,
+  name: string,
+  value: string,
+  fallback: string,
+): void {
+  const { pathname, search, hash } = win.location;
+  const query = withUrlParam(search, name, value, fallback);
+  win.history.replaceState({}, "", `${pathname}${query}${hash}`);
+}
