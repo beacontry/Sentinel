@@ -10,7 +10,7 @@ import { writeAudit, AuditAction } from "@/lib/audit";
 import { rateLimit } from "@/lib/rate-limiter";
 import { checkTier } from "@/lib/tiers-server";
 import { getETDateString } from "@/lib/market-hours";
-import { reserveManualFlatten, cancelAllAndWait } from "@/lib/trading-engine";
+import { reserveManualFlatten, cancelAllAndWait, cancelSymbolOrdersAndWait } from "@/lib/trading-engine";
 import { z } from "zod";
 
 const commandSchema = z.object({
@@ -92,25 +92,17 @@ export async function POST(request: NextRequest) {
         // keeps cancelAllOrders (consistent with closing every position).
         try {
           if (symbol && client.cancelOrder) {
-            const openOrders = await client.getOrders(100, "open");
-            const toCancel = openOrders.filter(
-              (o) =>
-                o.symbol === symbol &&
-                o.side === "sell" &&
-                (o.type === "stop" || o.type === "stop_limit"),
-            );
-            for (const o of toCancel) {
-              try {
-                await client.cancelOrder(o.id);
-              } catch (err) {
-                log.warn(
-                  { orderId: o.id, symbol, err: err instanceof Error ? err.message : "unknown" },
-                  "Failed to cancel blocking order before flatten",
-                );
-              }
-            }
-            if (toCancel.length > 0) {
-              await new Promise(r => setTimeout(r, 500)); // settle time
+            // Poll until the cancelled stops have actually released their
+            // shares instead of a fixed 500ms settle, for the same reason as
+            // flatten-all below.
+            const cancel = await cancelSymbolOrdersAndWait(client, symbol, {
+              filter: (o) => o.side === "sell" && (o.type === "stop" || o.type === "stop_limit"),
+            });
+            if (!cancel.released) {
+              log.warn(
+                { symbol, failedOrderIds: cancel.failedOrderIds },
+                "Stop cancel before flatten did not fully release; the sell may be rejected",
+              );
             }
           } else if (client.cancelAllOrders) {
             // Poll until the broker has actually released the cancelled
