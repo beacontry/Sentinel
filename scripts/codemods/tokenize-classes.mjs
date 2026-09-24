@@ -10,7 +10,8 @@
  *   text        arbitrary and off-scale font sizes → the 7-step type scale
  *   radius      arbitrary and off-scale radii → rounded-md / lg / xl
  *   shadow      Tailwind's stock shadows → shadow-card / pop / modal
- *   transition  transition-all → the properties that actually change
+ *   transition  transition-all → the properties that actually change;
+ *               also re-derives a list an earlier run wrote
  *   state       bg-X/NN + text-X chips and banners → the X-fill / X-fg /
  *               X-line triplet (X = bullish, bearish, warning)
  *   on-accent   text-white on a solid accent fill → text-on-accent
@@ -19,9 +20,11 @@
  * comments and JSX text are left alone. --dry (the default) prints per-file
  * counts and the sites left for a person to decide; --write applies.
  *
- * The scanner does not parse regex literals, so a quote or backtick inside
- * one (/[*_`]/) can desync it for the rest of that file. After a run, the
- * ratchet's counts show anything left behind; fix those by hand.
+ * The scanner skips a regex literal when a slash sits where an expression
+ * starts (after `( , = : [ ! & | ? ; {`), so a quote or backtick inside one
+ * (/[*_`]/) no longer desyncs the rest of the file. That test is a
+ * heuristic, not a parser: after a run, the ratchet's counts show anything
+ * left behind; fix those by hand.
  *
  * Every rule here is mechanical. Anything that needs judgement is listed
  * under "review by hand" and not rewritten:
@@ -105,18 +108,45 @@ const FAMILIES = {
   },
 };
 
-const TRANSFORM = /(?:^|[\s:])-?(?:translate-|scale-|rotate-|skew-)/;
+// Tailwind v4 compiles translate-*, scale-* and rotate-* to the separate
+// `translate`, `scale` and `rotate` properties, not to `transform` (only
+// skew-* still writes `transform`). A list that names `transform` for a
+// hover:-translate-y-1 animates nothing, and the lift jumps.
+const TRANSLATE = /(?:^|[\s:])-?translate-/;
+const SCALE = /(?:^|[\s:])-?scale-/;
+const ROTATE = /(?:^|[\s:])-?rotate-/;
+const SKEW = /(?:^|[\s:])-?skew-/;
 const OPACITY = /(?:^|[\s:])opacity-/;
 const SHADOW = /(?:^|[\s:])shadow(?:-|\s|$)/;
+// A gap that changes on a state (group-hover:gap-2 on an arrow link).
+const GAP = /(?<![\w-])(?:[a-z0-9-]+:)+gap-/;
 const STATEFUL = /(?<![\w-])(?:[a-z0-9-]+:)*(?:hover|focus|focus-visible|focus-within|active|group-hover|peer-hover|aria-[a-z]+|data-[a-z-]+|open|disabled|enabled|group-focus|peer-checked|checked):/;
 // A bar fill whose length comes from style={{ width | height }}: the
 // transition exists to animate that length, so keep it, named.
 const BAR_ACROSS = /(?<![\w:-])(?:h-full|inset-y-0)(?![\w-])/;
 const BAR_UP = /(?<![\w:-])w-full(?![\w-])/;
+// transition-all, or a list this codemod wrote earlier (it always starts
+// with the three colour properties), so a re-run corrects old output.
+const TARGET = /(?<![\w-])(?:transition-all|transition-\[background-color,border-color,color(?:,[a-z-]+)*\])(?![\w-])/g;
+
+/** The properties a class string changes, colours first. */
+export function transitionProps(str) {
+  const props = ["background-color", "border-color", "color"];
+  if (TRANSLATE.test(str)) props.push("translate");
+  if (SCALE.test(str)) props.push("scale");
+  if (ROTATE.test(str)) props.push("rotate");
+  if (SKEW.test(str)) props.push("transform");
+  if (OPACITY.test(str)) props.push("opacity");
+  if (SHADOW.test(str)) props.push("box-shadow");
+  if (GAP.test(str)) props.push("gap");
+  return props;
+}
 
 function rewriteTransition(str, review) {
-  if (!/(?<![\w-])transition-all(?![\w-])/.test(str)) return [str, 0];
-  if (!STATEFUL.test(str)) {
+  TARGET.lastIndex = 0;
+  if (!TARGET.test(str)) return [str, 0];
+  const isAll = /(?<![\w-])transition-all(?![\w-])/.test(str);
+  if (isAll && !STATEFUL.test(str)) {
     const bar = BAR_ACROSS.test(str) ? "width" : BAR_UP.test(str) ? "height" : null;
     if (bar) {
       let n = 0;
@@ -131,13 +161,11 @@ function rewriteTransition(str, review) {
       return [str, 0];
     }
   }
-  const props = ["background-color", "border-color", "color"];
-  if (TRANSFORM.test(str)) props.push("transform");
-  if (OPACITY.test(str)) props.push("opacity");
-  if (SHADOW.test(str)) props.push("box-shadow");
+  const props = transitionProps(str);
   const repl = props.length === 3 ? "transition-colors" : `transition-[${props.join(",")}]`;
   let n = 0;
-  const out = str.replace(/(?<![\w-])transition-all(?![\w-])/g, () => {
+  const out = str.replace(TARGET, (m) => {
+    if (m === repl) return m;
     n++;
     return repl;
   });
@@ -163,7 +191,31 @@ function rewriteOnAccent(str, review) {
 
 // ── literal scanner ──────────────────────────────────────────────────────
 
-/** [start, end) spans of every string and template literal, skipping comments. */
+function prevNonSpace(src, i) {
+  let j = i - 1;
+  while (j >= 0 && /\s/.test(src[j])) j--;
+  return j < 0 ? "(" : src[j];
+}
+
+/** Index just past a regex literal starting at `i`, or -1 when none closes on this line. */
+function regexEnd(src, i) {
+  let inClass = false;
+  for (let j = i + 1; j < src.length; j++) {
+    const ch = src[j];
+    if (ch === "\n") return -1;
+    if (ch === "\\") j++;
+    else if (ch === "[") inClass = true;
+    else if (ch === "]") inClass = false;
+    else if (ch === "/" && !inClass) {
+      let k = j + 1;
+      while (k < src.length && /[a-z]/.test(src[k])) k++;
+      return k;
+    }
+  }
+  return -1;
+}
+
+/** [start, end) spans of every string and template literal, skipping comments and regex literals. */
 export function literalSpans(src) {
   const spans = [];
   let i = 0;
@@ -180,6 +232,16 @@ export function literalSpans(src) {
       const e = src.indexOf("*/", i + 2);
       i = e < 0 ? n : e + 2;
       continue;
+    }
+    // A regex literal: a slash where an expression starts. Skip to its
+    // closing slash on the same line, so a quote or backtick inside it
+    // (/[*_`]/) does not open a string that swallows the rest of the file.
+    if (c === "/" && d !== ">" && /[(,=:[!&|?;{]/.test(prevNonSpace(src, i))) {
+      const e = regexEnd(src, i);
+      if (e > 0) {
+        i = e;
+        continue;
+      }
     }
     if (c === '"' || c === "'" || c === "`") {
       const start = i;

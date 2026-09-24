@@ -25,6 +25,18 @@ describe("tokenize-classes: literal scanner", () => {
     expect(run(src, "text").out).toBe(`<a className="flex text-xs uppercase\n  tracking-[0.08em] text-xs">x</a>`);
   });
 
+  it("skips a regex literal holding a quote or backtick, instead of opening a string", () => {
+    const src = 'const t = s.replace(/[*_`]/g, "");\nconst c = "text-[10px]";';
+    const spans = (literalSpans(src) as [number, number][]).map(([s, e]) => src.slice(s, e));
+    expect(spans).toEqual([`""`, `"text-[10px]"`]);
+  });
+
+  it("does not take a division or a self-closing tag for a regex", () => {
+    const src = 'const r = a / b; const q = "x"; <A b={c} /><p className="y" />';
+    const spans = (literalSpans(src) as [number, number][]).map(([s, e]) => src.slice(s, e));
+    expect(spans).toEqual([`"x"`, `"y"`]);
+  });
+
   it("does not treat an apostrophe in JSX text as a string", () => {
     const src = `<p>Don't panic</p>\n<p className="text-[10px]">x</p>`;
     expect(run(src, "text").out).toBe(`<p>Don't panic</p>\n<p className="text-xs">x</p>`);
@@ -58,8 +70,34 @@ describe("tokenize-classes: families", () => {
   it("transition: names only what changes", () => {
     expect(run(`"transition-all hover:bg-bg-hover"`, "transition").out).toBe(`"transition-colors hover:bg-bg-hover"`);
     expect(run(`"transition-all hover:-translate-y-1 hover:shadow-pop"`, "transition").out).toBe(
-      `"transition-[background-color,border-color,color,transform,box-shadow] hover:-translate-y-1 hover:shadow-pop"`,
+      `"transition-[background-color,border-color,color,translate,box-shadow] hover:-translate-y-1 hover:shadow-pop"`,
     );
+  });
+
+  it("transition: names translate, scale and gap as v4 compiles them, not transform", () => {
+    // Tailwind v4 writes hover:-translate-y-1 to the `translate` property and
+    // active:scale-95 to `scale`; a list naming `transform` animates neither.
+    expect(run(`"transition-all group-hover:translate-x-0.5"`, "transition").out).toBe(
+      `"transition-[background-color,border-color,color,translate] group-hover:translate-x-0.5"`,
+    );
+    expect(run(`"transition-all active:scale-95 disabled:opacity-50"`, "transition").out).toBe(
+      `"transition-[background-color,border-color,color,scale,opacity] active:scale-95 disabled:opacity-50"`,
+    );
+    expect(run(`"gap-1 group-hover:gap-2 transition-all"`, "transition").out).toBe(
+      `"gap-1 group-hover:gap-2 transition-[background-color,border-color,color,gap]"`,
+    );
+    expect(run(`"transition-all hover:skew-x-3"`, "transition").out).toBe(
+      `"transition-[background-color,border-color,color,transform] hover:skew-x-3"`,
+    );
+  });
+
+  it("transition: re-derives a list an earlier run wrote, and leaves a correct one alone", () => {
+    const old = run(`"transition-[background-color,border-color,color,transform] hover:-translate-y-0.5"`, "transition");
+    expect(old.out).toBe(`"transition-[background-color,border-color,color,translate] hover:-translate-y-0.5"`);
+    expect(old.count).toBe(1);
+    const ok = `"transition-[background-color,border-color,color,translate] hover:-translate-y-0.5"`;
+    expect(run(ok, "transition").count).toBe(0);
+    expect(run(`"transition-[width,background-color] h-full"`, "transition").count).toBe(0);
   });
 
   it("transition: keeps a bar fill's length animation, named", () => {
