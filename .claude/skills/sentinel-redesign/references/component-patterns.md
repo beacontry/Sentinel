@@ -1,374 +1,148 @@
 # Sentinel Component Patterns
 
-All reusable components live in `src/components/ui/`. Always import from there before creating new components.
+All reusable components live in `src/components/ui/`. Import from there before creating anything new. Every primitive is on the token scale (`globals.css`), and `/dashboard/admin/ui-kit` renders each one in every state for screenshots and a keyboard pass.
 
-## Available Components
+Rules that hold across all of them:
+- **44px touch floor.** Controls are `min-h-11`; a denser 36px control pads its hit area to 44px with a pseudo-element.
+- **One focus ring.** The global `:focus-visible` outline in `globals.css`. Fields keep `outline-hidden` under a 2px ring, which forced-colours mode repaints.
+- **State is never colour alone.** A gain or loss prints its sign and a ▲/▼ glyph; a status prints its word and an icon.
+- **No card in a card.** A group inside a card is an `Inset`.
 
-### Button (`src/components/ui/button.tsx`)
+## Actions
+
+### Button (`button.tsx`)
 ```tsx
 import { Button } from "@/components/ui/button";
 
-// Variants: primary | secondary | ghost | destructive | outline
-// Sizes: sm | md | lg
-<Button variant="primary" size="md" loading={false} onClick={...}>
-  Label
+<Button variant="primary" loading={saving} disabled={!ready} disabledReason="Engine is running, stop it first">
+  Place paper buy
 </Button>
 ```
+- Variants: `primary` (the one main action), `secondary`, `ghost`, `destructive` (loss triplet), `danger` (solid `bearish-solid` fill, only for the one irreversible confirm). `outline` is a deprecated alias of `secondary`.
+- Sizes: `md` (default, 44px) and `sm` (36px drawn, 44px hit area; dense rows only). `lg` is a deprecated alias of `md`.
+- `loading` disables, sets `aria-busy` and keeps the label. `disabledReason` prints why a disabled button is blocked and links it with `aria-describedby`.
+- No default `type`: inside a form it submits, as an HTML button does.
+- Icon-only: `className="w-11 px-0"` (md) or `"w-9 px-0"` (sm) plus an `aria-label`.
 
-**Variant styles:**
-- `primary` — `bg-accent text-black font-semibold hover:bg-accent-hover` (main CTA)
-- `secondary` — bordered, `bg-bg-surface`, hover upgrades to `bg-bg-elevated`
-- `ghost` — text only, hover adds background
-- `destructive` — `bg-bearish/15 text-bearish border-bearish/20`
-- `outline` — bordered, similar to secondary but explicit outline style
-
-**Size styles:**
-- `sm` — `px-3 py-1.5 text-xs rounded-xl`
-- `md` — `px-4 py-3 text-sm min-h-[44px] rounded-lg` (default, touch-friendly)
-- `lg` — `px-6 py-3 text-sm min-h-[48px] rounded-lg`
-
-**Built-in features:** Loading spinner, disabled state, `active:scale-[0.98]`, focus ring
-
-### Card (`src/components/ui/card.tsx`)
+### ButtonLink (`button-link.tsx`)
+Navigation styled as a button, on `next/link`. Never wrap a `Button` in a `Link` (invalid HTML, two tab stops).
 ```tsx
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-
-<Card hover>
-  <CardHeader>
-    <CardTitle>Section Title</CardTitle>
-    <Button variant="secondary" size="sm">Action</Button>
-  </CardHeader>
-  {/* content */}
-</Card>
+<ButtonLink href="/dashboard/alerts" variant="secondary">Alerts</ButtonLink>
 ```
 
-**Card base:** `rounded-xl border border-border bg-bg-secondary p-4 lg:p-5 shadow-card`
-**Hover mode:** `hover:border-border-hover hover:bg-bg-elevated cursor-pointer`
-**Selected state (add via className):** `border-accent/50`
-
-### Badge (`src/components/ui/badge.tsx`)
+### Segmented (`segmented.tsx`)
+Two to five mutually exclusive choices that apply at once (side, order type, a filter). A named group of buttons carrying `aria-pressed`, styled from it.
 ```tsx
-import { Badge } from "@/components/ui/badge";
-
-// Variants: default | bullish | bearish | warning | neutral
-<Badge variant="bullish">+2.5%</Badge>
-```
-
-**Variant styles:**
-- `bullish`, `bearish`, `warning` — `STATUS_TONE_CLASSES[tone]` from `src/lib/status-tone.ts` (`border-X-line bg-X-fill text-X-fg`); never an alpha tint
-- `default/neutral` — `bg-bg-elevated text-text-secondary border-border`
-
-**Base:** `rounded-full border px-2.5 py-1 text-xs font-medium`
-
-### SignalBadge (`src/components/ui/signal-badge.tsx`)
-```tsx
-import { SignalBadge } from "@/components/ui/signal-badge";
-
-// signal: STRONG_BUY | BUY | HOLD | SELL | STRONG_SELL
-<SignalBadge signal="STRONG_BUY" />
-```
-
-Maps signal types to Badge variants: STRONG_BUY/BUY -> bullish, HOLD -> neutral, SELL/STRONG_SELL -> bearish
-
-### StatCard (`src/components/ui/stat-card.tsx`)
-```tsx
-import { StatCard } from "@/components/ui/stat-card";
-
-<StatCard
-  label="Total P&L"        // uppercase tracking-wide muted label
-  value="$12,450.00"       // large semibold number
-  subtext="+15.3%"         // optional colored subtext
-  tone="positive"          // positive | negative | neutral
+<Segmented
+  label="Order side"
+  value={side}
+  onChange={setSide}
+  options={[
+    { value: "buy", label: "Buy", icon: "▲", tone: "bullish" },
+    { value: "sell", label: "Sell", icon: "▼", tone: "bearish" },
+  ]}
 />
 ```
+`busy` disables it with `aria-busy` while its value loads; `fullWidth` stretches the options.
 
-**Styling:** `rounded-xl border border-border bg-bg-surface p-4`
-- Label: `text-xs uppercase tracking-[0.18em] text-text-muted`
-- Value: `text-2xl font-semibold text-text-primary`
-- Subtext tone: positive=`text-bullish`, negative=`text-bearish`, neutral=`text-text-secondary`
+## Fields
 
-### Input (`src/components/ui/input.tsx`)
+### Input, Select, Textarea, SearchInput
+Share `FIELD_BASE` from `input.tsx`: the card fill (`bg-bg-secondary`), the 3:1 `border-border-control` edge, `text-base sm:text-sm` (iOS does not zoom), 44px height. An `error` sets `aria-invalid` and points `aria-describedby` at the error line.
 ```tsx
-import { Input } from "@/components/ui/input";
-
-<Input
-  label="Symbol"
-  placeholder="AAPL"
-  value={symbol}
-  onChange={(e) => setSymbol(e.target.value)}
-  error="Required field"  // optional, shows red border + message
-  icon={<Search />}       // optional left icon
-/>
+<Input label="Limit price" type="number" inputMode="decimal" enterKeyHint="done" error={err} />
 ```
+A field with no visible label takes an `aria-label`. Money and quantity fields use `inputMode="decimal"`.
 
-**Styling:** `rounded-lg border border-border-control bg-bg-secondary px-3 min-h-[44px]`
-- Focus: `border-accent/50 ring-1 ring-accent/30`
-- Error: `border-bearish focus:ring-bearish/30`
-- Label: `text-sm font-medium text-text-secondary`
+### Toggle (`toggle.tsx`)
+A checkbox drawn as a switch: solid accent track, on-accent thumb, 44px label, outline focus on the track.
 
-### Select (`src/components/ui/select.tsx`)
+## Surfaces
+
+### Card and Inset (`card.tsx`)
+- `Card`: `rounded-xl border border-border bg-bg-secondary p-5 shadow-card`. One level only.
+- `Inset`: `rounded-lg bg-bg-surface p-3`, no border. Use it for a group inside a card (a summary, a tile, a nested form). Takes `as`.
+- Dividers inside either: `divide-[var(--color-hairline-inner)]`.
+- `CardTitle` takes `as` (`h2`, `h3`, `h4`, `p`) so the heading level fits the page.
+- A clickable card is a stretched link (`after:absolute after:inset-0` on the Link, `relative` on the card), with any actions as siblings above it (`relative z-10`), visible at rest.
+
+### Readout strips
+A group of figures is one bordered strip of borderless tiles, not a card per figure:
 ```tsx
-import { Select } from "@/components/ui/select";
-
-<Select
-  label="Risk Tolerance"
-  options={[{ value: "moderate", label: "Moderate" }]}
-  value={value}
-  onChange={(e) => setValue(e.target.value)}
-/>
+<dl className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-bg-secondary p-2 shadow-card sm:grid-cols-4">
+  <div className="rounded-lg bg-bg-surface p-3">
+    <dt className="eyebrow text-text-muted">Buying power</dt>
+    <dd className="mt-1 font-mono text-xl font-semibold tabular-nums">$8,000.00</dd>
+  </div>
+</dl>
 ```
+`PageIntro` stats and `src/components/trader/account-readout.tsx` are built this way.
 
-### Textarea (`src/components/ui/textarea.tsx`)
-Same patterns as Input but multiline. Has `label`, `error`, `rows` props.
+## Money and status
 
-### Checkbox (`src/components/ui/checkbox.tsx`)
+### SignedValue (`signed-value.tsx`)
+The way to print a gain or loss. Glyph (aria-hidden), the `formatPnl` string (U+2212 minus, unsigned zero, dollars without a basis) and a visually hidden "gain" or "loss". Colours what is displayed after rounding; `null` prints "n/a".
 ```tsx
-<Checkbox label="Enable alerts" checked={enabled} onChange={setEnabled} />
+<SignedValue value={pnl} basis={costBasis} format={pnlFormat} />
 ```
+`DirectionGlyph` and `DirectionWord` do the same for a value that arrives as a preformatted string.
 
-### Toggle (`src/components/ui/toggle.tsx`)
+### StatusChip and OrderStatusChip (`status-chip.tsx`)
+Tone classes from `STATUS_TONE_CLASSES` (`src/lib/status-tone.ts`), the one status map. The type requires an `icon` for the `bullish` and `bearish` tones.
 ```tsx
-<Toggle label="Dark mode" checked={dark} onChange={setDark} />
+<StatusChip tone="bearish" icon={<AlertTriangle className="h-3 w-3" />}>LIVE, real money</StatusChip>
+<OrderStatusChip status={order.status} />
 ```
+`OrderStatusChip` reads `orderStatusMeta()` (`src/lib/order-status.ts`): a word, an icon and the tone from `tradeStatusTone()`. Unknown statuses keep their text, neutral.
 
-### Modal (`src/components/ui/modal.tsx`)
+### Badge and SignalBadge
+`Badge` shares the chip shape and map (`default` is neutral); use it for chips whose word already says the state. `SignalBadge` prints ▲/▼ beside Buy and Sell; one size.
+
+### StatCard
+Eyebrow label, `text-xl` mono value; a `positive`/`negative` tone also prints ▲/▼ and a hidden word.
+
+## States
+
+### EmptyState (`empty-state.tsx`)
+`kind`: `empty` (the only one that may offer to create), `filtered` (clear filters), `not-connected` (defaults to a Settings link). An action with `href` renders a ButtonLink; with `onClick`, a Button.
+
+### ErrorState (`error-state.tsx`)
+A failed load: `role="alert"`, a Try again button that keeps its label while retrying, and the trace ID as a reference. Never show EmptyState for a failure. `compact` for a widget or table body.
+
+### Skeleton and LoadingRegion
+`Skeleton` blocks are aria-hidden with a token sheen that shows on dark. Wrap them in `LoadingRegion label busy`, which sets `aria-busy` and announces "Loading {label}" once through a mounted status line. Size skeletons like the content they stand in for.
+
+### LiveRegion (`live-region.tsx`)
+A mounted, visually hidden `role="status"` (or `alert`) whose text changes. Never mount a live region together with its message.
+
+### Toast (`toast.tsx`)
 ```tsx
-import { Modal, ModalHeader, ModalTitle, ModalFooter } from "@/components/ui/modal";
-
-<Modal open={isOpen} onClose={() => setIsOpen(false)}>
-  <ModalHeader>
-    <ModalTitle>Confirm Action</ModalTitle>
-  </ModalHeader>
-  <p className="text-sm text-text-secondary">Are you sure?</p>
-  <ModalFooter>
-    <Button variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
-    <Button onClick={handleConfirm}>Confirm</Button>
-  </ModalFooter>
-</Modal>
-```
-
-**Overlay:** `bg-black/60 backdrop-blur-sm`
-**Content:** `max-w-lg rounded-xl border border-border bg-bg-surface p-6 shadow-modal animate-scale-in`
-**Features:** Focus trap, Escape to close, click-outside to close, body scroll lock
-
-### Tabs (`src/components/ui/tabs.tsx`)
-```tsx
-import { Tabs, TabPanel } from "@/components/ui/tabs";
-
-<Tabs
-  tabs={[{ id: "overview", label: "Overview" }, { id: "trades", label: "Trades" }]}
-  activeTab={activeTab}
-  onChange={setActiveTab}
-/>
-<TabPanel active={activeTab === "overview"}>...</TabPanel>
-<TabPanel active={activeTab === "trades"}>...</TabPanel>
-```
-
-**Active tab:** `bg-accent text-black rounded-full`
-**Inactive tab:** `bg-bg-elevated text-text-muted rounded-full`
-**Container:** `overflow-x-auto` for mobile
-
-### Pagination (`src/components/ui/pagination.tsx`)
-```tsx
-import { Pagination } from "@/components/ui/pagination";
-
-<Pagination currentPage={page} totalPages={total} onPageChange={setPage} />
-```
-
-**Active page:** `bg-accent text-white rounded-lg`
-**Navigation:** `h-9 w-9 rounded-lg` with ChevronLeft/ChevronRight
-
-### Skeleton (`src/components/ui/skeleton.tsx`)
-```tsx
-import { Skeleton } from "@/components/ui/skeleton";
-
-<Skeleton width="100%" height="20px" rounded="md" />
-<Skeleton className="h-6 w-32" rounded="lg" />
-```
-
-Uses shimmer animation with `oklch` gradient.
-
-### EmptyState (`src/components/ui/empty-state.tsx`)
-```tsx
-import { EmptyState } from "@/components/ui/empty-state";
-
-<EmptyState
-  icon={<Wallet className="w-10 h-10" />}
-  title="No portfolios yet"
-  description="Create your first portfolio to start trading."
-  action={{ label: "Create Portfolio", onClick: handleCreate }}
-/>
-```
-
-**Styling:** Centered column, `py-16 px-4`, description constrained to `max-w-sm`
-
-### Toast (`src/components/ui/toast.tsx`)
-```tsx
-import { useToast } from "@/components/ui/toast";
-
 const { toast } = useToast();
-toast("success", "Trade executed successfully");
-toast("error", "Failed to fetch data");
-toast("warning", "API rate limit approaching");
-toast("info", "New signal detected");
+toast({ type: "error", message: "Order rejected: insufficient buying power", traceId });
 ```
+Icon per kind, tone from the status map, a 44px labelled dismiss, at most three on screen, errors 10s and others 5s (`duration: 0` persists). Messages are announced through mounted polite and assertive regions.
 
-**Types:** success (bullish), error (bearish), warning (warning), info (accent)
-**Position:** `fixed bottom-4 right-4 w-80`
-**Auto-dismiss:** 4 seconds
+## Navigation
 
-### Dropdown (`src/components/ui/dropdown.tsx`)
-Menu dropdown with items. Click-outside to close.
+### Tabs and TabPanel (`tabs.tsx`)
+Underline tabs on Radix, 44px triggers, the global focus ring. `TabPanel` mounts on first show and is hidden, not unmounted, afterwards, so typed input survives a switch. Keep the active tab in the URL with `useUrlParam`.
 
-### Tooltip (`src/components/ui/tooltip.tsx`)
-Hover tooltip for additional context.
+### Nav items (`top-nav-shell.tsx`)
+Styled from `aria-current="page"`; the shells start with a "Skip to content" link to `<main id="main">`.
 
-### Avatar (`src/components/ui/avatar.tsx`)
-User avatar with fallback initials.
+### ConfirmActionModal / useConfirmAction
+The only way to confirm destructive or money-moving actions. Tones: `danger` (default, destructive button), `primary`, `irreversible` (the solid danger fill, for a LIVE order or a book-wide liquidation). Summary rows print a direction for toned figures; `typedKeyword` gates the largest actions.
 
-### SearchInput (`src/components/ui/search-input.tsx`)
-Input with search icon, designed for filter/search bars.
+## Trading-specific
 
-## Trading-Specific Components
+- `src/components/trader/`: the trader desk's rendering pieces (positions and orders tables with a card list below `md`, signal and trade feeds, account and P&L readouts).
+- `src/components/tax/`: Tax Center and Tax Report views and the shared formatters.
+- `src/components/marketing/`: landing sections (nav, pricing teaser, equity illustration).
 
-### Signal Card (`src/components/dashboard/signal-card.tsx`)
-Displays a trading signal with:
-- Bullish/bearish icon with tinted background (`bg-bullish/20` or `bg-bearish/20`)
-- Confidence bar: `h-1.5 bg-bg-elevated rounded-full` with colored fill
-- Uses TrendingUp/TrendingDown icons
+## Patterns
 
-### Accuracy Badge (`src/components/dashboard/accuracy-badge.tsx`)
-Shows prediction accuracy:
-- `>=60%` — `text-bullish`
-- `>=40%` — `text-warning`
-- `<40%` — `text-bearish`
-- Format: `{pct}% accuracy ({total} signals)`
+### Section header anatomy
+Title plus one line of description on the left (`min-w-0`, truncating), controls on the right (`shrink-0`). Dashboard widgets use this through `WidgetWrapper`.
 
-### Sentiment Gauge (`src/components/dashboard/sentiment-gauge.tsx`)
-SVG arc gauge for bull/bear sentiment.
-
-## Common UI Patterns
-
-### Page Loading State
-```tsx
-if (loading) {
-  return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-    </div>
-  );
-}
-```
-
-### Inline Loading (Button)
-```tsx
-<Button loading={isSubmitting}>Save</Button>
-```
-
-### Success Feedback
-```tsx
-{saved && (
-  <span className="text-sm text-bullish flex items-center gap-1">
-    <Check className="w-4 h-4" /> Saved
-  </span>
-)}
-```
-
-### Error Display
-```tsx
-{error && <p className="text-sm text-bearish">{error}</p>}
-```
-
-### Color-Coded P&L
-```tsx
-<span className={`font-mono ${value >= 0 ? "text-bullish" : "text-bearish"}`}>
-  {value >= 0 ? "+" : ""}{value.toFixed(2)}%
-</span>
-```
-
-### Selected Card
-```tsx
-<Card
-  hover
-  className={selectedId === item.id ? "border-accent/50" : ""}
-  onClick={() => setSelectedId(item.id)}
->
-```
-
-### Section Header with Icon
-```tsx
-<CardHeader>
-  <div className="flex items-center gap-2">
-    <Shield className="w-5 h-5 text-accent" />
-    <CardTitle>Section Title</CardTitle>
-  </div>
-</CardHeader>
-```
-
-### Inline Empty State (inside a Card)
-```tsx
-<div className="text-center py-8">
-  <Webhook className="w-10 h-10 text-text-muted mx-auto mb-3" />
-  <p className="text-sm text-text-muted mb-1">Nothing here yet</p>
-  <p className="text-xs text-text-muted">Add something to get started</p>
-</div>
-```
-
-### Full-Width Empty State
-```tsx
-<div className="rounded-xl border border-border bg-bg-surface p-12 text-center">
-  <Icon className="w-12 h-12 text-text-muted mx-auto mb-4" />
-  <h3 className="font-display text-lg font-semibold mb-2">Title</h3>
-  <p className="text-sm text-text-secondary max-w-sm mx-auto">Description</p>
-</div>
-```
-
-### Edit Mode Banner
-```tsx
-{editMode && (
-  <div className="rounded-xl bg-accent-muted border border-accent/20 px-4 py-3 flex items-center gap-3">
-    <Pencil className="w-4 h-4 text-accent shrink-0" />
-    <p className="text-sm text-text-secondary">
-      <span className="font-medium text-accent">Edit mode</span>
-      {" "}&mdash; Description of what user can do.
-    </p>
-  </div>
-)}
-```
-
-### List Item with Actions
-```tsx
-<div className="flex items-center justify-between p-3 rounded-lg bg-bg-elevated border border-border hover:border-border-hover transition-colors">
-  <div className="flex items-center gap-3 min-w-0">
-    <Icon className="w-5 h-5 text-accent shrink-0" />
-    <div className="min-w-0">
-      <p className="text-sm font-medium truncate">{name}</p>
-      <p className="text-xs text-text-muted truncate">{subtitle}</p>
-    </div>
-  </div>
-  <div className="flex items-center gap-1.5 shrink-0">
-    <Badge variant="bullish">Active</Badge>
-    <Button variant="ghost" size="sm"><Trash2 className="w-4 h-4" /></Button>
-  </div>
-</div>
-```
-
-### BUY/SELL Toggle Buttons
-```tsx
-<div className="flex gap-1">
-  <Button variant={side === "BUY" ? "primary" : "ghost"} size="sm" onClick={() => setSide("BUY")}>BUY</Button>
-  <Button variant={side === "SELL" ? "destructive" : "ghost"} size="sm" onClick={() => setSide("SELL")}>SELL</Button>
-</div>
-```
-
-### Form Section (Nested in Card)
-```tsx
-<form className="mb-4 p-4 rounded-lg bg-bg-elevated border border-border space-y-3">
-  <Input label="Name" ... />
-  <Input label="URL" ... />
-  <div className="flex gap-2">
-    <Button type="submit" size="sm">Save</Button>
-    <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
-  </div>
-</form>
-```
+### Tables on phones
+Four or more columns: `hidden md:block` table with a sticky `thead`, right-aligned `font-mono tabular-nums` figures, plus a `md:hidden` card list (primary field as title, the rest as a meta line, actions trailing).

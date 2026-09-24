@@ -148,17 +148,18 @@ All use `cubic-bezier(0.16, 1, 0.3, 1)` (expo ease-out) — no bounce/elastic ea
 
 ## Component Library (`src/components/ui/`)
 
-Always use existing components — never recreate them:
-- **Button** — variants primary/secondary/ghost/destructive/outline, sizes sm/md/lg, `loading` prop
-- **Card / CardHeader / CardTitle** — `rounded-xl`, optional `hover`, selected `border-accent/50`
-- **Badge** (default/bullish/bearish/warning/neutral, pill) + **SignalBadge** (STRONG_BUY…STRONG_SELL → Badge variants)
-- **StatCard** — label/value/subtext, tone coloring, bare icon
-- **Input** (label/error/icon, `rounded-lg min-h-[44px]`), **Select, Textarea, Checkbox, Toggle**
-- **Modal** suite — focus trap, Escape close; **Tabs / TabPanel** — underline, active `text-accent`
-- **ConfirmActionModal / useConfirmAction** — the ONLY way to confirm destructive or money-moving actions (native `confirm()`/`alert()` are banned in dashboard code as of 2026-07-15). Supports summary rows (font-mono), typed-keyword gate for book-wide liquidations, inline error + busy state. `const { requestConfirm, dialog } = useConfirmAction()` → render `{dialog}` once per page
-- **Pagination** (ellipsis), **Skeleton** (shimmer), **EmptyState** (icon/title/desc/CTA)
-- **Toast** (`useToast()`, solid bg), **Dropdown** + **Tooltip** (solid `bg-bg-elevated`, `rounded-lg`)
-- **Avatar, SearchInput, CommandPalette, DataTable**
+Always use existing components — never recreate them. Full reference: `.claude/skills/sentinel-redesign/references/component-patterns.md`; every primitive in every state renders at `/dashboard/admin/ui-kit` (admin only).
+- **Button** — variants primary/secondary/ghost/destructive/danger (`outline` = secondary, deprecated), sizes md (44px) / sm (36px on a 44px hit area; `lg` = md, deprecated), `loading` (aria-busy), `disabledReason`. `danger` is the solid fill for the one irreversible confirm only. **ButtonLink** puts the same classes on `next/link` — never a Button inside a Link
+- **Card / CardHeader / CardTitle (`as`)** and **Inset** — a group inside a card is an Inset (`bg-bg-surface`, no border), never a second card
+- **SignedValue** — every gain/loss: ▲/▼, U+2212 minus, hidden "gain"/"loss", from `formatPnl` (`src/lib/format-pnl.ts`, the only formatter)
+- **StatusChip / OrderStatusChip** — from `STATUS_TONE_CLASSES`; icon required for bullish/bearish; order statuses through `orderStatusMeta()` (`src/lib/order-status.ts`). **Badge** shares the chip shape; **SignalBadge** prints ▲/▼
+- **StatCard** — eyebrow label, `text-xl` mono value, toned values print a glyph
+- **Input / Select / Textarea / SearchInput** share `FIELD_BASE` (card fill, 3:1 edge, 16px on phones, 44px, `aria-invalid` + `aria-describedby` on error); **Toggle**; **Segmented** (2-5 exclusive options, `aria-pressed`, per-option tone)
+- **Modal** suite; **Tabs / TabPanel** — panels mount on first show, then hide rather than unmount
+- **ConfirmActionModal / useConfirmAction** — the ONLY way to confirm destructive or money-moving actions (native `confirm()`/`alert()` are banned in dashboard code as of 2026-07-15). Tones danger/primary/irreversible, summary rows, typed-keyword gate, inline error + busy state. `const { requestConfirm, dialog } = useConfirmAction()` → render `{dialog}` once per page
+- **EmptyState** (`kind` empty / filtered / not-connected) vs **ErrorState** (role=alert, retry, trace reference) — a failed load is never an EmptyState
+- **Skeleton** (token sheen, aria-hidden) inside **LoadingRegion**; **LiveRegion** for mounted status/alert text
+- **Toast** (`useToast()`, icon per kind, 44px dismiss, `traceId`, max 3), **Pagination**, **Dropdown** + **Tooltip**, **Avatar, CommandPalette, DataTable**
 
 ## Registration & Invites
 
