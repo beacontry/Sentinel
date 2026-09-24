@@ -270,6 +270,45 @@ describe("recordFailedEngineBuy", () => {
     expect(String(row?.notes)).toContain("cid-123");
   });
 
+  it("with scan state, an unconfirmed BUY holds its symbol, its sector notional and a position slot", async () => {
+    const engine = runningEngine();
+    const err = timeoutError();
+    err.clientOrderId = "cid-scan";
+    const pendingBuySymbols = new Set<string>();
+    const sectorCtx = { positionMarketValues: new Map<string, number>([["AAPL", 5000]]) };
+    const tally = { count: 0, notional: 0 };
+
+    await recordFailedEngineBuy(engine, {
+      symbol: "NVDA", signal: "BUY", qty: 10, buyNotional: 1001, err, source: "engine_scan",
+    }, { pendingBuySymbols, sectorCtx, tally });
+    await recordFailedEngineBuy(engine, {
+      symbol: "AMD", signal: "BUY", qty: 5, buyNotional: 500, err, source: "engine_scan",
+    }, { pendingBuySymbols, sectorCtx, tally });
+
+    expect([...pendingBuySymbols]).toEqual(["NVDA", "AMD"]);
+    expect(sectorCtx.positionMarketValues.get("NVDA")).toBe(1001);
+    expect(sectorCtx.positionMarketValues.get("AMD")).toBe(500);
+    expect(tally).toEqual({ count: 2, notional: 1501 });
+  });
+
+  it("with scan state, a definite refusal leaves the scan's counts alone", async () => {
+    const engine = runningEngine();
+    const pendingBuySymbols = new Set<string>();
+    const sectorCtx = { positionMarketValues: new Map<string, number>() };
+    const tally = { count: 0, notional: 0 };
+
+    await recordFailedEngineBuy(engine, {
+      symbol: "TSLA", signal: "BUY", qty: 5, buyNotional: 500,
+      err: new BrokerError("Alpaca order 403: insufficient buying power", 400, "Insufficient buying power for this order"),
+      source: "engine_add",
+    }, { pendingBuySymbols, sectorCtx, tally });
+
+    expect(pendingBuySymbols.size).toBe(0);
+    expect(sectorCtx.positionMarketValues.size).toBe(0);
+    expect(tally).toEqual({ count: 0, notional: 0 });
+    expect(state.inserts.find((r) => r.symbol === "TSLA")).toMatchObject({ status: "FAILED" });
+  });
+
   it("a definite refusal is logged, pushed and written FAILED, and not counted", async () => {
     const engine = runningEngine();
     const before = { orders: engine.recentOrderTimestamps.length, notional: engine.dailyNotional };

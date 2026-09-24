@@ -1850,17 +1850,38 @@ export async function placeEngineOrder(
 }
 
 /**
+ * BUYs of the current scan whose outcome is unknown. They are not in the
+ * position map (no fill to track), so the scan's max-positions and exposure
+ * checks add these to it.
+ */
+export interface UnconfirmedBuyTally {
+  count: number;
+  notional: number;
+}
+
+/**
  * A BUY whose placement threw: log it, put it on the engine's error list and
  * write a FAILED trade row carrying the client_order_id. When the outcome is
  * unknown (placeEngineOrder's lookup could not confirm or rule out the order),
  * the BUY is also counted against the order-rate and daily notional caps as
  * if placed, because under-counting real exposure is the unsafe direction.
- * Returns `unconfirmed: true` in that case so the caller can also keep the
- * symbol out of the rest of the scan. Exported for tests.
+ *
+ * With `scan`, an unconfirmed BUY is also counted in the scan's own state as
+ * if placed: the symbol joins pendingBuySymbols (no second BUY this scan),
+ * its notional joins the sector context (the sector cap), and `scan.tally`
+ * gains one position and its notional, which the caller adds to its
+ * max-positions and exposure checks. The order may be live, and the scan
+ * must not size later entries as if it were not. Returns
+ * `unconfirmed: true` in that case. Exported for tests.
  */
 export async function recordFailedEngineBuy(
   engine: EngineState,
-  failure: { symbol: string; signal: string; qty: number; buyNotional: number; err: unknown; source: string }
+  failure: { symbol: string; signal: string; qty: number; buyNotional: number; err: unknown; source: string },
+  scan?: {
+    pendingBuySymbols: Set<string>;
+    sectorCtx?: { positionMarketValues: Map<string, number> } | null;
+    tally?: UnconfirmedBuyTally;
+  }
 ): Promise<{ unconfirmed: boolean }> {
   const { symbol, signal, qty, buyNotional, err, source } = failure;
   const msg = err instanceof Error ? err.message : "unknown";
@@ -1873,7 +1894,17 @@ export async function recordFailedEngineBuy(
       ? `Buy order status unknown for ${symbol} (client id ${clientOrderId ?? "n/a"}): ${msg}`
       : `Buy order failed for ${symbol}: ${msg}`
   );
-  if (unconfirmed) recordOrderPlacement(engine, "buy", buyNotional);
+  if (unconfirmed) {
+    recordOrderPlacement(engine, "buy", buyNotional);
+    if (scan) {
+      scan.pendingBuySymbols.add(symbol);
+      scan.sectorCtx?.positionMarketValues.set(symbol, buyNotional);
+      if (scan.tally) {
+        scan.tally.count++;
+        scan.tally.notional += buyNotional;
+      }
+    }
+  }
   await logTrade(
     symbol,
     signal,
@@ -4729,9 +4760,10 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
 
     const riskLimits = await loadRiskLimits(engine.userId!);
     const perPosition = equity * riskLimits.positionPct;
+    const unconfirmedBuys: UnconfirmedBuyTally = { count: 0, notional: 0 };
 
     for (const symbol of SCAN_UNIVERSE) {
-      if (positionMap.size >= riskLimits.maxPositions) break;
+      if (positionMap.size + unconfirmedBuys.count >= riskLimits.maxPositions) break;
       // PR 21c / P1 #1 (2026-06-09 audit) — cooperative cancellation. An
       // override-fired stale tactical scan exits cleanly here instead of
       // placing orders against the newer scan's state.
@@ -4795,11 +4827,10 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
         });
       } catch (err) {
         if (placing) {
-          const { unconfirmed } = await recordFailedEngineBuy(engine, {
+          await recordFailedEngineBuy(engine, {
             symbol, signal: "tactical_entry", qty: placing.qty, buyNotional: placing.buyNotional, err,
             source: "engine_tactical",
-          });
-          if (unconfirmed) pendingBuySymbols.add(symbol);
+          }, { pendingBuySymbols, sectorCtx: tacticalSectorCtx, tally: unconfirmedBuys });
         } else {
           log.warn({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Tactical entry skipped for symbol");
         }
@@ -5176,6 +5207,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         });
         continue;
       }
+      // Set around the placement so the catch can tell a failed order from a
+      // failed gate read.
+      let placing: { qty: number; buyNotional: number } | null = null;
       try {
         const limitPrice = (price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
@@ -5192,7 +5226,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         }
         // Re-check right before placing: canPlaceBuyOrder awaited above.
         throwIfScanCancelled(engine, myGeneration);
+        placing = { qty, buyNotional };
         const tsEntryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
+        placing = null;
         recordOrderPlacement(engine, "buy", buyNotional);
         tsSectorCtx?.positionMarketValues.set(symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
@@ -5206,7 +5242,14 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       } catch (err) {
         // A cancelled scan must exit, not log and move to the next symbol.
         if (err instanceof ScanCancelledError) throw err;
-        log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Smart entry failed");
+        if (placing) {
+          await recordFailedEngineBuy(engine, {
+            symbol, signal: "tactical_smart_entry", qty: placing.qty, buyNotional: placing.buyNotional, err,
+            source: "engine_tactical_smart",
+          }, { pendingBuySymbols, sectorCtx: tsSectorCtx });
+        } else {
+          log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Smart entry failed");
+        }
       }
       await new Promise(r => setTimeout(r, 100));
     }
@@ -5299,6 +5342,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
 
     // 1. Swap: sell weak held positions and replace with top STRONG_BUY candidates
     let swapCount = 0;
+    // Swap and add BUYs whose outcome is unknown: counted by the add loop's
+    // position cap and exposure check below.
+    const unconfirmedBuys: UnconfirmedBuyTally = { count: 0, notional: 0 };
     for (const weak of weakHeld) {
       // Cooperative cancellation: a Stop or a superseding scan bumps the
       // generation; exit cleanly instead of placing more swap orders (audit #3).
@@ -5372,6 +5418,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       const qty = Math.min(Math.floor(positionValue / replacement.price), riskLimits.maxPositionSize);
       if (qty <= 0) continue;
 
+      let placing: { qty: number; buyNotional: number } | null = null;
       try {
         const limitPrice = (replacement.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
@@ -5386,7 +5433,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           });
           continue;
         }
+        placing = { qty, buyNotional };
         const swapBuyOrder = await placeEngineOrder(client, { symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
+        placing = null;
         recordOrderPlacement(engine, "buy", buyNotional);
         tsSectorCtx?.positionMarketValues.set(replacement.symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(replacement.symbol); // Phase 7: prevent re-fire within this scan
@@ -5400,7 +5449,15 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         heldSymbols.add(replacement.symbol);
         swapCount++;
       } catch (err) {
-        log.error({ symbol: replacement.symbol, err: err instanceof Error ? err.message : "unknown" }, "Swap buy failed");
+        if (placing) {
+          const { unconfirmed } = await recordFailedEngineBuy(engine, {
+            symbol: replacement.symbol, signal: "tactical_smart_swap_buy", qty: placing.qty, buyNotional: placing.buyNotional, err,
+            source: "engine_swap",
+          }, { pendingBuySymbols, sectorCtx: tsSectorCtx, tally: unconfirmedBuys });
+          if (unconfirmed) heldSymbols.add(replacement.symbol);
+        } else {
+          log.error({ symbol: replacement.symbol, err: err instanceof Error ? err.message : "unknown" }, "Swap buy failed");
+        }
       }
       await new Promise(r => setTimeout(r, 100));
     }
@@ -5411,7 +5468,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
     for (const cand of candidates) {
       // Cooperative cancellation (audit #3) — see swap loop above.
       throwIfScanCancelled(engine, myGeneration);
-      if (positionMap.size >= hardCap) break;
+      if (positionMap.size + unconfirmedBuys.count >= hardCap) break;
 
       const positionValue = equity * riskLimits.positionPct;
       const qty = Math.min(Math.floor(positionValue / cand.price), riskLimits.maxPositionSize);
@@ -5420,7 +5477,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       // Check exposure (use equity as cap when not configured)
       const effectiveMaxExposure = riskLimits.maxExposure < 0 ? equity * Math.abs(riskLimits.maxExposure) : riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
       const currentExposure = Array.from(positionMap.values())
-        .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0);
+        .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0) + unconfirmedBuys.notional;
       if (currentExposure + cand.price * qty > effectiveMaxExposure) break;
 
       // Phase 7 — duplicate-order guard: skip add if buy already pending on broker
@@ -5445,6 +5502,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         });
         continue;
       }
+      let placing: { qty: number; buyNotional: number } | null = null;
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
@@ -5459,7 +5517,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           });
           continue;
         }
+        placing = { qty, buyNotional };
         const addOrder = await placeEngineOrder(client, { symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
+        placing = null;
         recordOrderPlacement(engine, "buy", buyNotional);
         tsSectorCtx?.positionMarketValues.set(cand.symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(cand.symbol); // Phase 7: prevent re-fire within this scan
@@ -5472,7 +5532,14 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         });
         addCount++;
       } catch (err) {
-        log.error({ symbol: cand.symbol, err: err instanceof Error ? err.message : "unknown" }, "Add position failed");
+        if (placing) {
+          await recordFailedEngineBuy(engine, {
+            symbol: cand.symbol, signal: "tactical_smart_add", qty: placing.qty, buyNotional: placing.buyNotional, err,
+            source: "engine_add",
+          }, { pendingBuySymbols, sectorCtx: tsSectorCtx, tally: unconfirmedBuys });
+        } else {
+          log.error({ symbol: cand.symbol, err: err instanceof Error ? err.message : "unknown" }, "Add position failed");
+        }
       }
       await new Promise(r => setTimeout(r, 100));
     }
@@ -5856,6 +5923,9 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
   // sync anyway; checking against a slightly-stale view is acceptable
   // and saves a Map rebuild per symbol.
   const scanSectorCtx = buildSectorExposureContext(engine.userId!, equity);
+  // BUYs of this scan whose outcome is unknown: counted by the position cap,
+  // the exposure check and the swap-sell planner as if placed.
+  const unconfirmedBuys: UnconfirmedBuyTally = { count: 0, notional: 0 };
 
   // 5. Scan each symbol
   for (const symbol of symbols) {
@@ -6236,7 +6306,9 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         log.info({ symbol, signal, marketHealthy, confidence: confidence.toFixed(3) }, "STRONG_BUY skipped — market unhealthy or signal not confirmed");
         continue;
       }
-      if (isStrongSignal && positionMap.size >= positionCap) {
+      // BUYs of this scan whose outcome is unknown hold a slot as if placed.
+      const heldCount = positionMap.size + unconfirmedBuys.count;
+      if (isStrongSignal && heldCount >= positionCap) {
         // Swap-sell: instead of silently dropping, defer the candidate.
         // After the loop, if exits freed slots, the highest-confidence
         // deferred candidates get bought to redeploy that capital this
@@ -6261,7 +6333,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         continue;
       }
 
-      if (shouldBuy && positionMap.size < positionCap) {
+      if (shouldBuy && heldCount < positionCap) {
         // Skip if there's already a pending buy order for this symbol
         if (pendingBuySymbols.has(symbol)) {
           if (isStrongSignal) log.info({ symbol }, "STRONG_BUY skipped — pending buy order already exists");
@@ -6310,7 +6382,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         // Check max portfolio exposure (use equity as cap when not configured)
         const effectiveMaxExposure = riskLimits.maxExposure < 0 ? equity * Math.abs(riskLimits.maxExposure) : riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
         const currentExposure = Array.from(positionMap.values())
-          .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0);
+          .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0) + unconfirmedBuys.notional;
         if (currentExposure + (currentPrice * qty) > effectiveMaxExposure) {
           if (isStrongSignal) log.info({ symbol, currentExposure: currentExposure.toFixed(2), maxExposure: effectiveMaxExposure.toFixed(2), orderCost: (currentPrice * qty).toFixed(2) }, "STRONG_BUY skipped — max exposure reached");
           else log.info({ symbol, currentExposure, maxExposure: effectiveMaxExposure }, "Max exposure reached, skipping");
@@ -6466,9 +6538,9 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         } catch (err) {
           const { unconfirmed } = await recordFailedEngineBuy(engine, {
             symbol, signal, qty, buyNotional, err, source: "engine_scan",
-          });
-          // The order may be live: no second BUY for this symbol this scan.
-          if (unconfirmed) pendingBuySymbols.add(symbol);
+          }, { pendingBuySymbols, sectorCtx: scanSectorCtx, tally: unconfirmedBuys });
+          // The order may be live: the same cooldown as a placed BUY.
+          if (unconfirmed) engine.cooldowns.set(symbol, Date.now());
         }
       }
     } catch (err) {
@@ -6498,7 +6570,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           : equity * 1.5;
     const COOLDOWN_MS = 150 * 60 * 1000;
     const currentExposure = Array.from(positionMap.values())
-      .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0);
+      .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0) + unconfirmedBuys.notional;
 
     // Re-fetch buying power (audit #26): `account` was snapshotted at scan
     // start, and the in-loop entry buys placed this scan have since reserved
@@ -6524,7 +6596,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         currentPrice: c.currentPrice,
         signal: c.signal,
       })),
-      positionMapSize: positionMap.size,
+      positionMapSize: positionMap.size + unconfirmedBuys.count,
       hardCap: Math.floor(riskLimits.maxPositions * 1.5),
       pendingBuySymbols,
       cooldowns: engine.cooldowns,
@@ -6557,6 +6629,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
       // orderCost is recomputed from a fresh quote below (audit #44), so the
       // planner's price-based attempt.orderCost is intentionally not used here.
 
+      let placing: { buyNotional: number } | null = null;
       try {
         // Position-map drift guard (post-2026-06-11) — same defense as the
         // in-loop entry path. Refuse the redeploy BUY if broker holds the
@@ -6615,6 +6688,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         // Re-check cancellation right before placing (audit #23) — same window
         // as the main buy loop, in the post-loop redeploy.
         throwIfScanCancelled(engine, myGeneration);
+        placing = { buyNotional: freshOrderCost };
         const order = await placeEngineOrder(client, {
           symbol: candFull.symbol,
           side: "buy",
@@ -6623,6 +6697,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           timeInForce: "day",
           limitPrice,
         }, engine);
+        placing = null;
         recordOrderPlacement(engine, "buy", freshOrderCost);
         scanSectorCtx?.positionMarketValues.set(candFull.symbol, freshOrderCost); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(candFull.symbol);
@@ -6654,10 +6729,18 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         redeployed++;
         tradesThisScan++;
       } catch (err) {
-        log.error(
-          { symbol: candFull.symbol, err: err instanceof Error ? err.message : "unknown" },
-          "Swap-sell redeploy failed"
-        );
+        if (placing) {
+          const { unconfirmed } = await recordFailedEngineBuy(engine, {
+            symbol: candFull.symbol, signal: `swap_sell_redeploy:${candFull.signal}`, qty,
+            buyNotional: placing.buyNotional, err, source: "engine_swap_sell",
+          }, { pendingBuySymbols, sectorCtx: scanSectorCtx, tally: unconfirmedBuys });
+          if (unconfirmed) engine.cooldowns.set(candFull.symbol, Date.now());
+        } else {
+          log.error(
+            { symbol: candFull.symbol, err: err instanceof Error ? err.message : "unknown" },
+            "Swap-sell redeploy failed"
+          );
+        }
       }
       await new Promise((r) => setTimeout(r, 100));
     }
