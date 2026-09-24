@@ -166,13 +166,15 @@ describe.each(MODES)("%s", (_mode, vars) => {
     expect(cr("--color-border-control", surface)).toBeGreaterThanOrEqual(3);
   });
 
-  it.each(["--color-bullish", "--color-bearish", "--color-warning"])(
-    "%s text is at least 4.5:1 on bg-secondary and bg-surface",
-    (state) => {
-      expect(cr(state, "--color-bg-secondary")).toBeGreaterThanOrEqual(4.5);
-      expect(cr(state, "--color-bg-surface")).toBeGreaterThanOrEqual(4.5);
-    },
-  );
+  // A figure in a state colour sits on a card, and on a hovered or
+  // selected row (bg-hover). Coral's warning once measured 4.46:1 there.
+  it.each(
+    ["--color-bullish", "--color-bearish", "--color-warning"].flatMap((state) =>
+      ["--color-bg-secondary", "--color-bg-surface", "--color-bg-hover"].map((s) => [state, s]),
+    ),
+  )("%s text is at least 4.5:1 on %s", (state, surface) => {
+    expect(cr(state, surface)).toBeGreaterThanOrEqual(4.5);
+  });
 
   it.each(["bullish", "bearish", "warning"])("%s-fg is at least 4.5:1 on its -fill", (state) => {
     expect(cr(`--color-${state}-fg`, `--color-${state}-fill`)).toBeGreaterThanOrEqual(4.5);

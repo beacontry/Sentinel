@@ -243,7 +243,7 @@
     --color-on-accent: oklch(17% 0.020 163);
     --color-accent-muted: color-mix(in oklch, var(--color-accent) 15%, transparent);
     --color-bullish: oklch(72% 0.16 160);
-    --color-bearish: oklch(68% 0.19 25);
+    --color-bearish: oklch(72% 0.17 25);
     --color-warning: oklch(78% 0.15 75);
     --color-bullish-muted: color-mix(in oklch, var(--color-bullish) 15%, transparent);
     --color-bearish-muted: color-mix(in oklch, var(--color-bearish) 15%, transparent);
@@ -292,7 +292,7 @@
     --color-on-accent: oklch(17% 0 0);
     --color-accent-muted: color-mix(in oklch, var(--color-accent) 15%, transparent);
     --color-bullish: oklch(72% 0.16 160);
-    --color-bearish: oklch(68% 0.19 25);
+    --color-bearish: oklch(72% 0.17 25);
     --color-warning: oklch(78% 0.15 75);
     --color-bullish-muted: color-mix(in oklch, var(--color-bullish) 15%, transparent);
     --color-bearish-muted: color-mix(in oklch, var(--color-bearish) 15%, transparent);
@@ -355,7 +355,7 @@
     --color-accent: oklch(41% 0.13 29);
     --color-accent-hover: oklch(41% 0.125 41);
     --color-on-accent: oklch(99.5% 0.003 40);
-    --color-warning: oklch(52% 0.112 62);
+    --color-warning: oklch(50.5% 0.110 62);
     --color-warning-fg: oklch(42% 0.090 62);
     --color-warning-fill: oklch(95% 0.040 75);
     --color-warning-line: oklch(66% 0.12 68);
