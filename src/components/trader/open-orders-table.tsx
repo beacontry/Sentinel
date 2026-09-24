@@ -89,10 +89,15 @@ export function OpenOrdersTable({ orders }: { orders: TraderOpenOrder[] }) {
                 <Side side={o.side} />
               </div>
               <p className="font-mono text-xs text-text-muted tabular-nums">
-                {o.qty} · {typeLabel(o)} · {o.timeInForce.toUpperCase()} · {timeAgo(o.submittedAt)}
+                {o.qty} · {typeLabel(o)} · {o.timeInForce.toUpperCase()}
               </p>
             </div>
-            <Status o={o} />
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <Status o={o} />
+              <span className="text-xs text-text-muted" title={o.submittedAt}>
+                {timeAgo(o.submittedAt)}
+              </span>
+            </div>
           </li>
         ))}
       </ul>

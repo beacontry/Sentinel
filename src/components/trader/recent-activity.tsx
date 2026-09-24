@@ -78,35 +78,51 @@ export function RecentTrades({ trades, pnlFormat, summarizing, summaries, onSumm
         const costBasis = t.pnl != null ? (t.fillPrice ?? 0) * t.quantity - t.pnl : 0;
         const buy = t.action === "BUY";
         return (
-          <li key={t.id} className="py-1.5">
-            <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1">
-              <StatusChip tone={buy ? "bullish" : "bearish"} icon={buy ? "▲" : "▼"}>
-                {t.action}
-              </StatusChip>
-              <SymbolLink symbol={t.symbol} className="text-sm font-medium" />
-              <span className="font-mono text-xs text-text-muted tabular-nums">{t.quantity} shares</span>
-              <OrderStatusChip status={t.status} />
-              {t.pnl != null && (
-                <SignedValue
-                  value={t.pnl}
-                  basis={costBasis > 0 ? costBasis : undefined}
-                  format={pnlFormat}
-                  className="ml-auto text-xs"
-                />
-              )}
-              <span className="text-xs text-text-muted">{timeAgo(t.traderTimestamp)}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onSummarize(t.id)}
-                loading={busy}
-                title="AI summary of this trade"
-                aria-label={summary ? `Refresh the AI summary of ${t.symbol}` : `Summarize the ${t.symbol} trade with AI`}
-              >
-                {!busy && (summary ? <RotateCw className="h-3.5 w-3.5" aria-hidden="true" /> : <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />)}
-                <span className="text-xs">{summary ? "Refresh" : "Summary"}</span>
-              </Button>
-              <PostMortemButton tradeId={t.id} action={t.action} />
+          <li key={t.id} className="py-2">
+            {/* Phone: two rows (what and the result; then status, age and
+                actions). From md up the row wrappers dissolve (contents)
+                and every cell lands in one column grid, so figures line up
+                down the list. */}
+            <div className="flex flex-col gap-1.5 md:grid md:grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_7.5rem_14rem] md:items-center md:gap-x-3">
+              <div className="flex items-center gap-3 md:contents">
+                <div className="flex min-w-0 flex-1 items-center gap-2 md:order-1">
+                  <StatusChip tone={buy ? "bullish" : "bearish"} icon={buy ? "▲" : "▼"}>
+                    {t.action}
+                  </StatusChip>
+                  <SymbolLink symbol={t.symbol} className="text-sm font-medium" />
+                  <span className="truncate font-mono text-xs text-text-muted tabular-nums">{t.quantity} sh</span>
+                </div>
+                <div className="shrink-0 text-right text-sm md:order-4">
+                  {t.pnl != null ? (
+                    <SignedValue value={t.pnl} basis={costBasis > 0 ? costBasis : undefined} format={pnlFormat} />
+                  ) : (
+                    <>
+                      <span aria-hidden="true" className="text-text-muted">—</span>
+                      <span className="sr-only">No realized P&L</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 md:contents">
+                <div className="md:order-2">
+                  <OrderStatusChip status={t.status} />
+                </div>
+                <span className="whitespace-nowrap text-xs text-text-muted md:order-3">{timeAgo(t.traderTimestamp)}</span>
+                <div className="ml-auto flex items-center justify-end gap-1 md:order-5 md:ml-0 md:justify-start">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onSummarize(t.id)}
+                    loading={busy}
+                    title="AI summary of this trade"
+                    aria-label={summary ? `Refresh the AI summary of ${t.symbol}` : `Summarize the ${t.symbol} trade with AI`}
+                  >
+                    {!busy && (summary ? <RotateCw className="h-3.5 w-3.5" aria-hidden="true" /> : <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />)}
+                    <span className="text-xs">{summary ? "Refresh" : "Summary"}</span>
+                  </Button>
+                  <PostMortemButton tradeId={t.id} action={t.action} />
+                </div>
+              </div>
             </div>
             {summary && (
               <p className="mt-1 rounded-lg bg-bg-surface px-3 py-2 text-xs leading-relaxed text-text-secondary">

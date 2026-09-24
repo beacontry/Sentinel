@@ -113,7 +113,9 @@ export function PositionsTable({ positions, pnlFormat, busy, onOpen, onClose }: 
               <span className="font-mono font-semibold text-text-primary">{p.symbol}</span>
               <span className="font-mono text-xs text-text-muted tabular-nums">
                 {p.quantity ?? 0} sh · avg {money(p.entryPrice)}
-                {p.stopPrice ? ` · stop ${money(p.stopPrice)}` : ""}
+              </span>
+              <span className="font-mono text-xs text-text-muted tabular-nums">
+                stop {p.stopPrice ? money(p.stopPrice) : "—"}
               </span>
             </button>
             <SignedValue

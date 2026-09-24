@@ -15,7 +15,9 @@ vi.mock("next/navigation", () => ({
 import { PositionsTable } from "@/components/trader/positions-table";
 import { OpenOrdersTable } from "@/components/trader/open-orders-table";
 import { AccountReadout, PnlReadout } from "@/components/trader/account-readout";
-import type { TraderOpenOrder, TraderPosition } from "@/components/trader/types";
+import { RecentTrades } from "@/components/trader/recent-activity";
+import { ToastProvider } from "@/components/ui/toast";
+import type { TraderOpenOrder, TraderPosition, TraderTrade } from "@/components/trader/types";
 
 const noop = () => {};
 const positions: TraderPosition[] = [
@@ -102,5 +104,30 @@ describe("Account and P&L readouts", () => {
       createElement(PnlReadout, { todayPnl: null, lifetimePnl: { realizedPnl: 100, realizedPnlToday: 0, unrealizedPnl: 0, totalPnl: 100 }, basis: undefined, pnlFormat: "both" }),
     );
     expect(noBasis).not.toContain("%");
+  });
+});
+
+describe("RecentTrades", () => {
+  const trades: TraderTrade[] = [
+    { id: "t1", symbol: "PEP", action: "SELL", signal: "SELL", quantity: 40, orderType: "market", fillPrice: 170, status: "filled", pnl: -274.4, traderTimestamp: new Date().toISOString() },
+    { id: "t2", symbol: "CAT", action: "BUY", signal: "BUY", quantity: 8, orderType: "limit", fillPrice: null, status: "pending_new", pnl: null, traderTimestamp: new Date().toISOString() },
+  ];
+  // The post-mortem button raises toasts, so it needs the provider.
+  const html = renderToStaticMarkup(
+    createElement(
+      ToastProvider,
+      null,
+      createElement(RecentTrades, { trades, pnlFormat: "dollar", summarizing: new Set<string>(), summaries: {}, onSummarize: noop }),
+    ),
+  );
+
+  it("lines rows up in one column grid from md, two rows on a phone", () => {
+    expect(html).toContain("md:grid-cols-[minmax(0,1fr)_6.5rem_4.5rem_7.5rem_14rem]");
+    expect(html.match(/md:contents/g)?.length).toBe(4);
+  });
+
+  it("says a trade without realized P&L has none, rather than leaving a gap", () => {
+    expect(html).toContain('<span class="sr-only">No realized P&amp;L</span>');
+    expect(html).toContain("−$274.40");
   });
 });

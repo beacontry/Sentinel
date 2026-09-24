@@ -164,17 +164,15 @@ export function PostMortemButton({ tradeId, action }: PostMortemButtonProps) {
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={handleOpen}
-        className="text-xs uppercase tracking-wider px-2 py-0.5 rounded
-          text-text-muted hover:text-accent hover:bg-accent/10
-          transition-colors inline-flex items-center gap-1"
         title="Generate a multi-paragraph post-mortem"
       >
-        <BookOpen className="h-3 w-3" />
-        Post-mortem
-      </button>
+        <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+        <span className="text-xs">Post-mortem</span>
+      </Button>
 
       <Modal
         open={open}
