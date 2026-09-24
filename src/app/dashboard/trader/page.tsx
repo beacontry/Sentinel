@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePolling } from "@/hooks/usePolling";
 import { POLLING_INTERVALS } from "@/lib/config";
+import { isMarketOpen } from "@/lib/market-hours";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SignalBadge } from "@/components/ui/signal-badge";
@@ -653,13 +654,27 @@ export default function TraderPage() {
               const posCount = positions?.length ?? 0;
               const mktValue = (positions ?? []).reduce((s, p) => s + p.currentPrice * p.quantity, 0);
               const unreal = (positions ?? []).reduce((s, p) => s + p.unrealizedPnl, 0);
+              // Outside regular hours the halt deliberately sells nothing and
+              // leaves every broker stop in place (MARKET_CLOSED), so do not
+              // promise a liquidation. The server's clock still decides.
+              const willLiquidate = posCount > 0 && isMarketOpen();
               requestConfirm({
                 title: "Emergency halt",
-                description: (
+                description: willLiquidate ? (
                   <>
                     Stops the engine, cancels pending orders, and{" "}
                     <strong className="text-text-primary">liquidates ALL open positions at market</strong>.
                     The engine stays down until you explicitly press Start. This cannot be undone.
+                  </>
+                ) : posCount > 0 ? (
+                  <>
+                    Stops the engine and cancels pending buy orders.{" "}
+                    <strong className="text-text-primary">The market is closed, so no position will be sold</strong>{" "}
+                    and your existing broker stops stay in place. The engine stays down until you explicitly press Start.
+                  </>
+                ) : (
+                  <>
+                    Stops the engine and cancels pending orders. The engine stays down until you explicitly press Start.
                   </>
                 ),
                 summary:
@@ -677,7 +692,7 @@ export default function TraderPage() {
                         },
                       ]
                     : [{ label: "Open positions", value: "0" }],
-                confirmLabel: posCount > 0 ? `Halt & liquidate ${posCount}` : "Halt engine",
+                confirmLabel: willLiquidate ? `Halt & liquidate ${posCount}` : "Halt engine",
                 onConfirm: async () => {
                   const r = await handleEngine("halt");
                   if (!r.ok) throw new Error(r.error);
