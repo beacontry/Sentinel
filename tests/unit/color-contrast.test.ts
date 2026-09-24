@@ -94,3 +94,26 @@ describe("deltaEOK", () => {
     expect(() => deltaEOK("rgb(0 0 0 / 0.5)", "#ffffff")).toThrow();
   });
 });
+
+describe("deltaEOK under a simulated dichromacy", () => {
+  it("leaves greys where they are", () => {
+    for (const vision of ["deuteranopia", "protanopia"] as const) {
+      expect(deltaEOK("#000000", "#ffffff", vision)).toBeCloseTo(1, 3);
+      expect(deltaEOK("#777777", "#777777", vision)).toBeCloseTo(0, 6);
+    }
+  });
+
+  // Colour-blind coral's old accent and warning: an orange and a yellow
+  // 0.13 apart to typical vision, one colour to a deuteranope.
+  it("collapses an orange and a yellow of equal lightness for a deuteranope", () => {
+    const [orange, yellow] = ["oklch(50% 0.15 40)", "oklch(50% 0.11 100)"];
+    expect(deltaEOK(orange, yellow)).toBeGreaterThan(0.12);
+    expect(deltaEOK(orange, yellow, "deuteranopia")).toBeLessThan(0.02);
+  });
+
+  it("keeps the blue and orange of Wong's pair apart for both", () => {
+    for (const vision of ["deuteranopia", "protanopia"] as const) {
+      expect(deltaEOK("#0072b2", "#e69f00", vision)).toBeGreaterThan(0.2);
+    }
+  });
+});

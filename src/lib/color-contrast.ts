@@ -143,11 +143,42 @@ function linearToOklab(c: LinearRgba): [number, number, number] {
  * Colour difference as deltaE OK: straight-line distance in OKLab of the
  * two opaque colours as rendered (after gamut clipping). Around 0.02 is a
  * just-noticeable difference side by side; 0.10 reads as a different
- * colour at a glance, which is the floor for two meanings.
+ * colour at a glance, which is the floor for two meanings. With `vision`
+ * set, both colours are first simulated for that dichromacy.
  */
-export function deltaEOK(x: string, y: string): number {
+export function deltaEOK(x: string, y: string, vision: Vision = "normal"): number {
   const [a, b] = [parseColor(x), parseColor(y)];
   if (a.a < 1 || b.a < 1) throw new Error(`deltaEOK needs opaque colours: ${x}, ${y}`);
-  const [p, q] = [linearToOklab(a), linearToOklab(b)];
+  const [p, q] = [linearToOklab(simulateVision(a, vision)), linearToOklab(simulateVision(b, vision))];
   return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}
+
+/** Colour vision for deltaEOK: typical, or a full dichromacy. */
+export type Vision = "normal" | "deuteranopia" | "protanopia";
+
+/**
+ * Machado, Oliveira and Fernandes (2009), severity 1.0, applied to linear
+ * sRGB as the paper's model assumes. Deuteranopia and protanopia are the
+ * two red-green dichromacies colour-blind mode is designed for; what is
+ * left to them is lightness and the blue-yellow axis.
+ */
+const DICHROMACY: Record<Exclude<Vision, "normal">, number[][]> = {
+  protanopia: [
+    [0.152286, 1.052583, -0.204868],
+    [0.114503, 0.786281, 0.099216],
+    [-0.003882, -0.048116, 1.051998],
+  ],
+  deuteranopia: [
+    [0.367322, 0.860646, -0.227968],
+    [0.280085, 0.672501, 0.047413],
+    [-0.01182, 0.04294, 0.968881],
+  ],
+};
+
+/** How an opaque colour appears to a reader with the given vision. */
+export function simulateVision(c: LinearRgba, vision: Vision): LinearRgba {
+  if (vision === "normal") return c;
+  const m = DICHROMACY[vision];
+  const row = (i: number) => clamp01(m[i][0] * c.r + m[i][1] * c.g + m[i][2] * c.b);
+  return { r: row(0), g: row(1), b: row(2), a: c.a };
 }
