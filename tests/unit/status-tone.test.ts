@@ -51,7 +51,7 @@ describe("tone classes", () => {
 
 describe("primitives read the map", () => {
   it("Badge renders the tone's classes", () => {
-    const html = renderToStaticMarkup(createElement(Badge, { variant: "bearish" }, "Rejected"));
+    const html = renderToStaticMarkup(Badge({ variant: "bearish", children: "Rejected" }));
     for (const c of STATUS_TONE_CLASSES.bearish.split(" ")) expect(html).toContain(c);
     expect(html).not.toMatch(/bg-bearish\/\d/);
   });
