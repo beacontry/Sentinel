@@ -59,10 +59,11 @@ export function YearSummary({ year, summary }: { year: string; summary: TaxSumma
             {formatCurrency(summary.estimatedTax)}
           </dd>
           <dd className="mt-1 text-xs text-text-muted">
-            As a single filer with ${DEFAULT_ORDINARY_INCOME.toLocaleString("en-US")} of other income.{" "}
+            Assumes a single filer with ${DEFAULT_ORDINARY_INCOME.toLocaleString("en-US")} of other income.{" "}
             <Link href={`/dashboard/tax?year=${year}`} className="text-accent hover:underline">
-              Change these in the Tax Report
+              The Tax Report lets you try other assumptions
             </Link>
+            .
           </dd>
         </div>
       </dl>
