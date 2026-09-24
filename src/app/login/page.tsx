@@ -191,7 +191,7 @@ export default function LoginPage() {
 
           <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-pop">
             <div className="text-center mb-5">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent text-xl font-bold mb-3">
+              <div aria-hidden="true" className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent-muted text-accent text-xl font-bold mb-3">
                 {lastUser.name.charAt(0).toUpperCase()}
               </div>
               <h1 className="text-xl font-semibold text-text-primary">Welcome back</h1>
@@ -221,20 +221,12 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-4 flex items-center justify-between text-sm">
-              <button
-                type="button"
-                onClick={switchToFullLogin}
-                className="text-text-muted hover:text-accent transition-colors"
-              >
+              <Button type="button" variant="ghost" size="sm" onClick={switchToFullLogin} className="-ml-3">
                 Use password
-              </button>
-              <button
-                type="button"
-                onClick={switchUser}
-                className="text-text-muted hover:text-accent transition-colors"
-              >
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={switchUser} className="-mr-3">
                 Not {lastUser.name.split(" ")[0]}?
-              </button>
+              </Button>
             </div>
           </div>
         </div>
