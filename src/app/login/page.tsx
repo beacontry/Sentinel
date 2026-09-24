@@ -41,6 +41,23 @@ function getLandingPage(): string {
   return "/dashboard";
 }
 
+/**
+ * The sign-in error. Always mounted as role="alert" so a screen reader
+ * announces the text when it appears; when there is no error it is an
+ * empty, visually hidden region.
+ */
+function LoginError({ id, error }: { id: string; error: string }) {
+  return (
+    <div
+      id={id}
+      role="alert"
+      className={error ? "rounded-lg border border-bearish/25 bg-bearish/10 px-3 py-2 text-sm text-bearish" : "sr-only"}
+    >
+      {error}
+    </div>
+  );
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -182,14 +199,12 @@ export default function LoginPage() {
             </div>
 
             <form onSubmit={handlePinLogin} className="space-y-4">
-              {error && (
-                <div className="rounded-lg border border-bearish/25 bg-bearish/10 px-3 py-2 text-sm text-bearish">
-                  {error}
-                </div>
-              )}
+              <LoginError id="pin-error" error={error} />
               <Input
                 ref={pinRef}
                 label="PIN"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "pin-error" : undefined}
                 type="password"
                 inputMode="numeric"
                 pattern="[0-9]*"
@@ -245,13 +260,11 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-text-secondary">Enter your credentials to access the desk.</p>
 
           <form onSubmit={handlePasswordLogin} className="mt-5 space-y-4">
-            {error && (
-              <div className="rounded-lg border border-bearish/25 bg-bearish/10 px-3 py-2 text-sm text-bearish">
-                {error}
-              </div>
-            )}
+            <LoginError id="login-error" error={error} />
             <Input
               label="Email"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "login-error" : undefined}
               type="email"
               placeholder="you@example.com"
               value={email}
@@ -262,6 +275,8 @@ export default function LoginPage() {
             />
             <Input
               label="Password"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "login-error" : undefined}
               type="password"
               placeholder="Enter your password"
               value={password}

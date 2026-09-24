@@ -31,16 +31,27 @@ const TOAST_STYLES: Record<ToastType, string> = {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // Latest message for each live region. The regions stay mounted and
+  // only their text changes: a region inserted together with its message
+  // is often not announced, which lost success and info toasts (order
+  // confirmations) on screen readers.
+  const [polite, setPolite] = useState<Toast | null>(null);
+  const [assertive, setAssertive] = useState<Toast | null>(null);
   const idRef = useRef(0);
 
   const dismiss = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+    setPolite((prev) => (prev?.id === id ? null : prev));
+    setAssertive((prev) => (prev?.id === id ? null : prev));
   }, []);
 
   const addToast = useCallback(
     ({ type, message, duration }: { type: ToastType; message: string; duration?: number }) => {
       const id = ++idRef.current;
-      setToasts((prev) => [...prev, { id, type, message }]);
+      const toast = { id, type, message };
+      setToasts((prev) => [...prev, toast]);
+      if (type === "error") setAssertive(toast);
+      else setPolite(toast);
       // Errors linger twice as long by default — they usually carry a reason
       // the user needs to actually read ("Failed: insufficient buying power").
       // duration 0 = persistent until dismissed.
@@ -55,11 +66,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast: addToast }}>
       {children}
+      {/* Keyed spans, so a repeat of the same message is a new node and
+          is announced again. */}
+      <div role="status" className="sr-only">
+        {polite && <span key={polite.id}>{polite.message}</span>}
+      </div>
+      <div role="alert" className="sr-only">
+        {assertive && <span key={assertive.id}>{assertive.message}</span>}
+      </div>
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
         {toasts.map((t) => (
           <div
             key={t.id}
-            role={t.type === "error" ? "alert" : "status"}
             className={`animate-slide-up rounded-lg border pl-4 pr-2 py-3 text-sm shadow-lg flex items-start gap-2 ${TOAST_STYLES[t.type]}`}
           >
             <span className="flex-1 leading-snug">{t.message}</span>
