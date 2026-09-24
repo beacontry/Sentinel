@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { WidgetWrapper } from "./widget-wrapper";
+import { SortableWidget } from "./widget-tile";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Spinner } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,14 +17,7 @@ import type {
   WidgetCategory,
   WidgetSize,
 } from "@/lib/widget-registry";
-import {
-  Plus,
-  X,
-  ChevronUp,
-  ChevronDown,
-  GripVertical,
-  Maximize2,
-} from "lucide-react";
+import { LayoutGrid, Plus, X } from "lucide-react";
 // Phase 9 — drag-and-drop on dashboard widgets
 import {
   DndContext,
@@ -38,9 +33,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   rectSortingStrategy,
-  useSortable,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 
 // Widget component imports
 import { WatchlistWidget } from "./widgets/watchlist-widget";
@@ -98,12 +91,6 @@ const CATEGORY_ORDER: WidgetCategory[] = [
 // these in order; the next click after "full" goes back to "sm". Naming is
 // deliberately verbose so the tooltip reads clearly.
 const SIZE_CYCLE: WidgetSize[] = ["sm", "md", "lg", "full"];
-const SIZE_LABELS: Record<WidgetSize, string> = {
-  sm: "Small",
-  md: "Medium",
-  lg: "Large",
-  full: "Full width",
-};
 
 // Phase 20 — widget entry: id plus optional size override. When size is undefined
 // the widget falls back to its definition's defaultSize. Stored verbatim in the
@@ -338,7 +325,9 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
                   onMoveUp={() => handleMoveUp(index)}
                   onMoveDown={() => handleMoveDown(index)}
                   onCycleSize={() => handleCycleSize(index)}
-                />
+                >
+                  {renderWidget(def)}
+                </SortableWidget>
               );
             })}
 
@@ -369,17 +358,14 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
 
       {/* Empty state */}
       {entries.length === 0 && (
-        <div className="rounded-xl border border-border bg-bg-surface py-16 text-center">
-          <p className="text-text-muted mb-4">
-            Your dashboard is empty. Add some widgets to get started.
-          </p>
-          <Button
-            variant="secondary"
-            onClick={() => setShowAddPanel(true)}
-          >
-            <Plus className="w-4 h-4" />
-            Add Widgets
-          </Button>
+        <div className="rounded-xl border border-border bg-bg-secondary">
+          <EmptyState
+            icon={<LayoutGrid className="h-6 w-6" />}
+            title="Your dashboard is empty"
+            description="Add the modules you want to see here."
+            action={{ label: "Add widgets", onClick: () => setShowAddPanel(true) }}
+            headingLevel={2}
+          />
         </div>
       )}
 
@@ -395,9 +381,7 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
             bg-bg-surface shadow-modal">
             <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-xl border-b border-border bg-bg-surface px-5 py-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-accent">
-                  Module Library
-                </p>
+                <p className="eyebrow text-text-muted">Module library</p>
                 <h3 className="mt-1 text-lg font-semibold text-text-primary">
                   Add Module
                 </h3>
@@ -415,7 +399,7 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
               ) : (
                 availableByCategory.map(({ category, widgets }) => (
                   <div key={category}>
-                    <h4 className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-text-muted">
+                    <h4 className="eyebrow mb-3 text-text-muted">
                       {CATEGORY_LABELS[category]}
                     </h4>
                     <div className="grid gap-2">
@@ -447,133 +431,17 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
         </div>
       )}
 
+      {/* Mounted always so the status is announced when saving starts. */}
+      <div role="status" className="sr-only">{saving ? "Saving layout" : ""}</div>
       {saving && (
-        <div className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-lg
-          border border-border bg-bg-surface px-3 py-2 shadow-pop">
-          <div className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-          <span className="text-xs text-text-secondary">Saving...</span>
+        <div
+          aria-hidden="true"
+          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-lg border border-border bg-bg-surface px-3 py-2 shadow-pop"
+        >
+          <Spinner className="h-3 w-3 text-accent" />
+          <span className="text-xs text-text-secondary">Saving…</span>
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * Phase 9 — sortable widget wrapper. Renders a single dashboard widget that
- * can be dragged via @dnd-kit. Drag handle is the grip icon, visible only in
- * edit mode. The chevrons are kept as a keyboard-accessible fallback in case
- * the user prefers click-to-move (also useful on touch when drag may conflict
- * with scroll).
- *
- * Phase 20 — adds size cycler. Clicking the maximize icon walks through
- * sm → md → lg → full → sm. Hidden outside edit mode.
- */
-function SortableWidget({
-  id,
-  def,
-  size,
-  index,
-  total,
-  editMode,
-  onRemove,
-  onMoveUp,
-  onMoveDown,
-  onCycleSize,
-}: {
-  id: string;
-  def: WidgetDefinition;
-  size: WidgetSize;
-  index: number;
-  total: number;
-  editMode: boolean;
-  onRemove: () => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-  onCycleSize: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-    disabled: !editMode,
-  });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 10 : "auto",
-  };
-
-  // Map effective size → grid column span. Mirrors widget-wrapper's table.
-  const colSpan =
-    size === "full"
-      ? "col-span-full"
-      : size === "lg"
-      ? "col-span-1 md:col-span-2 2xl:col-span-3"
-      : size === "md"
-      ? "col-span-1 md:col-span-2 2xl:col-span-2"
-      : "col-span-1";
-
-  return (
-    <div ref={setNodeRef} style={style} className={colSpan}>
-      <WidgetWrapper
-        title={def.name}
-        size={size}
-        editMode={editMode}
-        index={index}
-        onRemove={onRemove}
-        className=""
-        headerAction={
-          editMode ? (
-            <div className="flex items-center gap-0.5">
-              {/* Drag handle — main interaction in edit mode */}
-              <button
-                {...attributes}
-                {...listeners}
-                className="p-1 rounded text-text-muted hover:text-text-primary cursor-grab active:cursor-grabbing
-                  min-h-[28px] min-w-[28px] flex items-center justify-center touch-none"
-                aria-label={`Drag to reorder ${def.name}`}
-                title="Drag to reorder"
-              >
-                <GripVertical className="w-3.5 h-3.5" />
-              </button>
-              {/* Size cycler — clicks through sm → md → lg → full */}
-              <button
-                onClick={onCycleSize}
-                className="p-1 rounded text-text-muted hover:text-text-primary
-                  transition-colors min-h-[28px] min-w-[28px]
-                  flex items-center justify-center"
-                aria-label={`Resize ${def.name} (currently ${SIZE_LABELS[size]})`}
-                title={`Resize — ${SIZE_LABELS[size]}`}
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-              </button>
-              {/* Chevrons — accessible fallback for reordering */}
-              <button
-                onClick={onMoveUp}
-                disabled={index === 0}
-                className="p-1 rounded text-text-muted hover:text-text-primary
-                  disabled:opacity-30 transition-colors min-h-[28px] min-w-[28px]
-                  flex items-center justify-center"
-                aria-label="Move up"
-              >
-                <ChevronUp className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={onMoveDown}
-                disabled={index === total - 1}
-                className="p-1 rounded text-text-muted hover:text-text-primary
-                  disabled:opacity-30 transition-colors min-h-[28px] min-w-[28px]
-                  flex items-center justify-center"
-                aria-label="Move down"
-              >
-                <ChevronDown className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : undefined
-        }
-      >
-        {renderWidget(def)}
-      </WidgetWrapper>
     </div>
   );
 }

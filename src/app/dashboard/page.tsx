@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { WidgetGrid, type WidgetEntry } from "@/components/dashboard/widget-grid";
 import { LayoutSwitcher } from "@/components/dashboard/layout-switcher";
 import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/ui/button-link";
 import { FreeTierWelcome } from "@/components/tiers/free-tier-welcome";
 import {
   Pencil,
@@ -27,7 +27,7 @@ export default function DashboardPage() {
 
       {/* Header — S6 style: bold title, subtitle, actions on right */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-sm text-text-secondary mt-1">
             Live market context, execution tools, and the modules you use.
@@ -39,33 +39,32 @@ export default function DashboardPage() {
             onChanged={() => setRefreshKey((k) => k + 1)}
           />
           <Button
-            variant={editMode ? "primary" : "outline"}
-            size="md"
+            variant={editMode ? "primary" : "secondary"}
             onClick={() => setEditMode((prev) => !prev)}
+            aria-pressed={editMode}
+            aria-label={editMode ? "Done editing layout" : "Edit layout"}
           >
             {editMode ? (
-              <Check className="h-4 w-4" />
+              <Check className="h-4 w-4" aria-hidden="true" />
             ) : (
-              <Pencil className="h-4 w-4" />
+              <Pencil className="h-4 w-4" aria-hidden="true" />
             )}
             <span className="hidden sm:inline">
               {editMode ? "Done" : "Edit Layout"}
             </span>
           </Button>
-          <Link href="/dashboard/alerts">
-            <Button variant="secondary" size="md">
-              <Bell className="h-4 w-4" />
-              <span className="hidden sm:inline">Alerts</span>
-            </Button>
-          </Link>
+          <ButtonLink href="/dashboard/alerts" variant="secondary" aria-label="Alerts">
+            <Bell className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Alerts</span>
+          </ButtonLink>
         </div>
       </div>
 
       {editMode && (
-        <div className="flex items-center gap-3 rounded-lg border border-accent/20 bg-accent/10 px-4 py-3 animate-fade-in">
-          <Pencil className="h-4 w-4 shrink-0 text-accent" />
+        <div role="status" className="flex items-center gap-3 rounded-lg border border-accent bg-bg-secondary px-4 py-3 animate-fade-in">
+          <Pencil className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
           <p className="text-sm text-text-secondary">
-            <span className="font-medium text-accent">Layout mode</span>{" "}
+            <span className="font-medium text-text-primary">Layout mode</span>{" "}
             &mdash; drag to reorder, click the resize icon to cycle sizes, or
             use the layout menu to save this view.
           </p>

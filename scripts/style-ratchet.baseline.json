@@ -7,14 +7,14 @@
   "transition-all": 0,
   "focus(-visible):outline-none": 18,
   "outline-none without focus-visible ring": 32,
-  "raw <button": 99,
+  "raw <button": 94,
   "raw <input": 9,
   "backdrop-blur": 9,
   "-[#hex]": 4,
   "rgb()/rgba() literal": 6,
   "bg-white/ or bg-black/": 8,
-  "state colour alpha tint": 101,
+  "state colour alpha tint": 100,
   "border-l-2/4 stripe": 0,
   "inline fontSize 8-11": 6,
-  "uppercase + tracking-[arbitrary]": 98
+  "uppercase + tracking-[arbitrary]": 97
 }
