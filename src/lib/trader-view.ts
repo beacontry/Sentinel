@@ -271,3 +271,20 @@ export type AccessLoss = 401 | 402 | 403;
 export function accessLossStatus(status: number | null | undefined): AccessLoss | null {
   return status === 401 || status === 402 || status === 403 ? status : null;
 }
+
+// ─── Order ticket ───────────────────────────────────────────────────
+
+/**
+ * The ticket's view of the engine. A status that could not be read is
+ * unknown, not stopped: the ticket must not tell the user the engine is
+ * stopped (and invite a whole order) when it may be running.
+ */
+export type TicketEngineState = "loading" | "unknown" | "running" | "stopped";
+
+export function ticketEngineState(
+  status: { running: boolean } | null,
+  loading: boolean,
+): TicketEngineState {
+  if (status) return status.running ? "running" : "stopped";
+  return loading ? "loading" : "unknown";
+}

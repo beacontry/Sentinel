@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useConfirmAction } from "@/components/ui/confirm-action-modal";
+import { ticketEngineState } from "@/lib/trader-view";
 
 interface EngineStatus {
   running: boolean;
@@ -104,6 +105,7 @@ export default function TradePage({
   const contextGenRef = useRef(0);
   const loadContext = useCallback(async () => {
     const gen = ++contextGenRef.current;
+    let engineRead = false;
     try {
       const [engineRes, accountRes, connectionsRes, quoteRes] = await Promise.all([
         fetch("/api/trader/engine"),
@@ -118,6 +120,11 @@ export default function TradePage({
           running: d.data?.running === true,
           environment: d.data?.environment ?? null,
         });
+        engineRead = true;
+      } else {
+        // Unknown, not stopped: the ticket must not claim the engine is
+        // stopped when its status could not be read.
+        setEngineStatus(null);
       }
       if (accountRes.ok) {
         const d = await accountRes.json();
@@ -149,7 +156,9 @@ export default function TradePage({
         }
       }
     } catch {
-      // Non-critical — fields can still be filled in manually
+      // Fields can still be filled in manually, but a failed read leaves the
+      // engine state unknown rather than the last (or a default) value.
+      if (gen === contextGenRef.current && !engineRead) setEngineStatus(null);
     } finally {
       if (gen === contextGenRef.current) setLoadingContext(false);
     }
@@ -204,6 +213,8 @@ export default function TradePage({
   // ─── Derived state ──────────────────────────────────────────────
   const isLive = connection?.environment === "live";
   const engineBlocked = engineStatus?.running === true;
+  const engineState = ticketEngineState(engineStatus, loadingContext);
+  const engineUnknown = engineState === "unknown";
   // Notional only with market + day/ioc per Alpaca's rules; the form
   // automatically downshifts the user's selection if they switch.
   const notionalConflict =
@@ -231,6 +242,9 @@ export default function TradePage({
   function validate(): string | null {
     if (engineBlocked) {
       return "Stop the engine before placing manual orders.";
+    }
+    if (engineUnknown) {
+      return "Engine status unknown. Retry before placing an order.";
     }
     if (sizingMode === "shares") {
       const q = parseFloat(qty);
@@ -723,12 +737,24 @@ export default function TradePage({
               size="lg"
               variant={side === "buy" ? "primary" : "destructive"}
               onClick={submit}
-              disabled={engineBlocked || submitting || !connection}
+              disabled={engineBlocked || engineUnknown || submitting || !connection}
               loading={submitting}
               className="w-full"
             >
               {isLive ? "Place LIVE " : "Place "}{side.toUpperCase()} order
             </Button>
+            {engineUnknown && (
+              <p role="status" className="text-center text-xs text-warning">
+                Engine status unknown, so orders are off until it is read.{" "}
+                <button
+                  type="button"
+                  onClick={() => void loadContext()}
+                  className="text-accent hover:text-accent-hover underline"
+                >
+                  Retry
+                </button>
+              </p>
+            )}
             {!connection && !loadingContext && (
               <p className="text-center text-xs text-text-muted">
                 No active broker connection.{" "}
@@ -744,8 +770,14 @@ export default function TradePage({
 
       {/* Status pill row */}
       <div className="flex flex-wrap gap-2 text-xs">
-        <Badge variant={engineBlocked ? "warning" : "default"}>
-          {engineBlocked ? "Engine running — orders blocked" : "Engine stopped"}
+        <Badge variant={engineState === "running" || engineUnknown ? "warning" : "default"}>
+          {engineState === "running"
+            ? "Engine running — orders blocked"
+            : engineState === "stopped"
+              ? "Engine stopped"
+              : engineUnknown
+                ? "Engine status unknown"
+                : "Checking engine"}
         </Badge>
         {connection && (
           <Badge variant={isLive ? "bearish" : "default"}>

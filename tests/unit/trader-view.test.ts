@@ -25,6 +25,7 @@ import {
   refreshFailureMessage,
   riskFormToEngineParams,
   syncedPickerMode,
+  ticketEngineState,
 } from "@/lib/trader-view";
 
 describe("applyEngineResponse (#30)", () => {
@@ -263,5 +264,20 @@ describe("loss of access on a primary read (#3)", () => {
     for (const code of [200, 404, 429, 500, 502, 504, null, undefined]) {
       expect(accessLossStatus(code)).toBeNull();
     }
+  });
+});
+
+describe("order ticket engine state (#38)", () => {
+  it("reads running or stopped only from a status it actually read", () => {
+    expect(ticketEngineState({ running: true }, false)).toBe("running");
+    expect(ticketEngineState({ running: false }, false)).toBe("stopped");
+  });
+
+  it("is unknown, not stopped, when the status could not be read", () => {
+    expect(ticketEngineState(null, false)).toBe("unknown");
+  });
+
+  it("is loading while the first read is in flight", () => {
+    expect(ticketEngineState(null, true)).toBe("loading");
   });
 });
