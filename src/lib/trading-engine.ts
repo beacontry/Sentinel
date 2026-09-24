@@ -7875,6 +7875,21 @@ function untilAborted<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
 const PROTECTIVE_SELL_TYPES = new Set(["stop", "stop_limit", "trailing_stop"]);
 
 /**
+ * Order statuses that no longer work at the broker. Not every broker honours
+ * getOrders(..., "open"): Tradier ignores the status argument and returns the
+ * whole day's book, so a filled or rejected stop comes back beside the live
+ * ones. A dead stop protects nothing and must not count as the existing one.
+ * A deny list rather than Alpaca's live set, because Tradier's live statuses
+ * are "open" and "pending" and IBKR's are capitalised: an unknown status is
+ * treated as live, which leaves that order alone rather than stacking a
+ * second sell on top of it. Compared lowercase.
+ */
+const DEAD_ORDER_STATUSES = new Set([
+  "filled", "canceled", "cancelled", "rejected", "expired",
+  "done_for_day", "replaced", "calculated", "inactive", "error",
+]);
+
+/**
  * Make sure every open position has a strategy-level GTC stop at the broker
  * when the engine stops (user Stop, halt path, SIGTERM drain). The engine
  * will not be managing exits after this, so the resting stop is the only
@@ -7916,13 +7931,18 @@ export async function placeSafetyStops(userId: string | null, signal?: AbortSign
     const { client } = resolved;
 
     const positions = (await untilAborted(client.getPositions(), deadline)).filter((p) => p.qty > 0);
-    const openOrders = await untilAborted(client.getOrders(OPEN_ORDERS_PAGE, "open"), deadline);
-    if (openOrders.length >= OPEN_ORDERS_PAGE) {
-      log.warn({ userId, count: openOrders.length }, "Open-order page is full; some existing stops may not be listed");
+    const listed = await untilAborted(client.getOrders(OPEN_ORDERS_PAGE, "open"), deadline);
+    if (listed.length >= OPEN_ORDERS_PAGE) {
+      log.warn({ userId, count: listed.length }, "Open-order page is full; some existing stops may not be listed");
     }
+    // Orders still working at the broker. A pending_cancel order may still
+    // hold shares (so it counts when freeing a symbol's sells) but protects
+    // nothing and cannot be cancelled again.
+    const openOrders = listed.filter((o) => !DEAD_ORDER_STATUSES.has(o.status.toLowerCase()));
+    const working = openOrders.filter((o) => o.status.toLowerCase() !== "pending_cancel");
 
     // A resting entry must not fill after the engine stops.
-    const buys = openOrders.filter((o) => o.side === "buy");
+    const buys = working.filter((o) => o.side === "buy");
     const buyCancels = client.cancelOrder
       ? buys.map((o) =>
           untilAborted(client.cancelOrder!(o.id), deadline).then(
@@ -7951,12 +7971,13 @@ export async function placeSafetyStops(userId: string | null, signal?: AbortSign
 
     for (const pos of positions) {
       const sells = openOrders.filter((o) => o.symbol === pos.symbol && o.side === "sell");
-      const stops = sells
+      const protecting = working.filter((o) => o.symbol === pos.symbol && o.side === "sell");
+      const stops = protecting
         .filter((o) => o.type === "stop" && o.stopPrice && parseFloat(o.stopPrice) > 0)
         .sort((a, b) => parseFloat(b.stopPrice!) - parseFloat(a.stopPrice!));
       const existing = stops[0];
 
-      if (!existing && sells.some((o) => PROTECTIVE_SELL_TYPES.has(o.type))) {
+      if (!existing && protecting.some((o) => PROTECTIVE_SELL_TYPES.has(o.type))) {
         // A stop_limit or trailing stop already protects it; its level cannot
         // be compared here, so leave it rather than risk a second sell.
         log.info({ symbol: pos.symbol }, "Safety stop skipped; broker already holds a protective sell");

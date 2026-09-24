@@ -94,7 +94,14 @@ vi.mock("@/lib/brokers", async (importOriginal) => {
     createBrokerClient: () => {
       const client: Record<string, unknown> = {
         getPositions: async () => state.positions,
-        getOrders: async () => state.orders.filter((o) => o.status !== "canceled").map((o) => ({ ...o })),
+        // Returns the whole book, dead orders included, as Tradier does
+        // regardless of the status argument. A pending_cancel order settles
+        // to canceled once it has been listed.
+        getOrders: async () => {
+          const listed = state.orders.map((o) => ({ ...o }));
+          for (const o of state.orders) if (o.status === "pending_cancel") o.status = "canceled";
+          return listed;
+        },
         cancelOrder: async (id: string) => {
           const o = state.orders.find((x) => x.id === id);
           state.calls.push(`cancel:${o?.symbol ?? id}`);
@@ -162,9 +169,13 @@ function setMemoryStop(userId: string, symbol: string, stopLoss: number) {
   });
 }
 
-/** Live (non-cancelled) stop sell orders for a symbol. */
+const NOT_WORKING = new Set(["canceled", "rejected", "filled", "expired", "pending_cancel"]);
+
+/** Working stop sell orders for a symbol. */
 function liveStops(symbol: string): FakeOrder[] {
-  return state.orders.filter((o) => o.symbol === symbol && o.side === "sell" && o.type === "stop" && o.status !== "canceled");
+  return state.orders.filter(
+    (o) => o.symbol === symbol && o.side === "sell" && o.type === "stop" && !NOT_WORKING.has(o.status)
+  );
 }
 
 // Entry 100, market 120. Any preset's fixed stop is below entry, so every
@@ -270,6 +281,47 @@ describe("placeSafetyStops", () => {
     // The hung replace left the old stop, never removed it.
     expect(liveStops("AAPL").map((o) => o.stopPrice)).toEqual(["50.00"]);
     expect(liveStops("MSFT").map((o) => o.stopPrice)).toEqual(["106.00"]);
+  });
+
+  describe("orders that are no longer working", () => {
+    // getOrders(..., "open") is not honoured by every broker (Tradier returns
+    // the whole day). A dead stop must not stand in for protection.
+    for (const status of ["rejected", "filled", "canceled", "expired"]) {
+      it(`places a stop when the only listed stop is ${status}`, async () => {
+        const userId = freshUser();
+        state.withReplace = false; // Tradier: no replaceOrder, no cancel path taken
+        state.positions = [pos("AAPL")];
+        state.orders = [{ ...stop("s-aapl", "AAPL", 110), status }];
+
+        await placeSafetyStops(userId);
+        expect(state.calls).toEqual(["place:AAPL"]);
+        expect(liveStops("AAPL")).toHaveLength(1);
+        expect(liveStops("AAPL")[0].id).not.toBe("s-aapl");
+      });
+    }
+
+    it("treats a pending_cancel stop as no protection and places a new one", async () => {
+      const userId = freshUser();
+      state.positions = [pos("AAPL")];
+      state.orders = [{ ...stop("s-aapl", "AAPL", 110), status: "pending_cancel" }];
+
+      await placeSafetyStops(userId);
+      expect(state.calls.some((c) => c.startsWith("replace:"))).toBe(false);
+      expect(state.calls).toContain("place:AAPL");
+      expect(liveStops("AAPL").filter((o) => o.id !== "s-aapl")).toHaveLength(1);
+    });
+
+    it("does not try to cancel a buy that already filled", async () => {
+      const userId = freshUser();
+      state.positions = [pos("AAPL")];
+      state.orders = [
+        stop("s-aapl", "AAPL", 110),
+        { id: "b-old", symbol: "NVDA", side: "buy", type: "market", status: "filled", qty: 5 },
+      ];
+
+      await placeSafetyStops(userId);
+      expect(state.calls).toEqual([]);
+    });
   });
 
   describe("broker without replaceOrder", () => {
