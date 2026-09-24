@@ -292,13 +292,15 @@
   }
 
   /* ── Coral: the light ladder turned to a warm hue 40, coral accent ──
-     A coral accent sits next to a loss red, so the two are pulled apart
-     on purpose: the accent moves toward orange (hue 40) and stays light
-     enough for text, and coral's own loss colour moves to a darker
-     crimson (hue 10). theme-contrast.test.ts holds the accent and its
-     hover at least 0.10 deltaE OK from bearish and bearish-solid. The
-     shared hue-27 values measured 0.02: the Get started fill and a loss
-     figure were the same colour. */
+     A coral accent is warm, and so are a loss and a warning, so coral
+     spaces all three on purpose. The accent sits at orange (hue 40), the
+     loss moves to a darker crimson (hue 10), and the warning moves off
+     the shared amber (hue 65) to yellow (hue 100), the ladder colour-blind
+     mode uses. The hover turns toward hue 50 to stay clear of the crimson.
+     theme-contrast.test.ts holds the accent and its hover at least 0.10
+     deltaE OK from each. The shared hue-27 values once measured 0.02: the
+     Get started fill and a loss figure were the same colour. With the
+     amber warning, a hovered button was the colour of a HOLD chip. */
   html.coral {
     --color-bg-primary: oklch(96.5% 0.010 40);
     --color-bg-secondary: oklch(99.5% 0.003 40);
@@ -313,9 +315,13 @@
     --color-text-primary: oklch(24% 0.020 38);
     --color-text-secondary: oklch(38% 0.020 38);
     --color-text-muted: oklch(47% 0.018 38);
-    --color-accent: oklch(54% 0.14 40);
-    --color-accent-hover: oklch(49% 0.14 40);
+    --color-accent: oklch(50% 0.15 40);
+    --color-accent-hover: oklch(46% 0.13 50);
     --color-on-accent: oklch(99.5% 0.003 40);
+    --color-warning: oklch(50% 0.11 100);
+    --color-warning-fg: oklch(38% 0.085 102);
+    --color-warning-fill: oklch(95% 0.060 100);
+    --color-warning-line: oklch(66% 0.12 100);
     --color-bearish: oklch(42% 0.16 10);
     --color-bearish-fg: oklch(38% 0.13 10);
     --color-bearish-fill: oklch(95% 0.025 10);

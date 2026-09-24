@@ -16,7 +16,8 @@
  * - Gain and loss text must clear 4.5:1 on a card, and each chip's
  *   foreground must clear 4.5:1 on its own fill.
  * - Two colours that mean different things must look different: the
- *   accent (and its hover) against a loss and the danger fill, a loss
+ *   accent (and its hover) against a loss, the danger fill and a
+ *   warning, a loss
  *   and a warning against the body text, and in colour-blind mode a loss
  *   against a warning. Measured as deltaE OK,
  *   floor 0.10. Contrast ratio cannot catch this: two reds of equal
@@ -151,11 +152,13 @@ describe.each(MODES)("%s", (_mode, vars) => {
     expect(cr(`--color-${state}-line`, "--color-bg-secondary")).toBeGreaterThanOrEqual(3);
   });
 
-  // The primary action must not be the colour of a loss or of the
-  // irreversible danger fill. Coral once measured 0.02 on both.
+  // The primary action must not be the colour of a loss, of the
+  // irreversible danger fill, or of a warning. Coral once measured 0.02
+  // against the loss, and then 0.05 against the warning once its accent
+  // moved toward orange: a hovered button matched a HOLD chip.
   it.each(
     ["--color-accent", "--color-accent-hover"].flatMap((a) =>
-      ["--color-bearish", "--color-bearish-solid"].map((b) => [a, b]),
+      ["--color-bearish", "--color-bearish-solid", "--color-warning", "--color-warning-line"].map((b) => [a, b]),
     ),
   )("%s is distinct from %s", (a, b) => {
     expect(deltaEOK(resolve(vars, a), resolve(vars, b))).toBeGreaterThanOrEqual(DISTINCT);
