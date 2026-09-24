@@ -3,7 +3,8 @@
 // subsection.
 
 import Link from "next/link";
-import { Radar, AlertTriangle } from "lucide-react";
+import { PublicShell } from "@/components/layout/public-shell";
+import { AlertTriangle } from "lucide-react";
 import { TERMS_VERSION } from "@/lib/terms-version";
 
 export const metadata = {
@@ -12,25 +13,8 @@ export const metadata = {
 
 export default function RiskPage() {
   return (
-    <div className="min-h-screen bg-bg-primary">
-      <header className="border-b border-border bg-bg-secondary">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <Link href="/" className="flex items-center gap-2.5 text-text-primary hover:text-accent transition-colors">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent">
-              <Radar className="h-4 w-4" />
-            </div>
-            <span className="font-semibold">Beacontry</span>
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
-          >
-            Sign in
-          </Link>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-3xl px-4 py-10 space-y-6 text-text-secondary leading-relaxed">
+    <PublicShell>
+      <div className="mx-auto max-w-3xl space-y-6 text-text-secondary leading-relaxed">
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">Risk Disclosure</h1>
           <p className="text-xs text-text-muted mt-1 font-mono">
@@ -151,7 +135,7 @@ export default function RiskPage() {
           {" "}·{" "}
           <Link href="/contact" className="text-accent hover:text-accent-hover underline">Contact</Link>
         </p>
-      </main>
-    </div>
+      </div>
+    </PublicShell>
   );
 }

@@ -15,7 +15,8 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Radar, Mail, MessageSquare, ExternalLink } from "lucide-react";
+import { PublicShell } from "@/components/layout/public-shell";
+import { Mail, MessageSquare, ExternalLink } from "lucide-react";
 import { LEGAL_ENTITY } from "@/lib/legal-entity";
 
 export const metadata: Metadata = {
@@ -27,28 +28,8 @@ export const metadata: Metadata = {
 
 export default function ContactPage() {
   return (
-    <div className="min-h-screen bg-bg-primary">
-      <header className="border-b border-border bg-bg-secondary">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <Link
-            href="/"
-            className="flex items-center gap-2.5 text-text-primary hover:text-accent transition-colors"
-          >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent">
-              <Radar className="h-4 w-4" />
-            </div>
-            <span className="font-semibold">Beacontry</span>
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
-          >
-            Sign in
-          </Link>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-3xl px-4 py-12 space-y-8">
+    <PublicShell>
+      <div className="mx-auto max-w-3xl space-y-8">
         <div>
           <h1 className="text-2xl sm:text-2xl font-bold tracking-tight text-text-primary">
             Get in touch
@@ -196,7 +177,7 @@ export default function ContactPage() {
             {LEGAL_ENTITY.address.zip}
           </p>
         </section>
-      </main>
-    </div>
+      </div>
+    </PublicShell>
   );
 }

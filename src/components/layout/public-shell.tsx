@@ -1,5 +1,6 @@
 // PublicShell: the site nav and footer around a public content page
-// (/learn, /tools, /glossary, /congress, /articles).
+// (/learn, /tools, /glossary, /congress, /articles), the legal and
+// contact pages (/terms, /privacy, /risk, /contact) and the 404.
 //
 // Distinct from the app shell because public pages need no app nav, only
 // minimal SEO-friendly chrome, cross-links to the public surface, and a
