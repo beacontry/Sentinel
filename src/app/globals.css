@@ -358,11 +358,15 @@
      so each picks up the swapped colour without being repeated here. */
 
   /* ─────────────────────────────────────────────────────────────────
-     Focus mode — opt-in collapse of the app chrome so a single page
-     (Analysis) gets the full viewport. Toggled by writing localStorage
-     and adding `focus-mode` to <html>.
+     Focus mode — the Analysis page's opt-in collapse of the desktop top
+     bar, so the chart workspace gets the full viewport height. Toggled by
+     adding `focus-mode` to <html>. The rule used to target the left
+     sidebar (aside[data-app-sidebar]), which no longer exists since the
+     shell moved to a top bar, so the button did nothing. Phones are
+     unaffected: that header is already hidden below lg and the menu
+     button stays.
      ───────────────────────────────────────────────────────────────── */
-  html.focus-mode aside[data-app-sidebar] {
+  html.focus-mode header[data-app-topnav] {
     display: none !important;
   }
 }

@@ -132,12 +132,12 @@ function AnalysisCockpit() {
   // removal so PanelGroup doesn't drift.
   const [chartFullscreen, setChartFullscreen] = useState(false);
 
-  // Focus mode — collapses the left dashboard sidebar to maximize the
-  // research workspace. Persists across visits via localStorage. The
-  // sidebar listens for an `html.focus-mode` class (see globals.css).
+  // Focus mode — hides the desktop top bar to maximize the research
+  // workspace. Persists across visits via localStorage. The top bar
+  // listens for an `html.focus-mode` class (see globals.css).
   // The class is also removed on unmount in case the user navigates to
-  // a different page and forgets to disable it (sidebar otherwise stays
-  // hidden globally, which would be confusing).
+  // a different page and forgets to disable it (the navigation would
+  // otherwise stay hidden globally, which would be confusing).
   const [focusMode, setFocusModeState] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -458,7 +458,7 @@ function AnalysisCockpit() {
                 ? "border-accent/40 bg-accent/10 text-accent"
                 : "border-border bg-bg-secondary text-text-secondary hover:text-text-primary hover:bg-bg-hover"
             }`}
-            title={focusMode ? "Show the sidebar" : "Hide the sidebar for more chart space"}
+            title={focusMode ? "Show the navigation bar" : "Hide the navigation bar for more chart space"}
             aria-pressed={focusMode}
           >
             <Focus className="w-3.5 h-3.5" />
