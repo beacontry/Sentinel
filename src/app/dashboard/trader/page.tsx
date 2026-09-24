@@ -345,7 +345,7 @@ export default function TraderPage() {
       setTaxStatus(json);
       setTaxLoad((s) => loadSucceeded(s, Date.now()));
     } catch {
-      setTaxLoad((s) => loadFailed(s, "Could not load your tax election."));
+      if (gen === genRef.current) setTaxLoad((s) => loadFailed(s, "Could not load your tax election."));
     }
   }
 
@@ -501,7 +501,7 @@ export default function TraderPage() {
       setRiskLoaded(form);
       setRiskLoad((s) => loadSucceeded(s, Date.now()));
     } catch {
-      setRiskLoad((s) => loadFailed(s, "Could not load your saved overrides."));
+      if (gen === genRef.current) setRiskLoad((s) => loadFailed(s, "Could not load your saved overrides."));
     }
   }
 

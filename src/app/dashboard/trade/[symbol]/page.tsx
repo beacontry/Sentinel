@@ -748,7 +748,10 @@ export default function TradePage({
                 Engine status unknown, so orders are off until it is read.{" "}
                 <button
                   type="button"
-                  onClick={() => void loadContext()}
+                  onClick={() => {
+                    setLoadingContext(true);
+                    void loadContext();
+                  }}
                   className="text-accent hover:text-accent-hover underline"
                 >
                   Retry
