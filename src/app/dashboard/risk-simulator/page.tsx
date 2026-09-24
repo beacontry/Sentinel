@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SignedValue } from "@/components/ui/signed-value";
 import { ShieldAlert, Zap } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -154,7 +155,7 @@ export default function RiskSimulatorPage() {
         stats={[
           { label: "Portfolio Value", value: `$${portfolioValue.toLocaleString()}`, tone: "brand" },
           { label: "Positions", value: String(positions.length) },
-          { label: "Worst Case", value: `$${worstScenario.toLocaleString()}`, tone: "bearish" },
+          { label: "Worst Case", value: <SignedValue value={worstScenario} /> },
           { label: "Scenarios", value: String(SCENARIOS.length + 1) },
         ]}
       />
