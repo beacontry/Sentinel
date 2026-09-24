@@ -203,7 +203,7 @@ export default function CalendarPage() {
                     {/* Day number */}
                     <span className={`text-sm font-mono font-medium leading-none
                       ${isToday
-                        ? "flex h-7 w-7 items-center justify-center rounded-full bg-accent text-black"
+                        ? "flex h-7 w-7 items-center justify-center rounded-full bg-accent text-on-accent"
                         : isSelected
                           ? "text-accent"
                           : "text-text-primary"

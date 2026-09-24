@@ -119,6 +119,14 @@ describe("style-ratchet: counts", () => {
     expect(c["outline-none without focus-visible ring"]).toBe(1);
   });
 
+  it("flags a solid accent fill labelled with a fixed colour, not on-accent", () => {
+    const c = count([
+      `"bg-accent text-black" "hover:bg-accent-hover text-bg-primary" "bg-ld-accent text-white"`,
+      `"bg-accent text-on-accent" "bg-ld-accent text-ld-on-accent" "bg-accent/10 text-white"`,
+    ]);
+    expect(c["accent fill with a literal label"]).toBe(3);
+  });
+
   it("passes against the committed baseline", () => {
     const root = join(__dirname, "..", "..");
     expect(() => execFileSync(process.execPath, [join(root, "scripts", "style-ratchet.mjs")], { cwd: root })).not.toThrow();

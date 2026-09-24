@@ -462,7 +462,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
                 <button
                   onClick={() => handleAskAI()}
                   disabled={!chatInput.trim() || chatLoading}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-black transition-[background-color,border-color,color,opacity] hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent transition-[background-color,border-color,color,opacity] hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   {chatLoading ? (
                     <div className="h-4 w-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />

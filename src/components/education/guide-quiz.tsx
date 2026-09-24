@@ -184,7 +184,7 @@ export function GuideQuiz({
           type="button"
           onClick={handleSubmit}
           disabled={!allAnswered || submitting}
-          className="inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {submitting ? "Submitting…" : "Submit answers"}
         </button>

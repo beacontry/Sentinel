@@ -51,6 +51,12 @@ export const PATTERNS = {
   "text-3xl and up (off scale)": { re: /(?<![\w-])(?:[a-z0-9-]+:)*text-(?:3xl|4xl|5xl|6xl|7xl|8xl|9xl)(?![\w-])/g, zero: true },
   "rounded-xs/sm/2xl/3xl/4xl (off scale)": { re: /(?<![\w-])(?:[a-z0-9-]+:)*rounded(?:-[trblse]{1,2})?-(?:xs|sm|2xl|3xl|4xl)(?![\w-])/g, zero: true },
   "stock shadow-sm/md/lg/xl/2xl (off scale)": { re: /(?<![\w-])(?:[a-z0-9-]+:)*shadow-(?:2xs|xs|sm|md|lg|xl|2xl)(?![\w/-])/g, zero: true },
+  // A solid accent fill labelled with a fixed colour instead of on-accent.
+  // The accent's lightness differs per theme (dark on light themes, light
+  // on dark ones), so black, white or a page background passes in some
+  // themes and fails in others. on-accent is the one label measured
+  // against the fill in every theme.
+  "accent fill with a literal label": { custom: "accentFillLiteralLabel", zero: true },
 };
 
 const CUSTOM = {
@@ -59,6 +65,15 @@ const CUSTOM = {
     let n = 0;
     for (const m of src.matchAll(/(["'`])((?:(?!\1)[\s\S])*?\boutline-none\b(?:(?!\1)[\s\S])*?)\1/g)) {
       if (!/focus-visible:(?:outline|ring)/.test(m[2]) && !/focus-within:(?:outline|ring)/.test(m[2])) n++;
+    }
+    return n;
+  },
+  /** Class strings with a solid bg-accent / bg-ld-accent fill and a text-black, text-white or text-bg-* label. */
+  accentFillLiteralLabel(src) {
+    let n = 0;
+    for (const m of src.matchAll(/(["'`])((?:(?!\1)[\s\S])*?)\1/g)) {
+      if (!/(?<![\w-])(?:[a-z0-9-]+:)*bg-(?:ld-)?accent(?:-hover|-dim)?(?![\w/-])/.test(m[2])) continue;
+      n += m[2].match(/(?<![\w-])(?:[a-z0-9-]+:)*text-(?:black|white|bg-[\w-]+|ld-(?:deep|panel|card))(?![\w/-])/g)?.length ?? 0;
     }
     return n;
   },
