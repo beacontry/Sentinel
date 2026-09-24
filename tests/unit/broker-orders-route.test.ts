@@ -107,6 +107,7 @@ function actions(): unknown[] {
 }
 
 beforeEach(() => {
+  (globalThis as typeof globalThis & { __rateLimitStore?: Map<string, unknown> }).__rateLimitStore?.clear();
   state.audits = [];
   state.placed = [];
   state.lookups = [];
@@ -216,5 +217,20 @@ describe("POST /api/broker/orders: ambiguous outcome", () => {
     expect(res.status).toBe(400);
     expect(state.lookups).toHaveLength(0);
     expect(actions()).toEqual([AuditAction.ORDER_REJECTED]);
+  });
+});
+
+describe("POST /api/broker/orders: per-user rate limit", () => {
+  it("refuses the 11th order in a minute with 429 and Retry-After, before the broker", async () => {
+    for (let i = 0; i < 10; i++) {
+      expect((await POST(orderRequest({}))).status).toBe(201);
+    }
+    const res = await POST(orderRequest({}));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
+    const body = await res.json();
+    expect(body.code).toBe("RATE_LIMITED");
+    expect(body.retryable).toBe(true);
+    expect(state.placed).toHaveLength(10);
   });
 });

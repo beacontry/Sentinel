@@ -18,6 +18,7 @@ import { createRouteLogger } from "@/lib/logger";
 import { peekEngineStatus } from "@/lib/trading-engine";
 import { checkTier } from "@/lib/tiers-server";
 import { isShuttingDown, shuttingDownResponseInit } from "@/lib/shutdown-state";
+import { rateLimit } from "@/lib/rate-limiter";
 
 const log = createRouteLogger("broker-orders");
 
@@ -117,6 +118,16 @@ export async function POST(request: Request) {
   if (isShuttingDown()) {
     const { body: refusal, init } = shuttingDownResponseInit();
     return NextResponse.json(refusal, init);
+  }
+
+  // Per-user cap on order submissions, ahead of the tier lookup and the body
+  // parse. Keyed on the user id so it cannot be reset by changing networks.
+  const { allowed } = rateLimit(`broker-order:${auth.userId}`, 10, 60);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many orders. Wait a minute and try again.", code: "RATE_LIMITED", retryable: true },
+      { status: 429, headers: { "Retry-After": "60" } }
+    );
   }
 
   // Trader tier or higher — manual order placement requires a paid
