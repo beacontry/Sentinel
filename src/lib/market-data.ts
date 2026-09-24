@@ -12,6 +12,16 @@ interface MarketDataProvider {
   fetchQuote(symbol: string): Promise<{ price: number; volume: number } | null>;
 }
 
+/** A quote is usable only when its price is a finite number above zero. A
+ *  missing price is "no quote" (null), never a $0 quote: 0 reads as a real
+ *  price to every `??` consumer and would stop a fallback provider from being
+ *  tried. `!(x > 0)` rejects 0, negatives AND NaN. */
+function isPricedQuote(
+  quote: { price: number; volume: number } | null | undefined
+): quote is { price: number; volume: number } {
+  return !!quote && Number.isFinite(quote.price) && quote.price > 0;
+}
+
 // ─── Persistent bar cache ──────────────────────────────────────────
 
 // P2 audit (2026-06-09) — pre-fix default was `/data/cache`, but the
@@ -166,8 +176,12 @@ class YahooProvider implements MarketDataProvider {
       const json = await res.json();
       const meta = json?.chart?.result?.[0]?.meta;
       if (!meta) return null;
+      // Yahoo sometimes returns a chart meta with no regularMarketPrice (halted
+      // or thin symbols, schema hiccups). That is no quote, not a $0 quote.
+      const price = meta.regularMarketPrice;
+      if (typeof price !== "number" || !Number.isFinite(price) || !(price > 0)) return null;
       return {
-        price: meta.regularMarketPrice ?? 0,
+        price,
         volume: meta.regularMarketVolume ?? 0,
       };
     } finally {
@@ -229,8 +243,9 @@ class FinnhubProvider implements MarketDataProvider {
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) return null;
       const data = await res.json();
-      if (!data.c) return null;
-      return { price: data.c, volume: data.v ?? 0 };
+      const price = data?.c;
+      if (typeof price !== "number" || !Number.isFinite(price) || !(price > 0)) return null;
+      return { price, volume: data.v ?? 0 };
     } finally {
       clearTimeout(timeout);
     }
@@ -272,7 +287,8 @@ class FallbackProvider implements MarketDataProvider {
     const start = Date.now();
     try {
       const quote = await this.primary.fetchQuote(symbol);
-      if (quote) return quote;
+      // Accept the primary only with a real price; a $0 quote falls through.
+      if (isPricedQuote(quote)) return quote;
     } catch {
       // Primary failed, fall through to secondary
     }
@@ -280,7 +296,8 @@ class FallbackProvider implements MarketDataProvider {
     if (elapsed >= this.totalBudgetMs) {
       return null; // Budget exhausted, skip secondary
     }
-    return this.secondary.fetchQuote(symbol);
+    const fallback = await this.secondary.fetchQuote(symbol);
+    return isPricedQuote(fallback) ? fallback : null;
   }
 }
 
