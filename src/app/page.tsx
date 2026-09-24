@@ -318,9 +318,12 @@ export default function LandingPage() {
               record-keeping and tax tooling.
             </p>
 
-            <ul className="mt-5 grid gap-3">
+            {/* A plain divided list inside the one card: the items used to be
+                bordered cards of their own with a hover shift, which read as
+                clickable and nested cards in cards. */}
+            <ul data-hero-checklist className="mt-3 divide-y divide-ld-border">
               {heroChecklist.map((item) => (
-                <li key={item.title} className="flex gap-3 rounded-xl border border-ld-border bg-white/[0.01] p-3.5 transition-all duration-200 hover:translate-x-1 hover:border-ld-accent/24 hover:bg-ld-accent/5">
+                <li key={item.title} className="flex gap-3 py-3.5 last:pb-0">
                   <span className="mt-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-ld-green/10 text-xs font-bold text-ld-green">
                     ✓
                   </span>
