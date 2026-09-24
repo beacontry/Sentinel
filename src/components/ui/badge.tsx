@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { STATUS_TONE_CLASSES } from "@/lib/status-tone";
 
 type BadgeVariant = "default" | "bullish" | "bearish" | "warning" | "neutral" | "accent";
 
@@ -10,11 +11,11 @@ interface BadgeProps {
 
 const variantStyles: Record<BadgeVariant, string> = {
   default: "border-border bg-bg-elevated text-text-secondary",
-  bullish: "border-bullish/20 bg-bullish/10 text-bullish",
-  bearish: "border-bearish/20 bg-bearish/10 text-bearish",
-  warning: "border-warning/20 bg-warning/10 text-warning",
-  neutral: "border-border bg-bg-elevated text-text-secondary",
-  accent: "border-accent/20 bg-accent/10 text-accent",
+  bullish: STATUS_TONE_CLASSES.bullish,
+  bearish: STATUS_TONE_CLASSES.bearish,
+  warning: STATUS_TONE_CLASSES.warning,
+  neutral: STATUS_TONE_CLASSES.neutral,
+  accent: STATUS_TONE_CLASSES.accent,
 };
 
 export function Badge({ children, variant = "default", className = "" }: BadgeProps) {

@@ -113,6 +113,19 @@ describe.each(MODES)("%s", (_mode, vars) => {
     expect(cr(`--color-${state}-fg`, `--color-${state}-fill`)).toBeGreaterThanOrEqual(4.5);
   });
 
+  // A banner on a state fill carries body text and a heading in the state
+  // colour, not only the -fg label.
+  it.each(
+    ["bullish", "bearish", "warning"].flatMap((state) =>
+      ["--color-text-primary", "--color-text-secondary", "--color-text-muted", `--color-${state}`].map((t) => [
+        t,
+        `--color-${state}-fill`,
+      ]),
+    ),
+  )("%s on %s is at least 4.5:1", (text, fill) => {
+    expect(cr(text, fill)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it.each([1, 2, 3, 4, 5, 6])("chart series %i is at least 3:1 on the chart background", (n) => {
     expect(cr(`--color-series-${n}`, "--color-bg-surface")).toBeGreaterThanOrEqual(3);
   });

@@ -7,6 +7,7 @@ import { useRecoveryPoll } from "@/hooks/useRecoveryPoll";
 import { accessRegained } from "@/lib/recovery-poll";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { isMarketOpen } from "@/lib/market-hours";
+import { tradeStatusTone } from "@/lib/status-tone";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SignalBadge } from "@/components/ui/signal-badge";
@@ -1573,11 +1574,7 @@ export default function TraderPage() {
                     <Badge variant={t.action === "BUY" ? "bullish" : "bearish"}>{t.action}</Badge>
                     <SymbolLink symbol={t.symbol} className="text-sm font-medium" />
                     <span className="text-xs font-mono text-text-muted">{t.quantity} shares</span>
-                    <Badge variant={
-                      t.status === "FILLED" ? "bullish"
-                      : t.status === "REJECTED" ? "bearish"
-                      : "neutral"
-                    }>{t.status}</Badge>
+                    <Badge variant={tradeStatusTone(t.status)}>{t.status}</Badge>
                     {t.pnl != null && (() => {
                       // Percent basis must be the ENTRY cost, not the exit
                       // proceeds. cost = proceeds − realized P&L = entryPrice ×

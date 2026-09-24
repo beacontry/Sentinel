@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { STATUS_TONE_TEXT_CLASSES } from "@/lib/status-tone";
 
 type IntroTone = "brand" | "bullish" | "bearish" | "neutral";
 
@@ -17,10 +18,10 @@ interface PageIntroProps {
 }
 
 const toneClasses: Record<IntroTone, string> = {
-  brand: "text-accent",
-  bullish: "text-bullish",
-  bearish: "text-bearish",
-  neutral: "text-text-primary",
+  brand: STATUS_TONE_TEXT_CLASSES.accent,
+  bullish: STATUS_TONE_TEXT_CLASSES.bullish,
+  bearish: STATUS_TONE_TEXT_CLASSES.bearish,
+  neutral: STATUS_TONE_TEXT_CLASSES.neutral,
 };
 
 export function PageIntro({

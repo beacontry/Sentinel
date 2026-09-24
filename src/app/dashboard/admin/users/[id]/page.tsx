@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
+import { tradeStatusTone } from "@/lib/status-tone";
 import {
   ArrowLeft,
   AlertTriangle,
@@ -468,17 +469,7 @@ export default function UserDetailPage() {
                       {t.pnl != null ? fmtMoney(t.pnl) : "—"}
                     </td>
                     <td className="py-2">
-                      <Badge
-                        variant={
-                          t.status === "FILLED"
-                            ? "bullish"
-                            : t.status === "PENDING"
-                              ? "neutral"
-                              : t.status === "FAILED"
-                                ? "bearish"
-                                : "warning"
-                        }
-                      >
+                      <Badge variant={tradeStatusTone(t.status)}>
                         {t.status}
                       </Badge>
                     </td>
