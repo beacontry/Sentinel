@@ -124,6 +124,8 @@ export default function PerformancePage() {
   }
 
   const o = data.overall;
+  // Tone and glyph from one direction, taken from the value as printed.
+  const avgReturnDir = percentDirection(o.avgReturn);
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -134,7 +136,7 @@ export default function PerformancePage() {
         stats={[
           { label: "Win Rate", value: `${Math.round(o.accuracy * 100)}%`, tone: o.accuracy >= 0.5 ? "bullish" : "bearish" },
           { label: "Total Signals", value: String(o.totalSignals) },
-          { label: "Avg Return", value: formatSignedPercent(o.avgReturn), tone: o.avgReturn >= 0 ? "bullish" : "bearish", direction: percentDirection(o.avgReturn) },
+          { label: "Avg Return", value: formatSignedPercent(o.avgReturn), tone: avgReturnDir === "gain" ? "bullish" : avgReturnDir === "loss" ? "bearish" : "neutral", direction: avgReturnDir },
           { label: "Correct", value: `${o.correctSignals} / ${o.totalSignals}`, tone: "bullish" },
         ]}
       />
