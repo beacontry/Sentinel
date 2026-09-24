@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useConfirmAction } from "@/components/ui/confirm-action-modal";
 import { ticketEngineState } from "@/lib/trader-view";
+import { fetchQuotes } from "@/lib/quotes-client";
 
 interface EngineStatus {
   running: boolean;
@@ -81,6 +82,10 @@ export default function TradePage({
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [connection, setConnection] = useState<ConnectionMeta | null>(null);
   const [quote, setQuote] = useState<QuoteSnapshot | null>(null);
+  // True once a quote read failed: the header says "Price unavailable" and
+  // the cost estimate for market and stop orders says so too, instead of
+  // leaving a blank that reads as "not loaded yet".
+  const [quoteUnavailable, setQuoteUnavailable] = useState(false);
   const [loadingContext, setLoadingContext] = useState(true);
 
   // Form state
@@ -107,11 +112,13 @@ export default function TradePage({
     const gen = ++contextGenRef.current;
     let engineRead = false;
     try {
-      const [engineRes, accountRes, connectionsRes, quoteRes] = await Promise.all([
+      // The quote comes from the read-only /api/quotes. fetchQuotes never
+      // rejects: a failed read is a null quote, not a failed context load.
+      const [engineRes, accountRes, connectionsRes, quotes] = await Promise.all([
         fetch("/api/trader/engine"),
         fetch("/api/broker/account"),
         fetch("/api/broker/connections"),
-        fetch(`/api/analyze?symbol=${encodeURIComponent(symbol)}`),
+        fetchQuotes([symbol]),
       ]);
       if (gen !== contextGenRef.current) return;
       if (engineRes.ok) {
@@ -141,19 +148,14 @@ export default function TradePage({
       if (connectionsRes.ok) {
         setConnection(activeConnectionFrom(await connectionsRes.json()));
       }
-      if (quoteRes.ok) {
-        const d = await quoteRes.json();
-        const bars = d.bars ?? [];
-        if (bars.length >= 2) {
-          const last = bars[bars.length - 1].close;
-          const prev = bars[bars.length - 2].close;
-          setQuote({
-            price: last,
-            changePct: ((last - prev) / prev) * 100,
-          });
-        } else if (bars.length === 1) {
-          setQuote({ price: bars[0].close, changePct: undefined });
-        }
+      const q = quotes[symbol];
+      if (q) {
+        setQuote({ price: q.price, changePct: q.change });
+        setQuoteUnavailable(false);
+      } else {
+        // Drop any earlier price so the estimate never uses a stale one.
+        setQuote(null);
+        setQuoteUnavailable(true);
       }
     } catch {
       // Fields can still be filled in manually, but a failed read leaves the
@@ -437,6 +439,9 @@ export default function TradePage({
           <h1 className="text-2xl font-bold tracking-tight font-mono">{symbol}</h1>
           <p className="text-sm text-text-secondary">Manual order ticket</p>
         </div>
+        {!quote && quoteUnavailable && (
+          <div className="text-right text-sm text-text-muted">Price unavailable</div>
+        )}
         {quote && (
           <div className="text-right">
             <div className="font-mono text-xl font-semibold text-text-primary">
@@ -728,7 +733,11 @@ export default function TradePage({
                 Estimated {side === "buy" ? "Cost" : "Proceeds"}
               </span>
               <span className="font-mono text-base font-semibold text-text-primary">
-                {estimate() != null ? `$${estimate()!.toFixed(2)}` : "—"}
+                {estimate() != null
+                  ? `$${estimate()!.toFixed(2)}`
+                  : quoteUnavailable && (orderType === "market" || orderType === "stop")
+                    ? "Price unavailable"
+                    : "—"}
               </span>
             </div>
 

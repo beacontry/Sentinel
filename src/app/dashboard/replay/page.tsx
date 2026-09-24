@@ -29,6 +29,7 @@ export default function ReplayPage() {
   const [bars, setBars] = useState<{ date: string; open: number; high: number; low: number; close: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
+  const [chartError, setChartError] = useState(false);
   const [chartFullscreen, setChartFullscreen] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
@@ -90,13 +91,22 @@ export default function ReplayPage() {
   const loadChart = useCallback(async () => {
     if (!selectedSymbol) return;
     setChartLoading(true);
+    setChartError(false);
+    // Daily bars from the read-only /api/bars (the chart keys candles by
+    // calendar day). A failed read says so instead of an empty chart.
     try {
-      const res = await fetch(`/api/analyze?symbol=${selectedSymbol}`);
+      const res = await fetch(`/api/bars/${encodeURIComponent(selectedSymbol)}?days=180`);
       if (res.ok) {
         const data = await res.json();
         setBars(data.bars ?? []);
+      } else {
+        setBars([]);
+        setChartError(true);
       }
-    } catch { /* handled */ }
+    } catch {
+      setBars([]);
+      setChartError(true);
+    }
     setChartLoading(false);
   }, [selectedSymbol]);
 
@@ -281,6 +291,14 @@ export default function ReplayPage() {
         </CardHeader>
         {chartLoading ? (
           <Skeleton className={chartFullscreen ? "flex-1 rounded-lg" : "h-[450px] rounded-lg"} />
+        ) : chartError ? (
+          <div
+            className={`flex items-center justify-center rounded-lg border border-border text-sm text-text-muted ${
+              chartFullscreen ? "flex-1" : "h-[450px]"
+            }`}
+          >
+            Price history unavailable for {selectedSymbol}
+          </div>
         ) : (
           <div
             ref={chartContainerRef}

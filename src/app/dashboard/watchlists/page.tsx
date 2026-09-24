@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useConfirmAction } from "@/components/ui/confirm-action-modal";
 import { PageIntro } from "@/components/layout/page-intro";
+import { fetchQuotes as fetchQuoteBatch } from "@/lib/quotes-client";
 import {
   Plus,
   X,
@@ -131,30 +132,13 @@ export default function WatchlistsPage() {
   }, [activeId, loadActive]);
 
   // ─── Fetch quote data for active list's symbols ─────────────────
-  // Same path as the legacy page — uses /api/analyze to pull recent bars
-  // and derive last price + % change. Best-effort; quotes may be stale or
-  // missing for fresh adds (visible "Loading..." state).
+  // Read-only /api/quotes (last close and % change), batched. Every symbol
+  // gets an entry: a quote, or null when it could not be read, which the card
+  // shows as "Price unavailable". Only a symbol with no entry yet shows the
+  // loading skeleton.
   const fetchQuotes = useCallback(async () => {
     if (!active || active.symbols.length === 0) return;
-    const newQuotes: Record<string, { price: number; change: number } | null> = {};
-    await Promise.allSettled(
-      active.symbols.map(async (sym) => {
-        try {
-          const res = await fetch(`/api/analyze?symbol=${sym}`);
-          if (res.ok) {
-            const data = await res.json();
-            const bars = data.bars ?? [];
-            if (bars.length >= 2) {
-              const last = bars[bars.length - 1].close;
-              const prev = bars[bars.length - 2].close;
-              newQuotes[sym] = { price: last, change: ((last - prev) / prev) * 100 };
-            }
-          }
-        } catch {
-          newQuotes[sym] = null;
-        }
-      })
-    );
+    const newQuotes = await fetchQuoteBatch(active.symbols);
     setQuotes((prev) => ({ ...prev, ...newQuotes }));
   }, [active]);
 
@@ -524,7 +508,9 @@ export default function WatchlistsPage() {
                           <div className="font-mono font-semibold text-text-primary group-hover:text-accent transition-colors">
                             {sym}
                           </div>
-                          {q ? (
+                          {q === null ? (
+                            <div className="mt-1 text-xs text-text-muted">Price unavailable</div>
+                          ) : q ? (
                             <div className="mt-1">
                               <div className="font-mono text-sm">${q.price.toFixed(2)}</div>
                               <div className={`font-mono text-xs ${q.change >= 0 ? "text-bullish" : "text-bearish"}`}>
