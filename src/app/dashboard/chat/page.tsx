@@ -248,7 +248,7 @@ export default function ChatPage() {
                     e.stopPropagation();
                     deleteSession(s.sessionId);
                   }}
-                  className="mt-0.5 shrink-0 rounded p-1 text-text-muted opacity-0 transition-all hover:bg-bearish/10 hover:text-bearish group-hover:opacity-100"
+                  className="mt-0.5 shrink-0 rounded p-1 text-text-muted opacity-0 transition-[background-color,border-color,color,opacity] hover:bg-bearish/10 hover:text-bearish group-hover:opacity-100"
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>
@@ -296,7 +296,7 @@ export default function ChatPage() {
                       setInput(prompt);
                       inputRef.current?.focus();
                     }}
-                    className="rounded-xl border border-border bg-bg-secondary px-4 py-3 text-left text-sm text-text-secondary transition-all hover:border-border hover:bg-bg-surface hover:text-text-primary"
+                    className="rounded-xl border border-border bg-bg-secondary px-4 py-3 text-left text-sm text-text-secondary transition-colors hover:border-border hover:bg-bg-surface hover:text-text-primary"
                   >
                     {prompt}
                   </button>

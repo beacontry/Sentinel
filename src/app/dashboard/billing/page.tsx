@@ -383,7 +383,7 @@ function UpgradeCard({ tier, cadence, tagline, features, highlight }: UpgradeCar
 
   return (
     <div
-      className={`rounded-xl border p-5 transition-all ${
+      className={`rounded-xl border p-5 transition-colors ${
         highlight
           ? "border-accent/40 bg-accent/[0.04]"
           : "border-border bg-bg-surface"

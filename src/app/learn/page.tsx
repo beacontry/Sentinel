@@ -132,7 +132,7 @@ export default function PublicLearnPage() {
             <Link
               key={guide.slug}
               href={`/learn/guides/${guide.slug}`}
-              className="group block rounded-xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
+              className="group block rounded-xl border border-ld-border bg-ld-card p-6 transition-[background-color,border-color,color,transform,box-shadow] duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
             >
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="font-mono text-xs uppercase tracking-wider text-ld-accent">
@@ -155,7 +155,7 @@ export default function PublicLearnPage() {
                   <Clock className="h-3 w-3" />
                   {guide.readingMinutes} min read
                 </span>
-                <span className="inline-flex items-center gap-1 text-ld-accent group-hover:gap-2 transition-all">
+                <span className="inline-flex items-center gap-1 text-ld-accent group-hover:gap-2 transition-colors">
                   Read <ArrowRight className="h-3 w-3" />
                 </span>
               </div>
@@ -173,7 +173,7 @@ export default function PublicLearnPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-[background-color,border-color,color,transform,box-shadow]"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

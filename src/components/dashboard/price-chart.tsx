@@ -280,7 +280,7 @@ function PriceChartView({ analysis, height = 400, events }: PriceChartProps) {
           <button
             key={key}
             onClick={() => toggleIndicator(key)}
-            className={`rounded-full border px-2.5 py-1 text-xs font-mono transition-all
+            className={`rounded-full border px-2.5 py-1 text-xs font-mono transition-[background-color,border-color,color,opacity]
               ${visible[key]
                 ? "border-current bg-bg-secondary opacity-100"
                 : "border-border opacity-50 hover:opacity-80"
@@ -317,7 +317,7 @@ function PriceChartView({ analysis, height = 400, events }: PriceChartProps) {
       <div className="flex gap-1.5 shrink-0">
         <button
           onClick={() => setShowRsi(!showRsi)}
-          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all
+          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
             ${showRsi
               ? "border-accent/30 bg-accent/12 text-accent"
               : "border-border text-text-muted hover:border-border-hover hover:text-text-secondary"
@@ -327,7 +327,7 @@ function PriceChartView({ analysis, height = 400, events }: PriceChartProps) {
         </button>
         <button
           onClick={() => setShowMacd(!showMacd)}
-          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all
+          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
             ${showMacd
               ? "border-accent/30 bg-accent/12 text-accent"
               : "border-border text-text-muted hover:border-border-hover hover:text-text-secondary"

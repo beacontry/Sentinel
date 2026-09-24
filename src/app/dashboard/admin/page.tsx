@@ -1161,7 +1161,7 @@ export default function AdminPage() {
                 exposed in the UI after save.
               </p>
             </div>
-            <ArrowRight className="w-5 h-5 text-text-muted group-hover:text-accent group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+            <ArrowRight className="w-5 h-5 text-text-muted group-hover:text-accent group-hover:translate-x-0.5 transition-[background-color,border-color,color,transform] flex-shrink-0" />
           </Link>
         </Card>
       </div>

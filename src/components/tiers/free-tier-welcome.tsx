@@ -115,7 +115,7 @@ export function FreeTierWelcome() {
           <Link
             key={f.href}
             href={f.href}
-            className="group flex flex-col rounded-lg border border-border bg-bg-surface p-3 transition-all hover:border-accent/40 hover:bg-bg-hover"
+            className="group flex flex-col rounded-lg border border-border bg-bg-surface p-3 transition-colors hover:border-accent/40 hover:bg-bg-hover"
           >
             <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-md bg-accent/10 text-accent">
               <f.icon className="h-4 w-4" />

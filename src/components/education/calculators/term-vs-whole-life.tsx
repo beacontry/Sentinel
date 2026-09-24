@@ -222,7 +222,7 @@ function Bar({
       </p>
       <div className="h-1.5 rounded-full bg-bg-elevated overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${
+          className={`h-full rounded-full transition-[width,background-color] duration-500 ${
             tone === "win" ? "bg-accent" : "bg-text-muted/40"
           }`}
           style={{ width: `${pct}%` }}

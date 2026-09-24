@@ -682,7 +682,7 @@ export default function ScreenerPage() {
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-2 rounded-full bg-bg-elevated overflow-hidden max-w-[100px]">
                           <div
-                            className={`h-full rounded-full transition-all ${
+                            className={`h-full rounded-full transition-[width,background-color] ${
                               r.confidence >= 0.7
                                 ? "bg-bullish"
                                 : r.confidence >= 0.4
@@ -949,7 +949,7 @@ function AnalysisModalContent({ analysis }: { analysis: AnalysisResult }) {
         </div>
         <div className="h-2 bg-bg-elevated rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-500 ease-out ${
+            className={`h-full rounded-full transition-[width,background-color] duration-500 ease-out ${
               isBullish
                 ? "bg-bullish"
                 : isBearish

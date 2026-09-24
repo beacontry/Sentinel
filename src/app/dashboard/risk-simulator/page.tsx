@@ -165,7 +165,7 @@ export default function RiskSimulatorPage() {
           <Card
             key={sc.name}
             hover
-            className={`cursor-pointer transition-all text-center ${selectedScenario?.name === sc.name ? "border-accent/50 bg-accent/5" : ""}`}
+            className={`cursor-pointer transition-colors text-center ${selectedScenario?.name === sc.name ? "border-accent/50 bg-accent/5" : ""}`}
             onClick={() => setSelectedScenario(sc)}
           >
             <div className={`text-lg font-mono font-semibold ${sc.marketChange >= 0 ? "text-bullish" : "text-bearish"}`}>
@@ -177,7 +177,7 @@ export default function RiskSimulatorPage() {
         ))}
         <Card
           hover
-          className={`cursor-pointer transition-all text-center ${selectedScenario?.name === "Custom" ? "border-accent/50 bg-accent/5" : ""}`}
+          className={`cursor-pointer transition-colors text-center ${selectedScenario?.name === "Custom" ? "border-accent/50 bg-accent/5" : ""}`}
           onClick={() => setSelectedScenario({ name: "Custom", marketChange: customChange, description: "Custom scenario" })}
         >
           <div className="flex items-center justify-center gap-1">

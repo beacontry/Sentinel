@@ -250,7 +250,7 @@ export function FireNumberCalculator() {
                 <div
                   className={`w-full ${
                     isFireYear ? "bg-bullish" : "bg-accent/70"
-                  } transition-all duration-500`}
+                  } transition-[height,background-color] duration-500`}
                   style={{ height: `${balanceH}%` }}
                   title={`Year ${s.year}: balance ${fmt(s.balance)} / target ${fmt(s.target)}`}
                 />

@@ -184,7 +184,7 @@ function PathCard({ path, readingMinutes, viewed, quizPassed, fraction }: PathCa
           </div>
           <div className="h-1.5 w-full rounded-full bg-bg-elevated overflow-hidden">
             <div
-              className="h-full bg-accent transition-all"
+              className="h-full bg-accent transition-[width,background-color]"
               style={{ width: `${Math.round(fraction * 100)}%` }}
               aria-hidden="true"
             />

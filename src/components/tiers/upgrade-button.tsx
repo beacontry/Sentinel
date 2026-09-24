@@ -55,7 +55,7 @@ export function UpgradeButton({
     variant === "primary"
       ? "bg-accent text-white hover:bg-accent-hover"
       : "border border-border text-text-primary hover:border-accent hover:bg-accent/[0.06]";
-  const baseCls = `inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold transition-all duration-200 ${widthCls} ${styleCls} ${className}`;
+  const baseCls = `inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold transition-colors duration-200 ${widthCls} ${styleCls} ${className}`;
 
   // While loading current tier, show a quiet placeholder. Avoids
   // flickering between "Loading" / "Already on plan" / "Upgrade".

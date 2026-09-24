@@ -186,7 +186,7 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
           </div>
           <div className="h-1.5 bg-bg-elevated rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-700 ease-out ${
+              className={`h-full rounded-full transition-[width,background-color] duration-700 ease-out ${
                 isBullish
                   ? "bg-bullish"
                   : isBearish

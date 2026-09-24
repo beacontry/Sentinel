@@ -671,7 +671,7 @@ function ActiveRunCard({
               </div>
               <div className="h-2 bg-bg-surface rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-accent rounded-full transition-all duration-300"
+                  className="h-full bg-accent rounded-full transition-[width,background-color] duration-300"
                   style={{ width: `${fetchPct}%` }}
                 />
               </div>
@@ -688,7 +688,7 @@ function ActiveRunCard({
               </div>
               <div className="h-2 bg-bg-surface rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-accent rounded-full transition-all duration-300"
+                  className="h-full bg-accent rounded-full transition-[width,background-color] duration-300"
                   style={{ width: `${genPct}%` }}
                 />
               </div>

@@ -108,7 +108,7 @@ export function PnlHeatmapWidget() {
                 <div
                   className={`absolute inset-y-0 left-0 ${
                     isPositive ? "bg-bullish/30" : "bg-bearish/30"
-                  } transition-all`}
+                  } transition-[width,background-color]`}
                   style={{ width: `${widthPct}%` }}
                 />
               </div>

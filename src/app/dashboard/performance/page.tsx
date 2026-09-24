@@ -334,7 +334,7 @@ function AttributionCard({ data }: { data: AttributionData }) {
                 <div
                   className={`absolute inset-y-0 left-0 ${
                     isPositive ? "bg-bullish/30" : "bg-bearish/30"
-                  } transition-all`}
+                  } transition-[width,background-color]`}
                   style={{ width: `${widthPct}%` }}
                 />
                 <div className="absolute inset-0 flex items-center justify-end pr-2 text-xs text-text-muted font-mono">

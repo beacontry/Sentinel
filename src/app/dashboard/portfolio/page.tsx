@@ -259,7 +259,7 @@ export default function PortfolioPage() {
                   </div>
                   <div className="h-2 rounded-full bg-bg-elevated overflow-hidden">
                     <div
-                      className="h-full transition-all"
+                      className="h-full transition-[width,background-color]"
                       style={{
                         width: `${s.pct}%`,
                         backgroundColor: SECTOR_COLORS[s.sector] ?? SECTOR_COLORS.Unknown,

@@ -500,7 +500,7 @@ export default function WatchlistsPage() {
                               e.stopPropagation();
                               removeSymbol(sym);
                             }}
-                            className="absolute top-2 right-2 p-0.5 opacity-0 group-hover:opacity-100 text-text-muted hover:text-bearish transition-all"
+                            className="absolute top-2 right-2 p-0.5 opacity-0 group-hover:opacity-100 text-text-muted hover:text-bearish transition-[background-color,border-color,color,opacity]"
                             aria-label={`Remove ${sym}`}
                           >
                             <X className="w-3.5 h-3.5" />

@@ -346,7 +346,7 @@ export default function AlertsPage() {
             {rules.map((rule) => (
               <div
                 key={rule.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-all
+                className={`flex items-center gap-3 p-3 rounded-lg border transition-[background-color,border-color,color,opacity]
                   ${rule.enabled
                     ? "bg-bg-elevated border-border"
                     : "bg-bg-secondary border-border/50 opacity-60"

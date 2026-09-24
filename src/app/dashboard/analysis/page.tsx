@@ -486,7 +486,7 @@ function AnalysisCockpit() {
                     <button
                       key={sym}
                       onClick={() => handleSelectSignal(sym)}
-                      className={`shrink-0 flex min-h-[38px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-mono transition-all
+                      className={`shrink-0 flex min-h-[38px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-mono transition-colors
                         ${isSelected ? "bg-accent/15 text-accent border-accent/30" : "bg-bg-secondary text-text-secondary border-border hover:border-border-hover"}`}
                     >
                       {sym}

@@ -96,7 +96,7 @@ export function SignalFeed({
                 <button
                   key={item.symbol}
                   onClick={() => onSelectSignal(item.symbol)}
-                  className={`w-full min-h-[60px] rounded-xl border px-3 py-3 text-left transition-all duration-150
+                  className={`w-full min-h-[60px] rounded-xl border px-3 py-3 text-left transition-[background-color,border-color,color,box-shadow] duration-150
                     ${
                       isSelected
                         ? "border-accent/30 bg-accent/5 shadow-card"

@@ -134,7 +134,7 @@ export default function NewsPage() {
                 rel="noopener noreferrer"
                 className="block group"
               >
-                <Card hover className="transition-all duration-200">
+                <Card hover className="transition-colors duration-200">
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1 min-w-0">
                       {/* Headline */}

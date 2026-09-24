@@ -252,7 +252,7 @@ export default function CalculatorPage() {
                 </div>
                 <div className="h-2 rounded-full bg-bg-primary overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-300 ${
+                    className={`h-full rounded-full transition-[width,background-color] duration-300 ${
                       positionValue / account > 0.5
                         ? "bg-warning"
                         : "bg-accent"

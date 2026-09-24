@@ -116,7 +116,7 @@ export default function PublicToolsPage() {
             <Link
               key={tool.slug}
               href={`/tools/${tool.slug}`}
-              className="group flex flex-col rounded-xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
+              className="group flex flex-col rounded-xl border border-ld-border bg-ld-card p-6 transition-[background-color,border-color,color,transform,box-shadow] duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
             >
               <div className="flex items-center gap-3 mb-3">
                 <div className="grid h-10 w-10 place-items-center rounded-lg bg-ld-accent/[0.16] text-ld-accent">
@@ -132,7 +132,7 @@ export default function PublicToolsPage() {
               <p className="text-base leading-relaxed text-ld-text-secondary mb-4 flex-1">
                 {tool.desc}
               </p>
-              <span className="inline-flex items-center gap-1 text-sm text-ld-accent group-hover:gap-2 transition-all">
+              <span className="inline-flex items-center gap-1 text-sm text-ld-accent group-hover:gap-2 transition-colors">
                 Open <ArrowRight className="h-3.5 w-3.5" />
               </span>
             </Link>
@@ -149,7 +149,7 @@ export default function PublicToolsPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-[background-color,border-color,color,transform,box-shadow]"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

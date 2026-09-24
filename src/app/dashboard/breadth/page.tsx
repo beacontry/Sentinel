@@ -93,21 +93,21 @@ export default function BreadthPage() {
             <div className="space-y-3">
               <div className="flex rounded-lg overflow-hidden h-8">
                 <div
-                  className="bg-bullish/80 flex items-center justify-center text-xs font-mono font-medium text-white transition-all"
+                  className="bg-bullish/80 flex items-center justify-center text-xs font-mono font-medium text-white transition-[width,background-color]"
                   style={{ width: `${data.scanned > 0 ? (data.advancers / data.scanned) * 100 : 50}%` }}
                 >
                   {data.advancers}
                 </div>
                 {data.unchanged > 0 && (
                   <div
-                    className="bg-bg-elevated flex items-center justify-center text-xs font-mono text-text-muted transition-all"
+                    className="bg-bg-elevated flex items-center justify-center text-xs font-mono text-text-muted transition-[width,background-color]"
                     style={{ width: `${(data.unchanged / data.scanned) * 100}%` }}
                   >
                     {data.unchanged}
                   </div>
                 )}
                 <div
-                  className="bg-bearish/80 flex items-center justify-center text-xs font-mono font-medium text-white transition-all"
+                  className="bg-bearish/80 flex items-center justify-center text-xs font-mono font-medium text-white transition-[width,background-color]"
                   style={{ width: `${data.scanned > 0 ? (data.decliners / data.scanned) * 100 : 50}%` }}
                 >
                   {data.decliners}
@@ -136,7 +136,7 @@ export default function BreadthPage() {
                   </div>
                   <div className="mt-3 mx-auto w-full max-w-[200px] h-2 rounded-full bg-bg-elevated overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all ${item.value >= 60 ? "bg-bullish" : item.value >= 40 ? "bg-warning" : "bg-bearish"}`}
+                      className={`h-full rounded-full transition-[width,background-color] ${item.value >= 60 ? "bg-bullish" : item.value >= 40 ? "bg-warning" : "bg-bearish"}`}
                       style={{ width: `${item.value}%` }}
                     />
                   </div>

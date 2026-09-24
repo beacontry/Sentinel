@@ -100,7 +100,7 @@ export function IntelligenceNewsTab({ symbol }: IntelligenceNewsTabProps) {
           target="_blank"
           rel="noopener noreferrer"
           className="block p-3 rounded-lg bg-bg-elevated hover:bg-bg-hover
-            border border-transparent hover:border-border-hover transition-all duration-200 group"
+            border border-transparent hover:border-border-hover transition-colors duration-200 group"
         >
           <div className="flex items-start justify-between gap-2">
             <h4 className="text-xs font-medium text-text-primary leading-snug line-clamp-2 group-hover:text-accent transition-colors">

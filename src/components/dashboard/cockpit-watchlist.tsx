@@ -142,7 +142,7 @@ export function CockpitWatchlist({
                       e.stopPropagation();
                       onRemoveSymbol(sym);
                     }}
-                    className="flex min-h-[28px] min-w-[28px] items-center justify-center rounded-xl p-1 text-text-muted opacity-0 transition-all group-hover:opacity-100 hover:bg-bearish/10 hover:text-bearish"
+                    className="flex min-h-[28px] min-w-[28px] items-center justify-center rounded-xl p-1 text-text-muted opacity-0 transition-[background-color,border-color,color,opacity] group-hover:opacity-100 hover:bg-bearish/10 hover:text-bearish"
                   >
                     <X className="w-3 h-3" />
                   </button>

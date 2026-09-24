@@ -9,7 +9,7 @@ export function Card({ children, hover = false, className = "", ...props }: Card
   return (
     <div
       className={`rounded-xl border border-border bg-bg-secondary p-5 shadow-card
-        ${hover ? "cursor-pointer transition-all duration-200 hover:shadow-card hover:border-border-hover" : ""}
+        ${hover ? "cursor-pointer transition-[background-color,border-color,color,box-shadow] duration-200 hover:shadow-card hover:border-border-hover" : ""}
         ${className}`}
       {...props}
     >

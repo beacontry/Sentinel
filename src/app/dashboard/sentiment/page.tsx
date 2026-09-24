@@ -178,7 +178,7 @@ export default function SentimentPage() {
                 <div className="mb-4">
                   <div className="h-2 rounded-full bg-bg-elevated overflow-hidden relative">
                     <div
-                      className="absolute inset-y-0 left-0 rounded-full transition-all"
+                      className="absolute inset-y-0 left-0 rounded-full transition-[width,background-color]"
                       style={{
                         width: `${overallScore * 100}%`,
                         background: `linear-gradient(90deg, oklch(0.6 0.15 25), oklch(0.6 0.12 90), oklch(0.6 0.15 145))`,

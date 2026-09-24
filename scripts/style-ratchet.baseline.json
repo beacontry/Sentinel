@@ -4,7 +4,7 @@
   "rounded-[arbitrary]": 0,
   "shadow-[arbitrary]": 0,
   "text-white": 42,
-  "transition-all": 95,
+  "transition-all": 0,
   "focus(-visible):outline-none": 24,
   "outline-none without focus-visible ring": 39,
   "raw <button": 152,

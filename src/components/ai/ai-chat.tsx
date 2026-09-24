@@ -206,7 +206,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
                   <button
                     key={prompt}
                     onClick={() => sendMessage(prompt)}
-                    className="w-full rounded-lg border border-border bg-bg-secondary px-3 py-2.5 text-left text-xs text-text-secondary transition-all hover:border-border hover:bg-bg-surface"
+                    className="w-full rounded-lg border border-border bg-bg-secondary px-3 py-2.5 text-left text-xs text-text-secondary transition-colors hover:border-border hover:bg-bg-surface"
                   >
                     {prompt}
                   </button>

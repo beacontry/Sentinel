@@ -366,7 +366,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
           {!chatOpen ? (
             <button
               onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
-              className="group flex w-full items-center gap-3 rounded-xl border border-accent/20 bg-accent/10 p-4 text-left transition-all hover:border-accent/30 hover:bg-accent/10"
+              className="group flex w-full items-center gap-3 rounded-xl border border-accent/20 bg-accent/10 p-4 text-left transition-colors hover:border-accent/30 hover:bg-accent/10"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
                 <Sparkles className="h-5 w-5" />
@@ -438,7 +438,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
                     <button
                       key={q}
                       onClick={() => handleAskAI(q)}
-                      className="rounded-xl border border-accent/15 bg-bg-secondary p-4 text-left transition-all hover:border-accent/30 hover:bg-bg-elevated"
+                      className="rounded-xl border border-accent/15 bg-bg-secondary p-4 text-left transition-colors hover:border-accent/30 hover:bg-bg-elevated"
                     >
                       <div className="text-sm font-semibold text-text-primary">{label}</div>
                       <div className="mt-1 text-xs text-text-muted leading-relaxed">{q}</div>
@@ -462,7 +462,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
                 <button
                   onClick={() => handleAskAI()}
                   disabled={!chatInput.trim() || chatLoading}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-black transition-all hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-black transition-[background-color,border-color,color,opacity] hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   {chatLoading ? (
                     <div className="h-4 w-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />

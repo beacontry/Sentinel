@@ -135,7 +135,7 @@ export default async function PublicArticlesPage() {
           {featured && (
             <Link
               href={`/articles/${featured.slug}`}
-              className="group block mb-8 rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
+              className="group block mb-8 rounded-xl border border-ld-border bg-ld-card p-8 transition-[background-color,border-color,color,transform,box-shadow] duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
             >
               <div className="flex items-center gap-3 mb-4 text-xs">
                 <span className="rounded-full bg-ld-accent/14 px-2.5 py-0.5 font-mono uppercase tracking-wider text-ld-accent">
@@ -159,7 +159,7 @@ export default async function PublicArticlesPage() {
               <p className="text-base leading-relaxed text-ld-text-secondary mb-4">
                 {featured.summary}
               </p>
-              <span className="inline-flex items-center gap-1 text-base text-ld-accent group-hover:gap-2 transition-all">
+              <span className="inline-flex items-center gap-1 text-base text-ld-accent group-hover:gap-2 transition-[background-color,border-color,color,transform,box-shadow]">
                 Read article <ArrowRight className="h-4 w-4" />
               </span>
             </Link>
@@ -172,7 +172,7 @@ export default async function PublicArticlesPage() {
                 <Link
                   key={item.slug}
                   href={`/articles/${item.slug}`}
-                  className="group flex flex-col rounded-xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
+                  className="group flex flex-col rounded-xl border border-ld-border bg-ld-card p-6 transition-[background-color,border-color,color,transform,box-shadow] duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
                 >
                   <div className="flex items-center gap-2 mb-3 text-xs">
                     {item.category && (
@@ -193,7 +193,7 @@ export default async function PublicArticlesPage() {
                   <p className="text-sm leading-relaxed text-ld-text-secondary line-clamp-3 flex-1">
                     {item.summary}
                   </p>
-                  <span className="mt-4 inline-flex items-center gap-1 text-sm text-ld-accent group-hover:gap-2 transition-all">
+                  <span className="mt-4 inline-flex items-center gap-1 text-sm text-ld-accent group-hover:gap-2 transition-colors">
                     Read <ArrowRight className="h-3.5 w-3.5" />
                   </span>
                 </Link>
@@ -212,7 +212,7 @@ export default async function PublicArticlesPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-[background-color,border-color,color,transform]"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

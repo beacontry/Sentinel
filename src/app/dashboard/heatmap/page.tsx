@@ -96,7 +96,7 @@ export default function HeatmapPage() {
               {sector.symbols.map((s) => (
                 <div
                   key={s.symbol}
-                  className={`${getColor(s.changePct)} rounded-lg p-2.5 text-center transition-all
+                  className={`${getColor(s.changePct)} rounded-lg p-2.5 text-center transition-[background-color,border-color,color,transform]
                     hover:scale-105 cursor-default`}
                 >
                   <p className="text-xs font-mono font-bold text-text-primary">

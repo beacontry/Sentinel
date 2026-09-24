@@ -349,7 +349,7 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
               onClick={() => setShowAddPanel(true)}
               className="flex min-h-[88px] w-full items-center justify-center gap-3 rounded-xl border border-dashed
                 border-border bg-bg-secondary
-                text-text-muted transition-all duration-150 hover:border-accent/30 hover:bg-accent/10 hover:text-accent cursor-pointer"
+                text-text-muted transition-colors duration-150 hover:border-accent/30 hover:bg-accent/10 hover:text-accent cursor-pointer"
             >
               <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-bg-elevated">
                 <Plus className="w-4 h-4" />
@@ -427,7 +427,7 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
                         <button
                           key={w.id}
                           onClick={() => handleAdd(w.id)}
-                          className="group flex w-full items-center justify-between rounded-lg border border-border bg-bg-elevated px-4 py-3 text-left transition-all duration-150 hover:border-accent/20 hover:bg-bg-hover/50"
+                          className="group flex w-full items-center justify-between rounded-lg border border-border bg-bg-elevated px-4 py-3 text-left transition-colors duration-150 hover:border-accent/20 hover:bg-bg-hover/50"
                         >
                           <div>
                             <p className="text-sm font-medium text-text-primary transition-colors group-hover:text-accent">

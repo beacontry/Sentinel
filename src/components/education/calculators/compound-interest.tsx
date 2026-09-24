@@ -124,12 +124,12 @@ export function CompoundInterestCalculator() {
       <div className="space-y-2">
         <div className="flex h-3 rounded-full overflow-hidden border border-border">
           <div
-            className="bg-text-muted/40 transition-all duration-500"
+            className="bg-text-muted/40 transition-[width,background-color] duration-500"
             style={{ width: `${principalPct}%` }}
             aria-label={`Principal ${principalPct.toFixed(0)}%`}
           />
           <div
-            className="bg-accent transition-all duration-500"
+            className="bg-accent transition-[width,background-color] duration-500"
             style={{ width: `${interestPct}%` }}
             aria-label={`Interest ${interestPct.toFixed(0)}%`}
           />

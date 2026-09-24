@@ -118,21 +118,21 @@ export function AnalystConsensus({ symbol }: AnalystConsensusProps) {
       <div className="h-3 rounded-full overflow-hidden flex bg-bg-elevated">
         {buyPct > 0 && (
           <div
-            className="h-full bg-bullish transition-all duration-500"
+            className="h-full bg-bullish transition-[width,background-color] duration-500"
             style={{ width: `${buyPct}%` }}
             title={`Buy: ${buyTotal}`}
           />
         )}
         {holdPct > 0 && (
           <div
-            className="h-full bg-text-muted/30 transition-all duration-500"
+            className="h-full bg-text-muted/30 transition-[width,background-color] duration-500"
             style={{ width: `${holdPct}%` }}
             title={`Hold: ${data.hold}`}
           />
         )}
         {sellPct > 0 && (
           <div
-            className="h-full bg-bearish transition-all duration-500"
+            className="h-full bg-bearish transition-[width,background-color] duration-500"
             style={{ width: `${sellPct}%` }}
             title={`Sell: ${sellTotal}`}
           />

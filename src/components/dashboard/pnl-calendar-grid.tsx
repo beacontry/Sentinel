@@ -154,7 +154,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
                         onDayClick(day);
                       }
                     }}
-                    className={`w-[14px] h-[14px] my-[1px] rounded transition-all duration-150
+                    className={`w-[14px] h-[14px] my-[1px] rounded transition-colors duration-150
                       ${day ? getColor(day.pnl, maxAbs) : EMPTY_COLOR}
                       ${isToday ? "ring-1 ring-accent/50" : ""}
                       hover:ring-1 hover:ring-text-muted/50 ${clickable ? "cursor-pointer" : "cursor-default"}
