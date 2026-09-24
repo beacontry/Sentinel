@@ -5,7 +5,7 @@ Detailed procedures extracted from CLAUDE.md. High-level architecture + safeguar
 ## Going live (one-time setup)
 
 1. Tighten risk profile on Trader page first — recommend `maxPositionPct` 2–5%, `maxDailyLossPct` 1%, `maxDailyNotionalPct` 0.5 (50% of equity), `maxConsecutiveLosses` 3.
-2. Settings → Broker Connections → Add → environment = Live → paste live API keys → type "LIVE" to confirm → Save. Test before saving.
+2. Settings → Broker Connections → Add → environment = Live → paste live API keys → type "LIVE" to confirm → Save. Test before saving. The new connection is saved inactive; activate it (sidebar switcher, or its toggle in Settings) with the engine stopped, which deactivates the paper one.
 3. On the droplet:
    ```bash
    echo 'ALLOW_LIVE_TRADING=1' | sudo tee -a /opt/apps/sentinel/.env
@@ -58,7 +58,7 @@ Three off-ramps, cheapest to most invasive. Pick the lightest one that fixes the
 
 Cheapest path. No code changes, no rebuild, no DB changes. Use when the engine made trades you regret but the code is working as designed and you just want to stop trading live.
 
-**Before clearing the flag: flatten, or confirm broker-side stops.** Either close the live positions (Emergency Halt on the Trader page, or at the broker), or open the broker's order list and confirm a resting GTC stop exists for every live position. Clearing `ALLOW_LIVE_TRADING` stops the engine from starting on the live connection, so after the restart nothing re-places or ratchets engine-managed stops for those positions. The kill switch itself keeps working on the live connection (protective actions ignore the live gates), but once you reactivate the paper connection below, halt and stop actions resolve to the paper account instead, because the resolver prefers paper. Do this step first.
+**Before clearing the flag: flatten, or confirm broker-side stops.** Either close the live positions (Emergency Halt on the Trader page, or at the broker), or open the broker's order list and confirm a resting GTC stop exists for every live position. Clearing `ALLOW_LIVE_TRADING` stops the engine from starting on the live connection, so after the restart nothing re-places or ratchets engine-managed stops for those positions. The kill switch itself keeps working on the live connection (protective actions ignore the live gates), but once you activate the paper connection below, halt and stop actions resolve to the paper account instead, because only one connection is active. Do this step first.
 
 ```bash
 # On the droplet — clear the env var
@@ -76,7 +76,7 @@ sudo podman run -d --name sentinel-app --network=host \
   ghcr.io/beacontry/sentinel:latest
 ```
 
-After: engine refuses to start on any live broker connection (emits `engine.live_blocked` audit event on attempts). An Emergency Halt against the live connection still liquidates and writes `engine.live_protective_action`; if it cannot reach any broker it answers `BROKER_UNRESOLVED` rather than claiming the positions were closed. Outside market hours it cannot liquidate: it answers `MARKET_CLOSED` and leaves the resting broker stops in place, so close those positions at the broker or halt again after the open. Re-activate the paper connection (`isActive=true` via Settings or `UPDATE broker_connections SET is_active=true WHERE environment='paper' AND user_id=...`) and start the engine. The live connection row stays in the DB — flipping back later is just reversing this procedure.
+After: engine refuses to start on any live broker connection (emits `engine.live_blocked` audit event on attempts). An Emergency Halt against the live connection still liquidates and writes `engine.live_protective_action`; if it cannot reach any broker it answers `BROKER_UNRESOLVED` rather than claiming the positions were closed. Outside market hours it cannot liquidate: it answers `MARKET_CLOSED` and leaves the resting broker stops in place, so close those positions at the broker or halt again after the open. Activate the paper connection (sidebar switcher or its toggle in Settings, engine stopped; this deactivates the live one) and start the engine. A direct `UPDATE` must demote the live row first, or the one-active index (migration `0049`) refuses it. The live connection row stays in the DB — flipping back later is just reversing this procedure.
 
 ### (B) Code revert — "Phase 3 safeguards are causing false halts" / "audit-log writes are slowing routes"
 

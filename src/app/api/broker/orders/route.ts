@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { getSession, requireAuthWithCsrf } from "@/lib/auth";
-import { db, withTimeout, isStatementTimeout } from "@/lib/db";
-import { brokerConnections } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { resolveActiveConnection } from "@/lib/broker-connection";
+import { withTimeout, isStatementTimeout } from "@/lib/db";
 import { placeBrokerOrderSchema } from "@/lib/validators";
 import {
   createBrokerClient,
@@ -23,20 +22,6 @@ import { rateLimit } from "@/lib/rate-limiter";
 
 const log = createRouteLogger("broker-orders");
 
-async function getActiveConnection(userId: string) {
-  const [connection] = await db
-    .select()
-    .from(brokerConnections)
-    .where(
-      and(
-        eq(brokerConnections.userId, userId),
-        eq(brokerConnections.isActive, true)
-      )
-    )
-    .limit(1);
-  return connection;
-}
-
 export async function GET() {
   const session = await getSession();
   if (!session) {
@@ -44,18 +29,9 @@ export async function GET() {
   }
 
   try {
-    const [connection] = await withTimeout(3000, async (tx) => {
-      return tx
-        .select()
-        .from(brokerConnections)
-        .where(
-          and(
-            eq(brokerConnections.userId, session.userId),
-            eq(brokerConnections.isActive, true)
-          )
-        )
-        .limit(1);
-    });
+    const connection = await withTimeout(3000, (tx) =>
+      resolveActiveConnection(session.userId, tx)
+    );
 
     if (!connection) {
       return NextResponse.json(
@@ -175,13 +151,14 @@ export async function POST(request: Request) {
   const clientOrderId = parsed.data.clientOrderId ?? randomUUID();
 
   try {
-    const connection = await getActiveConnection(auth.userId);
+    const connection = await resolveActiveConnection(auth.userId);
     if (!connection) {
       return NextResponse.json(
         { error: "No active broker connection found" },
         { status: 404 }
       );
     }
+
 
     const client = createBrokerClient(
       connection.broker,

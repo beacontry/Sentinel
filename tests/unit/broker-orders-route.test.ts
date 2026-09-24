@@ -43,8 +43,9 @@ vi.mock("@/lib/trading-engine", () => ({ peekEngineStatus: () => null }));
 vi.mock("@/lib/crypto", () => ({ decrypt: (v: string) => v, encrypt: (v: string) => v }));
 
 vi.mock("@/lib/db", () => {
-  const conn = { id: "conn", userId: "user-1", broker: "alpaca", environment: "paper", isActive: true, apiKey: "k", apiSecret: "s" };
-  const db = { select: () => ({ from: () => ({ where: () => ({ limit: async () => [conn] }) }) }) };
+  const conn = { id: "5d0c7a3e-2b4f-4c1d-9e8a-7f6b5a4c3d2e", userId: "user-1", broker: "alpaca", environment: "paper", isActive: true, apiKey: "k", apiSecret: "s" };
+  const rows = Promise.resolve([conn]);
+  const db = { select: () => ({ from: () => ({ where: () => rows }) }) };
   return { db, withTimeout: async () => [conn], isStatementTimeout: () => false };
 });
 
@@ -98,7 +99,7 @@ function orderRequest(body: Record<string, unknown>): NextRequest {
   return new NextRequest("http://localhost/api/broker/orders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbol: "AAPL", side: "buy", qty: "100", ...body }),
+    body: JSON.stringify({ symbol: "AAPL", side: "buy", qty: "100", expectedConnectionId: "5d0c7a3e-2b4f-4c1d-9e8a-7f6b5a4c3d2e", ...body }),
   });
 }
 

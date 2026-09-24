@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { brokerConnections, traderTrades, traderDailyPnl } from "@/lib/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { traderTrades, traderDailyPnl } from "@/lib/db/schema";
+import { sql } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
+import { resolveActiveConnection } from "@/lib/broker-connection";
 import { decrypt } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
@@ -71,9 +72,9 @@ export async function POST(request: NextRequest) {
       case "flatten": {
         // Sell a single position or all positions directly through Alpaca
 
-        const [conn] = await db.select().from(brokerConnections)
-          .where(and(eq(brokerConnections.userId, auth.userId), eq(brokerConnections.isActive, true)))
-          .limit(1);
+        // The shared resolver, so flatten acts on the same account as the
+        // engine and the kill switch, never an arbitrary active row.
+        const conn = await resolveActiveConnection(auth.userId);
 
         if (!conn) {
           return NextResponse.json({ error: "No active broker connection" }, { status: 400 });

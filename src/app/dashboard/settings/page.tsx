@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Toggle } from "@/components/ui/toggle";
 import { Modal, ModalHeader, ModalTitle, ModalDescription, ModalFooter } from "@/components/ui/modal";
 import { PageIntro } from "@/components/layout/page-intro";
+import { useToast } from "@/components/ui/toast";
+import { dispatchBrokerChanged } from "@/lib/broker-events";
 import {
   Webhook, Plus, Trash2, TestTube, Check, X, Shield,
   Link, Unlink, Pencil, CircleDot, Zap, Sliders,
@@ -111,6 +113,7 @@ const BROKER_FIELD_LABELS: Record<string, { apiKey: string; apiSecret: string; h
 // ─── Page ───────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const toast = useToast();
   const {
     pnlFormat,
     setPnlFormat,
@@ -429,22 +432,40 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleToggleBrokerActive(conn: BrokerConnection) {
-    try {
-      const res = await fetch("/api/broker/connections", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: conn.id, isActive: !conn.isActive }),
-      });
+  // Make this the one active connection. Goes through /activate, which
+  // demotes the others and refuses while the engine runs, the same path as
+  // the sidebar switcher. There is no "deactivate": switch to another one.
+  async function handleActivateBroker(conn: BrokerConnection) {
+    if (conn.isActive) return;
+    if (conn.environment === "live") {
+      const ok = confirm(
+        `Switch to LIVE trading on ${BROKER_LABELS[conn.broker] ?? conn.broker}?
 
-      if (res.ok) {
-        const data = await res.json();
-        setBrokerConnections((prev) =>
-          prev.map((c) => (c.id === conn.id ? data.connection : c))
-        );
+Any trade you place will use real money. The engine remains stopped — you must start it manually.`
+      );
+      if (!ok) return;
+    }
+    try {
+      const res = await fetch(`/api/broker/connections/${conn.id}/activate`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.toast({
+          type: "error",
+          message: typeof data.error === "string" ? data.error : "Could not switch broker.",
+        });
+        return;
       }
+      setBrokerConnections((prev) =>
+        prev.map((c) => ({ ...c, isActive: c.id === conn.id }))
+      );
+      dispatchBrokerChanged({
+        connectionId: conn.id,
+        environment: conn.environment === "live" ? "live" : "paper",
+      });
     } catch {
-      // Silent fail
+      toast.toast({ type: "error", message: "Could not switch broker." });
     }
   }
 
@@ -519,7 +540,9 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Toggle
                     checked={conn.isActive}
-                    onCheckedChange={() => handleToggleBrokerActive(conn)}
+                    disabled={conn.isActive}
+                    title={conn.isActive ? "Active. Switch by activating another connection." : "Make this the active connection"}
+                    onCheckedChange={() => handleActivateBroker(conn)}
                   />
                   <Button
                     variant="ghost"
@@ -609,11 +632,20 @@ export default function SettingsPage() {
             label="Environment"
             options={ENVIRONMENT_OPTIONS}
             value={brokerForm.environment}
+            // The active connection cannot change environment (the route
+            // refuses): that would move every order to another account.
+            disabled={editingBroker?.isActive === true}
             onChange={(value) => {
               setBrokerForm((f) => ({ ...f, environment: value }));
               setLiveConfirmText(""); // any environment change resets the confirmation
             }}
           />
+          {editingBroker?.isActive === true && (
+            <p className="text-xs text-text-muted">
+              This is the active connection, so its environment is fixed. Add a new connection for the other
+              environment, or switch to another account first.
+            </p>
+          )}
 
           {/* Live confirmation — required when newly switching to live OR creating a live connection */}
           {brokerForm.environment === "live" &&

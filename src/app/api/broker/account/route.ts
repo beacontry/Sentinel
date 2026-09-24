@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { brokerConnections } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { createBrokerClient, BrokerError } from "@/lib/brokers";
+import { resolveActiveConnection } from "@/lib/broker-connection";
 import { decrypt } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
 import { checkTier } from "@/lib/tiers-server";
@@ -20,18 +21,9 @@ export async function GET() {
 
   try {
     // Find the user's active broker connection
-    const [connection] = await withTimeout(3000, async (tx) => {
-      return tx
-        .select()
-        .from(brokerConnections)
-        .where(
-          and(
-            eq(brokerConnections.userId, session.userId),
-            eq(brokerConnections.isActive, true)
-          )
-        )
-        .limit(1);
-    });
+    const connection = await withTimeout(3000, (tx) =>
+      resolveActiveConnection(session.userId, tx)
+    );
 
     if (!connection) {
       return NextResponse.json(

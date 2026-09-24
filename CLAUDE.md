@@ -6,7 +6,7 @@
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)
-- Drizzle ORM + PostgreSQL (49 migrations as of `0048_optimizer_auto_promotion.sql`) — **verify each migration actually applied on prod post-deploy** (query `information_schema.columns`, don't assume; 0046/0047 sat unapplied Jun 27→Jul 14 and silently disabled all risk limits — see `docs/changelog.md` 2026-07-14)
+- Drizzle ORM + PostgreSQL (50 migrations as of `0049_single_active_broker_connection.sql`) — **verify each migration actually applied on prod post-deploy** (query `information_schema.columns`, don't assume; 0046/0047 sat unapplied Jun 27→Jul 14 and silently disabled all risk limits — see `docs/changelog.md` 2026-07-14)
 - Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
@@ -91,7 +91,7 @@ The screener scans market data, shared across users (not per-user). It pushes ac
 The separate `/dashboard/tax` page (Form 8949) reads engine trades only; Tax Center is the unified view.
 
 ### Broker Connections
-Each user has their own broker connection (`brokerConnections` table, scoped by `userId`). The engine resolves the active connection for the authenticated user via `resolveBrokerClient(userId)`.
+Each user has their own broker connections (`brokerConnections` table, scoped by `userId`), **at most one active** (partial unique index, migration `0049`). Every caller resolves it through `resolveActiveConnection(userId)` (`src/lib/broker-connection.ts`): the engine resolvers (`resolveBrokerClient` / `resolveBrokerClientForProtection`), manual orders, flatten, the account and dashboard reads. A user's first connection is created active and later ones inactive; the active one changes only through `POST /api/broker/connections/[id]/activate` (sidebar switcher or Settings), which refuses while the engine runs. PATCH refuses `isActive`, and an environment change on the active connection (409 `CONNECTION_ACTIVE`).
 
 ## Design System
 
@@ -355,7 +355,7 @@ Wrap in `div.overflow-x-auto` → `table.w-full text-sm`; header row `border-b b
 Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed` — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
 
 ## Migrations
-Browse `drizzle/*.sql` for the full list (49 migrations as of `0048_optimizer_auto_promotion.sql`). All idempotent (`IF NOT EXISTS`). **Post-deploy, verify each new migration actually applied** (`information_schema.columns`) — the deploy pipeline does NOT run migrations.
+Browse `drizzle/*.sql` for the full list (50 migrations as of `0049_single_active_broker_connection.sql`). All idempotent (`IF NOT EXISTS`). **Post-deploy, verify each new migration actually applied** (`information_schema.columns`) — the deploy pipeline does NOT run migrations.
 
 > **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015`; migrations 0016–0045 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` (prod's `__drizzle_migrations` table wasn't built via `drizzle-kit migrate`, so the journal is intentionally not regenerated). Fresh-DB rebuild: `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 

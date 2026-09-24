@@ -52,6 +52,7 @@ import { createRouteLogger } from "./logger";
 import { DRAIN_BUDGET_MS } from "./shutdown-config";
 import { isShuttingDown, SHUTTING_DOWN_CODE, SHUTTING_DOWN_MESSAGE } from "./shutdown-state";
 import { writeAudit, AuditAction } from "./audit";
+import { resolveActiveConnection } from "./broker-connection";
 import { detectMarketRegime } from "./market-regime";
 import { createAutoJournalStub } from "./journal-auto-stub";
 import { getUserTier } from "./tiers-server";
@@ -3192,25 +3193,15 @@ async function resolveBrokerClientFor(
   userId: string,
   purpose: BrokerResolvePurpose
 ): Promise<ResolvedBroker | null> {
-  const connections = await db
-    .select()
-    .from(brokerConnections)
-    .where(
-      and(
-        eq(brokerConnections.userId, userId),
-        eq(brokerConnections.isActive, true)
-      )
-    );
-
-  if (connections.length === 0) {
+  // The shared resolver: the same connection manual orders, flatten and the
+  // dashboard act on. Paper is preferred if several rows are active (only
+  // possible before migration 0049). Live requires both env-gate AND per-user
+  // permission (Phase 13) below.
+  const conn = await resolveActiveConnection(userId);
+  if (!conn) {
     log.warn({ userId }, "No active broker connections found");
     return null;
   }
-
-  // Prefer paper environment connections; live requires both env-gate AND
-  // per-user permission (Phase 13).
-  const conn =
-    connections.find((c) => c.environment === "paper") ?? connections[0];
 
   if (conn.environment === "live" && purpose === "protect") {
     // Protective actions run regardless of the live-entry gates. Record when

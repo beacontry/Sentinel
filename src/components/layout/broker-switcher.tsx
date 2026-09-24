@@ -7,7 +7,7 @@
 // account and would silently drift if we let the next scan resolve a
 // different broker.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Briefcase,
@@ -19,6 +19,7 @@ import {
 import Link from "next/link";
 import { useToast } from "@/components/ui/toast";
 import { usePolling } from "@/hooks/usePolling";
+import { dispatchBrokerChanged } from "@/lib/broker-events";
 
 interface BrokerConnection {
   id: string;
@@ -60,6 +61,9 @@ export function BrokerSwitcher() {
   const [engineRunning, setEngineRunning] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Active connection id from the last successful read. undefined until the
+  // first read, so the initial load does not count as a change.
+  const lastActiveIdRef = useRef<string | null | undefined>(undefined);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -70,7 +74,16 @@ export function BrokerSwitcher() {
       ]);
       if (connRes.ok) {
         const data = await connRes.json();
-        setConnections(data.connections ?? []);
+        const list: BrokerConnection[] = data.connections ?? [];
+        setConnections(list);
+        // Tell open pages (the order ticket) when the active account changed,
+        // whether this switcher did it or another tab or device did.
+        const nowActive = list.find((c) => c.isActive) ?? null;
+        const nowId = nowActive?.id ?? null;
+        if (lastActiveIdRef.current !== undefined && lastActiveIdRef.current !== nowId) {
+          dispatchBrokerChanged({ connectionId: nowId, environment: nowActive?.environment ?? null });
+        }
+        lastActiveIdRef.current = nowId;
       }
       if (engineRes.ok) {
         const data = await engineRes.json();
@@ -129,6 +142,10 @@ export function BrokerSwitcher() {
         return;
       }
       toast.toast({ type: "success", message: `Active broker: ${describe(c)}` });
+      // Signal the switch now, not only when the refetch below sees it: the
+      // refetch can fail, and an open ticket must not keep the old account.
+      dispatchBrokerChanged({ connectionId: c.id, environment: c.environment });
+      lastActiveIdRef.current = c.id;
       await fetchAll();
     } catch {
       toast.toast({ type: "error", message: "Could not switch broker." });

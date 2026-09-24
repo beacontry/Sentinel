@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { withTimeout, isStatementTimeout } from "@/lib/db";
-import { traderStatus, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
+import { traderStatus, traderTrades, traderDailyPnl, traderSignals } from "@/lib/db/schema";
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
+import { resolveActiveConnection } from "@/lib/broker-connection";
 import { decrypt } from "@/lib/crypto";
 import { getBrokerPositionCache, getTrackedPositionData, getUnprotectedSymbols } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
@@ -34,12 +35,8 @@ export async function GET() {
     // Status and broker connection — wrap all initial DB reads in a timeout
     const { status, conn } = await withTimeout(3000, async (tx) => {
       const [s] = await tx.select().from(traderStatus).where(eq(traderStatus.userId, session.userId)).limit(1);
-      const [c] = await tx
-        .select()
-        .from(brokerConnections)
-        .where(and(eq(brokerConnections.userId, session.userId), eq(brokerConnections.isActive, true)))
-        .limit(1);
-      return { status: s ?? null, conn: c ?? null };
+      const c = await resolveActiveConnection(session.userId, tx);
+      return { status: s ?? null, conn: c };
     });
 
     const traderServiceAlive = status
