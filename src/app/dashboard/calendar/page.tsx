@@ -87,6 +87,7 @@ export default function CalendarPage() {
 
   const todayStr = fmt(new Date());
   const monthLabel = new Date(year, month).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const monthLabelShort = new Date(year, month).toLocaleDateString("en-US", { month: "short", year: "numeric" });
   const days = getMonthDays(year, month);
 
   function prevMonth() {
@@ -146,16 +147,25 @@ export default function CalendarPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px] lg:h-[calc(100vh-220px)]">
+      {/* minmax(0, 1fr), not the implicit auto track: an auto column grows
+          to its widest content's min-content and pushed both cards past the
+          page gutter at 320px. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:h-[calc(100vh-220px)]">
         {/* Calendar grid — fixed */}
         <Card className="p-0 overflow-hidden">
           {/* Month header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <div className="flex items-center gap-3">
+          {/* Below sm the month is abbreviated and the padding tighter: at
+              320px the full label's 180px floor pushed Today 5px past the
+              card. */}
+          <div className="flex items-center justify-between gap-2 px-3 py-4 border-b border-border sm:px-5">
+            <div className="flex min-w-0 items-center gap-1 sm:gap-3">
               <Button variant="ghost" onClick={prevMonth} className="w-11 px-0" aria-label="Previous month">
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               </Button>
-              <h2 className="text-lg font-semibold min-w-[180px] text-center">{monthLabel}</h2>
+              <h2 className="min-w-0 whitespace-nowrap text-center text-base font-semibold sm:min-w-[180px] sm:text-lg">
+                <span className="sm:hidden" aria-hidden="true">{monthLabelShort}</span>
+                <span className="sr-only sm:not-sr-only">{monthLabel}</span>
+              </h2>
               <Button variant="ghost" onClick={nextMonth} className="w-11 px-0" aria-label="Next month">
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </Button>
