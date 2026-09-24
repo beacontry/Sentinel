@@ -1,108 +1,71 @@
 "use client";
 
-// Phase A.4 — Watchlists page is now DB-backed. Each row in the sidebar is
-// a real watchlists table entry; mutations go through /api/watchlists and
+// Watchlists are DB-backed: each row in the lists panel is a watchlists
+// table entry, and mutations go through /api/watchlists and
 // /api/watchlists/[id]/items. The single-list /api/watchlist endpoint
-// remains the "default-list" surface used by widgets and other pages, so
-// changing the default here flips what those see automatically.
+// stays the "default list" surface that widgets and other pages read, so
+// changing the default here changes what they see.
 //
-// One small UX shift from the legacy localStorage version: there's a
-// "Make default" action per row. The default list is what every other
-// page treats as "your watchlist."
+// The page owns the reads and writes; the panels in
+// src/components/watchlists/ only render.
 
-import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { SignedPercent } from "@/components/ui/signed-value";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useToast } from "@/components/ui/toast";
 import { useConfirmAction } from "@/components/ui/confirm-action-modal";
-import { PageIntro } from "@/components/layout/page-intro";
-import { fetchQuotes as fetchQuoteBatch } from "@/lib/quotes-client";
-import {
-  Plus,
-  X,
-  List,
-  Trash2,
-  Pencil,
-  Check,
-  Star,
-  Share2,
-  Copy,
-  Link2Off,
-} from "lucide-react";
-
-interface WatchlistSummary {
-  id: string;
-  name: string;
-  isDefault: boolean;
-  createdAt: string;
-  itemCount: number;
-}
-
-interface WatchlistDetail {
-  id: string;
-  name: string;
-  isDefault: boolean;
-  createdAt: string;
-  symbols: string[];
-  shareToken?: string | null;
-}
+import { useLatestRequest } from "@/hooks/use-latest-request";
+import { fetchQuotes as fetchQuoteBatch, type QuoteView } from "@/lib/quotes-client";
+import { ListsPanel, type WatchlistSummary } from "@/components/watchlists/lists-panel";
+import { ActiveList, type WatchlistDetail } from "@/components/watchlists/active-list";
 
 const MAX_WATCHLISTS = 20;
 const MAX_SYMBOLS = 200;
+
+type Status = "loading" | "error" | "ready";
 
 export default function WatchlistsPage() {
   const toast = useToast();
   const { requestConfirm, dialog: confirmDialog } = useConfirmAction();
   const [lists, setLists] = useState<WatchlistSummary[]>([]);
+  const [listsStatus, setListsStatus] = useState<Status>("loading");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [active, setActive] = useState<WatchlistDetail | null>(null);
-  const [loadingLists, setLoadingLists] = useState(true);
-  const [loadingActive, setLoadingActive] = useState(false);
-  const [newName, setNewName] = useState("");
+  const [activeStatus, setActiveStatus] = useState<Status>("loading");
   const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [addSymbol, setAddSymbol] = useState("");
-  const [editingName, setEditingName] = useState(false);
-  const [renameDraft, setRenameDraft] = useState("");
-  const [quotes, setQuotes] = useState<Record<string, { price: number; change: number } | null>>({});
+  const [quotes, setQuotes] = useState<Record<string, QuoteView | null>>({});
+  const [quotesReadAt, setQuotesReadAt] = useState<number | null>(null);
+  const [quotesLoading, setQuotesLoading] = useState(false);
+  const activeReq = useLatestRequest();
+  const listsLoaded = useRef(false);
 
   // ─── List the user's watchlists ────────────────────────────────
+  // A failed first read is an error state with a retry. A failed re-read
+  // after a change keeps the lists already on screen and says so in a toast.
   const fetchLists = useCallback(async (selectId?: string) => {
     try {
       const res = await fetch("/api/watchlists");
-      if (!res.ok) {
-        if (res.status !== 401) toast.toast({ type: "error", message: "Could not load watchlists." });
-        return;
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const next: WatchlistSummary[] = data.watchlists ?? [];
       setLists(next);
-      if (next.length > 0) {
-        // Prefer: explicitly-passed id → existing active → default → first
-        const pick =
+      setListsStatus("ready");
+      listsLoaded.current = true;
+      setActiveId((current) => {
+        if (next.length === 0) return null;
+        // Prefer: explicitly-passed id → current → default → first
+        return (
           (selectId && next.find((l) => l.id === selectId)?.id) ??
-          (activeId && next.find((l) => l.id === activeId)?.id) ??
+          (current && next.find((l) => l.id === current)?.id) ??
           next.find((l) => l.isDefault)?.id ??
-          next[0].id;
-        setActiveId(pick);
-      } else {
-        setActiveId(null);
-        setActive(null);
-      }
+          next[0].id
+        );
+      });
+      if (next.length === 0) setActive(null);
     } catch {
-      toast.toast({ type: "error", message: "Could not load watchlists." });
-    } finally {
-      setLoadingLists(false);
+      if (listsLoaded.current) toast.toast({ type: "error", message: "Could not refresh your watchlists." });
+      else setListsStatus("error");
     }
-    // intentionally not depending on activeId — we don't want to refetch the
-    // list every time the user clicks a row
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
 
   useEffect(() => {
@@ -110,42 +73,51 @@ export default function WatchlistsPage() {
   }, [fetchLists]);
 
   // ─── Load the active list's symbols ─────────────────────────────
+  // Only the newest selection's response lands, so clicking two lists in
+  // quick succession cannot show the first list under the second's name.
   const loadActive = useCallback(async (id: string) => {
-    setLoadingActive(true);
+    const ticket = activeReq.begin();
+    setActiveStatus((s) => (s === "ready" && active?.id === id ? s : "loading"));
     try {
-      const res = await fetch(`/api/watchlists/${id}`);
-      if (!res.ok) {
-        if (res.status !== 401) toast.toast({ type: "error", message: "Could not load watchlist." });
-        setActive(null);
-        return;
-      }
+      const res = await fetch(`/api/watchlists/${id}`, { signal: ticket.signal });
+      if (!ticket.isCurrent()) return;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: WatchlistDetail = await res.json();
+      if (!ticket.isCurrent()) return;
       setActive(data);
+      setActiveStatus("ready");
     } catch {
+      if (!ticket.isCurrent()) return;
       setActive(null);
-    } finally {
-      setLoadingActive(false);
+      setActiveStatus("error");
     }
-  }, [toast]);
+    // `active` is read only to keep a reload of the same list on screen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeReq]);
 
   useEffect(() => {
     if (activeId) loadActive(activeId);
   }, [activeId, loadActive]);
 
-  // ─── Fetch quote data for active list's symbols ─────────────────
+  // ─── Prices for the active list's symbols ───────────────────────
   // Read-only /api/quotes (last close and % change), batched. Every symbol
-  // gets an entry: a quote, or null when it could not be read, which the card
-  // shows as "Price unavailable". Only a symbol with no entry yet shows the
-  // loading skeleton.
-  const fetchQuotes = useCallback(async () => {
+  // gets an entry: a quote, or null when it could not be read, which reads
+  // "Unavailable". Only a symbol with no entry yet shows a skeleton.
+  const refreshQuotes = useCallback(async () => {
     if (!active || active.symbols.length === 0) return;
-    const newQuotes = await fetchQuoteBatch(active.symbols);
-    setQuotes((prev) => ({ ...prev, ...newQuotes }));
+    setQuotesLoading(true);
+    try {
+      const next = await fetchQuoteBatch(active.symbols);
+      setQuotes((prev) => ({ ...prev, ...next }));
+      setQuotesReadAt(Date.now());
+    } finally {
+      setQuotesLoading(false);
+    }
   }, [active]);
 
   useEffect(() => {
-    fetchQuotes();
-  }, [fetchQuotes]);
+    refreshQuotes();
+  }, [refreshQuotes]);
 
   // ─── Mutations ──────────────────────────────────────────────────
   async function createList() {
@@ -207,28 +179,25 @@ export default function WatchlistsPage() {
       }
       toast.toast({ type: "success", message: "Default watchlist updated." });
       await fetchLists(id);
+      if (active?.id === id) await loadActive(id);
     } catch {
       toast.toast({ type: "error", message: "Could not set default." });
     }
   }
 
-  async function commitRename() {
-    if (!active || !renameDraft.trim() || renameDraft.trim() === active.name) {
-      setEditingName(false);
-      return;
-    }
+  async function rename(name: string) {
+    if (!active) return;
     try {
       const res = await fetch(`/api/watchlists/${active.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: renameDraft.trim() }),
+        body: JSON.stringify({ name }),
       });
       if (!res.ok) {
         toast.toast({ type: "error", message: "Could not rename." });
         return;
       }
       toast.toast({ type: "success", message: "Renamed." });
-      setEditingName(false);
       await fetchLists(active.id);
       await loadActive(active.id);
     } catch {
@@ -236,10 +205,8 @@ export default function WatchlistsPage() {
     }
   }
 
-  async function addSymbolToActive() {
+  async function addSymbol(sym: string) {
     if (!active) return;
-    const sym = addSymbol.trim().toUpperCase();
-    if (!sym) return;
     if (active.symbols.includes(sym)) {
       toast.toast({ type: "warning", message: `${sym} is already in this list.` });
       return;
@@ -250,7 +217,6 @@ export default function WatchlistsPage() {
     }
     // Optimistic
     setActive({ ...active, symbols: [...active.symbols, sym] });
-    setAddSymbol("");
     try {
       const res = await fetch(`/api/watchlists/${active.id}/items`, {
         method: "POST",
@@ -258,12 +224,11 @@ export default function WatchlistsPage() {
         body: JSON.stringify({ symbol: sym }),
       });
       if (!res.ok) {
-        setActive({ ...active }); // revert (re-load)
         await loadActive(active.id);
         toast.toast({ type: "error", message: "Could not add symbol." });
         return;
       }
-      // Refresh list count badge in sidebar
+      // Refresh the count in the lists panel
       await fetchLists(active.id);
     } catch {
       await loadActive(active.id);
@@ -290,356 +255,65 @@ export default function WatchlistsPage() {
     }
   }
 
-  const totalSymbols = lists.reduce((sum, l) => sum + l.itemCount, 0);
-  const defaultName = lists.find((l) => l.isDefault)?.name ?? "—";
+  const activeName = lists.find((l) => l.id === activeId)?.name ?? null;
+  const showActive = listsStatus === "ready" && lists.length > 0;
 
   return (
-    <div className="p-4 lg:p-6 space-y-6">
-      <PageIntro
-        eyebrow="Portfolio Tools"
-        title="Watchlists"
-        description="Multiple named lists, synced across devices. Your default list is what every other page treats as 'your watchlist.'"
-        stats={[
-          { label: "Lists", value: String(lists.length) },
-          { label: "Total Symbols", value: String(totalSymbols) },
-          { label: "Default", value: defaultName, tone: "brand" },
-          { label: "Max / List", value: String(MAX_SYMBOLS) },
-        ]}
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* ─── Sidebar: list of watchlists ─── */}
-        <div className="lg:col-span-1 space-y-2">
-          {creating ? (
-            <Card className="border border-accent/30">
-              <div className="flex gap-2">
-                <Input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Watchlist name"
-                  onKeyDown={(e) => e.key === "Enter" && createList()}
-                  maxLength={60}
-                  autoFocus
-                />
-                <Button size="sm" onClick={createList} loading={submitting}>Add</Button>
-                <Button size="sm" variant="ghost" onClick={() => { setCreating(false); setNewName(""); }}>
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-            </Card>
-          ) : (
-            <Button
-              variant="secondary"
-              size="sm"
-              className="w-full"
-              onClick={() => setCreating(true)}
-              disabled={lists.length >= MAX_WATCHLISTS}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              New Watchlist
-            </Button>
-          )}
-
-          {loadingLists ? (
-            <div className="space-y-2">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-16" rounded="lg" />
-              ))}
-            </div>
-          ) : lists.length === 0 ? (
-            <p className="text-xs text-text-muted text-center py-4">
-              No watchlists yet. Create one to get started.
-            </p>
-          ) : (
-            lists.map((l) => (
-              // The row selects the list through one stretched button; the
-              // row actions are siblings above it, visible at rest because
-              // touch has no hover.
-              <div
-                key={l.id}
-                className={`relative flex items-center justify-between gap-2 rounded-xl border bg-bg-secondary p-3 transition-colors hover:border-border-hover ${
-                  l.id === activeId ? "border-accent" : "border-border"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => setActiveId(l.id)}
-                  aria-pressed={l.id === activeId}
-                  className="min-w-0 flex-1 text-left after:absolute after:inset-0 after:rounded-xl"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <span className="text-sm font-medium text-text-primary truncate">{l.name}</span>
-                    {l.isDefault && <Badge variant="default">Default</Badge>}
-                  </span>
-                  <span className="block text-xs text-text-muted">{l.itemCount} symbols</span>
-                </button>
-                <div className="relative z-10 flex shrink-0 items-center gap-0.5">
-                  {!l.isDefault && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => makeDefault(l.id)}
-                      className="w-9 px-0"
-                      title="Make default"
-                      aria-label={`Make ${l.name} default`}
-                    >
-                      <Star className="w-3.5 h-3.5" aria-hidden="true" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => deleteList(l.id)}
-                    className="w-9 px-0"
-                    title="Delete"
-                    aria-label={`Delete ${l.name}`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                  </Button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* ─── Main: active watchlist contents ─── */}
-        <div className="lg:col-span-3 space-y-4">
-          {!activeId || (!active && !loadingActive) ? (
-            <EmptyState
-              icon={<List className="w-10 h-10" />}
-              title="No watchlist selected"
-              description="Create or select a list to get started."
-            />
-          ) : loadingActive || !active ? (
-            <div className="space-y-3">
-              <Skeleton className="h-20" rounded="lg" />
-              <Skeleton className="h-60" rounded="lg" />
-            </div>
-          ) : (
-            <>
-              <Card>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    {editingName ? (
-                      <div className="flex gap-2 items-center">
-                        <Input
-                          value={renameDraft}
-                          onChange={(e) => setRenameDraft(e.target.value)}
-                          onBlur={commitRename}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") commitRename();
-                            if (e.key === "Escape") { setEditingName(false); setRenameDraft(active.name); }
-                          }}
-                          maxLength={60}
-                          autoFocus
-                        />
-                        <Button size="sm" variant="ghost" onClick={commitRename}>
-                          <Check className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-lg font-semibold text-text-primary truncate">
-                          {active.name}
-                        </h2>
-                        {active.isDefault && <Badge variant="default">Default</Badge>}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => { setRenameDraft(active.name); setEditingName(true); }}
-                          className="w-9 px-0"
-                          aria-label={`Rename ${active.name}`}
-                          title="Rename"
-                        >
-                          <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
-                        </Button>
-                      </div>
-                    )}
-                    <p className="text-xs text-text-muted">{active.symbols.length} / {MAX_SYMBOLS} symbols</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <ShareButton
-                      watchlistId={active.id}
-                      shareToken={active.shareToken ?? null}
-                      onChanged={() => loadActive(active.id)}
-                    />
-                    {!active.isDefault && (
-                      <Button variant="secondary" size="sm" onClick={() => makeDefault(active.id)}>
-                        <Star className="w-3.5 h-3.5" />
-                        Make default
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <div className="flex gap-2 mb-4">
-                  <Input
-                    value={addSymbol}
-                    onChange={(e) => setAddSymbol(e.target.value.toUpperCase())}
-                    placeholder="Add symbol (e.g. TSLA)"
-                    onKeyDown={(e) => e.key === "Enter" && addSymbolToActive()}
-                    maxLength={10}
-                  />
-                  <Button onClick={addSymbolToActive} disabled={active.symbols.length >= MAX_SYMBOLS}>
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                {active.symbols.length === 0 ? (
-                  <EmptyState
-                    icon={<List className="w-10 h-10" />}
-                    title="Empty list"
-                    description="Add symbols to start tracking."
-                  />
-                ) : (
-                  <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {active.symbols.map((sym) => {
-                      const q = quotes[sym];
-                      return (
-                        // One link per tile, stretched over it; Remove is a
-                        // sibling above the link, not a button inside it.
-                        <li
-                          key={sym}
-                          className="group relative rounded-lg bg-bg-surface p-3 transition-colors hover:bg-bg-hover"
-                        >
-                          <Link
-                            href={`/dashboard/analysis?symbol=${encodeURIComponent(sym)}`}
-                            className="font-mono font-semibold text-text-primary after:absolute after:inset-0 after:rounded-lg group-hover:text-accent transition-colors"
-                          >
-                            {sym}
-                          </Link>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeSymbol(sym)}
-                            className="absolute top-1 right-1 z-10 w-9 px-0"
-                            aria-label={`Remove ${sym}`}
-                          >
-                            <X className="w-3.5 h-3.5" aria-hidden="true" />
-                          </Button>
-                          {q === null ? (
-                            <div className="mt-1 text-xs text-text-muted">Price unavailable</div>
-                          ) : q ? (
-                            <div className="mt-1">
-                              <div className="font-mono text-sm tabular-nums">${q.price.toFixed(2)}</div>
-                              <div className="text-xs">
-                                <SignedPercent value={q.change} />
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="mt-1 space-y-1">
-                              <Skeleton className="h-4 w-16" rounded="sm" />
-                              <Skeleton className="h-3 w-12" rounded="sm" />
-                            </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </Card>
-            </>
-          )}
-        </div>
+    <div className="space-y-5 p-4 lg:space-y-6 lg:p-6">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-semibold tracking-tight text-text-primary">Watchlists</h1>
+        <p className="mt-1 max-w-2xl text-sm text-text-secondary">
+          Named lists of the symbols you follow, synced across devices. Your default list is the one the dashboard and
+          other pages show.
+        </p>
       </div>
-      {confirmDialog}
-    </div>
-  );
-}
 
-// Public-share toggle. When `shareToken` is null the button generates a
-// new one + copies the URL to the clipboard; when set, it shows a copy
-// affordance + a revoke option. Token rotation is "revoke and re-share."
-function ShareButton({
-  watchlistId,
-  shareToken,
-  onChanged,
-}: {
-  watchlistId: string;
-  shareToken: string | null;
-  onChanged: () => void;
-}) {
-  const toast = useToast();
-  const { requestConfirm, dialog: confirmDialog } = useConfirmAction();
-  const [submitting, setSubmitting] = useState(false);
+      <div className={`grid grid-cols-1 items-start gap-4 lg:gap-5 ${showActive ? "lg:grid-cols-[20rem_minmax(0,1fr)]" : ""}`}>
+        <ListsPanel
+          status={listsStatus}
+          lists={lists}
+          activeId={activeId}
+          maxLists={MAX_WATCHLISTS}
+          onSelect={setActiveId}
+          onMakeDefault={makeDefault}
+          onDelete={deleteList}
+          onRetry={() => {
+            setListsStatus("loading");
+            fetchLists();
+          }}
+          create={{
+            open: creating,
+            name: newName,
+            submitting,
+            onOpen: () => setCreating(true),
+            onCancel: () => {
+              setCreating(false);
+              setNewName("");
+            },
+            onName: setNewName,
+            onSubmit: createList,
+          }}
+        />
 
-  function getUrl(token: string): string {
-    if (typeof window === "undefined") return `/w/${token}`;
-    return `${window.location.origin}/w/${token}`;
-  }
-
-  async function generate() {
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/watchlists/${watchlistId}/share`, { method: "POST" });
-      if (!res.ok) {
-        toast.toast({ type: "error", message: "Could not generate share link." });
-        return;
-      }
-      const data = await res.json();
-      const url = getUrl(data.shareToken);
-      try {
-        await navigator.clipboard.writeText(url);
-        toast.toast({ type: "success", message: "Share link copied to clipboard." });
-      } catch {
-        toast.toast({ type: "success", message: `Share link: ${url}` });
-      }
-      onChanged();
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function copy() {
-    if (!shareToken) return;
-    const url = getUrl(shareToken);
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.toast({ type: "success", message: "Link copied." });
-    } catch {
-      toast.toast({ type: "info", message: url });
-    }
-  }
-
-  function revoke() {
-    requestConfirm({
-      title: "Revoke share link",
-      description: <>Anyone holding the current link loses access immediately. You can generate a fresh link afterwards.</>,
-      confirmLabel: "Revoke link",
-      onConfirm: async () => {
-        setSubmitting(true);
-        try {
-          const res = await fetch(`/api/watchlists/${watchlistId}/share`, { method: "DELETE" });
-          if (!res.ok) throw new Error("Could not revoke share.");
-          toast.toast({ type: "success", message: "Share link revoked." });
-          onChanged();
-        } finally {
-          setSubmitting(false);
-        }
-      },
-    });
-  }
-
-  if (!shareToken) {
-    return (
-      <Button variant="secondary" size="sm" onClick={generate} loading={submitting}>
-        <Share2 className="w-3.5 h-3.5" />
-        Share link
-      </Button>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1">
-      <Button variant="secondary" size="sm" onClick={copy}>
-        <Copy className="w-3.5 h-3.5" />
-        Copy link
-      </Button>
-      <Button variant="ghost" size="sm" onClick={revoke} loading={submitting} aria-label="Revoke share link">
-        <Link2Off className="w-3.5 h-3.5" />
-      </Button>
+        {showActive ? (
+          <ActiveList
+            status={activeStatus}
+            name={activeName}
+            active={active && active.id === activeId ? active : null}
+            maxSymbols={MAX_SYMBOLS}
+            quotes={quotes}
+            quotesReadAt={quotesReadAt}
+            quotesLoading={quotesLoading}
+            onRetry={() => activeId && loadActive(activeId)}
+            onRefreshQuotes={refreshQuotes}
+            onRename={rename}
+            onMakeDefault={() => active && makeDefault(active.id)}
+            onShareChanged={() => active && loadActive(active.id)}
+            onAdd={addSymbol}
+            onRemove={removeSymbol}
+          />
+        ) : null}
+      </div>
       {confirmDialog}
     </div>
   );
