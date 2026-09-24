@@ -8,7 +8,7 @@ Every value lives in `src/app/globals.css` (Tailwind CSS 4). The `@theme` block 
 |---|---|---|---|
 | light | none (the `@theme` block) | near-white on green-grey, hue 163 | emerald, dark fill with a white label |
 | dark (default) | `dark` | green-tinted ladder, hue 163 | emerald, light fill with a dark label |
-| coral | `coral` | warm light ladder, hue 30-40 | coral, white label |
+| coral | `coral` | warm light ladder, hue 40 | orange-coral (hue 40), white label; loss is coral's own darker crimson (hue 10) so the accent never reads as a loss |
 | light-blue | `light-blue` | cool light ladder, hue 250 | blue, white label |
 | gray | `gray` | the dark ladder with no tint | emerald |
 

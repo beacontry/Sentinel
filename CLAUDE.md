@@ -102,7 +102,7 @@ All tokens live in `src/app/globals.css`, in OKLCH: the `@theme` block is the li
 |-------|-------------------|--------|
 | light | near-white on green-grey (hue 163) | emerald, dark fill + white label |
 | dark | emerald-tinted lightness ladder | emerald, light fill + dark label |
-| coral | warm light ladder | coral, white label |
+| coral | warm light ladder | orange-coral, white label; loss is its own darker crimson, held apart from the accent by the contrast test |
 | light-blue | cool light ladder | blue, white label |
 | gray | the dark ladder with no tint | emerald |
 

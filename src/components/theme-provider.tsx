@@ -39,7 +39,7 @@ export const THEME_META: Record<
     label: "Coral",
     isDark: false,
     pwaColor: "#faf1ee",
-    swatch: "#b63325",
+    swatch: "#b04c26", // coral accent, oklch(54% 0.14 40)
     description: "Warm peach surfaces, coral accent",
   },
   "light-blue": {

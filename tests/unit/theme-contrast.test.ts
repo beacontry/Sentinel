@@ -15,8 +15,9 @@
  * - A form control's edge must clear 3:1 (WCAG 1.4.11) on every surface.
  * - Gain and loss text must clear 4.5:1 on a card, and each chip's
  *   foreground must clear 4.5:1 on its own fill.
- * - Two colours that mean different things must look different: in
- *   colour-blind mode, a loss against a warning. Measured as deltaE OK,
+ * - Two colours that mean different things must look different: the
+ *   accent (and its hover) against a loss and the danger fill, and in
+ *   colour-blind mode a loss against a warning. Measured as deltaE OK,
  *   floor 0.10. Contrast ratio cannot catch this: two reds of equal
  *   lightness are 1.0:1 whatever their hue.
  */
@@ -43,6 +44,7 @@ function block(opener: RegExp): Record<string, string> {
 const base = block(/@theme\s*\{/);
 const colorblindLight = block(/^\s*html\.colorblind\s*\{/m);
 const colorblindDark = block(/^\s*html\.colorblind\.dark,\s*html\.colorblind\.gray\s*\{/m);
+const colorblindCoral = block(/^\s*html\.colorblind\.coral\s*\{/m);
 
 const THEMES: Record<string, Record<string, string>> = {
   light: base,
@@ -53,10 +55,11 @@ const THEMES: Record<string, Record<string, string>> = {
 };
 const DARK = new Set(["dark", "gray"]);
 
-/** A theme with colour-blind mode on: the shared block, then any theme-specific one. */
+/** A theme with colour-blind mode on: the shared block, then coral's own. */
 const withColorblind = (name: string): Record<string, string> => ({
   ...THEMES[name],
   ...(DARK.has(name) ? colorblindDark : colorblindLight),
+  ...(name === "coral" ? colorblindCoral : {}),
 });
 
 const MODES: [string, Record<string, string>][] = Object.entries(THEMES).flatMap(([name, vars]) => [
@@ -145,6 +148,16 @@ describe.each(MODES)("%s", (_mode, vars) => {
 
   it.each(["bullish", "bearish", "warning"])("%s-line is at least 3:1 on bg-secondary", (state) => {
     expect(cr(`--color-${state}-line`, "--color-bg-secondary")).toBeGreaterThanOrEqual(3);
+  });
+
+  // The primary action must not be the colour of a loss or of the
+  // irreversible danger fill. Coral once measured 0.02 on both.
+  it.each(
+    ["--color-accent", "--color-accent-hover"].flatMap((a) =>
+      ["--color-bearish", "--color-bearish-solid"].map((b) => [a, b]),
+    ),
+  )("%s is distinct from %s", (a, b) => {
+    expect(deltaEOK(resolve(vars, a), resolve(vars, b))).toBeGreaterThanOrEqual(DISTINCT);
   });
 });
 
