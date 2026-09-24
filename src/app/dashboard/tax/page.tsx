@@ -1,20 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useState, useEffect, Suspense } from "react";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
-import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  Receipt,
-  Download,
-  FileText,
-  Info,
-} from "lucide-react";
+import { Receipt, Download } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
 import type {
   Form8949Line,
@@ -27,17 +18,16 @@ import { useToast } from "@/components/ui/toast";
 import { useUrlParam } from "@/hooks/use-url-param";
 import { useLatestRequest } from "@/hooks/use-latest-request";
 import { ErrorState } from "@/components/ui/error-state";
-import { SignedValue } from "@/components/ui/signed-value";
 import { Spinner } from "@/components/ui/button";
 import {
   CURRENT_TAX_YEAR,
   TAX_YEAR_OPTIONS,
   TAX_YEAR_VALUES,
   filingStatusOptions,
-  formatCurrency,
 } from "@/components/tax/tax-format";
+import { ReportEstimate } from "@/components/tax/report-estimate";
 import { NoLotsForYear } from "@/components/tax/no-lots-for-year";
-import { Form8949View, ScheduleDView } from "@/components/tax/tax-report-views";
+import { Form8949View, LotTableSkeleton, ScheduleDView } from "@/components/tax/tax-report-views";
 import {
   DEFAULT_ORDINARY_INCOME,
   commitIncomeDraft,
@@ -202,147 +192,89 @@ function TaxReportPage() {
   const longTermLines = data?.lines.filter((l) => l.isLongTerm) ?? [];
   const washSaleCount = data?.lines.filter((l) => l.washSale).length ?? 0;
 
+  const figures = data
+    ? {
+        totalGainLoss: data.scheduleDSummary.totalGainLoss,
+        estimatedTax: data.scheduleDSummary.estimatedTax,
+        lotCount: data.summary.tradeCount,
+        washSaleCount,
+      }
+    : null;
+
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <PaywallBanner minTier="trader" featureName="Tax Reports" description="Form 8949 generator from engine fills." />
       <PageIntro
         title="Tax Report"
-        description="Form 8949 and Schedule D capital gains report with lot-level detail."
+        description="Form 8949 lots and the Schedule D summary for one tax year, from your portfolio trades and engine fills."
         actions={
-          <div className="flex items-center gap-3 flex-wrap">
+          <>
             <Select
               options={TAX_YEAR_OPTIONS}
               value={year}
               onChange={(v) => setYear(v)}
-              className="w-28"
+              className="w-32"
+              aria-label="Tax year"
             />
-            <Select
-              options={filingStatusOptions}
-              value={filingStatus}
-              onChange={(v) => setFilingStatus(v as FilingStatus)}
-              className="w-48"
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleExport}
-              loading={exporting}
-            >
-              <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">Export</span> CSV
+            <Button variant="secondary" onClick={handleExport} loading={exporting}>
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Export CSV
             </Button>
-          </div>
+          </>
         }
-        stats={[
-          {
-            label: "Total Gain/Loss",
-            value: data ? <SignedValue value={data.scheduleDSummary.totalGainLoss} /> : "--",
-          },
-          {
-            label: "Est. Tax",
-            value: data ? formatCurrency(data.scheduleDSummary.estimatedTax) : "--",
-          },
-          {
-            label: "Lots Matched",
-            value: data ? String(data.summary.tradeCount) : "--",
-          },
-          {
-            label: "Wash Sales",
-            value: data ? String(washSaleCount) : "--",
-          },
-        ]}
       />
 
-      {/* Filing Assumptions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="w-4 h-4 text-text-muted" />
-            Filing Assumptions
-          </CardTitle>
-        </CardHeader>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Select
-            label="Filing Status"
-            options={filingStatusOptions}
-            value={filingStatus}
-            onChange={(v) => setFilingStatus(v as FilingStatus)}
-          />
-          <Input
-            label="Other Ordinary Income"
-            type="number"
-            value={incomeDraft}
-            onChange={(e) => setIncomeDraft(e.target.value)}
-            onBlur={commitIncome}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitIncome();
-            }}
-            min="0"
-            step="1000"
-          />
-          <div>
-            <p className="eyebrow text-text-muted mb-1.5">Tax Year</p>
-            <p className="text-sm text-text-secondary mt-2">
-              {year} tax year &middot; FIFO cost basis method
-            </p>
+      <ReportEstimate
+        year={year}
+        figures={figures}
+        loading={loading}
+        filingStatus={filingStatus}
+        onFilingStatusChange={setFilingStatus}
+        incomeDraft={incomeDraft}
+        onIncomeDraftChange={setIncomeDraft}
+        onIncomeCommit={commitIncome}
+      />
+
+      <div className="space-y-4">
+        <Tabs
+          tabs={TABS}
+          activeTab={activeTab}
+          onChange={(id) => setActiveTab(id as TaxTab)}
+        />
+
+        {loading ? (
+          <LotTableSkeleton />
+        ) : failed?.locked ? (
+          <div className="rounded-xl border border-border bg-bg-secondary">
+            <EmptyState
+              headingLevel={2}
+              icon={<Receipt className="h-7 w-7" />}
+              title="Tax reports need the Trader plan"
+              description="Upgrade to generate Form 8949 and Schedule D from your trades."
+            />
           </div>
-        </div>
-        <p className="text-xs text-text-muted mt-3 flex items-start gap-1.5">
-          <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-          <span>
-            Tax estimates are approximate. Uses 2024 federal brackets. Consult a
-            tax professional for filing. Owe estimated taxes?{" "}
-            <Link
-              href="/dashboard/education/guides/quarterly-estimated-taxes-for-traders"
-              className="text-accent hover:underline"
-            >
-              Read the quarterly estimates guide
-            </Link>
-            .
-          </span>
-        </p>
-      </Card>
-
-      {/* Tabs: Form 8949 / Schedule D */}
-      <Tabs
-        tabs={TABS}
-        activeTab={activeTab}
-        onChange={(id) => setActiveTab(id as TaxTab)}
-      />
-
-      {loading ? (
-        <div className="space-y-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-24" rounded="lg" />
-          ))}
-        </div>
-      ) : failed?.locked ? (
-        <EmptyState
-          icon={<Receipt className="h-7 w-7" />}
-          title="Tax Reports Need the Trader Plan"
-          description="Upgrade to generate Form 8949 and Schedule D from your trades."
-        />
-      ) : failed || !data ? (
-        <div className="rounded-xl border border-border bg-bg-secondary">
-          <ErrorState
-            headingLevel={2}
-            title="Could not load the tax report"
-            description={`The ${year} report did not load, so nothing here reflects your trades yet.`}
-            onRetry={retryReport}
+        ) : failed || !data ? (
+          <div className="rounded-xl border border-border bg-bg-secondary">
+            <ErrorState
+              headingLevel={2}
+              title="Could not load the tax report"
+              description={`The ${year} report did not load, so nothing here reflects your trades yet.`}
+              onRetry={retryReport}
+            />
+          </div>
+        ) : data.lines.length === 0 ? (
+          <div className="rounded-xl border border-border bg-bg-secondary">
+            <NoLotsForYear year={year} onYearChange={setYear} />
+          </div>
+        ) : activeTab === "form8949" ? (
+          <Form8949View
+            shortTermLines={shortTermLines}
+            longTermLines={longTermLines}
           />
-        </div>
-      ) : data.lines.length === 0 ? (
-        <div className="rounded-xl border border-border bg-bg-secondary">
-          <NoLotsForYear year={year} onYearChange={setYear} />
-        </div>
-      ) : activeTab === "form8949" ? (
-        <Form8949View
-          shortTermLines={shortTermLines}
-          longTermLines={longTermLines}
-        />
-      ) : (
-        <ScheduleDView summary={data.scheduleDSummary} />
-      )}
+        ) : (
+          <ScheduleDView summary={data.scheduleDSummary} />
+        )}
+      </div>
     </div>
   );
 }
