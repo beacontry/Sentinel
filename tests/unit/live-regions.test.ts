@@ -15,12 +15,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { MAX_TOASTS, ToastProvider } from "@/components/ui/toast";
 import LoginPage from "@/app/login/page";
+import RegisterPage from "@/app/register/page";
 
 describe("ToastProvider", () => {
   const html = renderToStaticMarkup(createElement(ToastProvider, null, "app"));
@@ -41,6 +43,16 @@ describe("LoginPage", () => {
   it("does not mark the fields invalid when there is no error", () => {
     expect(html).not.toContain("aria-invalid");
     expect(html).not.toContain("aria-describedby");
+  });
+});
+
+describe("RegisterPage", () => {
+  const html = renderToStaticMarkup(createElement(RegisterPage));
+
+  it("keeps an empty role=alert region mounted for the sign-up error", () => {
+    // It was mounted only once an error existed, so the first failure
+    // could go unannounced.
+    expect(html).toMatch(/<div id="register-error" role="alert" class="sr-only"><\/div>/);
   });
 });
 
