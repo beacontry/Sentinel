@@ -29,6 +29,11 @@ export async function GET() {
     const portfolioIds = userPortfolios.map((p) => p.id);
 
     const allPositions: TaxPosition[] = [];
+    // Manual positions with no usable current price. They are left out of the
+    // suggestions rather than valued at cost (which hides a real loss) or at a
+    // $0 quote (which fabricates a 100% loss), and returned so the Tax Center
+    // can say the analysis is incomplete.
+    const unpricedSymbols: string[] = [];
     const provider = getMarketDataProvider();
 
     // 1. Manual portfolio positions
@@ -39,8 +44,21 @@ export async function GET() {
         .where(eq(portfolioPositions.portfolioId, pId));
 
       for (const pos of positions) {
-        const quote = await provider.fetchQuote(pos.symbol).catch(() => null);
-        const currentPrice = quote?.price ?? pos.entryPrice;
+        let quote: { price: number } | null = null;
+        try {
+          quote = await provider.fetchQuote(pos.symbol);
+        } catch (err) {
+          log.warn(
+            { symbol: pos.symbol, err: err instanceof Error ? err.message : String(err) },
+            "Harvesting quote fetch failed"
+          );
+        }
+        if (!quote || !(quote.price > 0)) {
+          log.warn({ symbol: pos.symbol }, "Harvesting position unpriced: no positive quote");
+          if (!unpricedSymbols.includes(pos.symbol)) unpricedSymbols.push(pos.symbol);
+          continue;
+        }
+        const currentPrice = quote.price;
         const unrealizedPnl = (currentPrice - pos.entryPrice) * pos.quantity;
 
         allPositions.push({
@@ -74,7 +92,7 @@ export async function GET() {
 
     if (allPositions.length === 0) {
       return NextResponse.json(
-        { suggestions: [] },
+        { suggestions: [], unpricedSymbols },
         { headers: { "Cache-Control": "private, no-store" } }
       );
     }
@@ -82,7 +100,7 @@ export async function GET() {
     const suggestions = suggestHarvesting(allPositions);
 
     return NextResponse.json(
-      { suggestions },
+      { suggestions, unpricedSymbols },
       { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (err) {

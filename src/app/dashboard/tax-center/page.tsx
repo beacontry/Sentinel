@@ -63,6 +63,7 @@ export default function TaxCenterPage() {
   const [year, setYear] = useState(String(currentYear));
   const [summary, setSummary] = useState<TaxSummary | null>(null);
   const [suggestions, setSuggestions] = useState<HarvestingSuggestion[]>([]);
+  const [unpricedSymbols, setUnpricedSymbols] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [harvestLoading, setHarvestLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -88,8 +89,10 @@ export default function TaxCenterPage() {
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       setSuggestions(data.suggestions ?? []);
+      setUnpricedSymbols(Array.isArray(data.unpricedSymbols) ? data.unpricedSymbols : []);
     } catch {
       setSuggestions([]);
+      setUnpricedSymbols([]);
     } finally {
       setHarvestLoading(false);
     }
@@ -342,6 +345,16 @@ export default function TaxCenterPage() {
             Wash sale rules
           </Link>
         </CardHeader>
+
+        {!harvestLoading && unpricedSymbols.length > 0 && (
+          <div className="mb-3 flex items-start gap-2 rounded-lg bg-warning/10 border border-warning/20 px-3 py-2 text-xs text-warning">
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span>
+              No current price for {unpricedSymbols.join(", ")}. These positions
+              are left out of the suggestions below; reload to try again.
+            </span>
+          </div>
+        )}
 
         {harvestLoading ? (
           <div className="space-y-3">
