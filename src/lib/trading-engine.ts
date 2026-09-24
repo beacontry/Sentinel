@@ -4780,7 +4780,15 @@ async function runReconcilePass(client: BrokerClient, userId: string, manualClos
         // writes the snapshot estimate at submit). Engine exits are counted
         // by the scan that placed them, so only manual_close rows take this.
         if (newStatus === "FILLED" && row.action === "manual_close" && newPnl !== null && newFillTime) {
-          await recordManualCloseDailyPnl(userId, getETDateStringShared(newFillTime), newPnl);
+          const fillDate = getETDateStringShared(newFillTime);
+          await recordManualCloseDailyPnl(userId, fillDate, newPnl);
+          // The realized P&L also reaches a running engine's daily-loss halt
+          // when it filled on the engine's current day. The flatten removed
+          // the symbols from the position map, so no broker-side exit
+          // reconcile books it there. Accrual only: a user's own flatten does
+          // not advance the consecutive-loss streak.
+          const engine = g.__tradingEngines?.get(userId);
+          if (engine?.running && engine.dailyLossDate === fillDate) accrueRealizedPnl(engine, newPnl);
         }
 
         // Journal v2 — phase 1: when a trade reconciles to FILLED,

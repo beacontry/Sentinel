@@ -447,3 +447,50 @@ describe("reconcile select and fence", () => {
     expect(selects[1]).toContain('"created_at"');
   });
 });
+
+describe("a filled manual flatten feeds the running engine's daily-loss halt", () => {
+  function runningEngine(dailyLossDate: string): EngineState {
+    getEngineStatus(state.userId);
+    const engine = (globalThis as typeof globalThis & { __tradingEngines?: Map<string, EngineState> })
+      .__tradingEngines!.get(state.userId)!;
+    engine.userId = state.userId;
+    engine.running = true;
+    engine.dailyLoss = -50;
+    engine.dailyLossDate = dailyLossDate;
+    return engine;
+  }
+
+  async function flattenAndFill(filledAt: string) {
+    await POST(flattenRequest("AAPL"));
+    state.selectTrades = PENDING_ROWS;
+    state.brokerOrders = [{ id: "ord-AAPL", symbol: "AAPL", side: "sell", status: "filled", filledPrice: 185, filledAt }];
+    await reconcilePendingTrades(fakeClient() as unknown as BrokerClient, state.userId, { manualCloseOnly: true });
+  }
+
+  it("adds the realized P&L to dailyLoss when it filled on the engine's day, without touching the streak", async () => {
+    const engine = runningEngine("2026-09-24");
+    const streak = engine.consecutiveLosses;
+    try {
+      await flattenAndFill("2026-09-24T13:30:05Z");
+      expect(engine.dailyLoss).toBe(-200); // -50 + the -150 flatten
+      expect(engine.consecutiveLosses).toBe(streak);
+    } finally {
+      engine.running = false;
+    }
+  });
+
+  it("leaves dailyLoss alone for a fill on another day, or with the engine stopped", async () => {
+    const engine = runningEngine("2026-09-25");
+    try {
+      await flattenAndFill("2026-09-24T13:30:05Z");
+      expect(engine.dailyLoss).toBe(-50);
+
+      engine.dailyLossDate = "2026-09-24";
+      engine.running = false;
+      await flattenAndFill("2026-09-24T13:31:05Z");
+      expect(engine.dailyLoss).toBe(-50);
+    } finally {
+      engine.running = false;
+    }
+  });
+});
