@@ -1022,7 +1022,7 @@ function buildSectorExposureContext(
  * Returns { ok: false, reason } if blocked, { ok: true } otherwise.
  * Caller must call recordOrderPlacement() AFTER a successful placeOrder.
  */
-async function canPlaceBuyOrder(
+export async function canPlaceBuyOrder(
   engine: EngineState,
   symbol: string,
   notionalUsd: number,
@@ -1031,6 +1031,16 @@ async function canPlaceBuyOrder(
   /** Phase 4 — sector cap needs the live position map (symbol → market value) to sum exposure */
   sectorExposureContext?: { positionMarketValues: Map<string, number>; equity: number }
 ): Promise<{ ok: true } | { ok: false; reason: string; details: Record<string, unknown> }> {
+  // Fail closed on a halted or stopped engine before any await. A scan that
+  // was already past its own halt check when the kill switch fired must not
+  // open new exposure (finding #43). Exported for tests.
+  if (engine.halted || !engine.running) {
+    return {
+      ok: false,
+      reason: "engine_halted",
+      details: { symbol, halted: engine.halted, running: engine.running },
+    };
+  }
   // Refresh wash-sale set if stale. The helper has its own age check
   // (WASH_SALE_REFRESH_MS) so this is cheap when the cache is hot.
   await maybeRefreshWashSaleSet(engine);
@@ -1719,10 +1729,35 @@ async function enforceUnrealizedLossHalt(
   // forward protection we want.
 }
 
-async function placeEngineOrder(
+/**
+ * Thrown by placeEngineOrder for a BUY when the engine is halted or not
+ * running. Sells are never refused by this check.
+ */
+export class EngineClosedForEntriesError extends Error {
+  constructor(public readonly symbol: string) {
+    super(`Engine is halted or stopped: refusing to submit BUY for ${symbol}`);
+    this.name = "EngineClosedForEntriesError";
+  }
+}
+
+/**
+ * Exported for tests. `engine` is required for a BUY: a BUY with no engine,
+ * or on an engine that is halted or not running, is refused (fail closed).
+ * This backs up the per-scan halt checks, because a scan already past them
+ * when the kill switch fires would otherwise keep buying (finding #43).
+ */
+export async function placeEngineOrder(
   client: BrokerClient,
-  params: Omit<PlaceOrderParams, "positionIntent">
+  params: Omit<PlaceOrderParams, "positionIntent">,
+  engine?: EngineState
 ): Promise<BrokerOrder> {
+  if (params.side === "buy" && (!engine || engine.halted || !engine.running)) {
+    log.warn(
+      { symbol: params.symbol, qty: params.qty, halted: engine?.halted ?? null, running: engine?.running ?? null },
+      "BUY refused: engine is halted or not running"
+    );
+    throw new EngineClosedForEntriesError(params.symbol);
+  }
   // Phase 10 — refuse market orders when market is closed. Limit/stop orders
   // are allowed (limits expire at close with TIF=day; stops are GTC).
   if (params.type === "market" && !isMarketOpen()) {
@@ -4634,7 +4669,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
           });
           continue;
         }
-        const tentryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        const tentryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
         recordOrderPlacement(engine, "buy", buyNotional);
         // Accumulate this buy in the sector context so a later same-sector buy
         // in this same scan sees it — otherwise N same-sector buys each read a
@@ -4997,6 +5032,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
     const totalInvVol = toBuy.reduce((sum, s) => sum + s.invVol, 0);
 
     for (const { symbol, price, invVol } of toBuy) {
+      // Cooperative cancellation (finding #43): this loop had no check at
+      // all, so a scan superseded by stopEngine or haltEngine kept buying.
+      throwIfScanCancelled(engine, myGeneration);
       const volWeight = totalInvVol > 0 ? invVol / totalInvVol : 1 / toBuy.length;
       const positionValue = equity * Math.min(volWeight, riskLimits.positionPct);
       const qty = Math.min(Math.floor(positionValue / price), riskLimits.maxPositionSize);
@@ -5032,7 +5070,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           });
           continue;
         }
-        const tsEntryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        // Re-check right before placing: canPlaceBuyOrder awaited above.
+        throwIfScanCancelled(engine, myGeneration);
+        const tsEntryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
         recordOrderPlacement(engine, "buy", buyNotional);
         tsSectorCtx?.positionMarketValues.set(symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
@@ -5044,6 +5084,8 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           trailingStopPct: 0.117, entryDate: new Date(), holdPeriod: 999,
         });
       } catch (err) {
+        // A cancelled scan must exit, not log and move to the next symbol.
+        if (err instanceof ScanCancelledError) throw err;
         log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Smart entry failed");
       }
       await new Promise(r => setTimeout(r, 100));
@@ -5224,7 +5266,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           });
           continue;
         }
-        const swapBuyOrder = await placeEngineOrder(client, { symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        const swapBuyOrder = await placeEngineOrder(client, { symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
         recordOrderPlacement(engine, "buy", buyNotional);
         tsSectorCtx?.positionMarketValues.set(replacement.symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(replacement.symbol); // Phase 7: prevent re-fire within this scan
@@ -5297,7 +5339,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           });
           continue;
         }
-        const addOrder = await placeEngineOrder(client, { symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        const addOrder = await placeEngineOrder(client, { symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
         recordOrderPlacement(engine, "buy", buyNotional);
         tsSectorCtx?.positionMarketValues.set(cand.symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(cand.symbol); // Phase 7: prevent re-fire within this scan
@@ -6248,7 +6290,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
             type: "limit",
             timeInForce: "day",
             limitPrice: String(limitPrice),
-          });
+          }, engine);
           recordOrderPlacement(engine, "buy", buyNotional);
           scanSectorCtx?.positionMarketValues.set(symbol, buyNotional); // accumulate in-scan (audit #15)
           pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
@@ -6472,7 +6514,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           type: "limit",
           timeInForce: "day",
           limitPrice,
-        });
+        }, engine);
         recordOrderPlacement(engine, "buy", freshOrderCost);
         scanSectorCtx?.positionMarketValues.set(candFull.symbol, freshOrderCost); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(candFull.symbol);
@@ -7824,6 +7866,11 @@ export async function haltEngine(userId?: string): Promise<{
   engine.running = false;
   engine.halted = true;
   engine.haltReason = "user_emergency_halt";
+  // Cancel any in-flight scan before the first await, exactly as stopEngine
+  // does. Without this a tactical entry loop that was mid-universe when the
+  // kill switch fired kept placing BUYs (finding #43). placeEngineOrder and
+  // canPlaceBuyOrder also refuse BUYs on a halted engine.
+  engine.scanGeneration++;
 
   // Close all tracked positions. Protective resolver: the live-entry gates
   // must never disable the kill switch.
