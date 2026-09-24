@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { X, Send, Square, Sparkles, Trash2 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -168,20 +169,13 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
           </div>
           <div className="flex items-center gap-1">
             {messages.length > 0 && (
-              <button
-                onClick={clearChat}
-                className="rounded-lg p-2 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-secondary"
-                title="Clear chat"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <Button variant="ghost" size="sm" onClick={clearChat} className="w-9 px-0" title="Clear chat" aria-label="Clear chat">
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
             )}
-            <button
-              onClick={onClose}
-              className="rounded-lg p-2 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <Button variant="ghost" size="sm" onClick={onClose} className="w-9 px-0" aria-label="Close AI chat">
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Button>
           </div>
         </div>
 
@@ -283,22 +277,13 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
               disabled={isStreaming}
             />
             {isStreaming ? (
-              <button
-                onClick={handleStop}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-bearish-fill text-bearish-fg transition-colors hover:bg-bearish/25"
-                title="Stop generating"
-              >
-                <Square className="h-3 w-3 fill-current" />
-              </button>
+              <Button variant="destructive" onClick={handleStop} className="w-11 shrink-0 px-0" title="Stop generating" aria-label="Stop generating">
+                <Square className="h-3 w-3 fill-current" aria-hidden="true" />
+              </Button>
             ) : (
-              <button
-                onClick={() => sendMessage(input)}
-                disabled={!input.trim()}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent transition-colors hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-30"
-                title="Send message"
-              >
-                <Send className="h-4 w-4" />
-              </button>
+              <Button onClick={() => sendMessage(input)} disabled={!input.trim()} className="w-11 shrink-0 px-0" title="Send message" aria-label="Send message">
+                <Send className="h-4 w-4" aria-hidden="true" />
+              </Button>
             )}
           </div>
           <p className="mt-2 text-center text-xs text-text-muted">

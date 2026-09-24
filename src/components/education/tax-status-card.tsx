@@ -116,14 +116,10 @@ export function TaxStatusCard() {
               <span className="text-xs text-text-muted">Not declared</span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-xs font-medium text-text-secondary hover:border-border-hover hover:text-text-primary transition-colors"
-          >
-            <Pencil className="h-3.5 w-3.5" />
+          <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}>
+            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
             {status.hasTraderTaxStatus || hasMtm ? "Edit" : "Declare"}
-          </button>
+          </Button>
         </div>
         <p className="mt-3 text-xs text-text-muted leading-relaxed flex items-start gap-1.5">
           <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />

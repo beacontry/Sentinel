@@ -11,6 +11,7 @@ import { EducationalDisclaimer } from "@/components/education/educational-discla
 import { GLOSSARY_TERMS } from "@/lib/glossary-data";
 import { QUALITY_LABELS } from "@/lib/education/spaced-repetition";
 
+import { Button } from "@/components/ui/button";
 interface ReviewQueue {
   dueTerms: string[];
   newTerms: string[];
@@ -149,13 +150,9 @@ export default function GlossaryReviewPage() {
               {currentTerm.term}
             </h2>
             {!showAnswer ? (
-              <button
-                type="button"
-                onClick={() => setShowAnswer(true)}
-                className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-on-accent hover:bg-accent-hover transition-colors"
-              >
+              <Button type="button" onClick={() => setShowAnswer(true)}>
                 Show definition
-              </button>
+              </Button>
             ) : (
               <div className="text-left max-w-2xl mx-auto space-y-3">
                 <p className="text-sm leading-relaxed text-text-secondary">

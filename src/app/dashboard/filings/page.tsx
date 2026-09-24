@@ -459,17 +459,15 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
                     disabled={chatLoading}
                   />
                 </div>
-                <button
+                <Button
                   onClick={() => handleAskAI()}
-                  disabled={!chatInput.trim() || chatLoading}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent transition-[background-color,border-color,color,opacity] hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                  disabled={!chatInput.trim()}
+                  loading={chatLoading}
+                  className="w-11 shrink-0 px-0"
+                  aria-label="Ask about this filing"
                 >
-                  {chatLoading ? (
-                    <div className="h-4 w-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </button>
+                  {!chatLoading && <Send className="h-4 w-4" aria-hidden="true" />}
+                </Button>
               </div>
             </div>
           )}

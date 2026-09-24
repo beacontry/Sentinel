@@ -5,6 +5,7 @@ import { Check, X, RotateCcw, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import type { QuizQuestion } from "@/lib/education/guides-data";
 
+import { Button } from "@/components/ui/button";
 const PASS_PCT = 0.8;
 
 export function GuideQuiz({
@@ -180,14 +181,9 @@ export function GuideQuiz({
       )}
 
       {!submitted ? (
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={!allAnswered || submitting}
-          className="inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
+        <Button type="button" onClick={handleSubmit} disabled={!allAnswered || submitting} aria-busy={submitting || undefined}>
           {submitting ? "Submitting…" : "Submit answers"}
-        </button>
+        </Button>
       ) : (
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <p className="text-xs text-text-muted">
@@ -195,14 +191,10 @@ export function GuideQuiz({
               ? "Score saved to your progress."
               : "Score saved. Review the explanations above and retry to improve."}
           </p>
-          <button
-            type="button"
-            onClick={handleRetry}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-bg-secondary px-3 py-1.5 text-xs font-medium text-text-secondary hover:border-border-hover hover:text-text-primary transition-colors"
-          >
+          <Button type="button" variant="secondary" size="sm" onClick={handleRetry}>
             <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
             Retry
-          </button>
+          </Button>
         </div>
       )}
     </Card>

@@ -369,12 +369,9 @@ export default function ChatPage() {
               disabled={sending}
             />
             {sending ? (
-              <button
-                onClick={handleStop}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-bearish-fill text-bearish-fg transition-colors hover:bg-bearish/25"
-              >
-                <Square className="h-3 w-3 fill-current" />
-              </button>
+              <Button variant="destructive" onClick={handleStop} className="w-11 shrink-0 px-0" aria-label="Stop generating">
+                <Square className="h-3 w-3 fill-current" aria-hidden="true" />
+              </Button>
             ) : (
               <Button
                 onClick={handleSend}

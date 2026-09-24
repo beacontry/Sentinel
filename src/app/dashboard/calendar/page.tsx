@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, CalendarDays, Globe, X } from "lucide-react";
 import type { EconomicEvent } from "@/types";
 
+import { Button } from "@/components/ui/button";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const categoryColors: Record<string, string> = {
@@ -151,20 +152,17 @@ export default function CalendarPage() {
           {/* Month header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
             <div className="flex items-center gap-3">
-              <button onClick={prevMonth} className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
+              <Button variant="ghost" onClick={prevMonth} className="w-11 px-0" aria-label="Previous month">
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </Button>
               <h2 className="text-lg font-semibold min-w-[180px] text-center">{monthLabel}</h2>
-              <button onClick={nextMonth} className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors">
-                <ChevronRight className="h-4 w-4" />
-              </button>
+              <Button variant="ghost" onClick={nextMonth} className="w-11 px-0" aria-label="Next month">
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </Button>
             </div>
-            <button
-              onClick={goToday}
-              className="rounded-full border border-border px-3 py-1 text-xs font-medium text-text-secondary hover:border-border-hover hover:text-text-primary transition-colors"
-            >
+            <Button variant="secondary" size="sm" onClick={goToday}>
               Today
-            </button>
+            </Button>
           </div>
 
           {/* Weekday headers */}
@@ -275,12 +273,9 @@ export default function CalendarPage() {
                     })}
                   </div>
                 </div>
-                <button
-                  onClick={() => setSelectedDate(null)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <Button variant="ghost" onClick={() => setSelectedDate(null)} className="w-11 px-0" aria-label="Close day details">
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </Button>
               </div>
 
               {selectedEvents.length === 0 ? (

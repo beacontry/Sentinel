@@ -724,16 +724,17 @@ export default function BacktestPage() {
             <CardHeader className="p-0 pb-3">
               <div className="flex items-center justify-between gap-3">
                 <CardTitle>Equity Curve</CardTitle>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setChartFullscreen(!chartFullscreen)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-bg-secondary px-2.5 py-1 text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
                   title={chartFullscreen ? "Exit fullscreen (Esc)" : "Expand chart"}
                   aria-label={chartFullscreen ? "Exit fullscreen" : "Expand chart"}
                 >
-                  {chartFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                  {chartFullscreen ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
                   <span className="hidden sm:inline">{chartFullscreen ? "Exit" : "Expand"}</span>
-                </button>
+                </Button>
               </div>
             </CardHeader>
             <div className={chartFullscreen ? "flex-1 min-h-0" : ""}>
