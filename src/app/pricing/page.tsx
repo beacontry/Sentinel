@@ -6,35 +6,17 @@
 // tier details — feature-comparison matrix + FAQ + Get-in-touch CTA.
 //
 // Uses the same `ld-*` landing design tokens as src/app/page.tsx so
-// the visual identity stays consistent. Navbar duplicated inline
-// rather than extracted to a shared component — only two pages need
-// it; extraction can come later if we add more public pages.
+// the visual identity stays consistent. The nav and footer are the
+// shared SiteNav and SiteFooter.
 
 import Link from "next/link";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useState } from "react";
 import { ArrowRight, Check, Minus } from "lucide-react";
-import { ThemePicker } from "@/components/theme-picker";
-import { BeacontryMark } from "@/components/brand/beacontry-mark";
+import { SiteNav, LANDING_NAV_LINKS_ABSOLUTE } from "@/components/marketing/site-nav";
+import { SiteFooter } from "@/components/marketing/site-footer";
 
 export default function PricingPage() {
-  const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 16);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  const navLinks = [
-    { label: "Features", href: "/#features" },
-    { label: "How It Works", href: "/#process" },
-    { label: "Pricing", href: "/pricing" },
-    { label: "Why Beacontry", href: "/#trust" },
-    { label: "Explore Freely", href: "/#explore" },
-  ];
 
   // ─── Tier cards (kept in sync with landing teaser) ──────────────────
   //
@@ -287,62 +269,7 @@ export default function PricingPage() {
 
   return (
     <div className="min-h-screen bg-ld-deep font-[family-name:var(--font-display)] text-ld-text">
-      {/* ── Navbar — same structure as landing ── */}
-      <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-[background-color,border-color,color,box-shadow] duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-pop" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
-        <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
-          <Link href="/" className="flex items-center gap-3 text-lg font-bold tracking-tight">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-ld-on-accent">
-              <BeacontryMark variant="full" className="h-8 w-8" aria-label="Beacontry" />
-            </div>
-            Beacontry
-          </Link>
-
-          <ul className="hidden items-center gap-6 md:flex">
-            {navLinks.map((link) => (
-              <li key={link.href}>
-                <a
-                  href={link.href}
-                  className={`text-base font-medium transition-colors duration-200 hover:text-ld-text ${
-                    link.href === "/pricing" ? "text-ld-text" : "text-ld-text-secondary"
-                  }`}
-                >
-                  {link.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-
-          <div className="hidden items-center gap-3 md:flex">
-            <ThemePicker variant="icon" />
-            <Link href="/register" className="rounded-lg bg-ld-accent px-5 py-3 text-base font-semibold text-ld-on-accent transition-[background-color,border-color,color,translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop">
-              Get Started
-            </Link>
-          </div>
-
-          <div className="flex items-center gap-2 md:hidden">
-            <ThemePicker variant="icon" />
-            <button onClick={() => setMenuOpen(!menuOpen)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-ld-border text-ld-text" aria-label="Menu">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                {menuOpen ? <path d="M18 6L6 18M6 6l12 12" /> : <path d="M3 12h18M3 6h18M3 18h18" />}
-              </svg>
-            </button>
-          </div>
-        </div>
-        {menuOpen && (
-          <div className="border-t border-ld-border bg-ld-deep/96 px-5 pb-5 pt-3 backdrop-blur-[18px] md:hidden">
-            <ul className="flex flex-col gap-1">
-              {navLinks.map((link) => (
-                <li key={link.href}>
-                  <a href={link.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-base font-medium text-ld-text-secondary transition-colors hover:bg-ld-accent/8 hover:text-ld-text">{link.label}</a>
-                </li>
-              ))}
-            </ul>
-            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-lg bg-ld-accent py-3 text-center text-base font-semibold text-ld-on-accent">
-              Get Started
-            </Link>
-          </div>
-        )}
-      </nav>
+      <SiteNav links={LANDING_NAV_LINKS_ABSOLUTE} active="pricing" />
 
       {/* ── Hero ── */}
       <section className="pt-36 pb-16 lg:pt-40">
@@ -547,14 +474,7 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* ── Footer ── */}
-      <footer className="border-t border-ld-border bg-ld-deep">
-        <div className="mx-auto flex max-w-[1280px] items-center justify-center px-4 py-6 lg:px-7">
-          <div className="text-sm text-ld-text-muted">
-            &copy; 2026 Beacontry. All rights reserved.
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

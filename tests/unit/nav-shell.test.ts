@@ -13,11 +13,13 @@ import { join } from "node:path";
 
 const read = (f: string) => readFileSync(join(__dirname, "..", "..", f), "utf8");
 
+// PublicShell renders the shared SiteNav, so its row reads both files, in
+// render order: the skip link in the shell comes before the nav's links.
 describe.each([
-  ["src/components/layout/top-nav-shell.tsx"],
-  ["src/components/layout/public-shell.tsx"],
-])("%s", (file) => {
-  const src = read(file);
+  ["src/components/layout/top-nav-shell.tsx", ["src/components/layout/top-nav-shell.tsx"]],
+  ["src/components/layout/public-shell.tsx", ["src/components/layout/public-shell.tsx", "src/components/marketing/site-nav.tsx"]],
+])("%s", (_name, files) => {
+  const src = files.map(read).join("\n");
 
   it("renders a skip link to #main before anything else focusable", () => {
     const skip = src.indexOf('<a href="#main" className="skip-link">');
