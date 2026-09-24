@@ -72,7 +72,8 @@ describe("globals.css", () => {
   const css = readFileSync(join(__dirname, "..", "..", "src", "app", "globals.css"), "utf8");
 
   it("gives every focusable element a default focus-visible outline", () => {
-    expect(css).toMatch(/:focus-visible\s*\{\s*outline:\s*2px solid var\(--color-accent\)/);
+    expect(css).toMatch(/:focus-visible\s*\{\s*outline:\s*2px solid var\(--color-focus\)/);
+    expect(css).toMatch(/--color-focus:\s*var\(--color-accent\)/);
   });
 
   it("paints a system-colour outline in forced colours, outside any cascade layer", () => {

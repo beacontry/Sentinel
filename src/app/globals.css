@@ -1,53 +1,91 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════════════
+   Design tokens. One place for every colour, in OKLCH.
+
+   The @theme block is the light theme and the source Tailwind generates
+   utilities from (bg-bg-secondary, text-bullish, border-border-control …).
+   Every other theme is one `html.<name>` block below that redefines the
+   same names and nothing else; theme-init.js and ThemeProvider put that
+   class on <html> before first paint. Colour-blind mode is a second class
+   on <html> that swaps only the state colours.
+
+   Roles:
+   - bg-primary → secondary → surface → elevated → hover: the lightness
+     ladder. Cards and inputs sit on secondary, menus on elevated.
+   - border: decorative container edge, deliberately faint (~1.3:1).
+     border-control: the edge of a control, 3:1 or better on every
+     surface (WCAG 1.4.11). hairline-inner: dividers inside a container.
+   - accent + on-accent: the primary action and its label, 4.5:1 or
+     better at rest and on hover.
+   - bullish / bearish / warning: the state colour for text and marks,
+     4.5:1 on bg-secondary. Each also has a triplet for chips and
+     banners: -fg (text) on -fill (background) with a -line edge.
+   - bearish-solid + on-bearish: only for the one irreversible confirm.
+
+   tests/unit/theme-contrast.test.ts measures every pair above in every
+   theme and in colour-blind mode. Change a value, run it.
+   ═══════════════════════════════════════════════════════════════════════ */
 @theme {
   --font-display: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   --font-body: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), "JetBrains Mono", monospace;
 
-  /* ── Surfaces ── Light theme, white cards on gray body */
-  --color-bg-primary: #f1f5f9;
-  --color-bg-secondary: #ffffff;
-  --color-bg-surface: #f8fafc;
-  --color-bg-elevated: #f1f5f9;
-  --color-bg-hover: #e2e8f0;
+  /* ── Surfaces ── light: near-white cards on a green-grey page, hue 163 */
+  --color-bg-primary: oklch(96.5% 0.006 163);
+  --color-bg-secondary: oklch(99.5% 0.003 163);
+  --color-bg-surface: oklch(98% 0.004 163);
+  --color-bg-elevated: oklch(95% 0.007 163);
+  --color-bg-hover: oklch(92% 0.010 163);
 
-  /* ── Borders ── */
-  --color-border: #e2e8f0;
-  --color-border-hover: #cbd5e1;
-  /* Edge of a form control. --color-border is a decorative hairline
-     (1.2:1 here); WCAG 1.4.11 wants 3:1 against every surface a control
-     sits on, so inputs and selects use this instead. */
-  --color-border-control: #7c8aa0;
+  /* ── Edges ── */
+  --color-border: oklch(90% 0.010 163);
+  --color-border-hover: oklch(84% 0.012 163);
+  --color-border-control: oklch(60% 0.015 163);
+  --color-hairline-inner: rgb(0 0 0 / 0.07);
 
-  /* ── Text ── Dark on light, maximum contrast */
-  --color-text-primary: #0f172a;
-  --color-text-secondary: #334155;
-  --color-text-muted: #475569;
+  /* ── Text ── */
+  --color-text-primary: oklch(22% 0.020 163);
+  --color-text-secondary: oklch(38% 0.020 163);
+  --color-text-muted: oklch(47% 0.020 163);
 
-  /* ── Accent (emerald, darker for light bg) ── */
-  --color-accent: #10b981;
-  --color-accent-hover: #059669;
-  --color-accent-muted: rgba(16, 185, 129, 0.10);
-  /* Label on an accent fill (primary buttons). White on #10b981 is 2.5:1;
-     near-black clears 4.5:1 on both the rest and the hover fill. */
-  --color-on-accent: #020617;
+  /* ── Accent ── the fill moved dark enough for a white label, rather
+     than tinting the label (white on the old #10b981 was 2.5:1). */
+  --color-accent: oklch(50% 0.12 163);
+  --color-accent-hover: oklch(45% 0.11 163);
+  --color-on-accent: oklch(99.5% 0.003 163);
+  --color-accent-muted: color-mix(in oklch, var(--color-accent) 12%, transparent);
+  --color-focus: var(--color-accent);
 
-  /* ── Trading semantics (darker for light bg contrast) ── */
-  --color-bullish: #059669;
-  --color-bullish-muted: rgba(5, 150, 105, 0.10);
-  --color-bearish: #dc2626;
-  --color-bearish-muted: rgba(220, 38, 38, 0.10);
-  --color-warning: #d97706;
-  --color-warning-muted: rgba(217, 119, 6, 0.10);
-  --color-neutral: #94a3b8;
+  /* ── Trading states ── */
+  --color-bullish: oklch(48% 0.12 160);
+  --color-bearish: oklch(52% 0.19 27);
+  --color-warning: oklch(50% 0.13 65);
+  --color-bullish-muted: color-mix(in oklch, var(--color-bullish) 12%, transparent);
+  --color-bearish-muted: color-mix(in oklch, var(--color-bearish) 12%, transparent);
+  --color-warning-muted: color-mix(in oklch, var(--color-warning) 12%, transparent);
+  --color-bullish-fg: oklch(38% 0.09 160);
+  --color-bullish-fill: oklch(95% 0.030 160);
+  --color-bullish-line: oklch(62% 0.10 160);
+  --color-bearish-fg: oklch(42% 0.14 25);
+  --color-bearish-fill: oklch(95% 0.025 22);
+  --color-bearish-line: oklch(64% 0.13 25);
+  --color-warning-fg: oklch(42% 0.10 65);
+  --color-warning-fill: oklch(95% 0.040 85);
+  --color-warning-line: oklch(66% 0.12 70);
+  --color-bearish-solid: oklch(52% 0.19 27);
+  --color-on-bearish: oklch(99.5% 0.003 27);
+  --color-neutral: oklch(68% 0.015 163);
 
-  /* ── Signals ── */
-  --color-strong-buy: #047857;
-  --color-buy: #059669;
-  --color-hold: #94a3b8;
-  --color-sell: #dc2626;
-  --color-strong-sell: #b91c1c;
+  /* ── Signals ── follow the state colours, so colour-blind mode reaches them */
+  --color-strong-buy: var(--color-bullish-fg);
+  --color-buy: var(--color-bullish);
+  --color-hold: var(--color-neutral);
+  --color-sell: var(--color-bearish);
+  --color-strong-sell: var(--color-bearish-fg);
+
+  /* ── Loading shimmer ── */
+  --color-skeleton-sheen: color-mix(in oklch, var(--color-text-primary) 6%, transparent);
 
   /* ── Spacing ── */
   --space-xs: 4px;
@@ -59,286 +97,184 @@
   --space-3xl: 48px;
   --space-4xl: 64px;
 
-  /* ── Landing page ── */
-  --color-ld-deep: #f8fafc;
-  --color-ld-panel: #f1f5f9;
-  --color-ld-card: #ffffff;
-  --color-ld-card-hover: #f8fafc;
-  --color-ld-border: #e2e8f0;
-  --color-ld-border-accent: #d1fae5;
-  --color-ld-text: #0f172a;
-  --color-ld-text-secondary: #334155;
-  --color-ld-text-muted: #64748b;
-  /* ld-accent darkened from #059669, where neither white (3.8:1) nor
-     near-black reaches 4.5:1 on both it and its hover fill. */
-  --color-ld-accent: #047857;
-  --color-ld-accent-dim: #065f46;
-  --color-ld-on-accent: #ffffff;
-  --color-ld-red: #dc2626;
-  --color-ld-cyan: #0891b2;
-  --color-ld-amber: #d97706;
-  --color-ld-green: #059669;
+  /* ── Landing page ── the marketing pages used to carry their own
+     purple-black ladder (hue 285). Each ld-* name now points at the app
+     token with the same role, so the public site and the app share one
+     palette per theme and the markup did not have to change. */
+  --color-ld-deep: var(--color-bg-primary);
+  --color-ld-panel: var(--color-bg-secondary);
+  --color-ld-card: var(--color-bg-secondary);
+  --color-ld-card-hover: var(--color-bg-surface);
+  --color-ld-border: var(--color-border);
+  --color-ld-border-accent: color-mix(in oklch, var(--color-accent) 35%, var(--color-border));
+  --color-ld-text: var(--color-text-primary);
+  --color-ld-text-secondary: var(--color-text-secondary);
+  --color-ld-text-muted: var(--color-text-muted);
+  --color-ld-accent: var(--color-accent);
+  --color-ld-accent-dim: var(--color-accent-hover);
+  --color-ld-on-accent: var(--color-on-accent);
+  --color-ld-red: var(--color-bearish);
+  --color-ld-amber: var(--color-warning);
+  --color-ld-green: var(--color-bullish);
 }
 
 @layer base {
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  /* ── Dark mode overrides ── */
-  html.dark {
-    /* Dashboard surfaces */
-    --color-bg-primary: #0d1511;
-    --color-bg-secondary: #131d18;
-    --color-bg-surface: #18241e;
-    --color-bg-elevated: #1e2e27;
-    --color-bg-hover: #25382f;
-    --color-border: #2d4038;
-    --color-border-hover: #3d5349;
-    --color-border-control: #678376;
-    --color-text-primary: #edf3f0;
-    --color-text-secondary: #8da69c;
-    /* v3.1 — bumped from #607b71 to #7f9389 to clear WCAG AA (≥4.5:1)
-       on bg-surface #18241e. Old contrast ~3.5:1 (failed AA for
-       normal text); new ~4.9:1. */
-    --color-text-muted: #7f9389;
-    --color-accent: #10b981;
-    --color-accent-hover: #34d399;
-    --color-accent-muted: rgba(16, 185, 129, 0.15);
-    --color-on-accent: #0d1511;
-    --color-bullish: #10b981;
-    --color-bullish-muted: rgba(16, 185, 129, 0.15);
-    --color-bearish: #ef4444;
-    --color-bearish-muted: rgba(239, 68, 68, 0.15);
-    --color-warning: #f59e0b;
-    --color-warning-muted: rgba(245, 158, 11, 0.15);
-    --color-neutral: #6b7f76;
-    --color-strong-buy: #10b981;
-    --color-buy: #34d399;
-    --color-hold: #6b7f76;
-    --color-sell: #ef4444;
-    --color-strong-sell: #dc2626;
+  /* Native controls, scrollbars and the select popup follow the theme. */
+  html { color-scheme: light; }
 
-    /* Landing page surfaces */
-    --color-ld-deep: #0a0a0f;
-    --color-ld-panel: #0f0f18;
-    --color-ld-card: #12121e;
-    --color-ld-card-hover: #181828;
-    --color-ld-border: #1e1e35;
-    --color-ld-border-accent: #0a3d2a;
-    --color-ld-text: #e8e6f0;
-    --color-ld-text-secondary: #9b96b3;
-    /* v3.1 — bumped from #67627e to #8780a3 to clear WCAG AA on
-       ld-deep #0a0a0f. Old contrast ~3.4:1; new ~5.6:1. */
-    --color-ld-text-muted: #8780a3;
-    --color-ld-accent: #10b981;
-    --color-ld-accent-dim: #059669;
-    --color-ld-on-accent: #0a0a0f;
-    --color-ld-red: #ef4444;
-    --color-ld-cyan: #4df0e6;
-    --color-ld-amber: #ffa94d;
-    --color-ld-green: #54d38a;
+  /* ── Dark (the default for first-time visitors), hue 163 ──
+     A lightness ladder about +3.5 L per step; depth comes from the
+     ladder, not from shadow. */
+  html.dark {
+    color-scheme: dark;
+    --color-bg-primary: oklch(17% 0.020 163);
+    --color-bg-secondary: oklch(20.5% 0.024 163);
+    --color-bg-surface: oklch(24% 0.028 163);
+    --color-bg-elevated: oklch(27.5% 0.031 164);
+    --color-bg-hover: oklch(31% 0.033 164);
+    --color-border: oklch(30% 0.030 165);
+    --color-border-hover: oklch(36% 0.032 165);
+    --color-border-control: oklch(55% 0.035 165);
+    --color-hairline-inner: rgb(255 255 255 / 0.045);
+    --color-text-primary: oklch(96% 0.006 165);
+    --color-text-secondary: oklch(76% 0.028 165);
+    --color-text-muted: oklch(68% 0.026 165);
+    --color-accent: oklch(70% 0.15 162);
+    --color-accent-hover: oklch(76% 0.15 162);
+    --color-on-accent: oklch(17% 0.020 163);
+    --color-accent-muted: color-mix(in oklch, var(--color-accent) 15%, transparent);
+    --color-bullish: oklch(72% 0.16 160);
+    --color-bearish: oklch(68% 0.19 25);
+    --color-warning: oklch(78% 0.15 75);
+    --color-bullish-muted: color-mix(in oklch, var(--color-bullish) 15%, transparent);
+    --color-bearish-muted: color-mix(in oklch, var(--color-bearish) 15%, transparent);
+    --color-warning-muted: color-mix(in oklch, var(--color-warning) 15%, transparent);
+    --color-bullish-fg: oklch(84% 0.09 160);
+    --color-bullish-fill: oklch(27% 0.050 160);
+    --color-bullish-line: oklch(74% 0.12 160);
+    --color-bearish-fg: oklch(84% 0.088 22);
+    --color-bearish-fill: oklch(27.5% 0.046 22);
+    --color-bearish-line: oklch(74% 0.14 22);
+    --color-warning-fg: oklch(86% 0.10 80);
+    --color-warning-fill: oklch(28% 0.045 75);
+    --color-warning-line: oklch(74% 0.12 75);
+    --color-bearish-solid: oklch(55% 0.19 25);
+    --color-on-bearish: oklch(98% 0.005 25);
+    --color-neutral: oklch(60% 0.020 165);
   }
 
-  html.dark ::-webkit-scrollbar-thumb { background: #3d5349; }
-  html.dark ::-webkit-scrollbar-thumb:hover { background: #4d6559; }
-  html.dark ::selection { background-color: rgba(16, 185, 129, 0.30); }
+  /* ── Gray: the dark ladder with the tint taken out ("true neutral").
+     Keeps the emerald accent. */
+  html.gray {
+    color-scheme: dark;
+    --color-bg-primary: oklch(17% 0 0);
+    --color-bg-secondary: oklch(20.5% 0.002 286);
+    --color-bg-surface: oklch(24% 0.003 286);
+    --color-bg-elevated: oklch(27.5% 0.004 286);
+    --color-bg-hover: oklch(31% 0.004 286);
+    --color-border: oklch(30% 0.004 286);
+    --color-border-hover: oklch(36% 0.004 286);
+    --color-border-control: oklch(55% 0.004 286);
+    --color-hairline-inner: rgb(255 255 255 / 0.045);
+    --color-text-primary: oklch(96% 0 0);
+    --color-text-secondary: oklch(76% 0.004 286);
+    --color-text-muted: oklch(68% 0.004 286);
+    --color-accent: oklch(70% 0.15 162);
+    --color-accent-hover: oklch(76% 0.15 162);
+    --color-on-accent: oklch(17% 0 0);
+    --color-accent-muted: color-mix(in oklch, var(--color-accent) 15%, transparent);
+    --color-bullish: oklch(72% 0.16 160);
+    --color-bearish: oklch(68% 0.19 25);
+    --color-warning: oklch(78% 0.15 75);
+    --color-bullish-muted: color-mix(in oklch, var(--color-bullish) 15%, transparent);
+    --color-bearish-muted: color-mix(in oklch, var(--color-bearish) 15%, transparent);
+    --color-warning-muted: color-mix(in oklch, var(--color-warning) 15%, transparent);
+    --color-bullish-fg: oklch(84% 0.09 160);
+    --color-bullish-fill: oklch(27% 0.050 160);
+    --color-bullish-line: oklch(74% 0.12 160);
+    --color-bearish-fg: oklch(84% 0.088 22);
+    --color-bearish-fill: oklch(27.5% 0.046 22);
+    --color-bearish-line: oklch(74% 0.14 22);
+    --color-warning-fg: oklch(86% 0.10 80);
+    --color-warning-fill: oklch(28% 0.045 75);
+    --color-warning-line: oklch(74% 0.12 75);
+    --color-bearish-solid: oklch(55% 0.19 25);
+    --color-on-bearish: oklch(98% 0.005 25);
+    --color-neutral: oklch(60% 0.004 286);
+  }
 
-  /* Color-blind palette swap. Activated by the `colorblind` class on
-     the <html> element, toggled by useDisplayPrefs.setColorBlindMode.
-     Replaces red/green with a deuteranopia-friendly orange/blue pair
-     (Wong palette). Bullish stays a vivid color (still emotionally
-     positive), bearish swaps to orange (distinguishable from green
-     for the ~8% of men + ~0.5% of women who can't tell red from green).
-     The hex values match Bang Wong's published recommendations:
-     - blue:   #0072B2 (positive / bullish)
-     - orange: #E69F00 (negative / bearish) */
+  /* ── Coral: the light ladder turned to a warm hue 30, coral accent ── */
+  html.coral {
+    --color-bg-primary: oklch(96.5% 0.010 40);
+    --color-bg-secondary: oklch(99.5% 0.003 40);
+    --color-bg-surface: oklch(98% 0.006 40);
+    --color-bg-elevated: oklch(95% 0.014 40);
+    --color-bg-hover: oklch(92% 0.020 38);
+    --color-border: oklch(90% 0.018 38);
+    --color-border-hover: oklch(84% 0.024 36);
+    --color-border-control: oklch(60% 0.030 36);
+    --color-text-primary: oklch(24% 0.040 38);
+    --color-text-secondary: oklch(38% 0.040 38);
+    --color-text-muted: oklch(47% 0.035 38);
+    --color-accent: oklch(52% 0.17 30);
+    --color-accent-hover: oklch(47% 0.16 30);
+    --color-on-accent: oklch(99.5% 0.003 40);
+    --color-neutral: oklch(66% 0.025 40);
+  }
+
+  /* ── Light blue: the light ladder turned to hue 250, blue accent ── */
+  html.light-blue {
+    --color-bg-primary: oklch(96.5% 0.010 250);
+    --color-bg-secondary: oklch(99.5% 0.003 250);
+    --color-bg-surface: oklch(98% 0.006 250);
+    --color-bg-elevated: oklch(95% 0.014 250);
+    --color-bg-hover: oklch(92% 0.022 250);
+    --color-border: oklch(90% 0.020 250);
+    --color-border-hover: oklch(84% 0.028 250);
+    --color-border-control: oklch(60% 0.040 250);
+    --color-text-primary: oklch(24% 0.050 255);
+    --color-text-secondary: oklch(36% 0.050 255);
+    --color-text-muted: oklch(47% 0.040 255);
+    --color-accent: oklch(50% 0.19 262);
+    --color-accent-hover: oklch(45% 0.19 262);
+    --color-on-accent: oklch(99.5% 0.003 250);
+    --color-neutral: oklch(66% 0.040 250);
+  }
+
+  /* ── Colour-blind mode ── a class beside the theme class. Red/green
+     become blue/orange (after Bang Wong's deuteranopia-safe pair), moved
+     in lightness until each passes 4.5:1: the published #E69F00 orange is
+     2.1:1 on white. Light themes first, then the two dark ones. */
   html.colorblind {
-    --color-bullish: #0072B2;
-    --color-bullish-muted: rgba(0, 114, 178, 0.15);
-    --color-bearish: #E69F00;
-    --color-bearish-muted: rgba(230, 159, 0, 0.15);
+    --color-bullish: oklch(48% 0.13 245);
+    --color-bearish: oklch(52% 0.14 55);
+    --color-bullish-fg: oklch(38% 0.10 245);
+    --color-bullish-fill: oklch(95% 0.025 245);
+    --color-bullish-line: oklch(62% 0.11 245);
+    --color-bearish-fg: oklch(42% 0.11 55);
+    --color-bearish-fill: oklch(95% 0.035 70);
+    --color-bearish-line: oklch(64% 0.12 60);
   }
   html.colorblind.dark,
   html.colorblind.gray {
-    --color-bullish: #56B4E9;
-    --color-bullish-muted: rgba(86, 180, 233, 0.15);
-    --color-bearish: #E69F00;
-    --color-bearish-muted: rgba(230, 159, 0, 0.20);
+    --color-bullish: oklch(70% 0.13 240);
+    --color-bearish: oklch(76% 0.15 70);
+    --color-bullish-fg: oklch(84% 0.08 240);
+    --color-bullish-fill: oklch(27% 0.050 240);
+    --color-bullish-line: oklch(72% 0.11 240);
+    --color-bearish-fg: oklch(86% 0.10 70);
+    --color-bearish-fill: oklch(28% 0.045 70);
+    --color-bearish-line: oklch(76% 0.12 70);
   }
+  /* The -muted mixes are declared once per theme and resolve on <html>,
+     so each picks up the swapped colour without being repeated here. */
 
   /* ─────────────────────────────────────────────────────────────────
-     Coral theme — warm light variant, peachy off-white surfaces +
-     coral accent. Light-mode contrast model; trading semantics stay
-     the universal red/green so positions are still readable at a glance.
-     ───────────────────────────────────────────────────────────────── */
-  html.coral {
-    --color-bg-primary: #fdf5f3;
-    --color-bg-secondary: #ffffff;
-    --color-bg-surface: #fefaf9;
-    --color-bg-elevated: #fbe8e1;
-    --color-bg-hover: #f5d0c5;
-    --color-border: #f0c8bd;
-    --color-border-hover: #e3a796;
-    --color-border-control: #b07060;
-    --color-text-primary: #4a1e0f;
-    --color-text-secondary: #6a3322;
-    --color-text-muted: #8a5240;
-    --color-accent: #f97066;
-    --color-accent-hover: #ef5a4e;
-    --color-accent-muted: rgba(249, 112, 102, 0.12);
-    --color-on-accent: #1c0a04;
-    --color-bullish: #047857;
-    --color-bullish-muted: rgba(4, 120, 87, 0.10);
-    --color-bearish: #b91c1c;
-    --color-bearish-muted: rgba(185, 28, 28, 0.10);
-    --color-warning: #b45309;
-    --color-warning-muted: rgba(180, 83, 9, 0.10);
-    --color-neutral: #a8826a;
-    --color-strong-buy: #065f46;
-    --color-buy: #047857;
-    --color-hold: #a8826a;
-    --color-sell: #b91c1c;
-    --color-strong-sell: #991b1b;
-
-    /* Landing page surfaces for coral */
-    --color-ld-deep: #fef4f1;
-    --color-ld-panel: #fdebe6;
-    --color-ld-card: #ffffff;
-    --color-ld-card-hover: #fefaf9;
-    --color-ld-border: #f0c8bd;
-    --color-ld-border-accent: #fcd1ca;
-    --color-ld-text: #4a1e0f;
-    --color-ld-text-secondary: #6a3322;
-    --color-ld-text-muted: #8a5240;
-    /* Darkened from #ef5a4e / #c2410c so one label (white) clears 4.5:1
-       on both the fill and its hover. */
-    --color-ld-accent: #c93c32;
-    --color-ld-accent-dim: #a8291f;
-    --color-ld-on-accent: #ffffff;
-    --color-ld-red: #b91c1c;
-    --color-ld-cyan: #0891b2;
-    --color-ld-amber: #b45309;
-    --color-ld-green: #047857;
-  }
-
-  /* ─────────────────────────────────────────────────────────────────
-     Light Blue theme — cool light variant, sky-tinted surfaces, blue
-     accent. Same contrast model as light/coral.
-     ───────────────────────────────────────────────────────────────── */
-  html.light-blue {
-    --color-bg-primary: #f0f7ff;
-    --color-bg-secondary: #ffffff;
-    --color-bg-surface: #f8fcff;
-    --color-bg-elevated: #e0f0ff;
-    --color-bg-hover: #c7e2ff;
-    --color-border: #bdd9f5;
-    --color-border-hover: #94c0e8;
-    --color-border-control: #6488ac;
-    --color-text-primary: #0c2340;
-    --color-text-secondary: #1e3a5f;
-    --color-text-muted: #4a6580;
-    /* Darkened from #3b82f6 / #2563eb: white on #3b82f6 is 3.7:1 and
-       near-black on #2563eb is 3.8:1, so no single label passed both. */
-    --color-accent: #2563eb;
-    --color-accent-hover: #1d4ed8;
-    --color-accent-muted: rgba(37, 99, 235, 0.12);
-    --color-on-accent: #ffffff;
-    --color-bullish: #047857;
-    --color-bullish-muted: rgba(4, 120, 87, 0.10);
-    --color-bearish: #b91c1c;
-    --color-bearish-muted: rgba(185, 28, 28, 0.10);
-    --color-warning: #b45309;
-    --color-warning-muted: rgba(180, 83, 9, 0.10);
-    --color-neutral: #6b8cb0;
-    --color-strong-buy: #065f46;
-    --color-buy: #047857;
-    --color-hold: #6b8cb0;
-    --color-sell: #b91c1c;
-    --color-strong-sell: #991b1b;
-
-    /* Landing page surfaces for light-blue */
-    --color-ld-deep: #f0f7ff;
-    --color-ld-panel: #e3eefe;
-    --color-ld-card: #ffffff;
-    --color-ld-card-hover: #f8fcff;
-    --color-ld-border: #bdd9f5;
-    --color-ld-border-accent: #c7e2ff;
-    --color-ld-text: #0c2340;
-    --color-ld-text-secondary: #1e3a5f;
-    --color-ld-text-muted: #4a6580;
-    --color-ld-accent: #2563eb;
-    --color-ld-accent-dim: #1d4ed8;
-    --color-ld-on-accent: #ffffff;
-    --color-ld-red: #b91c1c;
-    --color-ld-cyan: #0891b2;
-    --color-ld-amber: #b45309;
-    --color-ld-green: #047857;
-  }
-
-  /* ─────────────────────────────────────────────────────────────────
-     Gray theme — true neutral dark variant. No emerald tint in surfaces
-     (the default dark theme leans green). Accent stays emerald so
-     bullish/CTA elements still pop.
-     ───────────────────────────────────────────────────────────────── */
-  html.gray {
-    --color-bg-primary: #0f0f10;
-    --color-bg-secondary: #18181b;
-    --color-bg-surface: #1f1f23;
-    --color-bg-elevated: #27272a;
-    --color-bg-hover: #3f3f46;
-    --color-border: #3f3f46;
-    --color-border-hover: #52525b;
-    --color-border-control: #7a7a84;
-    --color-text-primary: #fafafa;
-    --color-text-secondary: #a1a1aa;
-    /* v3.1 — bumped from #71717a to #8d8d96 for AA on bg-surface
-       #1f1f23. Old ~3.3:1; new ~5.0:1. */
-    --color-text-muted: #8d8d96;
-    --color-accent: #10b981;
-    --color-accent-hover: #34d399;
-    --color-accent-muted: rgba(16, 185, 129, 0.15);
-    --color-on-accent: #0a0a0a;
-    --color-bullish: #10b981;
-    --color-bullish-muted: rgba(16, 185, 129, 0.15);
-    --color-bearish: #ef4444;
-    --color-bearish-muted: rgba(239, 68, 68, 0.15);
-    --color-warning: #f59e0b;
-    --color-warning-muted: rgba(245, 158, 11, 0.15);
-    --color-neutral: #71717a;
-    --color-strong-buy: #10b981;
-    --color-buy: #34d399;
-    --color-hold: #71717a;
-    --color-sell: #ef4444;
-    --color-strong-sell: #dc2626;
-
-    /* Landing page surfaces for gray */
-    --color-ld-deep: #0a0a0a;
-    --color-ld-panel: #18181b;
-    --color-ld-card: #1f1f23;
-    --color-ld-card-hover: #27272a;
-    --color-ld-border: #3f3f46;
-    --color-ld-border-accent: #404040;
-    --color-ld-text: #fafafa;
-    --color-ld-text-secondary: #a1a1aa;
-    /* v3.1 — same bump as dashboard muted for AA on ld-deep #0a0a0a. */
-    --color-ld-text-muted: #8d8d96;
-    --color-ld-accent: #10b981;
-    --color-ld-accent-dim: #059669;
-    --color-ld-on-accent: #0a0a0a;
-    --color-ld-red: #ef4444;
-    --color-ld-cyan: #4df0e6;
-    --color-ld-amber: #ffa94d;
-    --color-ld-green: #54d38a;
-  }
-  html.gray ::-webkit-scrollbar-thumb { background: #3f3f46; }
-  html.gray ::-webkit-scrollbar-thumb:hover { background: #52525b; }
-  html.gray ::selection { background-color: rgba(16, 185, 129, 0.30); }
-
-  /* ─────────────────────────────────────────────────────────────────
-     Focus mode — opt-in collapse of the left dashboard sidebar so a
-     single page (Analysis, Trader, anywhere a chart lives) gets the
-     full viewport width. Toggled by writing localStorage and adding
-     `focus-mode` to <html>. Mobile is unaffected (sidebar is already
-     hidden via `hidden lg:flex`).
+     Focus mode — opt-in collapse of the app chrome so a single page
+     (Analysis) gets the full viewport. Toggled by writing localStorage
+     and adding `focus-mode` to <html>.
      ───────────────────────────────────────────────────────────────── */
   html.focus-mode aside[data-app-sidebar] {
     display: none !important;
@@ -379,13 +315,13 @@
   ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--color-border-hover); }
 
-  ::selection { background-color: rgba(16, 185, 129, 0.20); color: var(--color-text-primary); }
+  ::selection { background-color: color-mix(in oklch, var(--color-accent) 25%, transparent); color: var(--color-text-primary); }
   input, textarea, select, button { font-family: var(--font-body); }
 
   /* Default keyboard focus indicator. A component that draws its own ring
      (Button, the form primitives) overrides this with utilities. */
   :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
 }
