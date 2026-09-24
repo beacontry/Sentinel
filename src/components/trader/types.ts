@@ -38,6 +38,10 @@ export interface TraderData {
     totalPnl: number;
   } | null;
   positions: TraderPosition[];
+  /** The broker did not answer and positions come from its last cached read. */
+  positionsStale?: boolean;
+  /** Age of that cached read, in seconds (0 when live). */
+  positionsAgeSeconds?: number;
   /** Symbols whose protective broker stop is currently missing (broker
    *  rejected the place call — typically PDT). Surfaced as a banner because
    *  the position is only protected by the 1-min exit poll. */
@@ -54,6 +58,50 @@ export interface TraderData {
     halted: boolean;
   }>;
   analytics: TraderAnalytics | null;
+}
+
+/** /api/trader/engine, unwrapped from its { data } envelope. */
+export interface EngineStatus {
+  running: boolean;
+  halted: boolean;
+  mode?: string;
+  lastScanAt: string | null;
+  scanCount: number;
+  positionCount: number;
+  dailyLoss: number;
+  errors: string[];
+  isOwner?: boolean;
+  // Phase 3: live-trading safeguards
+  environment?: "paper" | "live" | null;
+  bootEquity?: number | null;
+  bootAccountNumber?: string | null;
+  dailyNotional?: number;
+  consecutiveLosses?: number;
+  liveTradingAllowed?: boolean;
+  // Phase 5: personalized live-trading protections
+  mtmElected?: boolean;
+  washSaleProtectionEnabled?: boolean;
+  washSaleBlockedCount?: number;
+  // Adaptive mode: populated only when mode === "adaptive"
+  effectiveMode?: string | null;
+  adaptiveRegime?: {
+    regime: "risk_on" | "neutral" | "risk_off";
+    vix: number;
+    spyPrice: number;
+    spyMA50: number;
+    spyMA200: number;
+    breadthScore?: number;
+    reasons: string[];
+    updatedAt: string;
+  } | null;
+}
+
+/** /api/tax-status: the self-attested section 475(f) election. */
+export interface TaxStatus {
+  hasTraderTaxStatus: boolean;
+  mtmElectionYear: number | null;
+  mtmDeclaredAt: string | null;
+  notes: string | null;
 }
 
 export interface TraderPosition {
