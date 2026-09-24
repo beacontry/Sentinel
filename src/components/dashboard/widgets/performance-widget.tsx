@@ -1,125 +1,74 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Target } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SignedPercent } from "@/components/ui/signed-value";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Target, ArrowRight } from "lucide-react";
-import Link from "next/link";
+import { fetchWidgetJson } from "@/lib/widget-load";
+import { useWidgetLoad } from "./use-widget-load";
+import { WidgetBody, WidgetFacts, WidgetFigure } from "./widget-body";
 
 interface PerformanceData {
   totalSignals: number;
   correctSignals: number;
   accuracy: number;
+  /** Already a percent: /api/performance computes pnl * 100 / cost basis. */
   avgReturn: number;
 }
 
+/**
+ * Win rate on closed trades as the headline, with the counts behind it
+ * and the average return. The win rate is a proportion, not a gain or a
+ * loss, so it prints in the text colour; it was green above 50% and
+ * amber below, a judgement carried by colour alone.
+ */
 export function PerformanceWidget() {
-  const [stats, setStats] = useState<PerformanceData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch("/api/performance");
-        if (!res.ok) throw new Error("Failed");
-        const data = await res.json();
-        setStats(data.overall ?? null);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="space-y-2.5">
-        <Skeleton className="h-10 w-full" rounded="md" />
-        <Skeleton className="h-7 w-full" rounded="md" />
-        <Skeleton className="h-7 w-full" rounded="md" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <p className="text-sm text-text-muted py-4 text-center">
-        Unable to load performance
-      </p>
-    );
-  }
-
-  if (!stats || stats.totalSignals === 0) {
-    return (
-      <div className="py-5 text-center">
-        <Target className="mx-auto mb-2 h-7 w-7 text-text-muted" />
-        <p className="text-sm text-text-muted">No performance data yet</p>
-        <Link
-          href="/dashboard/performance"
-          className="text-xs text-accent hover:text-accent-hover mt-1 inline-block"
-        >
-          View performance
-        </Link>
-      </div>
-    );
-  }
-
-  const winRate = (stats.accuracy * 100).toFixed(1);
-  const isGoodWinRate = stats.accuracy >= 0.5;
+  const load = useWidgetLoad<PerformanceData | null>(async (signal) => {
+    const data = await fetchWidgetJson<{ overall?: PerformanceData }>("/api/performance", signal);
+    return data.overall ?? null;
+  });
 
   return (
-    <div>
-      <div className="py-1 text-center">
-        <p
-          className={`font-display text-2xl font-bold leading-none tracking-tight ${
-            isGoodWinRate ? "text-bullish" : "text-warning"
-          }`}
-        >
-          {winRate}%
-        </p>
-        <p className="mt-1 text-xs uppercase tracking-[0.08em] text-text-muted">Win Rate</p>
-      </div>
-
-      <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-        <div className="rounded-lg bg-bg-elevated px-2 py-1.5 text-center">
-          <p className="text-xs uppercase tracking-[0.16em] text-text-muted">Total</p>
-          <p className="font-mono text-sm font-medium text-text-primary">
-            {stats.totalSignals}
-          </p>
+    <WidgetBody
+      load={load}
+      label="performance"
+      skeleton={
+        <div>
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="mt-1.5 h-8 w-24" />
+          <div className="mt-3 space-y-3">
+            <Skeleton className="h-5 w-full" />
+            <Skeleton className="h-5 w-full" />
+            <Skeleton className="h-5 w-full" />
+          </div>
         </div>
-        <div className="rounded-lg bg-bg-elevated px-2 py-1.5 text-center">
-          <p className="text-xs uppercase tracking-[0.16em] text-text-muted">Correct</p>
-          <p className="font-mono text-sm font-medium text-bullish">
-            {stats.correctSignals}
-          </p>
-        </div>
-      </div>
-
-      {stats.avgReturn !== 0 && (
-        <div className="mt-1.5 rounded-lg bg-bg-elevated px-2 py-1.5 text-center">
-          <p className="text-xs uppercase tracking-[0.16em] text-text-muted">Avg Return</p>
-          <p
-            className={`font-mono text-sm font-medium ${
-              stats.avgReturn >= 0 ? "text-bullish" : "text-bearish"
-            }`}
-          >
-            {/* /api/performance sends avgReturn already in percent
-                (pnl * 100 / cost basis), as the Performance page reads it. */}
-            {stats.avgReturn >= 0 ? "+" : ""}
-            {stats.avgReturn.toFixed(2)}%
-          </p>
-        </div>
-      )}
-
-      <Link
-        href="/dashboard/performance"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-xs uppercase
-          tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
-      >
-        Full Analytics <ArrowRight className="w-3 h-3" />
-      </Link>
-    </div>
+      }
+      isEmpty={(d) => d === null || d.totalSignals === 0}
+      empty={
+        <EmptyState
+          compact
+          icon={<Target />}
+          title="No closed trades yet"
+          description="Win rate and returns appear once a position has been closed."
+        />
+      }
+    >
+      {(stats) =>
+        stats && (
+          <div>
+            <WidgetFigure label="Win rate">
+              <span className="font-mono text-text-primary">{(stats.accuracy * 100).toFixed(1)}%</span>
+            </WidgetFigure>
+            <WidgetFacts
+              items={[
+                { label: "Closed trades", value: stats.totalSignals },
+                { label: "Winners", value: stats.correctSignals },
+                { label: "Average return", value: <SignedPercent value={stats.avgReturn} /> },
+              ]}
+            />
+          </div>
+        )
+      }
+    </WidgetBody>
   );
 }

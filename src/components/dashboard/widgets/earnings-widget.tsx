@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { Calendar, ArrowRight } from "lucide-react";
-import Link from "next/link";
+import { Calendar } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SymbolLink } from "@/components/ui/symbol-link";
+import { StatusChip } from "@/components/ui/status-chip";
+import { fetchWidgetJson } from "@/lib/widget-load";
+import { useWidgetLoad } from "./use-widget-load";
+import { WidgetBody, WidgetList, WidgetRow, WidgetRowsSkeleton } from "./widget-body";
 
 interface EarningsEntry {
   symbol: string;
@@ -12,124 +14,76 @@ interface EarningsEntry {
   hour?: string;
 }
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00");
-  const now = new Date();
-  const diffMs = d.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffMs / 86400000);
+interface EarningsData {
+  configured: boolean;
+  upcoming: EarningsEntry[];
+}
 
+const FALLBACK_SYMBOLS = "SPY,AAPL,MSFT,NVDA,GOOGL";
+
+function whenLabel(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  const diffDays = Math.ceil((d.getTime() - Date.now()) / 86400000);
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Tomorrow";
-  if (diffDays < 7) return `${diffDays}d`;
-
+  if (diffDays < 7) return `In ${diffDays} days`;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+const SESSION: Record<string, string> = { bmo: "Before open", amc: "After close" };
+
+/** The next five report dates for the default watchlist (or five large caps if it is empty). */
 export function EarningsWidget() {
-  const [earnings, setEarnings] = useState<EarningsEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        // Get watchlist first for context
-        const wlRes = await fetch("/api/watchlist");
-        let symbols = "SPY,AAPL,MSFT,NVDA,GOOGL";
-        if (wlRes.ok) {
-          const wlData = await wlRes.json();
-          const wlSymbols = wlData.symbols ?? [];
-          if (wlSymbols.length > 0) {
-            symbols = wlSymbols.slice(0, 20).join(",");
-          }
-        }
-
-        const res = await fetch(`/api/earnings?symbols=${encodeURIComponent(symbols)}`);
-        if (!res.ok) throw new Error("Failed");
-        const data = await res.json();
-
-        if (data.configured === false) {
-          setError(true);
-          return;
-        }
-
-        // Filter to future dates and sort
-        const now = new Date().toISOString().slice(0, 10);
-        const upcoming = (data.earnings ?? [])
-          .filter((e: EarningsEntry) => e.date >= now)
-          .sort((a: EarningsEntry, b: EarningsEntry) => a.date.localeCompare(b.date))
-          .slice(0, 5);
-
-        setEarnings(upcoming);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
+  const load = useWidgetLoad<EarningsData>(async (signal) => {
+    // The watchlist only picks the symbols; if it cannot be read, the
+    // widget still shows the large caps rather than failing.
+    let symbols = FALLBACK_SYMBOLS;
+    try {
+      const wl = await fetchWidgetJson<{ symbols?: string[] }>("/api/watchlist", signal);
+      if (wl.symbols && wl.symbols.length > 0) symbols = wl.symbols.slice(0, 20).join(",");
+    } catch (err) {
+      if (signal.aborted) throw err;
     }
-    load();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="space-y-1.5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-7 w-full" rounded="md" />
-        ))}
-      </div>
+    const data = await fetchWidgetJson<{ configured?: boolean; earnings?: EarningsEntry[] }>(
+      `/api/earnings?symbols=${encodeURIComponent(symbols)}`,
+      signal,
     );
-  }
-
-  if (error) {
-    return (
-      <p className="text-sm text-text-muted py-4 text-center">
-        Unable to load earnings
-      </p>
-    );
-  }
-
-  if (earnings.length === 0) {
-    return (
-      <div className="py-5 text-center">
-        <Calendar className="mx-auto mb-2 h-7 w-7 text-text-muted" />
-        <p className="text-sm text-text-muted">No upcoming earnings</p>
-      </div>
-    );
-  }
+    if (data.configured === false) return { configured: false, upcoming: [] };
+    const today = new Date().toISOString().slice(0, 10);
+    const upcoming = (data.earnings ?? [])
+      .filter((e) => e.date >= today)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 5);
+    return { configured: true, upcoming };
+  });
 
   return (
-    <div>
-      <div className="space-y-1">
-        {earnings.map((e, i) => (
-          <div
-            key={`${e.symbol}-${i}`}
-            className="flex items-center justify-between rounded-lg px-2.5 py-1.5
-              bg-bg-elevated hover:bg-bg-hover transition-colors"
-          >
-            <span className="font-mono text-sm font-medium text-text-primary">
-              {e.symbol}
-            </span>
-            <div className="flex items-center gap-1.5">
-              {e.hour && (
-                <Badge variant="neutral">
-                  {e.hour === "bmo" ? "Pre" : e.hour === "amc" ? "Post" : e.hour}
-                </Badge>
-              )}
-              <span className="font-mono text-xs text-text-secondary">
-                {formatDate(e.date)}
+    <WidgetBody
+      load={load}
+      label="upcoming earnings"
+      skeleton={<WidgetRowsSkeleton rows={5} />}
+      isEmpty={(d) => d.upcoming.length === 0}
+      empty={
+        load.data?.configured === false ? (
+          <EmptyState compact icon={<Calendar />} title="Earnings dates are not set up" description="This server has no earnings calendar source configured." />
+        ) : (
+          <EmptyState compact icon={<Calendar />} title="No reports coming up" description="None of your watchlist reports in the calendar's window." />
+        )
+      }
+    >
+      {({ upcoming }) => (
+        <WidgetList>
+          {upcoming.map((e, i) => (
+            <WidgetRow key={`${e.symbol}-${i}`}>
+              <SymbolLink symbol={e.symbol} className="text-sm font-semibold after:absolute after:inset-0" />
+              <span className="flex items-center gap-2 text-sm">
+                {e.hour && <StatusChip>{SESSION[e.hour] ?? e.hour}</StatusChip>}
+                <span className="text-text-primary">{whenLabel(e.date)}</span>
               </span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <Link
-        href="/dashboard/calendar"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-xs uppercase
-          tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
-      >
-        Full Calendar <ArrowRight className="w-3 h-3" />
-      </Link>
-    </div>
+            </WidgetRow>
+          ))}
+        </WidgetList>
+      )}
+    </WidgetBody>
   );
 }
