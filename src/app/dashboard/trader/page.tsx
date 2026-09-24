@@ -723,7 +723,7 @@ export default function TraderPage() {
         <DeskReadout account={data.brokerAccount} todayPnl={todayPnl} lifetimePnl={lifetimePnl} pnlFormat={pnlFormat} />
       )}
 
-      <div className="grid gap-4 lg:gap-6 xl:grid-cols-[minmax(0,1fr)_24rem] xl:items-start">
+      <div className="grid gap-4 lg:gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <div className="min-w-0 space-y-4 lg:space-y-6">
           {!notConnected && (
             <DeskPanel
@@ -781,9 +781,18 @@ export default function TraderPage() {
           </DeskPanel>
         </div>
 
-        <div className="min-w-0 space-y-4 lg:space-y-6">
-          <DeskPanel id="trader-signals" title="Recent signals" count={signals.length} description="What the last scans found.">
-            <RecentSignals signals={signals} />
+        {/* The side column stretches to the main one's height and Recent
+            signals takes up the difference, so no empty strip is left
+            under the column. */}
+        <div className="flex min-w-0 flex-col gap-4 lg:gap-6">
+          <DeskPanel
+            id="trader-signals"
+            title="Recent signals"
+            count={signals.length}
+            description="What the last scans found."
+            className="xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
+          >
+            <RecentSignals signals={signals} fill />
           </DeskPanel>
 
           {analytics && analytics.totalTrades > 0 && <PerformanceAnalytics analytics={analytics} />}

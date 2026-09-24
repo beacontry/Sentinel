@@ -19,7 +19,14 @@ import { timeAgo } from "./types";
  * only; the page owns the AI summary request.
  */
 
-export function RecentSignals({ signals }: { signals: TraderSignal[] }) {
+/**
+ * `fill`: from xl up the list takes whatever height its column leaves
+ * (flex-1 from a zero basis) instead of stopping at 400px, so the side
+ * column ends level with the main one rather than above an empty strip.
+ * The parent must be a flex column; 240px is the floor when the other
+ * side panels already fill the row.
+ */
+export function RecentSignals({ signals, fill = false }: { signals: TraderSignal[]; fill?: boolean }) {
   if (signals.length === 0) {
     return (
       <div className="py-8 text-center">
@@ -33,7 +40,11 @@ export function RecentSignals({ signals }: { signals: TraderSignal[] }) {
     );
   }
   return (
-    <ul className="max-h-[400px] divide-y divide-[var(--color-hairline-inner)] overflow-y-auto">
+    <ul
+      className={`max-h-[400px] divide-y divide-[var(--color-hairline-inner)] overflow-y-auto ${
+        fill ? "xl:max-h-none xl:min-h-60 xl:flex-1 xl:basis-0" : ""
+      }`}
+    >
       {signals.map((s) => (
         <li key={s.id} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 py-1.5">
           <SignalBadge signal={s.signal as SignalType} />
@@ -103,7 +114,10 @@ export function RecentTrades({ trades, pnlFormat, summarizing, summaries, onSumm
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2 md:contents">
+              {/* Wraps on a phone: a closing trade carries two actions,
+                  and chip, age, Summary and Post-mortem overran the card by
+                  about 18px at 390. The actions then take their own line. */}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 md:contents">
                 <div className="md:order-2">
                   <OrderStatusChip status={t.status} />
                 </div>
