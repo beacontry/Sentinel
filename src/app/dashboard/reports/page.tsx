@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
+import { useUrlParam } from "@/hooks/use-url-param";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -26,13 +27,33 @@ interface Trade {
   status: string;
 }
 
+const REPORT_TABS = ["overview", "signal", "time", "symbol"] as const;
+type ReportTab = (typeof REPORT_TABS)[number];
+
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-export default function ReportsPage() {
+// Wrap in Suspense: useUrlParam reads useSearchParams, and Next.js 15
+// requires a Suspense boundary so the SSR shell can render while the
+// client hydrates.
+export default function ReportsPageWrapper() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <ReportsPage />
+    </Suspense>
+  );
+}
+
+function ReportsPage() {
   const [perf, setPerf] = useState<PerformanceData | null>(null);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useUrlParam<ReportTab>("tab", "overview", REPORT_TABS);
 
   useEffect(() => {
     async function load() {
@@ -155,7 +176,7 @@ export default function ReportsPage() {
           { id: "symbol", label: "By Symbol" },
         ]}
         activeTab={activeTab}
-        onChange={setActiveTab}
+        onChange={(id) => setActiveTab(id as ReportTab)}
       />
 
       <TabPanel active={activeTab === "overview"}>

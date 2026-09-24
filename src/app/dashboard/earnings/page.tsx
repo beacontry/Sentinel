@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
+import { useUrlParam } from "@/hooks/use-url-param";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,12 +31,32 @@ function formatRevenue(v: number | null): string {
   return `$${v.toFixed(0)}`;
 }
 
-export default function EarningsPage() {
+const EARNINGS_TABS = ["calendar", "list"] as const;
+type EarningsTab = (typeof EARNINGS_TABS)[number];
+
+// Wrap in Suspense: useUrlParam reads useSearchParams, and Next.js 15
+// requires a Suspense boundary so the SSR shell can render while the
+// client hydrates.
+export default function EarningsPageWrapper() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <EarningsPage />
+    </Suspense>
+  );
+}
+
+function EarningsPage() {
   const [earnings, setEarnings] = useState<Earning[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [symbolInput, setSymbolInput] = useState("");
-  const [activeTab, setActiveTab] = useState("calendar");
+  const [activeTab, setActiveTab] = useUrlParam<EarningsTab>("tab", "calendar", EARNINGS_TABS);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   // The actual watchlist contents we queried Finnhub against. Surfaced
   // to the UI so users can see "we are tracking X, Y, Z" — answers the
@@ -342,7 +363,7 @@ export default function EarningsPage() {
           { id: "list", label: "List" },
         ]}
         activeTab={activeTab}
-        onChange={setActiveTab}
+        onChange={(id) => setActiveTab(id as EarningsTab)}
       />
 
       <TabPanel active={activeTab === "calendar"}>
