@@ -8,7 +8,7 @@ import { accessRegained } from "@/lib/recovery-poll";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { isMarketOpen } from "@/lib/market-hours";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { StatusChip } from "@/components/ui/status-chip";
 import { useToast } from "@/components/ui/toast";
 import { useConfirmAction } from "@/components/ui/confirm-action-modal";
 import { useDisplayPrefs } from "@/components/display-prefs-provider";
@@ -643,9 +643,9 @@ export default function TraderPage() {
             </span>{" "}
             Figures below may be out of date. ({dashLoad.error})
           </span>
-          <button type="button" onClick={() => load()} className="text-accent hover:underline">
-            Retry now
-          </button>
+          <Button variant="ghost" size="sm" onClick={() => load()}>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry now
+          </Button>
         </div>
       )}
 
@@ -660,7 +660,7 @@ export default function TraderPage() {
           className="rounded-xl border border-warning-line bg-warning-fill px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
         >
           <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <AlertTriangle aria-hidden="true" className="w-5 h-5 text-warning shrink-0 mt-0.5" />
             <div className="text-sm">
               <div className="font-semibold text-warning">
                 Engine offline with {positions.length} open position{positions.length === 1 ? "" : "s"}
@@ -697,7 +697,7 @@ export default function TraderPage() {
           className="rounded-xl border border-bearish-line bg-bearish-fill px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"
         >
           <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-bearish shrink-0 mt-0.5" />
+            <AlertTriangle aria-hidden="true" className="w-5 h-5 text-bearish shrink-0 mt-0.5" />
             <div className="text-sm">
               <div className="font-semibold text-bearish">
                 {data.unprotectedSymbols.length} position{data.unprotectedSymbols.length === 1 ? "" : "s"} without a broker-side stop
@@ -721,10 +721,9 @@ export default function TraderPage() {
           className="rounded-xl border border-bearish-line bg-bearish-fill px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
         >
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 rounded-full bg-bearish/20 border border-bearish/40 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-[0.12em] text-bearish">
-              <span className="inline-block w-2 h-2 rounded-full bg-bearish animate-pulse" />
-              Live
-            </div>
+            <StatusChip tone="bearish" icon={<span className="inline-block h-2 w-2 rounded-full bg-current motion-safe:animate-pulse" />}>
+              LIVE
+            </StatusChip>
             <div className="text-sm text-text-primary">
               <span className="font-semibold">Real money is at risk.</span>
               <span className="text-text-secondary">
@@ -869,17 +868,22 @@ export default function TraderPage() {
         {engine && (
           <div className="flex flex-col gap-1.5">
             <div className="flex flex-wrap items-center gap-3 text-xs text-text-muted">
-              <Badge variant={engine.running ? "bullish" : engine.halted ? "bearish" : "neutral"}>
-                {engine.running ? `Running (${engine.mode ?? "swing"})` : engine.halted ? "Halted" : "Stopped"}
-              </Badge>
-              {engine.environment && (
-                <Badge variant={engine.environment === "live" ? "bearish" : "neutral"}>
-                  {engine.environment.toUpperCase()}
-                </Badge>
+              {engine.running ? (
+                <StatusChip tone="bullish" icon={<Play className="h-3 w-3" />}>
+                  Running ({engine.mode ?? "swing"})
+                </StatusChip>
+              ) : engine.halted ? (
+                <StatusChip tone="bearish" icon={<XCircle className="h-3 w-3" />}>Halted</StatusChip>
+              ) : (
+                <StatusChip icon={<Square className="h-3 w-3" />}>Stopped</StatusChip>
               )}
+              {engine.environment === "live" && (
+                <StatusChip tone="bearish" icon={<AlertTriangle className="h-3 w-3" />}>LIVE, real money</StatusChip>
+              )}
+              {engine.environment === "paper" && <StatusChip tone="accent">Paper account</StatusChip>}
               {/* Folded in from the removed status bar (2026-07-15) */}
               {todayPnl?.halted && !engine.halted && (
-                <Badge variant="bearish">Trading Halted</Badge>
+                <StatusChip tone="bearish" icon={<XCircle className="h-3 w-3" />}>Trading halted</StatusChip>
               )}
               {engine.scanCount > 0 && <span className="font-mono">{engine.scanCount} scans</span>}
               {engine.lastScanAt && <span>Last: {timeAgo(engine.lastScanAt)}</span>}
@@ -888,8 +892,8 @@ export default function TraderPage() {
               )}
               {engine.positionCount > 0 && <span className="font-mono">{engine.positionCount} positions</span>}
               {(engine.dailyLoss ?? 0) !== 0 && (
-                <span className={(engine.dailyLoss ?? 0) < 0 ? "text-bearish" : "text-bullish"}>
-                  Day: ${(engine.dailyLoss ?? 0).toFixed(0)}
+                <span>
+                  Day: <SignedValue value={Math.round(engine.dailyLoss ?? 0)} />
                 </span>
               )}
               {(engine.consecutiveLosses ?? 0) > 0 && (
@@ -910,9 +914,13 @@ export default function TraderPage() {
                   {(((engine.adaptiveRegime.spyPrice - engine.adaptiveRegime.spyMA50) / engine.adaptiveRegime.spyMA50) * 100).toFixed(1)}%
                   {" vs SMA50"}
                 </span>
-                <Badge variant={engine.adaptiveRegime.regime === "risk_on" ? "bullish" : engine.adaptiveRegime.regime === "risk_off" ? "bearish" : "warning"}>
-                  {engine.adaptiveRegime.regime.replace("_", " ")}
-                </Badge>
+                {engine.adaptiveRegime.regime === "risk_on" ? (
+                  <StatusChip tone="bullish" icon="▲">risk on</StatusChip>
+                ) : engine.adaptiveRegime.regime === "risk_off" ? (
+                  <StatusChip tone="bearish" icon="▼">risk off</StatusChip>
+                ) : (
+                  <StatusChip tone="warning">neutral</StatusChip>
+                )}
               </div>
             )}
             {engine.mode === "adaptive" && !engine.adaptiveRegime && engine.running && (
@@ -940,7 +948,7 @@ export default function TraderPage() {
           <Card className="border-bearish-line bg-bearish-fill">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div className="flex items-start gap-2">
-                <AlertTriangle className="w-5 h-5 text-bearish flex-shrink-0 mt-0.5" />
+                <AlertTriangle aria-hidden="true" className="w-5 h-5 text-bearish flex-shrink-0 mt-0.5" />
                 <div>
                   <div className="text-sm font-semibold text-text-primary">Engine halted with open positions</div>
                   {todayPnl.haltReason && (
@@ -1098,13 +1106,9 @@ export default function TraderPage() {
             {taxLoad.status === "error" && !hasLoaded(taxLoad) && (
               <div role="alert" className="mt-1 flex items-center gap-2 text-xs text-bearish">
                 <span>{taxLoad.error}</span>
-                <button
-                  type="button"
-                  onClick={() => loadTaxStatus()}
-                  className="text-accent hover:underline"
-                >
+                <Button variant="ghost" size="sm" onClick={() => loadTaxStatus()}>
                   Retry
-                </button>
+                </Button>
               </div>
             )}
             <div className="text-xs text-text-muted mt-1">
@@ -1112,11 +1116,10 @@ export default function TraderPage() {
             </div>
           </div>
           <div className="sm:border-l sm:border-border sm:pl-4 sm:min-w-[200px]">
-            <div className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
-              Wash-sale protection
-            </div>
+            <div className="eyebrow text-text-muted">Wash-sale protection</div>
             <div className="mt-1 flex items-center gap-2">
               <span
+                aria-hidden="true"
                 className={`inline-block w-2 h-2 rounded-full ${
                   engine?.washSaleProtectionEnabled ? "bg-bullish" : "bg-text-muted"
                 }`}
