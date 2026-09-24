@@ -74,7 +74,7 @@ Seven steps, 12px floor. Tailwind's own steps are reset, so `text-3xl` and up co
 | `text-lg` | 20px | 1.3 | card and modal titles that lead |
 | `text-xl` | 24px | 1.3 | key figures |
 | `text-2xl` | 32px | 1.15 | page titles |
-| `text-display` | clamp(40-56px) | 1.15 | marketing headings only |
+| `text-display` | clamp(40-72px) | 1.05 | marketing headings only |
 
 - Uppercase kicker labels use the `eyebrow` utility (12px, 600, 0.08em). Write sentence case in the source. A hand-rolled `uppercase tracking-[…]` is counted by the style ratchet and may only go down.
 - Fonts: Geist Sans for display and body, Geist Mono (`font-mono`) for every financial number, with `tabular-nums`.

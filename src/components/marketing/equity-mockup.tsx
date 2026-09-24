@@ -34,6 +34,21 @@ const STROKE: Record<Tone, string> = {
   warning: "stroke-ld-amber",
 };
 
+// The four annotated events. Below sm the callouts are too small to read
+// inside the chart, so the same list is printed as a legend under it.
+const MARKERS: { x: number; y: number; top: number; width: number; label: string; tone: Tone }[] = [
+  { x: 130, y: 305, top: 56, width: 104, label: "BUY · INTC", tone: "accent" },
+  { x: 200, y: 295, top: 96, width: 96, label: "Stop −1.8%", tone: "bearish" },
+  { x: 310, y: 255, top: 146, width: 104, label: "AAPL +5.2%", tone: "bullish" },
+  { x: 420, y: 222, top: 36, width: 84, label: "Trail ↑", tone: "warning" },
+];
+const DOT: Record<Tone, string> = {
+  accent: "bg-ld-accent",
+  bearish: "bg-ld-red",
+  bullish: "bg-ld-green",
+  warning: "bg-ld-amber",
+};
+
 function Marker({
   x,
   y,
@@ -132,14 +147,24 @@ export function EquityMockup() {
           <path d={`${CURVE} L 580 320 L 40 320 Z`} fill="url(#equityFill)" />
           <path d={CURVE} fill="none" className="stroke-ld-accent" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
 
-          <Marker x={130} y={305} top={56} width={104} label="BUY · INTC" tone="accent" />
-          <Marker x={200} y={295} top={96} width={96} label={"Stop −1.8%"} tone="bearish" />
-          <Marker x={310} y={255} top={146} width={104} label="AAPL +5.2%" tone="bullish" />
-          <Marker x={420} y={222} top={36} width={84} label="Trail ↑" tone="warning" />
+          {MARKERS.map((m) => (
+            <Marker key={m.label} {...m} />
+          ))}
 
           <circle cx="580" cy="145" r="7" className="fill-ld-accent" opacity="0.2" />
           <circle cx="580" cy="145" r="4" className="fill-ld-accent stroke-ld-deep" strokeWidth="2" />
         </svg>
+
+        {/* Phone legend: the callouts above hide below sm, where they would
+            render under 6px. Left to right, as the dots sit on the curve. */}
+        <ol className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:hidden" aria-hidden="true">
+          {MARKERS.map((m) => (
+            <li key={m.label} className="flex min-w-0 items-center gap-2 font-mono text-xs text-ld-text-secondary">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[m.tone]}`} />
+              {m.label}
+            </li>
+          ))}
+        </ol>
       </div>
 
       <p className="border-t border-ld-border px-4 py-3 text-center font-mono text-xs leading-relaxed text-ld-text-muted">

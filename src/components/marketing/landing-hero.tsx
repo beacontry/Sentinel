@@ -33,7 +33,7 @@ export function LandingHero() {
         <div className="animate-fade-in-up">
           <p className="eyebrow text-accent">Automated engine · Manual ticket</p>
 
-          <h1 id="hero-title" className="mt-4 text-display font-bold tracking-[-0.04em] text-balance text-text-primary">
+          <h1 id="hero-title" className="mt-4 max-w-[14ch] text-display font-bold tracking-[-0.045em] text-balance text-text-primary">
             Scan. Signal. Execute. <span className="text-accent">Automatically.</span>
           </h1>
 
