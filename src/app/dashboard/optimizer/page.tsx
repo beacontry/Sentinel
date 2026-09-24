@@ -28,6 +28,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 import { useToast } from "@/components/ui/toast";
 
+import { Input } from "@/components/ui/input";
 // ── Types ───────────────────────────────────────────────────────────
 
 interface OptimizationRun {
@@ -357,46 +358,49 @@ export default function OptimizerPage() {
             <h3 className="text-sm font-semibold">Optimization Configuration</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted block mb-1">
-                  Population Size
-                </label>
-                <input
+                <Input
+                  label="Population size"
+                  id="opt-population"
                   type="number"
+                  inputMode="numeric"
                   min={10}
                   max={100}
                   value={popSize}
                   onChange={(e) => setPopSize(Number(e.target.value))}
-                  className="w-full bg-bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono min-h-[44px]"
+                  aria-describedby="opt-population-hint"
+                  className="font-mono"
                 />
-                <p className="text-xs text-text-muted mt-1">Strategies per generation</p>
+                <p id="opt-population-hint" className="text-xs text-text-muted mt-1">Strategies per generation</p>
               </div>
               <div>
-                <label className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted block mb-1">
-                  Generations
-                </label>
-                <input
+                <Input
+                  label="Generations"
+                  id="opt-generations"
                   type="number"
+                  inputMode="numeric"
                   min={5}
                   max={100}
                   value={gens}
                   onChange={(e) => setGens(Number(e.target.value))}
-                  className="w-full bg-bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono min-h-[44px]"
+                  aria-describedby="opt-generations-hint"
+                  className="font-mono"
                 />
-                <p className="text-xs text-text-muted mt-1">Evolution iterations</p>
+                <p id="opt-generations-hint" className="text-xs text-text-muted mt-1">Evolution iterations</p>
               </div>
               <div>
-                <label className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted block mb-1">
-                  Train / Test Split
-                </label>
-                <input
+                <Input
+                  label="Train / test split (% train)"
+                  id="opt-train-split"
                   type="number"
+                  inputMode="numeric"
                   min={40}
                   max={80}
                   value={trainPct}
                   onChange={(e) => setTrainPct(Number(e.target.value))}
-                  className="w-full bg-bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono min-h-[44px]"
+                  aria-describedby="opt-train-split-hint"
+                  className="font-mono"
                 />
-                <p className="text-xs text-text-muted mt-1">{trainPct}% train / {100 - trainPct}% test</p>
+                <p id="opt-train-split-hint" className="text-xs text-text-muted mt-1">{trainPct}% train / {100 - trainPct}% test</p>
               </div>
               <div>
                 <label className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted block mb-1">

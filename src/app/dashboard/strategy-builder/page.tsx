@@ -143,12 +143,16 @@ export default function StrategyBuilderPage() {
                 ))}
               </select>
               {ind?.hasValue && (
-                <input
-                  type="number"
-                  value={rule.value}
-                  onChange={(e) => updateRule(type, rule.id, "value", parseFloat(e.target.value) || 0)}
-                  className="bg-bg-elevated border border-border rounded-lg px-2 py-1.5 text-sm text-text-primary font-mono w-20 min-h-[36px]"
-                />
+                <div className="w-24">
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    aria-label="Rule value"
+                    value={rule.value}
+                    onChange={(e) => updateRule(type, rule.id, "value", parseFloat(e.target.value) || 0)}
+                    className="px-2 font-mono"
+                  />
+                </div>
               )}
               <Button variant="ghost" onClick={() => removeRule(type, rule.id)} className="w-11 px-0" aria-label="Remove rule">
                 <X className="w-4 h-4" aria-hidden="true" />

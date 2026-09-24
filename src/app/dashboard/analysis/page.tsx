@@ -53,6 +53,7 @@ import { ChartFullscreenOverlay } from "@/components/ui/chart-fullscreen-overlay
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
 import { Segmented } from "@/components/ui/segmented";
+import { Input } from "@/components/ui/input";
 const FOCUS_STORAGE_KEY = "sentinel-focus-mode";
 
 const POPULAR_SYMBOLS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"];
@@ -507,30 +508,33 @@ function AnalysisCockpit() {
 
             {showAddInput && (
               <div className="flex gap-2 px-4 pb-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                  <input
+                <div className="min-w-0 flex-1">
+                  <Input
                     type="text"
+                    icon={<Search className="w-4 h-4" aria-hidden="true" />}
+                    aria-label="Symbol to add to the watchlist"
                     value={newSymbol}
                     onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
                     onKeyDown={(e) => { if (e.key === "Enter") handleAddSymbol(newSymbol); }}
                     placeholder="Add to watchlist..."
                     maxLength={10}
+                    autoCapitalize="characters"
+                    autoComplete="off"
                     autoFocus
-                    className="w-full rounded-lg border border-border bg-bg-elevated pl-10 pr-3 py-2
-                      text-sm text-text-primary placeholder:text-text-muted font-mono
-                      focus:outline-none focus:border-accent/50 min-h-[44px]"
+                    className="font-mono"
                   />
                 </div>
                 <Button size="md" onClick={() => handleAddSymbol(newSymbol)}>
                   Add
                 </Button>
-                <button
+                <Button
+                  variant="ghost"
                   onClick={() => { setShowAddInput(false); setNewSymbol(""); }}
-                  className="rounded-xl p-2 text-text-muted hover:bg-bg-elevated hover:text-text-primary"
+                  className="w-11 px-0"
+                  aria-label="Close add symbol"
                 >
-                  <X className="w-4 h-4" />
-                </button>
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </Button>
               </div>
             )}
           </div>
@@ -697,28 +701,29 @@ function AnalysisCockpit() {
                     }}
                     className="flex gap-2"
                   >
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
-                      <input
+                    <div className="min-w-0 flex-1">
+                      <Input
                         type="text"
+                        icon={<Search className="w-3.5 h-3.5" aria-hidden="true" />}
+                        aria-label="Symbol to add to the watchlist"
                         value={newSymbol}
                         onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
                         placeholder="Add to watchlist..."
                         maxLength={10}
-                        className="w-full rounded-lg border border-border bg-bg-elevated pl-9 pr-3 py-1.5
-                          text-xs text-text-primary placeholder:text-text-muted font-mono
-                          focus:outline-none focus:border-accent/50 min-h-[38px]"
+                        autoCapitalize="characters"
+                        autoComplete="off"
+                        className="font-mono"
                       />
                     </div>
-                    <button
+                    <Button
                       type="submit"
+                      variant="secondary"
                       disabled={!newSymbol.trim()}
-                      className="min-h-[38px] rounded-lg border border-border px-2.5 py-1.5 text-text-muted
-                        transition-colors hover:border-accent/30 hover:text-accent disabled:opacity-30
-                        disabled:cursor-not-allowed"
+                      className="w-11 shrink-0 px-0"
+                      aria-label="Add symbol"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
+                      <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                    </Button>
                   </form>
 
                   {symbols.length === 0 && (

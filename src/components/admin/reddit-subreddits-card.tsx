@@ -271,21 +271,25 @@ export function RedditSubredditsCard() {
                       )}
                     </td>
                     <td className="py-2 pr-3">
-                      <input
-                        type="number"
-                        step="0.05"
-                        min={0}
-                        max={2}
-                        defaultValue={s.weight}
-                        onBlur={(e) => {
-                          const next = Number(e.target.value);
-                          if (Number.isFinite(next) && next !== Number(s.weight)) {
-                            updateWeight(s, next);
-                          }
-                        }}
-                        className="w-20 rounded-md border border-border bg-bg-elevated px-2 py-1 font-mono text-xs text-text-primary focus:outline-none focus:border-accent/50"
-                        aria-label={`Weight for r/${s.name}`}
-                      />
+                      <div className="w-24">
+                        <Input
+                          id={`reddit-weight-${s.name}`}
+                          type="number"
+                          inputMode="decimal"
+                          step="0.05"
+                          min={0}
+                          max={2}
+                          defaultValue={s.weight}
+                          onBlur={(e) => {
+                            const next = Number(e.target.value);
+                            if (Number.isFinite(next) && next !== Number(s.weight)) {
+                              updateWeight(s, next);
+                            }
+                          }}
+                          className="px-2 font-mono"
+                          aria-label={`Weight for r/${s.name}`}
+                        />
+                      </div>
                     </td>
                     <td className="py-2 pr-3">
                       <div className="flex items-center gap-2">

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TradeShareCard, type SharedTrade } from "@/components/social/trade-share-card";
 
+import { Input } from "@/components/ui/input";
 interface ComposeBoxProps {
   onPost: (post: {
     id: string;
@@ -230,19 +231,15 @@ export function ComposeBox({ onPost }: ComposeBoxProps) {
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none">
-                <Hash className="h-4 w-4" />
-              </div>
-              <input
+            <div className="w-32">
+              <Input
+                icon={<Hash className="h-4 w-4" aria-hidden="true" />}
+                aria-label="Symbol"
+                autoCapitalize="characters"
+                autoComplete="off"
                 value={symbol}
                 onChange={(e) => setSymbol(e.target.value.toUpperCase().slice(0, 10))}
                 placeholder="Symbol"
-                className="w-28 rounded-lg border border-border bg-bg-elevated pl-9 pr-3 py-2
-                  text-sm text-text-primary placeholder:text-text-muted
-                  transition-colors duration-150
-                  focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent
-                  min-h-[44px]"
               />
             </div>
             <Button
