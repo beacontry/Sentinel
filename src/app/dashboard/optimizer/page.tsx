@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { usePolling } from "@/hooks/usePolling";
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { POLLING_INTERVALS } from "@/lib/config";
 import {
   Play,
@@ -115,16 +116,33 @@ export default function OptimizerPage() {
     }
   }, []);
 
+  // The run the user asked for last. Set synchronously by selectRun and
+  // handleStart, never by the poll, so a slower response for an earlier
+  // click (or a poll tick for the previous selection) cannot switch the
+  // selection away from the run the user clicked.
+  const latestRequestedIdRef = useRef<string | null>(null);
+  const runDetailRequest = useLatestRequest();
+  // True while the current detail request is in flight. The poll skips a
+  // tick then rather than aborting it, or a detail slower than the poll
+  // interval would never land.
+  const detailInFlightRef = useRef(false);
+
   const fetchRunDetail = useCallback(async (id: string) => {
+    if (latestRequestedIdRef.current !== id) return;
+    const ticket = runDetailRequest.begin();
+    detailInFlightRef.current = true;
     try {
-      const res = await fetch(`/api/optimize/${id}`);
+      const res = await fetch(`/api/optimize/${id}`, { signal: ticket.signal });
       if (!res.ok) return;
       const data: RunDetail = await res.json();
+      if (!ticket.isCurrent() || latestRequestedIdRef.current !== id || data.run?.id !== id) return;
       setSelectedRun(data);
     } catch {
-      // Silently fail
+      // Silently fail (includes a superseded request's abort)
+    } finally {
+      if (ticket.isCurrent()) detailInFlightRef.current = false;
     }
-  }, []);
+  }, [runDetailRequest]);
 
   // Initial load
   useEffect(() => {
@@ -138,7 +156,15 @@ export default function OptimizerPage() {
 
   usePolling(() => {
     fetchRuns();
-    if (selectedRun && ["pending", "fetching_data", "optimizing"].includes(selectedRun.run.status)) {
+    // Refresh the selection only once it is the run last asked for and no
+    // detail request is outstanding; while a click on another run is still
+    // loading, the poll leaves it alone.
+    if (
+      selectedRun &&
+      selectedRun.run.id === latestRequestedIdRef.current &&
+      !detailInFlightRef.current &&
+      ["pending", "fetching_data", "optimizing"].includes(selectedRun.run.status)
+    ) {
       fetchRunDetail(selectedRun.run.id);
     }
   }, POLLING_INTERVALS.optimizerActiveRuns, { enabled: hasActiveRuns });
@@ -166,6 +192,8 @@ export default function OptimizerPage() {
 
   async function handleStart() {
     setStarting(true);
+    // A run clicked while the POST is in flight is the later choice and wins.
+    const requestedBeforeStart = latestRequestedIdRef.current;
     try {
       const res = await fetch("/api/optimize", {
         method: "POST",
@@ -184,6 +212,9 @@ export default function OptimizerPage() {
       }
       const data = await res.json();
       setShowConfig(false);
+      if (latestRequestedIdRef.current === requestedBeforeStart) {
+        latestRequestedIdRef.current = data.runId;
+      }
       await fetchRuns();
       fetchRunDetail(data.runId);
     } finally {
@@ -192,6 +223,7 @@ export default function OptimizerPage() {
   }
 
   function selectRun(run: OptimizationRun) {
+    latestRequestedIdRef.current = run.id;
     fetchRunDetail(run.id);
     setComparison(null); // clear stale comparison when switching runs
   }
