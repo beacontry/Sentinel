@@ -89,7 +89,7 @@ export function SignedValue({ value, basis, format = "dollar", glyph = true, cla
 }
 
 /** What the glyph and its gap take, in ch, beside the figure. */
-const GLYPH_CH = 1.75;
+export const GLYPH_CH = 1.75;
 
 /**
  * The width in ch of the widest unbreakable line a SignedValue prints:

@@ -7,7 +7,8 @@ import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Card, CardTitle, Inset } from "@/components/ui/card";
-import { PageIntro } from "@/components/layout/page-intro";
+import { PageIntro, statCh } from "@/components/layout/page-intro";
+import { SignedValue } from "@/components/ui/signed-value";
 import { StatCard } from "@/components/ui/stat-card";
 
 describe("Card", () => {
@@ -74,8 +75,28 @@ describe("PageIntro stats", () => {
   });
 
   it("prints a direction glyph and hidden word when the caller names one", () => {
-    expect(html).toMatch(/▲<\/span>\+\$12\.00<span class="sr-only"> gain<\/span>/);
-    expect(html).toMatch(/▼<\/span>−\$3\.00<span class="sr-only"> loss<\/span>/);
+    expect(html).toMatch(/▲<\/span>\+\$12\.00<\/span><span class="sr-only"> gain<\/span>/);
+    expect(html).toMatch(/▼<\/span>−\$3\.00<\/span><span class="sr-only"> loss<\/span>/);
+  });
+
+  // The glyph and figure are one run: a narrow tile must not leave the
+  // glyph on one line and the amount on the next.
+  it("keeps a direction glyph on the line of its figure", () => {
+    expect(html).toMatch(/<span class="whitespace-nowrap"><span aria-hidden="true"[^>]*>▲<\/span>\+\$12\.00<\/span>/);
+  });
+
+  // wrap-anywhere split plain figures mid-number, and a nowrap SignedValue
+  // ran past its tile and scrolled a 320px page sideways. The strip now
+  // fits the widest whole figure, as the trader desk tiles do.
+  it("fits every figure whole instead of splitting or overflowing it", () => {
+    expect(html).not.toContain("wrap-anywhere");
+    expect(html).toContain("tile-grid");
+    expect(html.match(/figure-fit/g)).toHaveLength(5);
+    expect(html.match(/@container/g)).toHaveLength(5);
+    // The widest run here is the word "Connected" (9 ch), just ahead of
+    // "+$12.00" with its glyph (7 + 1.75 ch): a word is not split either.
+    expect(html).toContain("--figure-ch:9");
+    expect(html).toMatch(/--tile-min:calc\(9 \* 0\.45rem \+ 1\.75rem\)/);
   });
 
   it("adds no glyph to a neutral word", () => {
@@ -87,6 +108,27 @@ describe("PageIntro stats", () => {
     expect(html).toMatch(/">HIGH<\/dd>/);
     expect(html).toMatch(/">--<\/dd>/);
     expect(html.match(/sr-only/g)).toHaveLength(2);
+  });
+});
+
+describe("PageIntro statCh", () => {
+  it("measures a plain string by its longest unbreakable token", () => {
+    expect(statCh({ value: "$1234567.89" })).toBe(11);
+    expect(statCh({ value: "90 days" })).toBe(4);
+  });
+
+  it("adds the glyph to a figure with a direction, as one run", () => {
+    expect(statCh({ value: "+$12.00", direction: "gain" })).toBe(8.75);
+  });
+
+  it("asks a SignedValue for its own widest run", () => {
+    const value = createElement(SignedValue, { value: -1234567.891, basis: 10_000_000, format: "both" });
+    // "−$1,234,567.89" with its glyph; the percent "(−12.35%)" is shorter.
+    expect(statCh({ value })).toBe(14 + 1.75);
+  });
+
+  it("asks nothing of a chip or other node, which wraps as words", () => {
+    expect(statCh({ value: createElement("span", null, "Connected") })).toBe(0);
   });
 });
 
