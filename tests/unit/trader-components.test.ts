@@ -105,11 +105,14 @@ describe("DeskReadout", () => {
     expect(html).toMatch(/Total equity<\/dt><dd class="[^"]*text-2xl[^"]*">\$10,000.00</);
   });
 
-  it("keeps tile figures on one line and sizes them to the tile", () => {
+  it("sizes tile figures to the tile and wraps them rather than overflowing", () => {
+    // "both" is the widest format: "+$1,234.57 (+10.00%)" does not fit a
+    // half-width phone tile, so a nowrap figure ran off the page.
     const html = renderToStaticMarkup(
-      createElement(DeskReadout, { account, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "dollar" }),
+      createElement(DeskReadout, { account, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "both" }),
     );
-    expect(html).toContain("whitespace-nowrap");
+    expect(html).toContain("wrap-anywhere");
+    expect(html).not.toContain("whitespace-nowrap");
     expect(html).toContain("@min-[11.5rem]:text-xl");
   });
 
