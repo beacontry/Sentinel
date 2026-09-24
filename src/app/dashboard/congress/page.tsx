@@ -231,7 +231,7 @@ export default function CongressPage() {
               placeholder="Pelosi, Burr, …"
             />
           </div>
-          <div className="flex gap-2 lg:items-end">
+          <div className="flex flex-wrap gap-2 lg:items-end">
             <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
               {(["all", "House", "Senate"] as const).map((c) => (
                 <button

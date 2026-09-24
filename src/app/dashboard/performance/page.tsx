@@ -270,16 +270,16 @@ export default function PerformancePage() {
             {data.weekly.map((w) => (
               <div
                 key={w.week}
-                className="flex-1 flex flex-col items-center justify-end gap-1"
+                className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1"
               >
-                <span className="text-xs font-mono text-text-muted">
+                <span className="hidden text-xs font-mono text-text-muted sm:inline">
                   {Math.round(w.winRate * 100)}%
                 </span>
                 <div
                   className={`w-full rounded-t ${w.winRate >= 0.5 ? "bg-bullish/70" : "bg-bearish/70"}`}
                   style={{ height: `${Math.max(w.winRate * 100, 4)}%` }}
                 />
-                <span className="text-xs text-text-muted truncate w-full text-center">
+                <span className="hidden w-full truncate text-center text-xs text-text-muted sm:block">
                   {new Date(w.week).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                 </span>
               </div>

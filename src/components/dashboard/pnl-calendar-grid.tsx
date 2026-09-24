@@ -107,7 +107,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
   }, [days]);
 
   return (
-    <div className="relative">
+    <div className="relative overflow-x-auto overscroll-x-contain">
       {/* Month labels */}
       <div className="flex ml-8">
         {weeks.map((week, wi) => (
