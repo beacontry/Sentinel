@@ -18,7 +18,10 @@ export const forumCategories = pgTable("forum_categories", {
   description: text("description"),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [
+  // One board per name (migration 0054): the seed inserts ON CONFLICT DO NOTHING.
+  uniqueIndex("forum_categories_name_idx").on(t.name),
+]);
 
 export const forumThreads = pgTable("forum_threads", {
   id: uuid("id").primaryKey().defaultRandom(),

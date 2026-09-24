@@ -33,11 +33,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Categories already exist", count: Number(existing[0].count) });
     }
 
-    // Insert all categories
-    await db.insert(forumCategories).values(CATEGORIES);
+    // Insert all categories. A concurrent seed (or the categories GET's own
+    // seed-on-empty) may have inserted some already; skip those names (unique
+    // index, migration 0054) rather than creating duplicate boards.
+    const inserted = await db
+      .insert(forumCategories)
+      .values(CATEGORIES)
+      .onConflictDoNothing({ target: forumCategories.name })
+      .returning({ id: forumCategories.id });
 
-    log.info("Forum categories seeded");
-    return NextResponse.json({ message: "Seeded", count: CATEGORIES.length });
+    log.info({ count: inserted.length }, "Forum categories seeded");
+    return NextResponse.json({ message: "Seeded", count: inserted.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message }, "Forum seed error");

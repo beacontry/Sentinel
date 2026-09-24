@@ -25,13 +25,8 @@ export async function GET(
 
   try {
     const { threadRows, replies } = await withTimeout(3000, async (tx) => {
-      // Increment view count
-      await tx
-        .update(forumThreads)
-        .set({ viewCount: sql`${forumThreads.viewCount} + 1` })
-        .where(eq(forumThreads.id, threadId));
-
-      // Get thread with author and category
+      // Get thread with author and category. The view count is bumped after
+      // this read, on its own, so the read transaction takes no row lock.
       const threadRows = await tx
         .select({
           id: forumThreads.id,
@@ -76,6 +71,23 @@ export async function GET(
     }
 
     const thread = threadRows[0];
+
+    // Count this view in its own short transaction, holding the row lock for
+    // the one UPDATE only. It used to run first inside the read transaction,
+    // so every viewer of a thread held that lock for the whole read. Bounded
+    // at 1s; a failure here costs one view, never the page.
+    try {
+      const [bumped] = await withTimeout(1000, async (tx) =>
+        tx
+          .update(forumThreads)
+          .set({ viewCount: sql`${forumThreads.viewCount} + 1` })
+          .where(eq(forumThreads.id, threadId))
+          .returning({ viewCount: forumThreads.viewCount })
+      );
+      if (bumped) thread.viewCount = bumped.viewCount;
+    } catch (err) {
+      log.warn({ err: err instanceof Error ? err.message : "Unknown error", threadId }, "Forum view count update failed");
+    }
 
     return NextResponse.json({
       thread: {

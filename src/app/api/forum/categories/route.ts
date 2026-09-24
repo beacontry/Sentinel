@@ -15,7 +15,9 @@ export async function GET() {
 
   try {
     const categories = await withTimeout(3000, async (tx) => {
-      // Auto-seed categories if table is empty
+      // Auto-seed categories if table is empty. Two first loads can both see
+      // an empty table, so the insert skips names that already exist (unique
+      // index, migration 0054) instead of seeding every board twice.
       const countResult = await tx
         .select({ count: sql<number>`count(*)::int` })
         .from(forumCategories);
@@ -31,7 +33,7 @@ export async function GET() {
           { name: "Small Caps & Penny Stocks", description: "Micro and small cap opportunities and momentum plays.", sortOrder: 6 },
           { name: "Post-Mortems", description: "Review past trades — wins and losses. Lessons learned.", sortOrder: 7 },
           { name: "Beginner Corner", description: "New to trading? Ask questions and learn the basics.", sortOrder: 8 },
-        ]);
+        ]).onConflictDoNothing({ target: forumCategories.name });
         log.info("Auto-seeded forum categories");
       }
 
