@@ -106,3 +106,16 @@ describe("eyebrow utility", () => {
     expect(m![1]).toMatch(/letter-spacing:\s*0\.08em/);
   });
 });
+
+describe("skip link", () => {
+  it("sits off screen until focused, then on screen above the page", () => {
+    const rest = /\.skip-link\s*\{([^}]*)\}/.exec(CSS);
+    const focus = /\.skip-link:focus\s*\{([^}]*)\}/.exec(CSS);
+    expect(rest).not.toBeNull();
+    expect(focus).not.toBeNull();
+    expect(rest![1]).toMatch(/position:\s*absolute/);
+    expect(rest![1]).toMatch(/left:\s*-9999px/);
+    expect(rest![1]).toMatch(/z-index:\s*\d+/);
+    expect(focus![1]).toMatch(/left:\s*16px/);
+  });
+});
