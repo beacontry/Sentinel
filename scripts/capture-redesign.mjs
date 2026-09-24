@@ -12,6 +12,8 @@
 //               outline (on itself or on a focus-within wrapper);
 //             - hit areas: every control is at least 44px tall, counting a
 //               ::before / ::after hit-area pseudo-element;
+//             - hit overlap: 1px inside each edge of every control hits
+//               that control, not a neighbour's hit-area pseudo;
 //             - the primary button hover paints accent-hover (not struck
 //               through by a later class);
 //             - a positioned sm Button keeps its absolute position;
@@ -181,6 +183,45 @@ async function hitAreas(page, where) {
   for (const s of short) fail(where, `hit area under 44px: ${s}`);
 }
 
+/**
+ * No control's hit area reaches over another's visible box. A hit-area
+ * pseudo is painted above earlier siblings, so an overhang silently moves
+ * the click on a neighbour's edge (Edit opening Delete). Probe 1px inside
+ * each edge of every control: the point must hit that control.
+ */
+async function hitOverlap(page, where) {
+  const stolen = await page.evaluate(() => {
+    const out = [];
+    const sel = 'button, a[href], input:not([type="hidden"]), select, textarea, [role="switch"], [role="tab"]';
+    const name = (el) => (el.getAttribute("aria-label") || el.textContent || el.tagName).trim().slice(0, 30);
+    for (const el of document.querySelectorAll(sel)) {
+      if (el.getBoundingClientRect().width <= 2 || el.getBoundingClientRect().height <= 2 || el.closest('[aria-hidden="true"]')) continue;
+      // elementFromPoint sees only the viewport, so bring each control in.
+      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const points = [
+        [r.left + 1, cy],
+        [r.right - 1, cy],
+        [cx, r.top + 1],
+        [cx, r.bottom - 1],
+      ];
+      for (const [x, y] of points) {
+        if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+        const hit = document.elementFromPoint(x, y)?.closest(sel);
+        if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) {
+          out.push(`${name(el)} edge at (${Math.round(x)},${Math.round(y)}) hits ${name(hit)}`);
+          break;
+        }
+      }
+    }
+    scrollTo(0, 0);
+    return out;
+  });
+  for (const s of stolen) fail(where, `hit area overlap: ${s}`);
+}
+
 async function kitChecks(page, where) {
   // Primary hover: the painted fill must be accent-hover.
   const primary = page.locator("button", { hasText: /^Primary$/ }).first();
@@ -228,6 +269,7 @@ async function main() {
           await page.screenshot({ path: path.join(OUT, `ui-kit-${themeName}-${vp.width}.png`), fullPage: true });
           const stops = await keyboardPass(page, where);
           await hitAreas(page, where);
+          await hitOverlap(page, where);
           await kitChecks(page, where);
           report.push({ where, stops });
           await page.close();

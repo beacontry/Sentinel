@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Inbox, Plus, Search, X } from "lucide-react";
+import { Inbox, Plus, Search, Star, Trash2, X } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
 import { Button } from "@/components/ui/button";
 import { ButtonLink } from "@/components/ui/button-link";
@@ -76,6 +76,18 @@ export function UiKitGallery() {
           <Button disabled>Disabled</Button>
           <Button disabled disabledReason="Engine is running, stop it first">Place paper buy</Button>
           <ButtonLink href="/dashboard" variant="secondary">Link as button</ButtonLink>
+        </div>
+        {/* The tight rows the app uses for row actions: the hit-area check
+            asserts neither button's pseudo reaches over its neighbour. */}
+        <div className="mt-3 flex flex-wrap items-center gap-6">
+          <div data-kit="tight-row" className="flex items-center gap-0.5">
+            <Button size="sm" variant="ghost" aria-label="Make default"><Star className="h-4 w-4" /></Button>
+            <Button size="sm" variant="ghost" aria-label="Delete watchlist"><Trash2 className="h-4 w-4" /></Button>
+          </div>
+          <div data-kit="tight-row" className="flex items-center gap-1">
+            <Button size="sm" variant="secondary">Edit</Button>
+            <Button size="sm" variant="destructive">Delete</Button>
+          </div>
         </div>
       </Section>
 
