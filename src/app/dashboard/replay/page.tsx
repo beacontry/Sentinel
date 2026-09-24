@@ -309,7 +309,7 @@ export default function ReplayPage() {
             className={`w-full rounded-lg overflow-hidden ${chartFullscreen ? "flex-1 min-h-0" : ""}`}
           />
         )}
-        <div className="mt-3 flex items-center gap-4 text-[10px] text-text-muted">
+        <div className="mt-3 flex items-center gap-4 text-xs text-text-muted">
           <div className="flex items-center gap-1">
             <div className="w-0 h-0 border-l-[5px] border-r-[5px] border-b-[8px] border-l-transparent border-r-transparent border-b-bullish" />
             Buy Entry

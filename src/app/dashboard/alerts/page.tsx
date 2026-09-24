@@ -327,7 +327,7 @@ export default function AlertsPage() {
                       {t.label}
                     </span>
                   </div>
-                  <p className="text-[11px] text-text-muted leading-snug">
+                  <p className="text-xs text-text-muted leading-snug">
                     {t.desc}
                   </p>
                 </button>

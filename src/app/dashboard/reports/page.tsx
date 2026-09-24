@@ -194,7 +194,7 @@ function ReportsPage() {
                 { label: "Worst Trade", value: `$${analytics.worstTrade.toFixed(0)}`, color: "text-bearish" },
               ].map((s) => (
                 <Card key={s.label}>
-                  <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">{s.label}</div>
+                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">{s.label}</div>
                   <div className={`mt-1 text-xl font-mono font-semibold ${s.color}`}>{s.value}</div>
                 </Card>
               ))}
@@ -204,11 +204,11 @@ function ReportsPage() {
               <CardHeader className="p-0 pb-3"><CardTitle>Win / Loss Streaks</CardTitle></CardHeader>
               <div className="flex gap-6">
                 <div>
-                  <div className="text-[11px] text-text-muted uppercase tracking-[0.08em]">Longest Win</div>
+                  <div className="text-xs text-text-muted uppercase tracking-[0.08em]">Longest Win</div>
                   <div className="text-2xl font-mono font-semibold text-bullish">{analytics.maxWinStreak}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-text-muted uppercase tracking-[0.08em]">Longest Loss</div>
+                  <div className="text-xs text-text-muted uppercase tracking-[0.08em]">Longest Loss</div>
                   <div className="text-2xl font-mono font-semibold text-bearish">{analytics.maxLossStreak}</div>
                 </div>
               </div>

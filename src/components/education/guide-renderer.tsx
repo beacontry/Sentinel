@@ -196,7 +196,7 @@ function Block({ block }: { block: GuideBlock }) {
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
               {block.pairs.map((p, i) => (
                 <div key={i} className="flex flex-col">
-                  <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+                  <dt className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
                     {p.label}
                   </dt>
                   <dd className="text-sm font-mono text-text-primary mt-0.5">
@@ -263,13 +263,13 @@ export function GuideRenderer({ guide }: { guide: Guide }) {
       {/* Key facts strip */}
       {guide.keyFacts.length > 0 && (
         <div className="rounded-xl border border-border bg-bg-secondary p-4">
-          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted mb-3">
+          <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted mb-3">
             Key facts
           </p>
           <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
             {guide.keyFacts.map((f, i) => (
               <div key={i} className="flex flex-col">
-                <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+                <dt className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
                   {f.label}
                 </dt>
                 <dd className="text-sm font-mono text-text-primary mt-0.5">
@@ -304,7 +304,7 @@ export function GuideRenderer({ guide }: { guide: Guide }) {
 export function GuideTableOfContents({ guide }: { guide: Guide }) {
   return (
     <nav className="space-y-2">
-      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+      <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
         On this page
       </p>
       <ul className="space-y-1.5">

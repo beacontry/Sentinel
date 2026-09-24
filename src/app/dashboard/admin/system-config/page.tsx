@@ -294,7 +294,7 @@ export default function SystemConfigPage() {
                   </div>
                 </div>
                 {help.rotation && (
-                  <p className="text-[11px] text-text-muted mt-3 pt-3 border-t border-border/40 italic">
+                  <p className="text-xs text-text-muted mt-3 pt-3 border-t border-border/40 italic">
                     {help.rotation}
                   </p>
                 )}
@@ -353,7 +353,7 @@ export default function SystemConfigPage() {
               </span>
             )}
           </div>
-          <p className="text-[11px] text-text-muted leading-relaxed">
+          <p className="text-xs text-text-muted leading-relaxed">
             Testing hits the provider with a 1-token ping and never persists the
             value. Saving encrypts the value and writes an audit row tagged{" "}
             <code className="font-mono">system_config.updated</code>.

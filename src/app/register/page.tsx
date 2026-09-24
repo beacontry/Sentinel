@@ -228,7 +228,7 @@ function RegisterForm() {
                 : "Free tier — education, glossary, calculators, Congress trades, daily digest, watchlists. Upgrade later when you want the engine."}
           </p>
           {planIntent && planPrice ? (
-            <div className="mt-4 rounded-lg border border-accent/30 bg-accent/[0.06] px-3 py-2 text-[0.82rem] text-text-secondary">
+            <div className="mt-4 rounded-lg border border-accent/30 bg-accent/[0.06] px-3 py-2 text-sm text-text-secondary">
               <span className="font-semibold text-accent">
                 {planIntent.plan === "trader" ? "Trader" : "Premium"}{" "}
                 {planIntent.cadence === "year" ? "Annual" : "Monthly"}
@@ -323,7 +323,7 @@ function RegisterForm() {
             </Button>
 
             {!isInvitePath && (
-              <p className="text-center text-[0.78rem] text-text-muted">
+              <p className="text-center text-xs text-text-muted">
                 By signing up you agree to our{" "}
                 <Link href="/terms" className="underline hover:text-text-secondary">
                   Terms

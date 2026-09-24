@@ -90,7 +90,7 @@ export function FreeTierWelcome() {
 
       <div className="mb-4 flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-accent" />
-        <span className="font-mono text-[10px] uppercase tracking-wider text-accent">
+        <span className="font-mono text-xs uppercase tracking-wider text-accent">
           Welcome to Beacontry
         </span>
       </div>
@@ -123,10 +123,10 @@ export function FreeTierWelcome() {
             <div className="font-semibold text-sm text-text-primary mb-0.5">
               {f.title}
             </div>
-            <div className="text-[0.78rem] leading-snug text-text-secondary">
+            <div className="text-xs leading-snug text-text-secondary">
               {f.desc}
             </div>
-            <span className="mt-2 inline-flex items-center gap-1 text-[0.78rem] text-accent opacity-0 transition-opacity group-hover:opacity-100">
+            <span className="mt-2 inline-flex items-center gap-1 text-xs text-accent opacity-0 transition-opacity group-hover:opacity-100">
               Open <ArrowRight className="h-3 w-3" />
             </span>
           </Link>

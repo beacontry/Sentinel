@@ -307,7 +307,7 @@ function TaxReportPage() {
             step="1000"
           />
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted mb-1.5">
+            <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted mb-1.5">
               Tax Year
             </p>
             <p className="text-sm text-text-secondary mt-2">
@@ -460,14 +460,14 @@ function LotTable({ lines }: { lines: Form8949Line[] }) {
                     {line.quantity} sh {line.symbol}
                   </span>
                   {line.washSale && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-warning">
+                    <span className="inline-flex items-center gap-1 text-xs text-warning">
                       <AlertTriangle className="w-3 h-3" />
                       W
                     </span>
                   )}
                   <Badge
                     variant="neutral"
-                    className="text-[10px] px-1.5 py-0"
+                    className="text-xs px-1.5 py-0"
                   >
                     {line.source === "engine" ? "ENG" : "PTF"}
                   </Badge>
@@ -653,13 +653,13 @@ function ScheduleDView({ summary }: { summary: ScheduleDSummary }) {
         </CardHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+            <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
               Filing Status
             </p>
             <p className="text-sm font-medium text-text-primary mt-1">{filingLabel}</p>
           </div>
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+            <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
               Other Income
             </p>
             <p className="text-sm font-mono text-text-primary mt-1">
@@ -667,7 +667,7 @@ function ScheduleDView({ summary }: { summary: ScheduleDSummary }) {
             </p>
           </div>
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+            <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
               Estimated Tax on Gains
             </p>
             <p className="text-lg font-mono font-bold text-warning mt-1">
@@ -675,7 +675,7 @@ function ScheduleDView({ summary }: { summary: ScheduleDSummary }) {
             </p>
           </div>
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+            <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
               Effective Rate
             </p>
             <p className="text-sm font-mono text-text-primary mt-1 flex items-center gap-1">

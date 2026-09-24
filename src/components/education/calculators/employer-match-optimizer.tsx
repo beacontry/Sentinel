@@ -257,7 +257,7 @@ function SummaryBox({
       : "border-border bg-bg-secondary";
   return (
     <div className={`rounded-xl border p-3 space-y-1 ${wrapClass}`}>
-      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+      <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
         {label}
       </p>
       <p className="text-lg font-mono font-semibold text-text-primary">

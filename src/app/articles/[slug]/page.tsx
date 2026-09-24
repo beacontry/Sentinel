@@ -207,7 +207,7 @@ export default async function PublicArticlePage({
 
       <article className="max-w-3xl mx-auto">
         <header className="mb-8">
-          <div className="flex items-center gap-3 mb-4 text-[0.78rem] text-ld-text-muted">
+          <div className="flex items-center gap-3 mb-4 text-xs text-ld-text-muted">
             {article.category && (
               <span className="inline-flex items-center gap-1 font-mono uppercase tracking-wider">
                 <Tag className="h-3 w-3" />
@@ -221,7 +221,7 @@ export default async function PublicArticlePage({
               </span>
             )}
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-ld-text leading-tight">
+          <h1 className="text-2xl sm:text-2xl font-bold tracking-tight text-ld-text leading-tight">
             {article.title}
           </h1>
         </header>
@@ -230,7 +230,7 @@ export default async function PublicArticlePage({
             by default in this project, so we apply spacing + color rules
             scoped via CSS classes on the wrapping div. */}
         <div
-          className="article-prose text-[1.04rem] leading-[1.78] text-ld-text-secondary"
+          className="article-prose text-base leading-[1.78] text-ld-text-secondary"
           dangerouslySetInnerHTML={{ __html: html }}
         />
 
@@ -257,7 +257,7 @@ export default async function PublicArticlePage({
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-[0.94rem] font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
+          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
         >
           Sign up free
         </Link>

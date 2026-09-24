@@ -239,7 +239,7 @@ export default function ChatPage() {
                   className="flex min-h-[36px] flex-1 items-start gap-2 text-left"
                 >
                   <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span className="line-clamp-2 leading-snug text-[13px]">
+                  <span className="line-clamp-2 leading-snug text-sm">
                     {s.firstMessage || "New conversation"}
                   </span>
                 </button>
@@ -296,7 +296,7 @@ export default function ChatPage() {
                       setInput(prompt);
                       inputRef.current?.focus();
                     }}
-                    className="rounded-xl border border-border bg-bg-secondary px-4 py-3 text-left text-[13px] text-text-secondary transition-all hover:border-border hover:bg-bg-surface hover:text-text-primary"
+                    className="rounded-xl border border-border bg-bg-secondary px-4 py-3 text-left text-sm text-text-secondary transition-all hover:border-border hover:bg-bg-surface hover:text-text-primary"
                   >
                     {prompt}
                   </button>
@@ -385,7 +385,7 @@ export default function ChatPage() {
               </Button>
             )}
           </div>
-          <p className="mx-auto mt-2 max-w-3xl text-center text-[10px] text-text-muted">
+          <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-text-muted">
             AI may produce inaccurate analysis. Always verify before trading.
           </p>
         </div>

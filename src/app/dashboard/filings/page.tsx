@@ -145,7 +145,7 @@ export default function FilingsPage() {
       {/* Filters — only show after search */}
       {!loading && filings.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted mr-1">Form</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-text-muted mr-1">Form</div>
           {FORM_TYPES.map((form) => {
             const count = form === "All" ? filings.length : filings.filter((f) => f.form === form).length;
             if (form !== "All" && count === 0) return null;
@@ -166,7 +166,7 @@ export default function FilingsPage() {
 
           <div className="w-px h-5 bg-border mx-1" />
 
-          <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted mr-1">Sort</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-text-muted mr-1">Sort</div>
           <button
             onClick={() => { setSortField("date"); setSortDir((d) => sortField === "date" ? (d === "desc" ? "asc" : "desc") : "desc"); }}
             className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
@@ -389,7 +389,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-accent">Filing Analysis</div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-muted">
                     {filing.form} · {filing.filingDate}
                   </div>
                 </div>

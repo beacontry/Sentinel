@@ -169,20 +169,20 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
             name="symbol"
             defaultValue={symbol ?? ""}
             placeholder="Filter by ticker (e.g. NVDA)"
-            className="w-full rounded-lg border border-ld-border bg-ld-card pl-10 pr-3 py-2.5 text-[0.94rem] text-ld-text uppercase placeholder:text-ld-text-muted placeholder:normal-case focus:border-ld-accent focus:outline-none"
+            className="w-full rounded-lg border border-ld-border bg-ld-card pl-10 pr-3 py-2.5 text-base text-ld-text uppercase placeholder:text-ld-text-muted placeholder:normal-case focus:border-ld-accent focus:outline-none"
             maxLength={10}
           />
         </div>
         <button
           type="submit"
-          className="rounded-lg bg-ld-accent px-5 py-2.5 text-[0.92rem] font-semibold text-white hover:bg-ld-accent-dim transition-colors"
+          className="rounded-lg bg-ld-accent px-5 py-2.5 text-base font-semibold text-white hover:bg-ld-accent-dim transition-colors"
         >
           Filter
         </button>
         {symbol && (
           <Link
             href="/congress"
-            className="rounded-lg border border-ld-border px-4 py-2.5 text-[0.92rem] text-ld-text-secondary hover:text-ld-text hover:border-ld-border-accent transition-colors"
+            className="rounded-lg border border-ld-border px-4 py-2.5 text-base text-ld-text-secondary hover:text-ld-text hover:border-ld-border-accent transition-colors"
           >
             Clear
           </Link>
@@ -193,19 +193,19 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
           recent-window, not a totals view). */}
       <div className="mb-8 grid grid-cols-3 gap-3 max-w-2xl mx-auto">
         <div className="rounded-lg border border-ld-border bg-ld-card p-4 text-center">
-          <div className="font-mono text-[10px] uppercase tracking-wider text-ld-text-muted mb-1">
+          <div className="font-mono text-xs uppercase tracking-wider text-ld-text-muted mb-1">
             Shown
           </div>
           <div className="font-mono text-xl font-bold text-ld-text">{total}</div>
         </div>
         <div className="rounded-lg border border-ld-border bg-ld-card p-4 text-center">
-          <div className="font-mono text-[10px] uppercase tracking-wider text-ld-text-muted mb-1">
+          <div className="font-mono text-xs uppercase tracking-wider text-ld-text-muted mb-1">
             Buys
           </div>
           <div className="font-mono text-xl font-bold text-ld-green">{buys}</div>
         </div>
         <div className="rounded-lg border border-ld-border bg-ld-card p-4 text-center">
-          <div className="font-mono text-[10px] uppercase tracking-wider text-ld-text-muted mb-1">
+          <div className="font-mono text-xs uppercase tracking-wider text-ld-text-muted mb-1">
             Sells
           </div>
           <div className="font-mono text-xl font-bold text-bearish">{sells}</div>
@@ -236,22 +236,22 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-ld-border bg-ld-panel/40">
-                  <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-wider text-ld-text-muted">
+                  <th className="px-4 py-3 text-left font-mono text-xs uppercase tracking-wider text-ld-text-muted">
                     Date
                   </th>
-                  <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-wider text-ld-text-muted">
+                  <th className="px-4 py-3 text-left font-mono text-xs uppercase tracking-wider text-ld-text-muted">
                     Member
                   </th>
-                  <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-wider text-ld-text-muted">
+                  <th className="px-4 py-3 text-left font-mono text-xs uppercase tracking-wider text-ld-text-muted">
                     Ticker
                   </th>
-                  <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-wider text-ld-text-muted">
+                  <th className="px-4 py-3 text-left font-mono text-xs uppercase tracking-wider text-ld-text-muted">
                     Action
                   </th>
-                  <th className="px-4 py-3 text-right font-mono text-[10px] uppercase tracking-wider text-ld-text-muted">
+                  <th className="px-4 py-3 text-right font-mono text-xs uppercase tracking-wider text-ld-text-muted">
                     Amount
                   </th>
-                  <th className="px-4 py-3 text-right font-mono text-[10px] uppercase tracking-wider text-ld-text-muted">
+                  <th className="px-4 py-3 text-right font-mono text-xs uppercase tracking-wider text-ld-text-muted">
                     Filed
                   </th>
                 </tr>
@@ -264,12 +264,12 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
                       key={i}
                       className="border-b border-ld-border/30 last:border-b-0 hover:bg-ld-panel/40"
                     >
-                      <td className="px-4 py-3 font-mono text-[0.82rem] text-ld-text-secondary whitespace-nowrap">
+                      <td className="px-4 py-3 font-mono text-sm text-ld-text-secondary whitespace-nowrap">
                         {fmtDate(t.transactionDate)}
                       </td>
                       <td className="px-4 py-3">
                         <div className="text-ld-text">{t.filerName}</div>
-                        <div className="text-[0.7rem] text-ld-text-muted">
+                        <div className="text-xs text-ld-text-muted">
                           {t.chamber}
                           {t.party ? ` · ${t.party}` : ""}
                         </div>
@@ -290,10 +290,10 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
                           ) : (
                             <TrendingDown className="h-3.5 w-3.5" />
                           )}
-                          <span className="text-[0.84rem]">{t.transactionType}</span>
+                          <span className="text-sm">{t.transactionType}</span>
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-[0.84rem] text-ld-text-secondary whitespace-nowrap">
+                      <td className="px-4 py-3 text-right font-mono text-sm text-ld-text-secondary whitespace-nowrap">
                         {fmtUsd(t.amountFrom)} – {fmtUsd(t.amountTo)}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -302,13 +302,13 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
                             href={t.sourceUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[0.78rem] text-ld-text-muted hover:text-ld-accent whitespace-nowrap"
+                            className="inline-flex items-center gap-1 text-xs text-ld-text-muted hover:text-ld-accent whitespace-nowrap"
                           >
                             {fmtDate(t.filingDate)}
                             <ExternalLink className="h-3 w-3" />
                           </a>
                         ) : (
-                          <span className="text-[0.78rem] text-ld-text-muted whitespace-nowrap">
+                          <span className="text-xs text-ld-text-muted whitespace-nowrap">
                             {fmtDate(t.filingDate)}
                           </span>
                         )}
@@ -334,13 +334,13 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-[0.94rem] font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
+          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
         >
           Sign up free
         </Link>
       </section>
 
-      <p className="mt-6 text-center text-[0.78rem] text-ld-text-muted">
+      <p className="mt-6 text-center text-xs text-ld-text-muted">
         Data sourced from official House Clerk + Senate eFD Periodic Transaction Reports.
         Members of Congress are required to disclose trades within 45 days.
       </p>

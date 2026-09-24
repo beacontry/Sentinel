@@ -259,7 +259,7 @@ export function RedditSubredditsCard() {
                           r/{s.name}
                         </a>
                         {s.displayName !== `r/${s.name}` && (
-                          <span className="text-[10px] text-text-muted">
+                          <span className="text-xs text-text-muted">
                             {s.displayName}
                           </span>
                         )}

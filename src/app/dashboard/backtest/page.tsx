@@ -515,7 +515,7 @@ export default function BacktestPage() {
               placeholder="AAPL"
             />
             <div className="flex flex-col gap-1">
-              <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">Window</span>
+              <span className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">Window</span>
               <div className="inline-flex rounded-lg border border-border bg-bg-secondary p-0.5">
                 <button
                   type="button"
@@ -706,7 +706,7 @@ export default function BacktestPage() {
               icon={BarChart3}
             />
           </div>
-          <p className="text-[11px] text-text-muted -mt-1">
+          <p className="text-xs text-text-muted -mt-1">
             Sortino punishes only downside volatility. Calmar = annualized return ÷ max drawdown.
             MAR = total return ÷ max drawdown over the full window.
             All three &gt; 1.0 is good; &gt; 3.0 is excellent.

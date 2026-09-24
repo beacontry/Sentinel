@@ -229,7 +229,7 @@ export function FireNumberCalculator() {
 
       {/* Trajectory chart */}
       <div className="space-y-2">
-        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
           Portfolio vs FIRE target over time
         </p>
         <div className="relative h-24 border-l border-b border-border">
@@ -262,7 +262,7 @@ export function FireNumberCalculator() {
             );
           })}
         </div>
-        <div className="flex items-center justify-between text-[10px] text-text-muted">
+        <div className="flex items-center justify-between text-xs text-text-muted">
           <span>Now (age {currentAge})</span>
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1">
@@ -306,7 +306,7 @@ function ResultBox({
       : "border-border bg-bg-secondary";
   return (
     <div className={`rounded-xl border p-3 ${wrapClass}`}>
-      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+      <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
         {label}
       </p>
       <p className="mt-1 text-lg font-mono font-semibold text-text-primary">

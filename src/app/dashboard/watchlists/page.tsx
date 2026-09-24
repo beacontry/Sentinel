@@ -362,7 +362,7 @@ export default function WatchlistsPage() {
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm font-medium text-text-primary truncate">{l.name}</span>
                       {l.isDefault && (
-                        <Badge variant="default" className="text-[9px] px-1.5">DEFAULT</Badge>
+                        <Badge variant="default" className="text-xs px-1.5">DEFAULT</Badge>
                       )}
                     </div>
                     <div className="text-xs text-text-muted">{l.itemCount} symbols</div>
@@ -434,7 +434,7 @@ export default function WatchlistsPage() {
                           {active.name}
                         </h2>
                         {active.isDefault && (
-                          <Badge variant="default" className="text-[10px]">DEFAULT</Badge>
+                          <Badge variant="default" className="text-xs">DEFAULT</Badge>
                         )}
                         <button
                           onClick={() => { setRenameDraft(active.name); setEditingName(true); }}

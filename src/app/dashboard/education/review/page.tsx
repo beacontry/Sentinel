@@ -136,10 +136,10 @@ export default function GlossaryReviewPage() {
       ) : currentTerm ? (
         <Card className="space-y-5">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+            <span className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
               Review {completed + 1} of {pile.length + completed}
             </span>
-            <span className="text-[11px] text-text-muted">
+            <span className="text-xs text-text-muted">
               {currentTerm.category}
             </span>
           </div>
@@ -197,12 +197,12 @@ export default function GlossaryReviewPage() {
                       title={cfg.description}
                     >
                       <span className="font-semibold">{q}</span>
-                      <span className="text-[10px]">{cfg.label}</span>
+                      <span className="text-xs">{cfg.label}</span>
                     </button>
                   );
                 })}
               </div>
-              <div className="flex items-center justify-center gap-4 pt-2 text-[10px] text-text-muted">
+              <div className="flex items-center justify-center gap-4 pt-2 text-xs text-text-muted">
                 <span className="flex items-center gap-1">
                   <X className="h-3 w-3 text-bearish" /> 0–2 = lapse (resets)
                 </span>

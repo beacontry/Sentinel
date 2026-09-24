@@ -102,7 +102,7 @@ export default function HeatmapPage() {
                   <p className="text-xs font-mono font-bold text-text-primary">
                     {s.symbol}
                   </p>
-                  <p className="text-[10px] font-mono text-text-primary/70">
+                  <p className="text-xs font-mono text-text-primary/70">
                     ${s.price.toFixed(2)}
                   </p>
                   <p

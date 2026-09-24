@@ -110,7 +110,7 @@ export default async function PublicWatchlistPage({
           </p>
         </div>
 
-        <p className="text-center text-[11px] text-text-muted">
+        <p className="text-center text-xs text-text-muted">
           This watchlist is shared publicly via a unique link. The owner can revoke access at any time.
         </p>
       </main>

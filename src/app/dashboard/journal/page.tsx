@@ -448,7 +448,7 @@ function JournalPage() {
                 >
                   <span className="font-medium">{label}</span>
                   <span className="font-mono">{wrPct}% win</span>
-                  <span className="text-[10px] opacity-75">
+                  <span className="text-xs opacity-75">
                     n={p.n}
                     {isBetter || isWorse ? ` · ${p.deviation > 0 ? "+" : ""}${devPct}pp` : ""}
                   </span>
@@ -536,7 +536,7 @@ function JournalPage() {
               </label>
               {TAG_CATEGORIES.map((cat) => (
                 <div key={cat.id} className="space-y-1">
-                  <p className="text-[10px] uppercase tracking-[0.08em] text-text-muted">
+                  <p className="text-xs uppercase tracking-[0.08em] text-text-muted">
                     {cat.label}
                   </p>
                   <div className="flex flex-wrap gap-1.5">
@@ -669,7 +669,7 @@ function JournalPage() {
                         <Badge variant={typeMeta.tone} className="inline-flex items-center gap-1">
                           <TypeIcon className="w-3 h-3" />
                           {typeMeta.label}
-                          {unfilled && <span className="ml-1 text-[9px] uppercase tracking-wider">· Needs review</span>}
+                          {unfilled && <span className="ml-1 text-xs uppercase tracking-wider">· Needs review</span>}
                         </Badge>
                       )}
                       <h3 className="font-medium text-text-primary">{entry.title}</h3>

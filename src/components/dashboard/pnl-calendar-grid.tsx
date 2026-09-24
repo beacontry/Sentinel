@@ -113,9 +113,9 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
         {weeks.map((week, wi) => (
           <div key={wi} className="w-[16px] mx-[1px] text-center shrink-0">
             {week.monthLabel ? (
-              <span className="text-[9px] text-text-muted">{week.monthLabel}</span>
+              <span className="text-xs text-text-muted">{week.monthLabel}</span>
             ) : (
-              <span className="text-[9px]">&nbsp;</span>
+              <span className="text-xs">&nbsp;</span>
             )}
           </div>
         ))}
@@ -126,7 +126,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
         <div className="flex flex-col mr-1 shrink-0 w-7">
           {DAY_LABELS.map((label, i) => (
             <div key={i} className="h-[14px] my-[1px] flex items-center justify-end">
-              <span className="text-[9px] text-text-muted leading-none">{label}</span>
+              <span className="text-xs text-text-muted leading-none">{label}</span>
             </div>
           ))}
         </div>
@@ -176,7 +176,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
 
       {/* Legend */}
       <div className="flex items-center gap-2 mt-3 ml-8">
-        <span className="text-[10px] text-text-muted">Loss</span>
+        <span className="text-xs text-text-muted">Loss</span>
         {LOSS_COLORS.slice().reverse().map((color, i) => (
           <div key={`l${i}`} className={`w-[10px] h-[10px] rounded-[2px] ${color}`} />
         ))}
@@ -184,7 +184,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
         {PROFIT_COLORS.map((color, i) => (
           <div key={`p${i}`} className={`w-[10px] h-[10px] rounded-[2px] ${color}`} />
         ))}
-        <span className="text-[10px] text-text-muted">Profit</span>
+        <span className="text-xs text-text-muted">Profit</span>
       </div>
 
       {/* Tooltip */}
@@ -210,7 +210,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
           }`}>
             {tooltip.day.pnl >= 0 ? "+" : ""}${tooltip.day.pnl.toFixed(2)}
           </p>
-          <p className="text-[10px] text-text-muted">
+          <p className="text-xs text-text-muted">
             {tooltip.day.tradesCount} trade{tooltip.day.tradesCount !== 1 ? "s" : ""}
           </p>
         </div>

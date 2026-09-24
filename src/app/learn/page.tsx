@@ -80,14 +80,14 @@ export default function PublicLearnPage() {
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link
             href="/glossary"
-            className="inline-flex items-center gap-2 rounded-[10px] border border-ld-border px-4 py-2 text-[0.92rem] font-medium text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06] transition-colors"
+            className="inline-flex items-center gap-2 rounded-[10px] border border-ld-border px-4 py-2 text-base font-medium text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06] transition-colors"
           >
             <BookOpen className="h-4 w-4" />
             Glossary (95 terms)
           </Link>
           <Link
             href="/tools"
-            className="inline-flex items-center gap-2 rounded-[10px] border border-ld-border px-4 py-2 text-[0.92rem] font-medium text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06] transition-colors"
+            className="inline-flex items-center gap-2 rounded-[10px] border border-ld-border px-4 py-2 text-base font-medium text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06] transition-colors"
           >
             <Calculator className="h-4 w-4" />
             Calculators (8 tools)
@@ -102,14 +102,14 @@ export default function PublicLearnPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search guides…"
-          className="w-full rounded-lg border border-ld-border bg-ld-card px-4 py-2.5 text-[0.94rem] text-ld-text placeholder:text-ld-text-muted focus:border-ld-accent focus:outline-none"
+          className="w-full rounded-lg border border-ld-border bg-ld-card px-4 py-2.5 text-base text-ld-text placeholder:text-ld-text-muted focus:border-ld-accent focus:outline-none"
         />
         <div className="flex flex-wrap gap-2">
           {TOPIC_TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`rounded-full px-3.5 py-1.5 text-[0.85rem] font-medium transition-colors ${
+              className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 activeTab === tab.id
                   ? "bg-ld-accent text-white"
                   : "border border-ld-border bg-ld-card text-ld-text-secondary hover:border-ld-accent/40 hover:text-ld-text"
@@ -135,10 +135,10 @@ export default function PublicLearnPage() {
               className="group block rounded-2xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_22px_60px_rgba(0,0,0,0.32)]"
             >
               <div className="flex flex-wrap items-center gap-2 mb-3">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-ld-accent">
+                <span className="font-mono text-xs uppercase tracking-wider text-ld-accent">
                   {TOPIC_META[guide.topic].label}
                 </span>
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${DIFFICULTY_COLOR[guide.difficulty]}`}>
+                <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${DIFFICULTY_COLOR[guide.difficulty]}`}>
                   {guide.difficulty}
                 </span>
               </div>
@@ -146,11 +146,11 @@ export default function PublicLearnPage() {
               <h3 className="text-lg font-bold leading-tight mb-2 group-hover:text-ld-accent transition-colors">
                 {guide.title}
               </h3>
-              <p className="text-[0.9rem] leading-relaxed text-ld-text-secondary line-clamp-3 mb-4">
+              <p className="text-base leading-relaxed text-ld-text-secondary line-clamp-3 mb-4">
                 {guide.summary}
               </p>
 
-              <div className="flex items-center justify-between text-[0.78rem] text-ld-text-muted">
+              <div className="flex items-center justify-between text-xs text-ld-text-muted">
                 <span className="inline-flex items-center gap-1">
                   <Clock className="h-3 w-3" />
                   {guide.readingMinutes} min read
@@ -173,7 +173,7 @@ export default function PublicLearnPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-[0.94rem] font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
+          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

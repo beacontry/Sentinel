@@ -170,7 +170,7 @@ export default function CalendarPage() {
           {/* Weekday headers */}
           <div className="grid grid-cols-7 border-b border-border">
             {WEEKDAYS.map((d) => (
-              <div key={d} className="py-2 text-center text-[11px] uppercase tracking-[0.12em] text-text-muted">
+              <div key={d} className="py-2 text-center text-xs uppercase tracking-[0.12em] text-text-muted">
                 {d}
               </div>
             ))}
@@ -225,12 +225,12 @@ export default function CalendarPage() {
                           return entries.map(([cat, count]) => (
                             <div key={cat} className="flex items-center gap-1">
                               <div className={`h-1 flex-1 rounded-full ${categoryColors[cat] ?? categoryColors.other}`} />
-                              {count > 1 && <span className="text-[8px] font-mono text-text-muted">{count}</span>}
+                              {count > 1 && <span className="text-xs font-mono text-text-muted">{count}</span>}
                             </div>
                           ));
                         })()}
                         {dayEvents.length > 3 && (
-                          <span className="text-[8px] font-mono text-text-muted">{dayEvents.length} events</span>
+                          <span className="hidden text-xs font-mono text-text-muted sm:inline">{dayEvents.length} events</span>
                         )}
                       </div>
                     )}
@@ -246,7 +246,7 @@ export default function CalendarPage() {
           )}
 
           {/* Legend */}
-          <div className="flex flex-wrap items-center gap-4 px-5 py-3 border-t border-border text-[10px] uppercase tracking-[0.12em] text-text-muted">
+          <div className="flex flex-wrap items-center gap-4 px-5 py-3 border-t border-border text-xs uppercase tracking-[0.12em] text-text-muted">
             {Object.entries(categoryLabels).map(([key, label]) => (
               <div key={key} className="flex items-center gap-1.5">
                 <div className={`h-2 w-4 rounded-full ${categoryColors[key]}`} />
@@ -266,7 +266,7 @@ export default function CalendarPage() {
             <>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-muted">
                     {selectedDate === todayStr ? "Today" : "Selected"}
                   </div>
                   <div className="text-lg font-semibold">
@@ -297,7 +297,7 @@ export default function CalendarPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-medium">{event.event}</span>
-                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${categoryBadge[event.category] ?? categoryBadge.other}`}>
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${categoryBadge[event.category] ?? categoryBadge.other}`}>
                               {categoryLabels[event.category] ?? event.category}
                             </span>
                           </div>
@@ -313,19 +313,19 @@ export default function CalendarPage() {
                             <div className="mt-3 grid grid-cols-3 gap-2">
                               {event.actual != null && (
                                 <div className="rounded-lg bg-bg-elevated p-2">
-                                  <div className="text-[10px] text-text-muted">Actual</div>
+                                  <div className="text-xs text-text-muted">Actual</div>
                                   <div className="font-mono text-sm font-medium text-bullish">{event.actual}</div>
                                 </div>
                               )}
                               {event.forecast != null && (
                                 <div className="rounded-lg bg-bg-elevated p-2">
-                                  <div className="text-[10px] text-text-muted">Forecast</div>
+                                  <div className="text-xs text-text-muted">Forecast</div>
                                   <div className="font-mono text-sm font-medium">{event.forecast}</div>
                                 </div>
                               )}
                               {event.previous != null && (
                                 <div className="rounded-lg bg-bg-elevated p-2">
-                                  <div className="text-[10px] text-text-muted">Previous</div>
+                                  <div className="text-xs text-text-muted">Previous</div>
                                   <div className="font-mono text-sm font-medium text-text-secondary">{event.previous}</div>
                                 </div>
                               )}
@@ -349,7 +349,7 @@ export default function CalendarPage() {
               {/* Quick upcoming */}
               {events.filter((e) => e.date >= todayStr && e.importance === "high").length > 0 && (
                 <div className="mt-5 text-left">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted mb-2">Upcoming high impact</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-muted mb-2">Upcoming high impact</div>
                   <div className="space-y-1.5">
                     {events
                       .filter((e) => e.date >= todayStr && e.importance === "high")
@@ -364,7 +364,7 @@ export default function CalendarPage() {
                             <div className="h-1.5 w-1.5 rounded-full bg-bearish" />
                             <span className="text-xs text-text-primary truncate">{e.event}</span>
                           </div>
-                          <span className="text-[10px] font-mono text-text-muted shrink-0 ml-2">
+                          <span className="text-xs font-mono text-text-muted shrink-0 ml-2">
                             {new Date(e.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                           </span>
                         </button>

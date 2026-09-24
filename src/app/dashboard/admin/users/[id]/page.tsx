@@ -542,7 +542,7 @@ function Stat({
         : "text-text-primary";
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-[0.08em] text-text-muted mb-1">{label}</div>
+      <div className="text-xs uppercase tracking-[0.08em] text-text-muted mb-1">{label}</div>
       <div className={`text-lg font-mono font-semibold ${toneClass}`}>{value}</div>
     </div>
   );

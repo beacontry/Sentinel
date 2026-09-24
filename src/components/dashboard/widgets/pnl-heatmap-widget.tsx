@@ -83,7 +83,7 @@ export function PnlHeatmapWidget() {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] uppercase tracking-wider text-text-muted">
+        <span className="text-xs uppercase tracking-wider text-text-muted">
           Top contributors
         </span>
         <span
@@ -103,7 +103,7 @@ export function PnlHeatmapWidget() {
               key={r.symbol}
               className="grid grid-cols-[50px_1fr_auto] gap-2 items-center text-xs"
             >
-              <SymbolLink symbol={r.symbol} className="font-medium text-[12px]" />
+              <SymbolLink symbol={r.symbol} className="font-medium text-xs" />
               <div className="relative h-5 rounded-md bg-bg-elevated overflow-hidden">
                 <div
                   className={`absolute inset-y-0 left-0 ${
@@ -113,7 +113,7 @@ export function PnlHeatmapWidget() {
                 />
               </div>
               <span
-                className={`font-mono text-[11px] font-medium ${
+                className={`font-mono text-xs font-medium ${
                   isPositive ? "text-bullish" : "text-bearish"
                 }`}
               >
@@ -125,19 +125,19 @@ export function PnlHeatmapWidget() {
       </div>
       <Link
         href="/dashboard/performance"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-[11px] uppercase
+        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-xs uppercase
           tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
       >
         Full attribution <ArrowRight className="w-3 h-3" />
       </Link>
       {data.totalPnl >= 0 && (
-        <p className="text-[10px] text-text-muted text-center mt-1">
+        <p className="text-xs text-text-muted text-center mt-1">
           <TrendingUp className="inline w-3 h-3 mr-0.5" />
           Lifetime realized
         </p>
       )}
       {data.totalPnl < 0 && (
-        <p className="text-[10px] text-text-muted text-center mt-1">
+        <p className="text-xs text-text-muted text-center mt-1">
           <TrendingDown className="inline w-3 h-3 mr-0.5" />
           Lifetime realized
         </p>

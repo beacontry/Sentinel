@@ -233,7 +233,7 @@ export default function PricingPage() {
   function renderCell(value: Cell) {
     if (value === true) return <Check className="mx-auto h-4 w-4 text-ld-accent" />;
     if (value === false) return <Minus className="mx-auto h-4 w-4 text-ld-text-muted opacity-50" />;
-    return <span className="text-[0.86rem] text-ld-text-secondary">{value}</span>;
+    return <span className="text-sm text-ld-text-secondary">{value}</span>;
   }
 
   // ─── FAQ ────────────────────────────────────────────────────────────
@@ -290,7 +290,7 @@ export default function PricingPage() {
       {/* ── Navbar — same structure as landing ── */}
       <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-all duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-[0_10px_30px_rgba(0,0,0,0.24)]" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
         <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
-          <Link href="/" className="flex items-center gap-3 text-[1.25rem] font-bold tracking-tight">
+          <Link href="/" className="flex items-center gap-3 text-lg font-bold tracking-tight">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-white">
               <BeacontryMark variant="full" className="h-8 w-8" aria-label="Beacontry" />
             </div>
@@ -302,7 +302,7 @@ export default function PricingPage() {
               <li key={link.href}>
                 <a
                   href={link.href}
-                  className={`text-[0.94rem] font-medium transition-colors duration-200 hover:text-ld-text ${
+                  className={`text-base font-medium transition-colors duration-200 hover:text-ld-text ${
                     link.href === "/pricing" ? "text-ld-text" : "text-ld-text-secondary"
                   }`}
                 >
@@ -314,7 +314,7 @@ export default function PricingPage() {
 
           <div className="hidden items-center gap-3 md:flex">
             <ThemePicker variant="icon" />
-            <Link href="/register" className="rounded-[10px] bg-ld-accent px-5 py-3 text-[0.92rem] font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
+            <Link href="/register" className="rounded-[10px] bg-ld-accent px-5 py-3 text-base font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
               Get Started
             </Link>
           </div>
@@ -333,11 +333,11 @@ export default function PricingPage() {
             <ul className="flex flex-col gap-1">
               {navLinks.map((link) => (
                 <li key={link.href}>
-                  <a href={link.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-[0.94rem] font-medium text-ld-text-secondary transition-colors hover:bg-ld-accent/8 hover:text-ld-text">{link.label}</a>
+                  <a href={link.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-base font-medium text-ld-text-secondary transition-colors hover:bg-ld-accent/8 hover:text-ld-text">{link.label}</a>
                 </li>
               ))}
             </ul>
-            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-[10px] bg-ld-accent py-3 text-center text-[0.92rem] font-semibold text-white">
+            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-[10px] bg-ld-accent py-3 text-center text-base font-semibold text-white">
               Get Started
             </Link>
           </div>
@@ -371,24 +371,24 @@ export default function PricingPage() {
               }`}
             >
               {tier.highlight && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-ld-accent px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-white">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-ld-accent px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider text-white">
                   {tier.tag}
                 </div>
               )}
               {!tier.highlight && (
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ld-text-muted">{tier.tag}</p>
+                <p className="font-mono text-xs uppercase tracking-[0.14em] text-ld-text-muted">{tier.tag}</p>
               )}
 
               <h3 className="mt-3 text-xl font-bold">{tier.name}</h3>
-              <p className="mt-2 text-[0.9rem] text-ld-text-secondary">{tier.desc}</p>
+              <p className="mt-2 text-base text-ld-text-secondary">{tier.desc}</p>
 
               <div className="mt-5 flex items-baseline gap-1">
-                <span className="text-[2.5rem] font-extrabold leading-none">{tier.price}</span>
+                <span className="text-2xl font-extrabold leading-none">{tier.price}</span>
                 {tier.cadence && <span className="text-ld-text-muted">{tier.cadence}</span>}
               </div>
-              <p className="mt-1 text-[0.8rem] text-ld-text-muted">{tier.annual}</p>
+              <p className="mt-1 text-xs text-ld-text-muted">{tier.annual}</p>
 
-              <ul className="mt-6 flex-1 space-y-2.5 text-[0.92rem]">
+              <ul className="mt-6 flex-1 space-y-2.5 text-base">
                 {tier.features.map((feat) => (
                   <li key={feat} className="flex items-start gap-2 text-ld-text-secondary">
                     <Check className="mt-0.5 h-4 w-4 shrink-0 text-ld-accent" />
@@ -399,7 +399,7 @@ export default function PricingPage() {
 
               <Link
                 href={tier.ctaHref}
-                className={`mt-8 inline-flex items-center justify-center gap-2 rounded-[10px] px-5 py-3 text-[0.92rem] font-semibold transition-all duration-200 hover:-translate-y-0.5 ${
+                className={`mt-8 inline-flex items-center justify-center gap-2 rounded-[10px] px-5 py-3 text-base font-semibold transition-all duration-200 hover:-translate-y-0.5 ${
                   tier.highlight
                     ? "bg-ld-accent text-white hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]"
                     : "border border-ld-border text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06]"
@@ -429,19 +429,19 @@ export default function PricingPage() {
                 {/* Sticky header */}
                 <thead>
                   <tr className="border-b border-ld-border bg-ld-panel/60">
-                    <th className="w-[36%] px-5 py-4 text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-text-muted">
+                    <th className="w-[36%] px-5 py-4 text-xs font-mono uppercase tracking-[0.1em] text-ld-text-muted">
                       Feature
                     </th>
-                    <th className="px-3 py-4 text-center text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-text-secondary">
+                    <th className="px-3 py-4 text-center text-xs font-mono uppercase tracking-[0.1em] text-ld-text-secondary">
                       Free
                     </th>
-                    <th className="px-3 py-4 text-center text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-accent">
+                    <th className="px-3 py-4 text-center text-xs font-mono uppercase tracking-[0.1em] text-ld-accent">
                       Trader
                     </th>
-                    <th className="px-3 py-4 text-center text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-accent">
+                    <th className="px-3 py-4 text-center text-xs font-mono uppercase tracking-[0.1em] text-ld-accent">
                       Premium
                     </th>
-                    <th className="px-3 py-4 text-center text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-text-secondary">
+                    <th className="px-3 py-4 text-center text-xs font-mono uppercase tracking-[0.1em] text-ld-text-secondary">
                       Self-hosted
                     </th>
                   </tr>
@@ -451,7 +451,7 @@ export default function PricingPage() {
                     <Fragment key={category.name}>
                       {/* Category divider */}
                       <tr className="border-b border-ld-border/60 bg-ld-deep/30">
-                        <td colSpan={5} className="px-5 py-2.5 text-[0.78rem] font-mono uppercase tracking-[0.1em] text-ld-accent">
+                        <td colSpan={5} className="px-5 py-2.5 text-xs font-mono uppercase tracking-[0.1em] text-ld-accent">
                           {category.name}
                         </td>
                       </tr>
@@ -460,7 +460,7 @@ export default function PricingPage() {
                           key={`${category.name}-${ri}`}
                           className="border-b border-ld-border/30 last:border-b-0 hover:bg-ld-panel/40"
                         >
-                          <td className="px-5 py-3 text-[0.9rem] text-ld-text-secondary">
+                          <td className="px-5 py-3 text-base text-ld-text-secondary">
                             {row.label}
                           </td>
                           <td className="px-3 py-3 text-center">{renderCell(row.free)}</td>
@@ -476,7 +476,7 @@ export default function PricingPage() {
             </div>
           </div>
 
-          <p className="mt-4 text-center text-[0.78rem] text-ld-text-muted">
+          <p className="mt-4 text-center text-xs text-ld-text-muted">
             All features available on every tier unless otherwise marked. Self-hosted runs on your own infrastructure with full FSL-1.1 source.
           </p>
         </div>
@@ -506,7 +506,7 @@ export default function PricingPage() {
                   className="flex w-full items-center justify-between gap-3 px-6 py-4 text-left"
                   aria-expanded={open}
                 >
-                  <span className="text-[0.98rem] font-semibold text-ld-text">{faq.q}</span>
+                  <span className="text-base font-semibold text-ld-text">{faq.q}</span>
                   <span
                     className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-ld-border text-ld-text-secondary transition-transform duration-200 ${open ? "rotate-45 border-ld-accent text-ld-accent" : ""}`}
                     aria-hidden="true"
@@ -515,7 +515,7 @@ export default function PricingPage() {
                   </span>
                 </button>
                 {open && (
-                  <div className="border-t border-ld-border/40 px-6 pb-5 pt-4 text-[0.94rem] leading-relaxed text-ld-text-secondary">
+                  <div className="border-t border-ld-border/40 px-6 pb-5 pt-4 text-base leading-relaxed text-ld-text-secondary">
                     {faq.a}
                   </div>
                 )}
@@ -550,7 +550,7 @@ export default function PricingPage() {
       {/* ── Footer ── */}
       <footer className="border-t border-ld-border bg-ld-deep">
         <div className="mx-auto flex max-w-[1280px] items-center justify-center px-4 py-6 lg:px-7">
-          <div className="text-[0.88rem] text-ld-text-muted">
+          <div className="text-sm text-ld-text-muted">
             &copy; 2026 Beacontry. All rights reserved.
           </div>
         </div>

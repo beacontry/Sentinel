@@ -164,7 +164,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-white">
                 <BeacontryMark className="h-3.5 w-3.5" aria-label="Beacontry" />
               </div>
-              <span className="text-[14px] font-semibold text-text-primary">Beacontry</span>
+              <span className="text-sm font-semibold text-text-primary">Beacontry</span>
             </Link>
 
             {/* Nav sections with dropdowns */}
@@ -186,7 +186,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[13px] whitespace-nowrap transition-colors ${
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors ${
                         active
                           ? "text-text-primary bg-bg-hover font-medium"
                           : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
@@ -213,7 +213,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                       onClick={() => setOpenSectionHref(isOpen ? null : item.href)}
                       aria-haspopup="menu"
                       aria-expanded={isOpen}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[13px] whitespace-nowrap transition-colors ${
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors ${
                         active
                           ? "text-text-primary bg-bg-hover font-medium"
                           : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
@@ -237,7 +237,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                         <Link
                           href={item.href}
                           role="menuitem"
-                          className={`block px-3 py-1.5 text-[13px] transition-colors ${
+                          className={`block px-3 py-1.5 text-sm transition-colors ${
                             pathname === item.href
                               ? "text-text-primary bg-bg-hover font-medium"
                               : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
@@ -253,7 +253,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                               key={tab.href}
                               href={tab.href}
                               role="menuitem"
-                              className={`block px-3 py-1.5 text-[13px] transition-colors ${
+                              className={`block px-3 py-1.5 text-sm transition-colors ${
                                 tabActive
                                   ? "text-text-primary bg-bg-hover font-medium"
                                   : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
@@ -327,7 +327,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                       type="button"
                       onClick={handleLogout}
                       role="menuitem"
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover/60 transition-colors"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover/60 transition-colors"
                     >
                       <LogOut className="h-4 w-4" />
                       Sign out
@@ -386,8 +386,8 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                   <BeacontryMark className="h-4 w-4" aria-label="Beacontry" />
                 </div>
                 <div>
-                  <div className="text-[15px] font-semibold text-text-primary">Beacontry</div>
-                  <div className="text-[10px] text-text-muted">Trading Intelligence</div>
+                  <div className="text-base font-semibold text-text-primary">Beacontry</div>
+                  <div className="text-xs text-text-muted">Trading Intelligence</div>
                 </div>
               </Link>
             </div>
@@ -403,7 +403,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                     <Link
                       href={item.href}
                       onClick={() => setMobileOpen(false)}
-                      className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] ${
+                      className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm ${
                         active
                           ? "text-text-primary bg-bg-hover font-medium"
                           : "text-text-secondary"
@@ -421,7 +421,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                               key={tab.href}
                               href={tab.href}
                               onClick={() => setMobileOpen(false)}
-                              className={`rounded-md px-2.5 py-1 text-[12px] ${
+                              className={`rounded-md px-2.5 py-1 text-xs ${
                                 tabActive
                                   ? "text-text-primary bg-bg-hover font-medium"
                                   : "text-text-muted"
@@ -450,7 +450,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                   toggleChat();
                   setMobileOpen(false);
                 }}
-                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-text-secondary"
+                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-text-secondary"
               >
                 <Sparkles className="h-4 w-4" />
                 AI Assistant
@@ -458,7 +458,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="mt-0.5 flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-text-secondary"
+                className="mt-0.5 flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-text-secondary"
               >
                 <LogOut className="h-4 w-4" />
                 Sign out

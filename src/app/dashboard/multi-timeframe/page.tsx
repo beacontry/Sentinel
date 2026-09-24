@@ -190,8 +190,8 @@ export default function MultiTimeframePage() {
                 <p className="text-sm text-text-secondary">{result.confluence.description}</p>
               </div>
               <div className="text-right">
-                <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">Score</div>
-                <div className={`text-3xl font-mono font-semibold ${confluenceColor[result.confluence.status]}`}>
+                <div className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">Score</div>
+                <div className={`text-2xl font-mono font-semibold ${confluenceColor[result.confluence.status]}`}>
                   {result.confluence.score}
                 </div>
               </div>

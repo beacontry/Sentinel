@@ -268,7 +268,7 @@ export default function TaxCenterPage() {
                 </p>
                 <Link
                   href="/dashboard/education/guides/quarterly-estimated-taxes-for-traders"
-                  className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+                  className="mt-2 inline-flex items-center gap-1 text-xs text-accent hover:underline"
                 >
                   <BookOpen className="w-3 h-3" />
                   Owe quarterly?
@@ -620,7 +620,7 @@ function PersonalizedTaxEducation({
           <BookOpen className="w-4 h-4 text-accent" />
           Tax Education
         </CardTitle>
-        <span className="text-[11px] text-text-muted">
+        <span className="text-xs text-text-muted">
           Personalized to your data
         </span>
       </CardHeader>

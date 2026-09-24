@@ -168,7 +168,7 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
 
         {/* Confidence: inline label/percent above a slim full-width bar */}
         <div>
-          <div className="flex justify-between text-[10px] mb-1">
+          <div className="flex justify-between text-xs mb-1">
             <span className="text-text-muted uppercase tracking-wider">
               Confidence
             </span>
@@ -239,12 +239,12 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
           <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
             <div className="flex items-center gap-1 text-text-muted">
               <Activity className="w-3 h-3" />
-              <span className="text-[10px]">RSI</span>
+              <span className="text-xs">RSI</span>
             </div>
             <span className="font-mono text-sm font-medium">
               {analysis.indicators.rsi_14?.toFixed(1) ?? "--"}
             </span>
-            <span className={`text-[9px] font-medium ${rsiStatus.color}`}>
+            <span className={`text-xs font-medium ${rsiStatus.color}`}>
               {rsiStatus.label}
             </span>
           </div>
@@ -253,12 +253,12 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
           <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
             <div className="flex items-center gap-1 text-text-muted">
               <ArrowUpDown className="w-3 h-3" />
-              <span className="text-[10px]">MACD</span>
+              <span className="text-xs">MACD</span>
             </div>
             <span className="font-mono text-sm font-medium">
               {analysis.indicators.macd_line?.toFixed(3) ?? "--"}
             </span>
-            <span className={`text-[9px] font-medium ${macdDir.color}`}>
+            <span className={`text-xs font-medium ${macdDir.color}`}>
               {macdDir.label}
             </span>
           </div>
@@ -273,13 +273,13 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
               ) : (
                 <Minus className="w-3 h-3" />
               )}
-              <span className="text-[10px]">EMA</span>
+              <span className="text-xs">EMA</span>
             </div>
             {/* No numeric value for EMA — show the trend twice would be
                 redundant. Render a dash so the row heights align across
                 all three tiles. */}
             <span className="font-mono text-sm font-medium text-text-muted">--</span>
-            <span className={`text-[9px] font-medium ${emaTrend.color}`}>
+            <span className={`text-xs font-medium ${emaTrend.color}`}>
               {emaTrend.label}
             </span>
           </div>
@@ -296,19 +296,19 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
         </div>
         <div className="grid grid-cols-3 gap-1.5">
           <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
-            <span className="text-[10px] text-text-muted">Stop (2%)</span>
+            <span className="text-xs text-text-muted">Stop (2%)</span>
             <span className="font-mono text-sm text-bearish">
               ${stopLoss.toFixed(2)}
             </span>
           </div>
           <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
-            <span className="text-[10px] text-text-muted">Target (3%)</span>
+            <span className="text-xs text-text-muted">Target (3%)</span>
             <span className="font-mono text-sm text-bullish">
               ${takeProfit.toFixed(2)}
             </span>
           </div>
           <div className="flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg bg-bg-elevated">
-            <span className="text-[10px] text-text-muted">R / R</span>
+            <span className="text-xs text-text-muted">R / R</span>
             <span className="font-mono text-sm font-medium text-text-primary">
               1 : {riskReward}
             </span>
@@ -371,7 +371,7 @@ export function SignalDetails({ analysis, loading }: SignalDetailsProps) {
       {/* Historical accuracy placeholder */}
       <div className="px-4 py-3 border-b border-border">
         <div className="rounded-lg bg-bg-elevated px-3 py-2.5">
-          <p className="text-[10px] text-text-muted uppercase tracking-wider mb-1">
+          <p className="text-xs text-text-muted uppercase tracking-wider mb-1">
             Pattern Accuracy
           </p>
           <p className="text-xs text-text-secondary">
@@ -473,7 +473,7 @@ function HybridLayersSection({ analysis }: { analysis: AnalysisResult }) {
       </div>
       <div className="flex flex-wrap gap-1.5">
         {analysis.unusualVolume && (
-          <Badge variant="warning" className="text-[10px]">
+          <Badge variant="warning" className="text-xs">
             Unusual Volume{" "}
             {analysis.volumeRatio
               ? `${analysis.volumeRatio.toFixed(1)}x`
@@ -481,7 +481,7 @@ function HybridLayersSection({ analysis }: { analysis: AnalysisResult }) {
           </Badge>
         )}
         {analysis.fibonacci && (
-          <Badge variant="default" className="text-[10px]">
+          <Badge variant="default" className="text-xs">
             Fib Levels Active
           </Badge>
         )}
@@ -489,7 +489,7 @@ function HybridLayersSection({ analysis }: { analysis: AnalysisResult }) {
           <span
             title={`${redditCounts.bullish} bullish · ${redditCounts.bearish} bearish · ${redditCounts.neutral} neutral posts`}
           >
-            <Badge variant={redditVariant} className="text-[10px]">
+            <Badge variant={redditVariant} className="text-xs">
               Reddit · {redditCounts.total} mentions
               {redditCounts.bullish > redditCounts.bearish ? " ↑" : redditCounts.bearish > redditCounts.bullish ? " ↓" : ""}
             </Badge>
@@ -563,7 +563,7 @@ function MarketContextSection({ symbol }: { symbol: string }) {
         <div className="space-y-4">
           {/* Analyst Consensus */}
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5">
+            <p className="text-xs text-text-muted uppercase tracking-wider mb-1.5">
               Analyst Consensus
             </p>
             <AnalystConsensus symbol={symbol} />
@@ -571,7 +571,7 @@ function MarketContextSection({ symbol }: { symbol: string }) {
 
           {/* Insider Activity */}
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5">
+            <p className="text-xs text-text-muted uppercase tracking-wider mb-1.5">
               Insider Activity
             </p>
             <InsiderActivity symbol={symbol} />
@@ -579,7 +579,7 @@ function MarketContextSection({ symbol }: { symbol: string }) {
 
           {/* Social Buzz */}
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5">
+            <p className="text-xs text-text-muted uppercase tracking-wider mb-1.5">
               Social Buzz
             </p>
             <SocialBuzz symbol={symbol} />
@@ -587,7 +587,7 @@ function MarketContextSection({ symbol }: { symbol: string }) {
 
           {/* Peer Stocks */}
           <div>
-            <p className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5">
+            <p className="text-xs text-text-muted uppercase tracking-wider mb-1.5">
               Related Stocks
             </p>
             <PeerStocks symbol={symbol} />

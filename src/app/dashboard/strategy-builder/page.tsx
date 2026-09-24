@@ -243,7 +243,7 @@ export default function StrategyBuilderPage() {
                   { label: "Total Trades", value: String(result.totalTrades), tone: "text-text-primary" },
                 ].map((stat) => (
                   <Card key={stat.label}>
-                    <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">{stat.label}</div>
+                    <div className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">{stat.label}</div>
                     <div className={`mt-1 text-xl font-mono font-semibold ${stat.tone}`}>{stat.value}</div>
                   </Card>
                 ))}

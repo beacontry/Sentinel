@@ -34,7 +34,7 @@ export function TraderTierRequired() {
         <div>
           <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-accent/14 px-3 py-1">
             <Lock className="h-3.5 w-3.5 text-accent" />
-            <span className="font-mono text-[10px] uppercase tracking-wider text-accent">
+            <span className="font-mono text-xs uppercase tracking-wider text-accent">
               Trader plan required
             </span>
           </div>
@@ -49,7 +49,7 @@ export function TraderTierRequired() {
             (or higher). $20/month, cancel anytime.
           </p>
 
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-[0.84rem] text-text-secondary mb-2">
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-sm text-text-secondary mb-2">
             {TRADER_FEATURES.map((f) => (
               <li key={f} className="flex items-start gap-1.5">
                 <Check className="h-3.5 w-3.5 text-accent shrink-0 mt-0.5" />
@@ -67,7 +67,7 @@ export function TraderTierRequired() {
             Upgrade to Trader
             <ArrowRight className="h-4 w-4" />
           </Link>
-          <span className="text-[0.72rem] text-text-muted text-center lg:text-right">
+          <span className="text-xs text-text-muted text-center lg:text-right">
             Includes 7-day trial
           </span>
         </div>

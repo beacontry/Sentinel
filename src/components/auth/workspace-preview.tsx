@@ -46,7 +46,7 @@ export function WorkspacePreview({
         </div>
         <div>
           <div className="font-display text-2xl leading-none text-text-primary">Beacontry</div>
-          <div className="mt-1 text-[11px] uppercase tracking-[0.08em] text-text-muted">
+          <div className="mt-1 text-xs uppercase tracking-[0.08em] text-text-muted">
             Market Operating Desk
           </div>
         </div>
@@ -55,10 +55,10 @@ export function WorkspacePreview({
       <div className="mt-10 grid flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,1fr)]">
         <div className="flex flex-col justify-between gap-8">
           <div>
-            <div className="inline-flex rounded-[10px] border border-accent/25 bg-accent/10 px-3 py-1 text-[11px] uppercase tracking-[0.08em] text-accent">
+            <div className="inline-flex rounded-[10px] border border-accent/25 bg-accent/10 px-3 py-1 text-xs uppercase tracking-[0.08em] text-accent">
               {eyebrow}
             </div>
-            <h1 className="mt-6 font-display text-4xl leading-[0.95] text-text-primary xl:text-5xl">
+            <h1 className="mt-6 font-display text-2xl leading-[0.95] text-text-primary xl:text-display">
               {title}
             </h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-text-secondary">
@@ -67,7 +67,7 @@ export function WorkspacePreview({
           </div>
 
           <div className="rounded-[14px] border border-border bg-bg-secondary p-5">
-            <div className="text-[11px] uppercase tracking-[0.08em] text-accent">
+            <div className="text-xs uppercase tracking-[0.08em] text-accent">
               {protocolTitle}
             </div>
             <div className="mt-4 space-y-3">
@@ -90,7 +90,7 @@ export function WorkspacePreview({
           <div className="rounded-[14px] border border-border bg-bg-elevated p-5 shadow-lg">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-[11px] uppercase tracking-[0.08em] text-accent">
+                <div className="text-xs uppercase tracking-[0.08em] text-accent">
                   Workspace Preview
                 </div>
                 <div className="mt-2 font-display text-2xl text-text-primary">
@@ -109,7 +109,7 @@ export function WorkspacePreview({
                   className="rounded-[10px] border border-border bg-bg-elevated px-4 py-3"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[11px] uppercase tracking-[0.22em] text-text-muted">
+                    <div className="text-xs uppercase tracking-[0.22em] text-text-muted">
                       {lane.label}
                     </div>
                     <div className={`text-sm font-semibold ${toneClasses[lane.tone ?? "neutral"]}`}>
@@ -130,7 +130,7 @@ export function WorkspacePreview({
                 key={stat.label}
                 className="rounded-[10px] border border-border bg-bg-secondary px-4 py-4"
               >
-                <div className="text-[11px] uppercase tracking-[0.08em] text-text-muted">
+                <div className="text-xs uppercase tracking-[0.08em] text-text-muted">
                   {stat.label}
                 </div>
                 <div className="mt-2 font-display text-2xl text-text-primary">

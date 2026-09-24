@@ -113,7 +113,7 @@ export default async function PublicGuidePage({
             <PrintButton />
           </div>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-ld-text">
+        <h1 className="text-2xl sm:text-2xl font-bold tracking-tight text-ld-text">
           {guide.title}
         </h1>
         <p className="text-base leading-relaxed text-ld-text-secondary">
@@ -149,7 +149,7 @@ export default async function PublicGuidePage({
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-[0.94rem] font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
+          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

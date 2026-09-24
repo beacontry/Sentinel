@@ -266,7 +266,7 @@ export default function PortfolioPage() {
                       }}
                     />
                   </div>
-                  <div className="text-[10px] text-text-muted font-mono">
+                  <div className="text-xs text-text-muted font-mono">
                     ${s.value.toFixed(2)}
                   </div>
                 </div>
@@ -349,7 +349,7 @@ export default function PortfolioPage() {
               ))}
               <Link
                 href="/dashboard/paper-trading"
-                className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-[11px] uppercase tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
+                className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-xs uppercase tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
               >
                 Manage portfolios <ArrowRight className="w-3 h-3" />
               </Link>
@@ -361,7 +361,7 @@ export default function PortfolioPage() {
             <CardHeader className="p-0 pb-3">
               <CardTitle>Live broker positions</CardTitle>
               {summary.broker.cacheAge !== null && (
-                <Badge variant="neutral" className="text-[10px]">
+                <Badge variant="neutral" className="text-xs">
                   cache {Math.floor(summary.broker.cacheAge / 60)}m old
                 </Badge>
               )}

@@ -109,7 +109,7 @@ export function AnalystConsensus({ symbol }: AnalystConsensusProps) {
             {data.consensus}
           </span>
         </div>
-        <span className="text-[10px] text-text-muted">
+        <span className="text-xs text-text-muted">
           {data.totalAnalysts} analyst{data.totalAnalysts !== 1 ? "s" : ""}
         </span>
       </div>
@@ -140,7 +140,7 @@ export function AnalystConsensus({ symbol }: AnalystConsensusProps) {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center justify-between text-[10px]">
+      <div className="flex items-center justify-between text-xs">
         <span className="text-bullish font-medium">
           {buyTotal} Buy
         </span>

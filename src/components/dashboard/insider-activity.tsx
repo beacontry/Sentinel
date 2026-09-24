@@ -127,7 +127,7 @@ export function InsiderActivity({ symbol }: InsiderActivityProps) {
             <div className="flex items-center gap-2 min-w-0">
               <Badge
                 variant={t.type === "buy" ? "bullish" : t.type === "sell" ? "bearish" : "neutral"}
-                className="text-[9px] px-1.5 py-0.5 shrink-0"
+                className="text-xs px-1.5 py-0.5 shrink-0"
               >
                 {t.type.toUpperCase()}
               </Badge>
@@ -153,7 +153,7 @@ export function InsiderActivity({ symbol }: InsiderActivityProps) {
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="block w-full text-[10px] text-accent text-center hover:underline focus-visible:underline focus:outline-none"
+          className="block w-full text-xs text-accent text-center hover:underline focus-visible:underline focus:outline-none"
         >
           {expanded
             ? "Show less"

@@ -209,7 +209,7 @@ export default function LandingPage() {
       {/* ── Navbar — exact Dark Moon structure ── */}
       <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-all duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-lg" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
         <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
-          <Link href="/" className="flex items-center gap-3 text-[1.25rem] font-bold tracking-tight">
+          <Link href="/" className="flex items-center gap-3 text-lg font-bold tracking-tight">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-ld-on-accent">
               <BeacontryMark variant="full" className="h-8 w-8" aria-label="Beacontry" />
             </div>
@@ -219,7 +219,7 @@ export default function LandingPage() {
           <ul className="hidden items-center gap-6 md:flex">
             {navLinks.map((link) => (
               <li key={link.href}>
-                <a href={link.href} className="text-[0.94rem] font-medium text-ld-text-secondary transition-colors duration-200 hover:text-ld-text">{link.label}</a>
+                <a href={link.href} className="text-base font-medium text-ld-text-secondary transition-colors duration-200 hover:text-ld-text">{link.label}</a>
               </li>
             ))}
           </ul>
@@ -228,9 +228,9 @@ export default function LandingPage() {
             <ThemePicker variant="icon" />
             {/* PWA install — renders nothing unless Chrome fires beforeinstallprompt */}
             <PWAInstallButton
-              className="inline-flex items-center gap-2 rounded-[10px] border border-ld-accent/40 bg-ld-accent/8 px-4 py-3 text-[0.9rem] font-medium text-ld-accent transition-all duration-200 hover:bg-ld-accent/14"
+              className="inline-flex items-center gap-2 rounded-[10px] border border-ld-accent/40 bg-ld-accent/8 px-4 py-3 text-base font-medium text-ld-accent transition-all duration-200 hover:bg-ld-accent/14"
             />
-            <Link href="/register" className="rounded-[10px] bg-ld-accent px-5 py-3 text-[0.92rem] font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
+            <Link href="/register" className="rounded-[10px] bg-ld-accent px-5 py-3 text-base font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
               Get Started
             </Link>
           </div>
@@ -250,11 +250,11 @@ export default function LandingPage() {
             <ul className="flex flex-col gap-1">
               {navLinks.map((link) => (
                 <li key={link.href}>
-                  <a href={link.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-[0.94rem] font-medium text-ld-text-secondary transition-colors hover:bg-ld-accent/8 hover:text-ld-text">{link.label}</a>
+                  <a href={link.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-base font-medium text-ld-text-secondary transition-colors hover:bg-ld-accent/8 hover:text-ld-text">{link.label}</a>
                 </li>
               ))}
             </ul>
-            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-[10px] bg-ld-accent py-3 text-center text-[0.92rem] font-semibold text-ld-on-accent">
+            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-[10px] bg-ld-accent py-3 text-center text-base font-semibold text-ld-on-accent">
               Get Started
             </Link>
             {/* PWA install in the mobile menu — hidden unless the browser
@@ -262,7 +262,7 @@ export default function LandingPage() {
                 users will actually use (the ⋮-menu "Install app" item
                 doesn't always show). */}
             <PWAInstallButton
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-[10px] border border-ld-accent/40 bg-ld-accent/8 py-3 text-center text-[0.92rem] font-medium text-ld-accent"
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-[10px] border border-ld-accent/40 bg-ld-accent/8 py-3 text-center text-base font-medium text-ld-accent"
             />
           </div>
         )}
@@ -302,7 +302,7 @@ export default function LandingPage() {
 
             <div className="mt-8 flex flex-wrap justify-center gap-3 lg:justify-start">
               {heroPoints.map((point) => (
-                <span key={point} className="inline-flex items-center gap-2 rounded-full border border-ld-border bg-white/[0.01] px-3 py-2 text-[0.92rem] text-ld-text-muted transition-all duration-200 hover:border-ld-accent/32 hover:bg-ld-accent/8">
+                <span key={point} className="inline-flex items-center gap-2 rounded-full border border-ld-border bg-white/[0.01] px-3 py-2 text-base text-ld-text-muted transition-all duration-200 hover:border-ld-accent/32 hover:bg-ld-accent/8">
                   {point}
                 </span>
               ))}
@@ -312,7 +312,7 @@ export default function LandingPage() {
           {/* Hero Card — checklist */}
           <aside className="animate-fade-in-up stagger-1 top-accent-line rounded-xl border border-ld-border bg-ld-card p-8 shadow-lg transition-all duration-300 hover:border-ld-accent/28 hover:shadow-lg">
             <h3 className="text-lg font-bold">What Beacontry does</h3>
-            <p className="mt-3 text-[0.95rem] text-ld-text-secondary">
+            <p className="mt-3 text-base text-ld-text-secondary">
               A trading workspace — automated engine for hands-off operation, manual
               ticket for trade-by-trade discretion, both backed by audit-grade
               record-keeping and tax tooling.
@@ -327,7 +327,7 @@ export default function LandingPage() {
                   <span className="mt-0.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-ld-green/10 text-xs font-bold text-ld-green">
                     ✓
                   </span>
-                  <div className="text-[0.93rem] text-ld-text-secondary">
+                  <div className="text-base text-ld-text-secondary">
                     <strong className="text-ld-text">{item.title}</strong>
                     <br />
                     {item.desc}
@@ -345,7 +345,7 @@ export default function LandingPage() {
           {stats.map((stat, i) => (
             <div key={stat.label} className={`animate-fade-in-up stagger-${i + 1} px-5 py-9 text-center transition-colors hover:bg-white/[0.02]`}>
               <div className="font-mono text-[clamp(1.3rem,3vw,2.1rem)] font-bold text-ld-accent">{stat.value}</div>
-              <div className="mt-1 text-[0.8rem] uppercase tracking-[0.12em] text-ld-text-muted">{stat.label}</div>
+              <div className="mt-1 text-xs uppercase tracking-[0.12em] text-ld-text-muted">{stat.label}</div>
             </div>
           ))}
         </div>
@@ -373,10 +373,10 @@ export default function LandingPage() {
                   <Icon className="h-6 w-6" />
                 </div>
                 <h3 className="text-lg font-bold">{f.title}</h3>
-                <p className="mt-3 text-[0.94rem] leading-relaxed text-ld-text-secondary">{f.desc}</p>
+                <p className="mt-3 text-base leading-relaxed text-ld-text-secondary">{f.desc}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {f.tags.map((tag) => (
-                    <span key={tag} className="rounded-md border border-ld-border bg-ld-accent/7 px-2 py-1 font-mono text-[0.72rem] text-ld-text-muted">{tag}</span>
+                    <span key={tag} className="rounded-md border border-ld-border bg-ld-accent/7 px-2 py-1 font-mono text-xs text-ld-text-muted">{tag}</span>
                   ))}
                 </div>
               </article>
@@ -405,8 +405,8 @@ export default function LandingPage() {
                 <div className="mb-4 grid h-[52px] w-[52px] place-items-center rounded-full border border-ld-border bg-white/[0.02] font-mono font-bold text-ld-accent">
                   {step.num}
                 </div>
-                <h3 className="mb-2 text-[1.05rem] font-bold">{step.title}</h3>
-                <p className="text-[0.98rem] leading-relaxed text-ld-text-secondary">{step.desc}</p>
+                <h3 className="mb-2 text-base font-bold">{step.title}</h3>
+                <p className="text-base leading-relaxed text-ld-text-secondary">{step.desc}</p>
               </article>
             ))}
           </div>
@@ -424,21 +424,21 @@ export default function LandingPage() {
                 <span className="h-3 w-3 rounded-full bg-[#28c840]" />
                 <span className="ml-2 font-mono text-xs text-ld-text-muted">beacontry · 30-day equity</span>
               </div>
-              <span className="font-mono text-[10px] text-ld-text-muted hidden sm:inline">demo</span>
+              <span className="font-mono text-xs text-ld-text-muted hidden sm:inline">demo</span>
             </div>
 
             {/* Stats strip — anchors the visual with real-looking numbers */}
             <div className="grid grid-cols-3 border-b border-ld-border bg-ld-card/40 px-4 py-3 text-center">
               <div>
-                <div className="font-mono text-[0.7rem] uppercase tracking-wider text-ld-text-muted">P/L</div>
+                <div className="font-mono text-xs uppercase tracking-wider text-ld-text-muted">P/L</div>
                 <div className="font-mono text-base font-bold text-ld-green">+18.4%</div>
               </div>
               <div className="border-x border-ld-border">
-                <div className="font-mono text-[0.7rem] uppercase tracking-wider text-ld-text-muted">Win rate</div>
+                <div className="font-mono text-xs uppercase tracking-wider text-ld-text-muted">Win rate</div>
                 <div className="font-mono text-base font-bold text-ld-text">64%</div>
               </div>
               <div>
-                <div className="font-mono text-[0.7rem] uppercase tracking-wider text-ld-text-muted">Trades</div>
+                <div className="font-mono text-xs uppercase tracking-wider text-ld-text-muted">Trades</div>
                 <div className="font-mono text-base font-bold text-ld-text">23</div>
               </div>
             </div>
@@ -575,7 +575,7 @@ export default function LandingPage() {
 
             {/* Caption */}
             <div className="border-t border-ld-border px-4 py-3 text-center">
-              <p className="font-mono text-[10px] leading-relaxed text-ld-text-muted">
+              <p className="font-mono text-xs leading-relaxed text-ld-text-muted">
                 Illustrative — every signal logged, every stop synced to broker, every trade journaled.
               </p>
             </div>
@@ -605,7 +605,7 @@ export default function LandingPage() {
                   <Icon className="h-6 w-6" />
                 </div>
                 <h3 className="text-lg font-bold">{p.title}</h3>
-                <p className="mt-3 text-[0.94rem] leading-relaxed text-ld-text-secondary">{p.desc}</p>
+                <p className="mt-3 text-base leading-relaxed text-ld-text-secondary">{p.desc}</p>
               </article>
             );
           })}
@@ -720,24 +720,24 @@ export default function LandingPage() {
               }`}
             >
               {tier.highlight && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-ld-accent px-3 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-ld-on-accent">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-ld-accent px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider text-ld-on-accent">
                   {tier.tag}
                 </div>
               )}
               {!tier.highlight && (
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ld-text-muted">{tier.tag}</p>
+                <p className="font-mono text-xs uppercase tracking-[0.14em] text-ld-text-muted">{tier.tag}</p>
               )}
 
               <h3 className="mt-3 text-xl font-bold">{tier.name}</h3>
-              <p className="mt-2 text-[0.9rem] text-ld-text-secondary">{tier.desc}</p>
+              <p className="mt-2 text-base text-ld-text-secondary">{tier.desc}</p>
 
               <div className="mt-5 flex items-baseline gap-1">
-                <span className="text-[2.5rem] font-extrabold leading-none">{tier.price}</span>
+                <span className="text-2xl font-extrabold leading-none">{tier.price}</span>
                 {tier.cadence && <span className="text-ld-text-muted">{tier.cadence}</span>}
               </div>
-              <p className="mt-1 text-[0.8rem] text-ld-text-muted">{tier.annual}</p>
+              <p className="mt-1 text-xs text-ld-text-muted">{tier.annual}</p>
 
-              <ul className="mt-6 flex-1 space-y-2.5 text-[0.92rem]">
+              <ul className="mt-6 flex-1 space-y-2.5 text-base">
                 {tier.features.map((feat) => (
                   <li key={feat} className="flex items-start gap-2 text-ld-text-secondary">
                     <Check className="mt-0.5 h-4 w-4 shrink-0 text-ld-accent" />
@@ -748,7 +748,7 @@ export default function LandingPage() {
 
               <Link
                 href={tier.name === "Self-Hosted" ? "https://github.com/beacontry/Sentinel" : "/register"}
-                className={`mt-8 inline-flex items-center justify-center gap-2 rounded-[10px] px-5 py-3 text-[0.92rem] font-semibold transition-all duration-200 ${
+                className={`mt-8 inline-flex items-center justify-center gap-2 rounded-[10px] px-5 py-3 text-base font-semibold transition-all duration-200 ${
                   tier.highlight
                     ? "bg-ld-accent text-ld-on-accent hover:bg-ld-accent-dim hover:shadow-lg"
                     : "border border-ld-border text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06]"
@@ -760,7 +760,7 @@ export default function LandingPage() {
           ))}
         </div>
 
-        <p className="mx-auto mt-10 max-w-[680px] px-4 text-center text-[0.85rem] text-ld-text-muted">
+        <p className="mx-auto mt-10 max-w-[680px] px-4 text-center text-sm text-ld-text-muted">
           Need team / firm / white-label? <a href="mailto:hello@beacontry.com" className="text-ld-accent hover:underline">Get in touch</a> for Team and Enterprise pricing.
         </p>
       </section>
@@ -812,7 +812,7 @@ export default function LandingPage() {
                   <Icon className="h-6 w-6" />
                 </div>
                 <h3 className="text-lg font-bold">{trust.title}</h3>
-                <p className="mt-3 text-[0.94rem] leading-relaxed text-ld-text-secondary">{trust.desc}</p>
+                <p className="mt-3 text-base leading-relaxed text-ld-text-secondary">{trust.desc}</p>
               </article>
             );
           })}
@@ -856,11 +856,11 @@ export default function LandingPage() {
                   "group flex flex-col gap-1 rounded-xl border border-ld-border bg-ld-deep/40 p-4 text-left transition-all duration-200 hover:border-ld-accent/50 hover:bg-ld-accent/[0.04]";
                 const inner = (
                   <>
-                    <span className="flex items-center justify-between gap-2 text-[0.94rem] font-semibold text-ld-text">
+                    <span className="flex items-center justify-between gap-2 text-base font-semibold text-ld-text">
                       {link.label}
                       <ArrowRight className="h-3.5 w-3.5 text-ld-text-muted transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ld-accent" />
                     </span>
-                    <span className="text-[0.82rem] leading-relaxed text-ld-text-secondary">
+                    <span className="text-sm leading-relaxed text-ld-text-secondary">
                       {link.blurb}
                     </span>
                   </>
@@ -889,7 +889,7 @@ export default function LandingPage() {
       {/* ── Footer ── */}
       <footer className="border-t border-ld-border bg-ld-deep">
         <div className="mx-auto flex max-w-[1280px] flex-col items-center gap-3 px-4 py-6 text-center lg:px-7">
-          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[0.88rem] text-ld-text-muted">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-ld-text-muted">
             <Link href="/pricing" className="hover:text-ld-text">Pricing</Link>
             <Link href="/learn" className="hover:text-ld-text">Learn</Link>
             <Link href="/tools" className="hover:text-ld-text">Tools</Link>
@@ -900,10 +900,10 @@ export default function LandingPage() {
             <Link href="/risk" className="hover:text-ld-text">Risk Disclosure</Link>
             <a href="https://github.com/beacontry/Sentinel" target="_blank" rel="noopener noreferrer" className="hover:text-ld-text">Source</a>
           </div>
-          <div className="text-[0.85rem] text-ld-text-muted">
+          <div className="text-sm text-ld-text-muted">
             &copy; 2026 Beacontry. All rights reserved.
           </div>
-          <div className="text-[0.78rem] text-ld-text-muted max-w-[640px]">
+          <div className="text-xs text-ld-text-muted max-w-[640px]">
             Beacontry is a software tool for market research and trade journaling.
             It is not a registered broker-dealer, investment advisor, or tax
             professional. Nothing here is investment advice.

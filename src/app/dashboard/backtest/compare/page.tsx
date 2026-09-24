@@ -217,7 +217,7 @@ function ComparePage() {
               return (
                 <Card key={s.id}>
                   <div className="font-semibold text-text-primary mb-1">{s.name}</div>
-                  <div className="text-[10px] text-text-muted mb-3">
+                  <div className="text-xs text-text-muted mb-3">
                     Last run: {s.lastRunAt ? new Date(s.lastRunAt).toLocaleDateString() : "—"}
                   </div>
                   <div className="space-y-1.5 text-sm font-mono">
@@ -274,7 +274,7 @@ function StatRow({
     tone === "bullish" ? "text-bullish" : tone === "bearish" ? "text-bearish" : "text-text-primary";
   return (
     <div className="flex items-center justify-between">
-      <span className="text-[11px] uppercase tracking-wider text-text-muted">{label}</span>
+      <span className="text-xs uppercase tracking-wider text-text-muted">{label}</span>
       <span className={color}>{value}</span>
     </div>
   );

@@ -106,7 +106,7 @@ export function NetWorthWidget() {
   return (
     <div className="space-y-3">
       <div className="flex items-baseline gap-2">
-        <p className="text-3xl font-mono font-semibold text-text-primary tabular-nums">
+        <p className="text-2xl font-mono font-semibold text-text-primary tabular-nums">
           {fmt(total)}
         </p>
         <p className="text-xs text-text-muted">Total</p>
@@ -142,7 +142,7 @@ export function NetWorthWidget() {
           </div>
         )}
         {broker.cacheAge !== null && broker.cacheAge > 300 && (
-          <p className="text-[10px] text-text-muted">
+          <p className="text-xs text-text-muted">
             Broker cache: {Math.floor(broker.cacheAge / 60)}m old
           </p>
         )}
@@ -150,7 +150,7 @@ export function NetWorthWidget() {
 
       <Link
         href="/dashboard/education#calculators"
-        className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+        className="mt-2 inline-flex items-center gap-1 text-xs text-accent hover:underline"
       >
         <BookOpen className="h-3 w-3" />
         FIRE Number Calculator

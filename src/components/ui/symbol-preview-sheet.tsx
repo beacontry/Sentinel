@@ -218,9 +218,9 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
             <>
               {/* Price */}
               <div>
-                <div className="text-[11px] uppercase tracking-[0.08em] text-text-muted">Last price</div>
+                <div className="text-xs uppercase tracking-[0.08em] text-text-muted">Last price</div>
                 <div className="flex items-baseline gap-3 mt-0.5">
-                  <span className="font-mono text-3xl font-semibold text-text-primary">
+                  <span className="font-mono text-2xl font-semibold text-text-primary">
                     ${price.toFixed(2)}
                   </span>
                   {changePct !== null && (
@@ -238,7 +238,7 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
 
               {/* Signal */}
               <div>
-                <div className="text-[11px] uppercase tracking-[0.08em] text-text-muted">Current signal</div>
+                <div className="text-xs uppercase tracking-[0.08em] text-text-muted">Current signal</div>
                 <div className="mt-1 flex items-center gap-2">
                   <span
                     className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${signalMeta.cls}`}
@@ -327,7 +327,7 @@ interface StatProps {
 function Stat({ label, value, tone = "neutral", sub }: StatProps) {
   return (
     <div className="rounded-lg bg-bg-elevated px-3 py-2">
-      <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">{label}</div>
+      <div className="text-xs uppercase tracking-[0.08em] text-text-muted">{label}</div>
       <div
         className={`mt-0.5 font-mono text-sm font-medium ${
           tone === "warning" ? "text-warning" : "text-text-primary"
@@ -335,7 +335,7 @@ function Stat({ label, value, tone = "neutral", sub }: StatProps) {
       >
         {value}
       </div>
-      {sub && <div className="text-[10px] text-text-muted">{sub}</div>}
+      {sub && <div className="text-xs text-text-muted">{sub}</div>}
     </div>
   );
 }

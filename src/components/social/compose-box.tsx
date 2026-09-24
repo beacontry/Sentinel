@@ -204,7 +204,7 @@ export function ComposeBox({ onPost }: ComposeBoxProps) {
                       </span>
                       <Badge
                         variant={trade.action === "BUY" ? "bullish" : "bearish"}
-                        className="text-[10px]"
+                        className="text-xs"
                       >
                         {trade.action}
                       </Badge>
@@ -278,7 +278,7 @@ export function ComposeBox({ onPost }: ComposeBoxProps) {
             Post
           </Button>
         </div>
-        <div className="flex items-center gap-1.5 text-[11px] text-text-muted">
+        <div className="flex items-center gap-1.5 text-xs text-text-muted">
           <Info className="w-3 h-3" />
           <span>
             <span className="font-mono text-accent/80">$NVDA</span> links to analysis

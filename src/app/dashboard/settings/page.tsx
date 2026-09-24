@@ -859,7 +859,7 @@ Any trade you place will use real money. The engine remains stopped — you must
                 <button
                   key={v}
                   onClick={() => setPnlFormat(v)}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors
+                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors
                     ${pnlFormat === v
                       ? "bg-bg-elevated text-text-primary"
                       : "text-text-muted hover:text-text-secondary"
@@ -879,7 +879,7 @@ Any trade you place will use real money. The engine remains stopped — you must
                 <button
                   key={v}
                   onClick={() => setTimeFormat(v)}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors
+                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors
                     ${timeFormat === v
                       ? "bg-bg-elevated text-text-primary"
                       : "text-text-muted hover:text-text-secondary"
@@ -1212,7 +1212,7 @@ function DigestEmailToggle() {
           notifications + Discord delivery happen regardless of this setting.
         </p>
         {loaded && delivery && (
-          <p className="text-[11px] text-text-muted mt-1">
+          <p className="text-xs text-text-muted mt-1">
             Would send to <span className="font-mono">{delivery}</span>
           </p>
         )}

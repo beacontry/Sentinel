@@ -97,49 +97,49 @@ export function PnlWidget() {
     <div>
       <div className="py-1 text-center">
         <p
-          className={`font-display text-[2rem] font-bold leading-none tracking-tight ${
+          className={`font-display text-2xl font-bold leading-none tracking-tight ${
             isPositive ? "text-bullish" : "text-bearish"
           }`}
         >
           {formatPnl(todayPnl.totalPnl, todayBasis, pnlFormat)}
         </p>
-        <p className="mt-1 text-[10px] uppercase tracking-[0.08em] text-text-muted">
+        <p className="mt-1 text-xs uppercase tracking-[0.08em] text-text-muted">
           Today&apos;s P&L
         </p>
       </div>
 
       <div className="mt-2.5 grid grid-cols-2 gap-1.5">
         <div className="rounded-[10px] bg-bg-elevated px-2 py-1.5 text-center">
-          <p className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Realized</p>
+          <p className="text-xs uppercase tracking-[0.16em] text-text-muted">Realized</p>
           <p
-            className={`font-mono text-[13px] font-medium ${
+            className={`font-mono text-sm font-medium ${
               realized >= 0 ? "text-bullish" : "text-bearish"
             }`}
           >
             {formatPnl(realized, lifetimeBasis, pnlFormat)}
           </p>
-          <p className="text-[9px] uppercase tracking-[0.12em] text-text-muted/70 mt-0.5">lifetime</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-text-muted/70 mt-0.5">lifetime</p>
         </div>
         <div className="rounded-[10px] bg-bg-elevated px-2 py-1.5 text-center">
-          <p className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Unrealized</p>
+          <p className="text-xs uppercase tracking-[0.16em] text-text-muted">Unrealized</p>
           <p
-            className={`font-mono text-[13px] font-medium ${
+            className={`font-mono text-sm font-medium ${
               unrealized >= 0 ? "text-bullish" : "text-bearish"
             }`}
           >
             {formatPnl(unrealized, lifetimeBasis, pnlFormat)}
           </p>
-          <p className="text-[9px] uppercase tracking-[0.12em] text-text-muted/70 mt-0.5">open positions</p>
+          <p className="text-xs uppercase tracking-[0.12em] text-text-muted/70 mt-0.5">open positions</p>
         </div>
       </div>
 
-      <p className="mt-1.5 text-center text-[10px] uppercase tracking-[0.16em] text-text-muted">
+      <p className="mt-1.5 text-center text-xs uppercase tracking-[0.16em] text-text-muted">
         {todayPnl.tradesCount} trade{todayPnl.tradesCount !== 1 ? "s" : ""} today
       </p>
 
       <Link
         href="/dashboard/pnl-calendar"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-[11px] uppercase
+        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-xs uppercase
           tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
       >
         P&L Calendar <ArrowRight className="w-3 h-3" />

@@ -73,7 +73,7 @@ export function FieldLabel({
       </label>
       {help && <HelpTip>{help}</HelpTip>}
       {hint && (
-        <span className="ml-auto text-[10px] uppercase tracking-wide text-text-muted">
+        <span className="ml-auto text-xs uppercase tracking-wide text-text-muted">
           {hint}
         </span>
       )}

@@ -199,7 +199,7 @@ export function LayoutSwitcher({ currentEntries, onChanged }: LayoutSwitcherProp
           >
             {layouts.length > 0 && (
               <>
-                <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+                <div className="px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-[0.1em] text-text-muted">
                   Saved layouts
                 </div>
                 {layouts.map((l) => (

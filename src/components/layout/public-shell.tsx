@@ -48,7 +48,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
       {/* Navbar — mirrors src/app/page.tsx structure but with public-route nav links */}
       <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-all duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-[0_10px_30px_rgba(0,0,0,0.24)]" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
         <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
-          <Link href="/" className="flex items-center gap-3 text-[1.25rem] font-bold tracking-tight">
+          <Link href="/" className="flex items-center gap-3 text-lg font-bold tracking-tight">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-white">
               <BeacontryMark variant="full" className="h-8 w-8" aria-label="Beacontry" />
             </div>
@@ -64,7 +64,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className={`text-[0.9rem] font-medium transition-colors duration-200 hover:text-ld-text ${
+                    className={`text-base font-medium transition-colors duration-200 hover:text-ld-text ${
                       isActive ? "text-ld-text" : "text-ld-text-secondary"
                     }`}
                   >
@@ -77,7 +77,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
 
           <div className="hidden items-center gap-3 md:flex">
             <ThemePicker variant="icon" />
-            <Link href="/register" className="rounded-[10px] bg-ld-accent px-5 py-3 text-[0.92rem] font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
+            <Link href="/register" className="rounded-[10px] bg-ld-accent px-5 py-3 text-base font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
               Get Started
             </Link>
           </div>
@@ -96,13 +96,13 @@ export function PublicShell({ children, active }: PublicShellProps) {
             <ul className="flex flex-col gap-1">
               {PUBLIC_NAV_LINKS.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-[0.94rem] font-medium text-ld-text-secondary transition-colors hover:bg-ld-accent/8 hover:text-ld-text">
+                  <Link href={link.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-base font-medium text-ld-text-secondary transition-colors hover:bg-ld-accent/8 hover:text-ld-text">
                     {link.label}
                   </Link>
                 </li>
               ))}
             </ul>
-            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-[10px] bg-ld-accent py-3 text-center text-[0.92rem] font-semibold text-white">
+            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-[10px] bg-ld-accent py-3 text-center text-base font-semibold text-white">
               Get Started
             </Link>
           </div>
@@ -119,7 +119,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
 
       {/* Footer */}
       <footer className="mt-16 border-t border-ld-border bg-ld-deep">
-        <div className="mx-auto flex max-w-[1280px] flex-col items-center gap-3 px-4 py-6 text-center text-[0.85rem] text-ld-text-muted lg:px-7">
+        <div className="mx-auto flex max-w-[1280px] flex-col items-center gap-3 px-4 py-6 text-center text-sm text-ld-text-muted lg:px-7">
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
             <Link href="/" className="hover:text-ld-text">Home</Link>
             <Link href="/pricing" className="hover:text-ld-text">Pricing</Link>
@@ -129,7 +129,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
             <Link href="/contact" className="hover:text-ld-text">Contact</Link>
           </div>
           <div>&copy; 2026 Beacontry. All rights reserved.</div>
-          <div className="text-[0.78rem]">
+          <div className="text-xs">
             Beacontry is a software tool for market research and trade journaling. It is not a registered
             broker-dealer, investment advisor, or tax professional. Nothing here is investment advice.
           </div>

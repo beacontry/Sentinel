@@ -784,7 +784,7 @@ export default function TraderPage() {
           className="rounded-xl border border-bearish/40 bg-bearish/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
         >
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 rounded-full bg-bearish/20 border border-bearish/40 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-bearish">
+            <div className="flex items-center gap-2 rounded-full bg-bearish/20 border border-bearish/40 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-[0.12em] text-bearish">
               <span className="inline-block w-2 h-2 rounded-full bg-bearish animate-pulse" />
               Live
             </div>
@@ -797,7 +797,7 @@ export default function TraderPage() {
             </div>
           </div>
           {engine.bootAccountNumber && (
-            <div className="text-[11px] font-mono text-text-muted">
+            <div className="text-xs font-mono text-text-muted">
               acct ••••{engine.bootAccountNumber.slice(-4)}
             </div>
           )}
@@ -963,7 +963,7 @@ export default function TraderPage() {
             </div>
             {/* Adaptive mode: show the effective mode + regime snippet underneath */}
             {engine.mode === "adaptive" && engine.adaptiveRegime && engine.effectiveMode && (
-              <div className="flex items-center gap-2 text-[11px] text-text-secondary">
+              <div className="flex items-center gap-2 text-xs text-text-secondary">
                 <span className="font-medium">Adaptive &mdash; currently <span className="text-accent">{engine.effectiveMode}</span></span>
                 <span className="text-text-muted">&middot;</span>
                 <span className="font-mono">VIX {engine.adaptiveRegime.vix.toFixed(1)}</span>
@@ -979,7 +979,7 @@ export default function TraderPage() {
               </div>
             )}
             {engine.mode === "adaptive" && !engine.adaptiveRegime && engine.running && (
-              <div className="text-[11px] text-text-muted italic">Adaptive &mdash; computing regime on next scan&hellip;</div>
+              <div className="text-xs text-text-muted italic">Adaptive &mdash; computing regime on next scan&hellip;</div>
             )}
           </div>
         )}
@@ -1079,17 +1079,17 @@ export default function TraderPage() {
             </div>
             <div className="grid grid-cols-3 gap-3 mb-3">
               <div>
-                <div className="text-[11px] uppercase tracking-wide text-text-muted">Open positions</div>
+                <div className="text-xs uppercase tracking-wide text-text-muted">Open positions</div>
                 <div className="font-mono text-lg font-semibold text-text-primary">{positions.length}</div>
               </div>
               <div>
-                <div className="text-[11px] uppercase tracking-wide text-text-muted">Unrealized P&L</div>
+                <div className="text-xs uppercase tracking-wide text-text-muted">Unrealized P&L</div>
                 <div className={`font-mono text-lg font-semibold ${openUnrealized >= 0 ? "text-bullish" : "text-bearish"}`}>
                   ${openUnrealized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
               <div>
-                <div className="text-[11px] uppercase tracking-wide text-text-muted">Realized today</div>
+                <div className="text-xs uppercase tracking-wide text-text-muted">Realized today</div>
                 <div className={`font-mono text-lg font-semibold ${todayPnl.realizedPnl >= 0 ? "text-bullish" : "text-bearish"}`}>
                   ${todayPnl.realizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
@@ -1097,7 +1097,7 @@ export default function TraderPage() {
             </div>
             {losers.length > 0 && (
               <div className="border-t border-border/50 pt-3">
-                <div className="text-[11px] uppercase tracking-wide text-text-muted mb-2">Worst bleeding ({Math.min(losers.length, 5)} of {losers.length})</div>
+                <div className="text-xs uppercase tracking-wide text-text-muted mb-2">Worst bleeding ({Math.min(losers.length, 5)} of {losers.length})</div>
                 <div className="space-y-1.5">
                   {losers.slice(0, 5).map((p) => {
                     const movePct = p.entryPrice > 0 ? ((p.currentPrice - p.entryPrice) / p.entryPrice) * 100 : 0;
@@ -1144,7 +1144,7 @@ export default function TraderPage() {
             {/* When margin is in use (negative cash), show the gap so the
                 user sees the loan size at a glance: LMV - equity = margin loan. */}
             {data.brokerAccount.cash < 0 && (
-              <p className="text-[11px] text-text-muted mt-1 font-mono">
+              <p className="text-xs text-text-muted mt-1 font-mono">
                 ${Math.abs(data.brokerAccount.cash).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on margin
               </p>
             )}
@@ -1194,7 +1194,7 @@ export default function TraderPage() {
               {formatPnl(totalPnlVal, basis, pnlFormat)}
             </p>
             {lifetimePnl && todayPnl && (
-              <p className="mt-0.5 text-[11px] text-text-muted font-mono">
+              <p className="mt-0.5 text-xs text-text-muted font-mono">
                 Today: {formatPnl(todayPnl.totalPnl ?? 0, basis, pnlFormat)}
               </p>
             )}
@@ -1208,7 +1208,7 @@ export default function TraderPage() {
               {formatPnl(realizedVal, basis, pnlFormat)}
             </p>
             {lifetimePnl && (
-              <p className="mt-0.5 text-[11px] text-text-muted font-mono">
+              <p className="mt-0.5 text-xs text-text-muted font-mono">
                 Today: {formatPnl(lifetimePnl.realizedPnlToday, basis, pnlFormat)}
               </p>
             )}
@@ -1251,7 +1251,7 @@ export default function TraderPage() {
               <span className={`text-lg font-mono font-bold ${(analytics.winRate ?? 0) >= 50 ? "text-bullish" : "text-bearish"}`}>
                 {(analytics.winRate ?? 0).toFixed(1)}%
               </span>
-              <span className="text-[10px] text-text-muted block">{analytics.winningTrades}W / {analytics.losingTrades}L</span>
+              <span className="text-xs text-text-muted block">{analytics.winningTrades}W / {analytics.losingTrades}L</span>
             </div>
             <div className="rounded-lg bg-bg-elevated p-3">
               <span className="text-xs text-text-muted block">Profit Factor</span>
@@ -1322,7 +1322,7 @@ export default function TraderPage() {
             </div>
           </div>
           <div className="sm:border-l sm:border-border sm:pl-4 sm:min-w-[200px]">
-            <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+            <div className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
               Wash-sale protection
             </div>
             <div className="mt-1 flex items-center gap-2">
@@ -1629,7 +1629,7 @@ export default function TraderPage() {
                         }
                       }}
                       disabled={summarizing.has(t.id)}
-                      className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded
+                      className="text-xs uppercase tracking-wider px-2 py-0.5 rounded
                         text-text-muted hover:text-accent hover:bg-accent/10
                         disabled:opacity-50 transition-colors"
                       title="AI summary of this trade"
@@ -1640,7 +1640,7 @@ export default function TraderPage() {
                   </div>
                   {(summaryByTradeId[t.id] || t.aiSummary) && (
                     <div className="px-3 pb-2 text-xs text-text-secondary leading-relaxed border-t border-border/30 pt-2">
-                      <span className="text-[10px] uppercase tracking-wider text-text-muted mr-2">summary</span>
+                      <span className="text-xs uppercase tracking-wider text-text-muted mr-2">summary</span>
                       {summaryByTradeId[t.id] || t.aiSummary}
                     </div>
                   )}
@@ -1775,7 +1775,7 @@ export default function TraderPage() {
                     className="font-mono"
                   />
                   {riskForm[key] === "" && hasLoaded(riskLoad) && (
-                    <span className="text-[11px] text-text-muted mt-0.5 block">Engine decides</span>
+                    <span className="text-xs text-text-muted mt-0.5 block">Engine decides</span>
                   )}
                 </div>
               ))}

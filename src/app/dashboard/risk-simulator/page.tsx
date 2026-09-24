@@ -172,7 +172,7 @@ export default function RiskSimulatorPage() {
               {sc.marketChange >= 0 ? "+" : ""}{sc.marketChange}%
             </div>
             <div className="text-xs font-medium text-text-primary mt-1">{sc.name}</div>
-            <div className="text-[10px] text-text-muted mt-0.5">{sc.description}</div>
+            <div className="text-xs text-text-muted mt-0.5">{sc.description}</div>
           </Card>
         ))}
         <Card

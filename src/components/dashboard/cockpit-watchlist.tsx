@@ -106,7 +106,7 @@ export function CockpitWatchlist({
           </div>
         ) : symbols.length === 0 ? (
           <div className="px-4 py-4 text-center">
-            <p className="text-[10px] text-text-muted">No symbols in this list</p>
+            <p className="text-xs text-text-muted">No symbols in this list</p>
           </div>
         ) : (
           <div className="space-y-1 p-2">
@@ -131,7 +131,7 @@ export function CockpitWatchlist({
                     {a && (
                       <Badge
                         variant={signalBadgeVariant[a.signal] ?? "neutral"}
-                        className="text-[9px] px-1 py-0"
+                        className="text-xs px-1 py-0"
                       >
                         {Math.round(a.confidence * 100)}%
                       </Badge>
@@ -159,7 +159,7 @@ export function CockpitWatchlist({
           <div className="border-t border-border">
             <div className="flex items-center gap-2 px-4 py-2">
               <Clock className="w-3 h-3 text-text-muted" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
+              <span className="text-xs font-semibold uppercase tracking-[0.08em] text-text-muted">
                 Recently viewed
               </span>
             </div>
@@ -168,7 +168,7 @@ export function CockpitWatchlist({
                 <button
                   key={item.symbol}
                   onClick={() => onSelectSymbol(item.symbol)}
-                  className="flex min-h-[34px] w-full items-center justify-between rounded-[14px] px-2.5 py-1 text-[10px] transition-colors hover:bg-bg-elevated"
+                  className="flex min-h-[34px] w-full items-center justify-between rounded-[14px] px-2.5 py-1 text-xs transition-colors hover:bg-bg-elevated"
                 >
                   <span className="font-mono text-text-secondary">
                     {item.symbol}
@@ -238,7 +238,7 @@ function WatchlistSwitcher({
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
       <DropdownMenu.Trigger asChild>
         <button
-          className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary hover:text-text-primary transition-colors min-w-0"
+          className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-text-secondary hover:text-text-primary transition-colors min-w-0"
           aria-label="Switch watchlist"
           title="Switch watchlist"
         >
@@ -271,9 +271,9 @@ function WatchlistSwitcher({
                 />
                 <span className="truncate flex-1">{o.name}</span>
                 {o.isDefault && (
-                  <Badge variant="default" className="text-[9px] px-1 py-0">DEFAULT</Badge>
+                  <Badge variant="default" className="text-xs px-1 py-0">DEFAULT</Badge>
                 )}
-                <span className="text-[10px] font-mono text-text-muted shrink-0">
+                <span className="text-xs font-mono text-text-muted shrink-0">
                   {o.itemCount}
                 </span>
               </button>

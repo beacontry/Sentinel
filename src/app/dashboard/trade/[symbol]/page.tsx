@@ -511,19 +511,19 @@ export default function TradePage({
           {account && (
             <div className="flex gap-6 text-right">
               <div>
-                <div className="text-[10px] uppercase tracking-wider text-text-muted">Equity</div>
+                <div className="text-xs uppercase tracking-wider text-text-muted">Equity</div>
                 <div className="font-mono text-sm text-text-primary">
                   ${account.equity.toFixed(2)}
                 </div>
               </div>
               <div>
-                <div className="text-[10px] uppercase tracking-wider text-text-muted">Buying Power</div>
+                <div className="text-xs uppercase tracking-wider text-text-muted">Buying Power</div>
                 <div className="font-mono text-sm text-accent">
                   ${account.buyingPower.toFixed(2)}
                 </div>
               </div>
               <div>
-                <div className="text-[10px] uppercase tracking-wider text-text-muted">Cash</div>
+                <div className="text-xs uppercase tracking-wider text-text-muted">Cash</div>
                 <div className="font-mono text-sm text-text-primary">
                   ${account.cash.toFixed(2)}
                 </div>
@@ -577,7 +577,7 @@ export default function TradePage({
                   <button
                     onClick={() => setSizingMode("shares")}
                     disabled={engineBlocked}
-                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
+                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium uppercase tracking-wide transition-colors
                       ${sizingMode === "shares"
                         ? "bg-bg-elevated text-text-primary"
                         : "text-text-muted hover:text-text-secondary"
@@ -589,7 +589,7 @@ export default function TradePage({
                   <button
                     onClick={() => { setSizingMode("dollars"); setUseBracket(false); }}
                     disabled={engineBlocked}
-                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
+                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium uppercase tracking-wide transition-colors
                       ${sizingMode === "dollars"
                         ? "bg-bg-elevated text-text-primary"
                         : "text-text-muted hover:text-text-secondary"
@@ -622,7 +622,7 @@ export default function TradePage({
                 />
               )}
               {notionalConflict && (
-                <p className="mt-1 text-[11px] text-warning">
+                <p className="mt-1 text-xs text-warning">
                   Dollar-based orders must be Market type with Day or IOC time-in-force.
                 </p>
               )}

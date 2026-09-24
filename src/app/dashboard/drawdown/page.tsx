@@ -191,7 +191,7 @@ export default function DrawdownPage() {
             );
           })}
         </div>
-        <div className="flex justify-between mt-2 text-[10px] text-text-muted font-mono">
+        <div className="flex justify-between mt-2 text-xs text-text-muted font-mono">
           <span>{equity[0]?.date}</span>
           <span>{equity[equity.length - 1]?.date}</span>
         </div>
@@ -219,7 +219,7 @@ export default function DrawdownPage() {
             );
           })}
         </div>
-        <div className="flex justify-between mt-2 text-[10px] text-text-muted font-mono">
+        <div className="flex justify-between mt-2 text-xs text-text-muted font-mono">
           <span>0%</span>
           <span>-{maxDDDepth.toFixed(1)}%</span>
         </div>

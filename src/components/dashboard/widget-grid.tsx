@@ -419,7 +419,7 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
               ) : (
                 availableByCategory.map(({ category, widgets }) => (
                   <div key={category}>
-                    <h4 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
+                    <h4 className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-text-muted">
                       {CATEGORY_LABELS[category]}
                     </h4>
                     <div className="grid gap-2">

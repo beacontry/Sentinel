@@ -147,7 +147,7 @@ export function UpgradeButton({
         {!submitting ? <ArrowRight className="h-4 w-4" /> : null}
       </button>
       {error ? (
-        <p className="mt-2 text-[0.78rem] text-bearish text-center">
+        <p className="mt-2 text-xs text-bearish text-center">
           {error}
         </p>
       ) : null}

@@ -90,7 +90,7 @@ export function NewsWidget() {
               transition-colors"
           >
             <div className="flex items-start justify-between gap-2">
-              <h4 className="line-clamp-2 text-[13px] leading-5 text-text-primary
+              <h4 className="line-clamp-2 text-sm leading-5 text-text-primary
                 group-hover:text-accent transition-colors">
                 {article.headline}
               </h4>
@@ -99,7 +99,7 @@ export function NewsWidget() {
             </div>
             <div className="mt-1 flex items-center gap-1.5">
               <Badge variant="neutral">{article.source}</Badge>
-              <span className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
+              <span className="text-xs uppercase tracking-[0.14em] text-text-muted">
                 {timeAgo(article.datetime)}
               </span>
             </div>
@@ -109,7 +109,7 @@ export function NewsWidget() {
 
       <Link
         href="/dashboard/news"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-[11px] uppercase
+        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-xs uppercase
           tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
       >
         View All News <ArrowRight className="w-3 h-3" />

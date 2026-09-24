@@ -474,7 +474,7 @@ function AnalysisCockpit() {
         <div className="flex flex-col lg:hidden flex-1 min-h-0 overflow-y-auto">
           <div className="shrink-0 border-b border-border bg-bg-secondary">
             <div className="flex items-center gap-2 overflow-x-auto px-4 py-3">
-              <span className="text-[10px] uppercase tracking-wider text-text-muted shrink-0">
+              <span className="text-xs uppercase tracking-wider text-text-muted shrink-0">
                 Watchlist
               </span>
               {symbols.length === 0 ? (
@@ -615,7 +615,7 @@ function AnalysisCockpit() {
                   <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
                     <button
                       onClick={() => switchChartMode("engine")}
-                      className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium uppercase tracking-wide transition-colors
                         ${chartMode === "engine"
                           ? "bg-bg-elevated text-text-primary"
                           : "text-text-muted hover:text-text-secondary"
@@ -626,7 +626,7 @@ function AnalysisCockpit() {
                     </button>
                     <button
                       onClick={() => switchChartMode("tradingview")}
-                      className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium uppercase tracking-wide transition-colors
                         ${chartMode === "tradingview"
                           ? "bg-bg-elevated text-text-primary"
                           : "text-text-muted hover:text-text-secondary"
@@ -740,7 +740,7 @@ function AnalysisCockpit() {
                         <button
                           key={sym}
                           onClick={() => handleAddSymbol(sym)}
-                          className="rounded-full border border-border px-2.5 py-1 text-[10px] font-mono
+                          className="rounded-full border border-border px-2.5 py-1 text-xs font-mono
                             text-text-muted transition-colors hover:border-accent/30 hover:text-accent"
                         >
                           + {sym}

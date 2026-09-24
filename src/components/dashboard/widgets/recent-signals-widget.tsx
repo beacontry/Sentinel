@@ -104,16 +104,16 @@ export function RecentSignalsWidget() {
               bg-bg-elevated hover:bg-bg-hover transition-colors"
           >
             <div className="flex items-center gap-2">
-              <SymbolLink symbol={sig.symbol} className="text-[13px] font-medium">
+              <SymbolLink symbol={sig.symbol} className="text-sm font-medium">
                 {sig.symbol}
               </SymbolLink>
               <SignalBadge signal={sig.signal} />
             </div>
             <div className="flex flex-col items-end gap-0.5 text-right leading-none">
-              <span className="font-mono text-[12px] text-text-secondary">
+              <span className="font-mono text-xs text-text-secondary">
                 ${sig.price.toFixed(2)}
               </span>
-              <span className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
+              <span className="text-xs uppercase tracking-[0.14em] text-text-muted">
                 {timeAgo(sig.createdAt)}
               </span>
             </div>
@@ -123,7 +123,7 @@ export function RecentSignalsWidget() {
 
       <Link
         href="/dashboard/screener"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-[11px] uppercase
+        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-xs uppercase
           tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
       >
         View Screener <ArrowRight className="w-3 h-3" />

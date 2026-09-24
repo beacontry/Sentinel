@@ -145,10 +145,10 @@ export function TaxLossHarvestingCalculator() {
       </div>
 
       <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
-        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
           Estimated current-year tax savings
         </p>
-        <p className="mt-1 text-3xl font-mono font-semibold text-text-primary">
+        <p className="mt-1 text-2xl font-mono font-semibold text-text-primary">
           {fmt(result.totalSavings)}
         </p>
       </div>

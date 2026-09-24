@@ -181,7 +181,7 @@ export function TaxStatusCard() {
                   value={mtmYear}
                   onChange={(e) => setMtmYear(e.target.value)}
                 />
-                <p className="text-[11px] text-text-muted">
+                <p className="text-xs text-text-muted">
                   The first tax year the election applies. Leave blank if you
                   haven&apos;t elected MTM. Once recorded, the &quot;declared at&quot;
                   timestamp is set by the server.

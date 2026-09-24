@@ -272,14 +272,14 @@ export default function PerformancePage() {
                 key={w.week}
                 className="flex-1 flex flex-col items-center justify-end gap-1"
               >
-                <span className="text-[9px] font-mono text-text-muted">
+                <span className="text-xs font-mono text-text-muted">
                   {Math.round(w.winRate * 100)}%
                 </span>
                 <div
                   className={`w-full rounded-t ${w.winRate >= 0.5 ? "bg-bullish/70" : "bg-bearish/70"}`}
                   style={{ height: `${Math.max(w.winRate * 100, 4)}%` }}
                 />
-                <span className="text-[8px] text-text-muted truncate w-full text-center">
+                <span className="text-xs text-text-muted truncate w-full text-center">
                   {new Date(w.week).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                 </span>
               </div>
@@ -337,7 +337,7 @@ function AttributionCard({ data }: { data: AttributionData }) {
                   } transition-all`}
                   style={{ width: `${widthPct}%` }}
                 />
-                <div className="absolute inset-0 flex items-center justify-end pr-2 text-[10px] text-text-muted font-mono">
+                <div className="absolute inset-0 flex items-center justify-end pr-2 text-xs text-text-muted font-mono">
                   {r.tradeCount} trade{r.tradeCount !== 1 ? "s" : ""} · {Math.round(winRate)}% win
                 </div>
               </div>
@@ -347,7 +347,7 @@ function AttributionCard({ data }: { data: AttributionData }) {
                 }`}
               >
                 {isPositive ? "+" : ""}${r.pnl.toFixed(2)}
-                <div className="text-[10px] text-text-muted">
+                <div className="text-xs text-text-muted">
                   {r.pctOfTotal >= 0 ? "+" : ""}
                   {r.pctOfTotal.toFixed(1)}%
                 </div>
@@ -358,7 +358,7 @@ function AttributionCard({ data }: { data: AttributionData }) {
               <Link
                 href={`/dashboard/journal?symbol=${encodeURIComponent(r.symbol)}`}
                 title={`Open journal entries for ${r.symbol}`}
-                className="text-[10px] text-text-muted hover:text-accent transition-colors px-1"
+                className="text-xs text-text-muted hover:text-accent transition-colors px-1"
               >
                 Journal
               </Link>
@@ -367,7 +367,7 @@ function AttributionCard({ data }: { data: AttributionData }) {
         })}
       </div>
       {data.rows.length > 10 && (
-        <p className="text-[11px] text-text-muted text-center mt-3">
+        <p className="text-xs text-text-muted text-center mt-3">
           +{data.rows.length - 10} more symbols not shown
         </p>
       )}

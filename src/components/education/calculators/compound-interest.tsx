@@ -112,10 +112,10 @@ export function CompoundInterestCalculator() {
       </div>
 
       <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
-        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
           Final balance after {years} years
         </p>
-        <p className="mt-1 text-3xl font-mono font-semibold text-text-primary">
+        <p className="mt-1 text-2xl font-mono font-semibold text-text-primary">
           {fmt(result.final)}
         </p>
       </div>
@@ -160,7 +160,7 @@ export function CompoundInterestCalculator() {
 
       {/* Year-by-year sparkline */}
       <div className="space-y-2">
-        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
           Balance year by year
         </p>
         <div className="flex items-end gap-0.5 h-20">
@@ -173,7 +173,7 @@ export function CompoundInterestCalculator() {
             />
           ))}
         </div>
-        <div className="flex justify-between text-[10px] text-text-muted">
+        <div className="flex justify-between text-xs text-text-muted">
           <span>Year 1</span>
           <span>Year {years}</span>
         </div>

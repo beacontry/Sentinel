@@ -161,7 +161,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
               <h2 className="text-sm font-semibold text-text-primary">
                 Beacontry AI
               </h2>
-              <p className="text-[10px] text-text-muted">
+              <p className="text-xs text-text-muted">
                 Trading research assistant
               </p>
             </div>
@@ -199,7 +199,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
                 </p>
               </div>
               <div className="space-y-2 pt-2">
-                <p className="px-1 text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                <p className="px-1 text-xs font-medium uppercase tracking-wider text-text-muted">
                   Suggested
                 </p>
                 {SUGGESTED_PROMPTS.map((prompt) => (
@@ -301,7 +301,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
               </button>
             )}
           </div>
-          <p className="mt-2 text-center text-[10px] text-text-muted">
+          <p className="mt-2 text-center text-xs text-text-muted">
             AI may produce inaccurate analysis. Always verify before trading.
           </p>
         </div>

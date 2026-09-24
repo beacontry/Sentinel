@@ -150,7 +150,7 @@ export default function NewsPage() {
                           <span title="Headline sentiment from keyword classifier — not financial advice">
                             <Badge
                               variant={article.sentiment === "bullish" ? "bullish" : "bearish"}
-                              className="text-[10px] uppercase tracking-wider"
+                              className="text-xs uppercase tracking-wider"
                             >
                               {article.sentiment === "bullish" ? "▲ Bullish" : "▼ Bearish"}
                             </Badge>

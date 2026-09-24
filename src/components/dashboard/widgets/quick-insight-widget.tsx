@@ -62,15 +62,15 @@ export function QuickInsightWidget() {
   return (
     <div>
       {symbol && (
-        <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-accent">{symbol}</p>
+        <p className="mb-1.5 font-mono text-xs uppercase tracking-[0.08em] text-accent">{symbol}</p>
       )}
-      <p className="text-[13px] leading-6 text-text-secondary line-clamp-4">
+      <p className="text-sm leading-6 text-text-secondary line-clamp-4">
         {insight ?? "No insight available"}
       </p>
 
       <Link
         href={`/dashboard/insights${symbol ? `?symbol=${symbol}` : ""}`}
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-[11px] uppercase
+        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-xs uppercase
           tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
       >
         Full Insights <ArrowRight className="w-3 h-3" />

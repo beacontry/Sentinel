@@ -40,7 +40,7 @@ export default function PrivacyPage() {
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-accent/22 bg-accent/10 px-3 py-1">
             <Shield className="h-3.5 w-3.5 text-accent" />
-            <span className="font-mono text-[10px] uppercase tracking-wider text-accent">
+            <span className="font-mono text-xs uppercase tracking-wider text-accent">
               Privacy
             </span>
           </div>
@@ -56,13 +56,13 @@ export default function PrivacyPage() {
             doesn't have to scroll. */}
         <section className="rounded-xl border border-border bg-bg-elevated p-5 space-y-2">
           <h2 className="text-base font-semibold text-text-primary">Who controls your data</h2>
-          <p className="text-[0.92rem]">
+          <p className="text-base">
             The data controller for personal information processed by Beacontry is{" "}
             <strong className="text-text-primary">{LEGAL_ENTITY.name}</strong>, a{" "}
             {LEGAL_ENTITY.formationState} limited liability company doing business as{" "}
             &quot;{LEGAL_ENTITY.tradeName}.&quot; Mailing address: {formatAddressOneLine()}.
           </p>
-          <p className="text-[0.92rem]">
+          <p className="text-base">
             For privacy requests (access, deletion, export, correction), email{" "}
             <a
               href={`mailto:${LEGAL_ENTITY.privacyEmail}?subject=${LEGAL_ENTITY.privacySubject}`}
@@ -80,7 +80,7 @@ export default function PrivacyPage() {
             users actually want to know. */}
         <section className="rounded-xl border border-border bg-bg-surface p-5 space-y-2">
           <h2 className="text-base font-semibold text-text-primary">In plain language</h2>
-          <ul className="space-y-1.5 text-[0.92rem] list-disc list-inside marker:text-text-muted">
+          <ul className="space-y-1.5 text-base list-disc list-inside marker:text-text-muted">
             <li>We collect: your email, name, password (hashed), broker API keys (encrypted), and the trades you make on Beacontry.</li>
             <li>We do <strong className="text-text-primary">not</strong> sell your data. Ever.</li>
             <li>We share data only with: Stripe (billing), Resend (email), Cloudflare (DNS/CDN), Groq (AI processing of public market questions you submit). Each is contractually bound to use the data only to serve us.</li>

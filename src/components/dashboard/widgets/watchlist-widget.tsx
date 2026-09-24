@@ -69,20 +69,20 @@ export function WatchlistWidget() {
           className="flex items-center justify-between rounded-[10px] px-2.5 py-1.5
             bg-bg-elevated hover:bg-bg-hover transition-colors"
         >
-          <SymbolLink symbol={sym} className="text-[13px] font-medium">
+          <SymbolLink symbol={sym} className="text-sm font-medium">
             {sym}
           </SymbolLink>
           <Badge variant="neutral">Watching</Badge>
         </div>
       ))}
       {symbols.length > 6 && (
-        <p className="pt-0.5 text-center text-[11px] uppercase tracking-[0.16em] text-text-muted">
+        <p className="pt-0.5 text-center text-xs uppercase tracking-[0.16em] text-text-muted">
           +{symbols.length - 6} more
         </p>
       )}
       <Link
         href="/dashboard"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-1.5 text-[11px] uppercase
+        className="flex min-h-[36px] items-center justify-center gap-1 pt-1.5 text-xs uppercase
           tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
       >
         View All <ArrowRight className="w-3 h-3" />

@@ -1127,7 +1127,7 @@ function IndicatorCell({
     <div className="flex flex-col gap-1 px-3 py-2.5 rounded-lg bg-bg-elevated">
       <div className="flex items-center gap-1.5 text-text-muted">
         {icon}
-        <span className="text-[11px] font-medium uppercase tracking-wider">
+        <span className="text-xs font-medium uppercase tracking-wider">
           {label}
         </span>
       </div>
@@ -1136,7 +1136,7 @@ function IndicatorCell({
           {value}
         </span>
         {status && (
-          <span className={`text-[10px] font-medium ${statusColor ?? "text-text-muted"}`}>
+          <span className={`text-xs font-medium ${statusColor ?? "text-text-muted"}`}>
             {status}
           </span>
         )}

@@ -213,7 +213,7 @@ function Bar({
   return (
     <div className={`rounded-xl border p-3 space-y-2 ${toneClass}`}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
           {label}
         </p>
       </div>

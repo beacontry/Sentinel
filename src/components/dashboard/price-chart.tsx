@@ -401,7 +401,7 @@ function RsiSubChart({
 
   return (
     <div className="relative">
-      <span className="absolute top-1 left-2 text-[10px] font-mono text-text-muted z-10">RSI (14)</span>
+      <span className="absolute top-1 left-2 text-xs font-mono text-text-muted z-10">RSI (14)</span>
       <div ref={ref} className="overflow-hidden rounded-xl border border-border bg-bg-surface" />
     </div>
   );
@@ -501,7 +501,7 @@ function MacdSubChart({
 
   return (
     <div className="relative">
-      <span className="absolute top-1 left-2 text-[10px] font-mono text-text-muted z-10">MACD (12,26,9)</span>
+      <span className="absolute top-1 left-2 text-xs font-mono text-text-muted z-10">MACD (12,26,9)</span>
       <div ref={ref} className="overflow-hidden rounded-xl border border-border bg-bg-surface" />
     </div>
   );

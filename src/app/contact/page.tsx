@@ -50,7 +50,7 @@ export default function ContactPage() {
 
       <main className="mx-auto max-w-3xl px-4 py-12 space-y-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-text-primary">
+          <h1 className="text-2xl sm:text-2xl font-bold tracking-tight text-text-primary">
             Get in touch
           </h1>
           <p className="text-text-secondary mt-2 leading-relaxed">
@@ -93,7 +93,7 @@ export default function ContactPage() {
             </div>
             <div className="flex-1">
               <h2 className="text-base font-semibold text-text-primary mb-1">
-                Support tickets <span className="text-text-muted text-[0.78rem] font-normal">— for active users</span>
+                Support tickets <span className="text-text-muted text-xs font-normal">— for active users</span>
               </h2>
               <p className="text-sm text-text-secondary leading-relaxed mb-3">
                 Signed in already? The ticket system in the dashboard
@@ -118,7 +118,7 @@ export default function ContactPage() {
           <h2 className="text-sm font-semibold text-text-primary mb-1.5">
             Security disclosures
           </h2>
-          <p className="text-[0.88rem] text-text-secondary leading-relaxed">
+          <p className="text-sm text-text-secondary leading-relaxed">
             Found a security issue? Email{" "}
             <a
               href="mailto:hello@beacontry.com?subject=Security%20disclosure"
@@ -136,7 +136,7 @@ export default function ContactPage() {
           <h2 className="text-base font-semibold text-text-primary mb-3">
             Self-serve
           </h2>
-          <ul className="grid sm:grid-cols-2 gap-2 text-[0.92rem]">
+          <ul className="grid sm:grid-cols-2 gap-2 text-base">
             <li>
               <Link href="/pricing" className="text-accent hover:text-accent-hover underline">
                 Pricing
@@ -185,7 +185,7 @@ export default function ContactPage() {
           <h2 className="text-sm font-semibold text-text-primary mb-2">
             Legal entity
           </h2>
-          <p className="text-[0.88rem] text-text-secondary leading-relaxed font-mono">
+          <p className="text-sm text-text-secondary leading-relaxed font-mono">
             {LEGAL_ENTITY.name}
             <br />
             (d/b/a {LEGAL_ENTITY.tradeName})

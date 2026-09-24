@@ -88,7 +88,7 @@ export function MarketOverviewWidget() {
         <div>
           <div className="mb-1.5 flex items-center gap-1">
             <TrendingUp className="w-3.5 h-3.5 text-bullish" />
-            <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-bullish">Gainers</span>
+            <span className="text-xs font-medium uppercase tracking-[0.08em] text-bullish">Gainers</span>
           </div>
           <div className="space-y-1">
             {gainers.map((g) => (
@@ -97,7 +97,7 @@ export function MarketOverviewWidget() {
                 className="flex items-center justify-between rounded-[8px] px-2 py-1
                   bg-bullish/5 hover:bg-bullish/10 transition-colors"
               >
-                <SymbolLink symbol={g.symbol} className="text-[12px] font-medium">
+                <SymbolLink symbol={g.symbol} className="text-xs font-medium">
                   {g.symbol}
                 </SymbolLink>
                 <div className="flex items-center gap-1">
@@ -118,7 +118,7 @@ export function MarketOverviewWidget() {
         <div>
           <div className="mb-1.5 flex items-center gap-1">
             <TrendingDown className="w-3.5 h-3.5 text-bearish" />
-            <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-bearish">Losers</span>
+            <span className="text-xs font-medium uppercase tracking-[0.08em] text-bearish">Losers</span>
           </div>
           <div className="space-y-1">
             {losers.map((l) => (
@@ -127,7 +127,7 @@ export function MarketOverviewWidget() {
                 className="flex items-center justify-between rounded-[8px] px-2 py-1
                   bg-bearish/5 hover:bg-bearish/10 transition-colors"
               >
-                <SymbolLink symbol={l.symbol} className="text-[12px] font-medium">
+                <SymbolLink symbol={l.symbol} className="text-xs font-medium">
                   {l.symbol}
                 </SymbolLink>
                 <div className="flex items-center gap-1">
@@ -147,7 +147,7 @@ export function MarketOverviewWidget() {
 
       <Link
         href="/dashboard/screener"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-[11px] uppercase
+        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-xs uppercase
           tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
       >
         View Screener <ArrowRight className="w-3 h-3" />

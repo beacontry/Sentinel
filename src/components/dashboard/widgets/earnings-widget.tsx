@@ -106,7 +106,7 @@ export function EarningsWidget() {
             className="flex items-center justify-between rounded-[10px] px-2.5 py-1.5
               bg-bg-elevated hover:bg-bg-hover transition-colors"
           >
-            <span className="font-mono text-[13px] font-medium text-text-primary">
+            <span className="font-mono text-sm font-medium text-text-primary">
               {e.symbol}
             </span>
             <div className="flex items-center gap-1.5">
@@ -115,7 +115,7 @@ export function EarningsWidget() {
                   {e.hour === "bmo" ? "Pre" : e.hour === "amc" ? "Post" : e.hour}
                 </Badge>
               )}
-              <span className="font-mono text-[12px] text-text-secondary">
+              <span className="font-mono text-xs text-text-secondary">
                 {formatDate(e.date)}
               </span>
             </div>
@@ -125,7 +125,7 @@ export function EarningsWidget() {
 
       <Link
         href="/dashboard/calendar"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-[11px] uppercase
+        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-xs uppercase
           tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
       >
         Full Calendar <ArrowRight className="w-3 h-3" />
