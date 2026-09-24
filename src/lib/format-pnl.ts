@@ -47,6 +47,16 @@ function dollars(abs: number): string {
   return `$${CENTS.format(abs)}`;
 }
 
+/**
+ * A balance or a price, not a change: grouped, to the cent, no "+". A
+ * negative balance still takes the U+2212 minus. NaN or Infinity is n/a.
+ */
+export function formatUsd(amountUsd: number): string {
+  if (!Number.isFinite(amountUsd)) return UNAVAILABLE;
+  const cents = Math.round(amountUsd * 100);
+  return `${cents < 0 ? MINUS : ""}${dollars(Math.abs(cents) / 100)}`;
+}
+
 export function formatSignedUsd(amountUsd: number): string {
   if (!Number.isFinite(amountUsd)) return UNAVAILABLE;
   const direction = pnlDirection(amountUsd);

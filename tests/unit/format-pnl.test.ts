@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { formatPnl, formatSignedPercent, formatSignedUsd, MINUS, percentDirection, pnlDirection } from "@/lib/format-pnl";
+import { formatPnl, formatSignedPercent, formatSignedUsd, formatUsd, MINUS, percentDirection, pnlDirection } from "@/lib/format-pnl";
 import { formatPnl as reExported } from "@/components/display-prefs-provider";
 
 describe("formatPnl", () => {
@@ -79,5 +79,24 @@ describe("percentDirection", () => {
     expect(percentDirection(null)).toBeUndefined();
     expect(percentDirection(undefined)).toBeUndefined();
     expect(percentDirection(Number.NaN)).toBeUndefined();
+  });
+});
+
+describe("formatUsd", () => {
+  it("groups a balance to the cent with no sign", () => {
+    expect(formatUsd(57737.05)).toBe("$57,737.05");
+    expect(formatUsd(0)).toBe("$0.00");
+  });
+
+  it("keeps the typographic minus for a negative balance", () => {
+    expect(formatUsd(-12.5)).toBe(`${MINUS}$12.50`);
+  });
+
+  it("does not print a minus for a value that rounds to zero", () => {
+    expect(formatUsd(-0.004)).toBe("$0.00");
+  });
+
+  it("prints n/a for an unknown", () => {
+    expect(formatUsd(Number.NaN)).toBe("n/a");
   });
 });
