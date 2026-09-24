@@ -41,6 +41,7 @@ import {
 } from "./db/schema";
 import { eq, and, desc, gt, inArray, lt, isNotNull, sql } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
+import { DRAIN_BUDGET_MS } from "./shutdown-config";
 import { writeAudit, AuditAction } from "./audit";
 import { detectMarketRegime } from "./market-regime";
 import { createAutoJournalStub } from "./journal-auto-stub";
@@ -7165,7 +7166,11 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   return { ok: true };
 }
 
-export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?: string }> {
+export async function stopEngine(
+  userId?: string,
+  /** Shutdown drain deadline, passed through to placeSafetyStops. */
+  signal?: AbortSignal
+): Promise<{ ok: boolean; error?: string }> {
   const engine = userId ? getEngine(userId) : getEngine();
 
   if (!engine.running) {
@@ -7196,7 +7201,7 @@ export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?
   engine.scanGeneration++;
 
   // Place broker-side safety stop orders for all open positions
-  await placeSafetyStops(engine.userId);
+  await placeSafetyStops(engine.userId, signal);
 
   log.info("Trading engine stopped — safety stops placed on broker");
 
@@ -7840,32 +7845,238 @@ async function placeDisasterStops(userId: string | null): Promise<void> {
 }
 
 /**
- * Place tighter safety stops when engine is stopping (strategy-level stop loss).
- * These are more protective since the engine won't be managing exits dynamically.
+ * Settle a promise, or reject as soon as `signal` aborts. The underlying call
+ * is abandoned, not cancelled: a broker request already sent may still land,
+ * which is harmless here because every call on the safety-stop path either
+ * raises protection or leaves it as it was.
  */
-export async function placeSafetyStops(userId: string | null): Promise<void> {
+function untilAborted<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    p.catch(() => {});
+    return Promise.reject(signal.reason ?? new Error("aborted"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(
+      (v) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(v);
+      },
+      (e) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(e);
+      }
+    );
+  });
+}
+
+/** Sell-side order types that already protect a position at the broker. */
+const PROTECTIVE_SELL_TYPES = new Set(["stop", "stop_limit", "trailing_stop"]);
+
+/**
+ * Make sure every open position has a strategy-level GTC stop at the broker
+ * when the engine stops (user Stop, halt path, SIGTERM drain). The engine
+ * will not be managing exits after this, so the resting stop is the only
+ * protection until the next start.
+ *
+ * It never lowers protection. The target per position is the highest of the
+ * existing broker stop, the engine's in-memory stop (breakeven promotions and
+ * trail ratchets land there), and the strategy's fixed-% stop from entry,
+ * clamped just below market. An existing stop is moved UP in place with
+ * replaceOrder, never cancelled first; a position with no stop gets one.
+ * There is no cancel-all: an interrupted drain (force exit, SIGKILL) leaves
+ * every position with at least the stop it had before.
+ *
+ * Brokers without replaceOrder: a stop that should rise is cancelled and
+ * re-placed one symbol at a time, so at most one position is between orders
+ * at any moment, and once a cancel is sent its replacement is placed even
+ * past the deadline. A broker with neither leaves existing stops alone.
+ *
+ * Open BUY orders are cancelled one by one so a resting entry cannot fill
+ * after the engine stops. Other open sells of a symbol with no stop (a
+ * pending limit exit) are cancelled before its stop is placed, as before.
+ *
+ * Everything runs under one deadline: `signal` (the shutdown drain passes
+ * one) combined with DRAIN_BUDGET_MS. Past it no new broker call starts.
+ * The boot-time placeDisasterStops and stop-sync remain the backstop.
+ */
+export async function placeSafetyStops(userId: string | null, signal?: AbortSignal): Promise<void> {
   if (!userId) return;
 
-  const resolved = await resolveBrokerClientForProtection(userId);
-  if (!resolved) {
-    log.error({ userId }, "No broker client for safety stops; existing broker-side orders left as they are");
-    return;
-  }
-
-  const { client } = resolved;
+  const budget = AbortSignal.timeout(DRAIN_BUDGET_MS);
+  const deadline = signal ? AbortSignal.any([signal, budget]) : budget;
 
   try {
-    const positions = await client.getPositions();
-    if (positions.length === 0) return;
+    const resolved = await untilAborted(resolveBrokerClientForProtection(userId), deadline);
+    if (!resolved) {
+      log.error({ userId }, "No broker client for safety stops; existing broker-side orders left as they are");
+      return;
+    }
+    const { client } = resolved;
 
-    await cancelAllAndWait(client);
+    const positions = (await untilAborted(client.getPositions(), deadline)).filter((p) => p.qty > 0);
+    const openOrders = await untilAborted(client.getOrders(OPEN_ORDERS_PAGE, "open"), deadline);
+    if (openOrders.length >= OPEN_ORDERS_PAGE) {
+      log.warn({ userId, count: openOrders.length }, "Open-order page is full; some existing stops may not be listed");
+    }
+
+    // A resting entry must not fill after the engine stops.
+    const buys = openOrders.filter((o) => o.side === "buy");
+    const buyCancels = client.cancelOrder
+      ? buys.map((o) =>
+          untilAborted(client.cancelOrder!(o.id), deadline).then(
+            () => log.info({ symbol: o.symbol, orderId: o.id }, "Cancelled open buy on engine stop"),
+            (err) =>
+              log.warn(
+                { symbol: o.symbol, orderId: o.id, err: err instanceof Error ? err.message : "unknown" },
+                "Failed to cancel open buy on engine stop"
+              )
+          )
+        )
+      : [];
+    if (buys.length > 0 && !client.cancelOrder) {
+      log.warn({ userId, count: buys.length }, "Broker cannot cancel single orders; open buys left working");
+    }
+
+    if (positions.length === 0) {
+      await Promise.allSettled(buyCancels);
+      return;
+    }
+
+    const positionMap = getPositionMap(userId);
+    const engine = getEngine(userId);
+    const cancelReplace: Array<() => Promise<void>> = [];
+    const parallel: Array<Promise<void>> = [...buyCancels];
 
     for (const pos of positions) {
-      if (pos.qty <= 0) continue;
-      await placeSafetyStopForPosition(client, userId, pos);
+      const sells = openOrders.filter((o) => o.symbol === pos.symbol && o.side === "sell");
+      const stops = sells
+        .filter((o) => o.type === "stop" && o.stopPrice && parseFloat(o.stopPrice) > 0)
+        .sort((a, b) => parseFloat(b.stopPrice!) - parseFloat(a.stopPrice!));
+      const existing = stops[0];
+
+      if (!existing && sells.some((o) => PROTECTIVE_SELL_TYPES.has(o.type))) {
+        // A stop_limit or trailing stop already protects it; its level cannot
+        // be compared here, so leave it rather than risk a second sell.
+        log.info({ symbol: pos.symbol }, "Safety stop skipped; broker already holds a protective sell");
+        continue;
+      }
+
+      const tracked = positionMap.get(pos.symbol);
+      const task = async (): Promise<void> => {
+        if (deadline.aborted) return;
+        const strategy = await untilAborted(resolveStrategy(userId, pos.symbol), deadline);
+        const existingStop = existing ? parseFloat(existing.stopPrice!) : 0;
+        const fixedStop = pos.avgEntryPrice * (1 - strategy.stopLossPct);
+        const memStop = tracked && tracked.stopLoss > 0 ? tracked.stopLoss : 0;
+        // Clamp below current price (audit #17): a stop at or above market is
+        // rejected by Alpaca and would leave the position broker-unprotected.
+        const rawTarget = Math.max(existingStop, memStop, fixedStop);
+        const target = pos.currentPrice > 0 ? Math.min(rawTarget, pos.currentPrice * (1 - 0.001)) : rawTarget;
+        const targetStr = target.toFixed(2);
+
+        const markProtected = (price: number) => {
+          if (tracked && price > tracked.stopLoss) tracked.stopLoss = price;
+          engine.unprotectedSymbols.delete(pos.symbol);
+        };
+
+        if (!existing) {
+          // No stop at the broker. Free any other open sell's shares first.
+          if (sells.length > 0) {
+            await cancelSymbolOrdersAndWait(client, pos.symbol, { filter: (o) => o.side === "sell" });
+          }
+          await untilAborted(
+            placeEngineOrder(client, {
+              symbol: pos.symbol, side: "sell", qty: String(pos.qty),
+              type: "stop", timeInForce: "gtc", stopPrice: targetStr,
+            }),
+            deadline
+          );
+          markProtected(target);
+          log.info({ symbol: pos.symbol, stopPrice: targetStr, qty: pos.qty }, "Safety stop placed");
+          return;
+        }
+
+        // Never downward: only a strictly higher cent value moves the stop.
+        const raise = parseFloat(targetStr) > existingStop;
+        const qtyChanged = stops.length === 1 && existing.qty !== pos.qty;
+        if (!raise && !qtyChanged) {
+          markProtected(existingStop);
+          log.info({ symbol: pos.symbol, stopPrice: existing.stopPrice }, "Safety stop kept; existing broker stop is at or above target");
+          return;
+        }
+
+        if (client.replaceOrder) {
+          const updates: { stopPrice?: string; qty?: string } = {};
+          if (raise) updates.stopPrice = targetStr;
+          if (qtyChanged) updates.qty = String(pos.qty);
+          await untilAborted(client.replaceOrder(existing.id, updates), deadline);
+          markProtected(raise ? target : existingStop);
+          log.info(
+            { symbol: pos.symbol, oldStop: existing.stopPrice, newStop: updates.stopPrice ?? existing.stopPrice, qty: pos.qty },
+            "Safety stop ratcheted in place"
+          );
+          return;
+        }
+
+        if (!client.cancelOrder) {
+          log.warn({ symbol: pos.symbol, stopPrice: existing.stopPrice }, "Broker cannot replace or cancel; existing stop left as it is");
+          return;
+        }
+
+        // Cancel-and-replace. Once the cancel is sent the replacement MUST be
+        // placed, deadline or not: the force exit is the only bound here.
+        const cancel = await cancelSymbolOrdersAndWait(client, pos.symbol, {
+          filter: (o) => o.id === existing.id,
+        });
+        if (cancel.failedOrderIds.length > 0) {
+          log.warn({ symbol: pos.symbol }, "Stop cancel failed; existing stop left as it is");
+          return;
+        }
+        try {
+          await placeEngineOrder(client, {
+            symbol: pos.symbol, side: "sell", qty: String(pos.qty),
+            type: "stop", timeInForce: "gtc", stopPrice: raise ? targetStr : existing.stopPrice!,
+          });
+          markProtected(raise ? target : existingStop);
+          log.info({ symbol: pos.symbol, oldStop: existing.stopPrice, newStop: targetStr }, "Safety stop replaced");
+        } catch (err) {
+          engine.unprotectedSymbols.add(pos.symbol);
+          throw err;
+        }
+      };
+
+      const run = () =>
+        task().catch((err) => {
+          log.error(
+            { symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" },
+            deadline.aborted ? "Safety stop not updated before the drain deadline" : "Failed to place safety stop"
+          );
+        });
+
+      if (existing && !client.replaceOrder) cancelReplace.push(run);
+      else parallel.push(run());
     }
+
+    // One symbol at a time for cancel-and-replace, alongside the parallel work.
+    parallel.push(
+      (async () => {
+        for (const run of cancelReplace) {
+          if (deadline.aborted) break;
+          await run();
+        }
+      })()
+    );
+
+    await Promise.allSettled(parallel);
   } catch (err) {
-    log.error({ err: err instanceof Error ? err.message : "unknown" }, "Failed to place safety stops");
+    log.error(
+      { userId, err: err instanceof Error ? err.message : "unknown" },
+      deadline.aborted
+        ? "Safety stops not reached before the drain deadline; existing broker-side orders left as they are"
+        : "Failed to place safety stops; existing broker-side orders left as they are"
+    );
   }
 }
 
@@ -8605,6 +8816,8 @@ export function getAllEngineSnapshots(): Array<{
 /**
  * Stop every running engine on this process. Called from the SIGTERM/SIGINT handler
  * in instrumentation.ts so safety stops are placed on Alpaca before the container exits.
+ * Every engine drains in parallel under one DRAIN_BUDGET_MS deadline, which sits
+ * inside the handler's FORCE_EXIT_MS (see lib/shutdown-config.ts).
  */
 export async function shutdownAllEngines(): Promise<void> {
   if (!g.__tradingEngines) return;
@@ -8612,7 +8825,8 @@ export async function shutdownAllEngines(): Promise<void> {
   if (userIds.length === 0) return;
 
   log.info({ engines: userIds.length }, "Graceful shutdown — stopping all engines");
-  await Promise.allSettled(userIds.map(uid => stopEngine(uid)));
+  const deadline = AbortSignal.timeout(DRAIN_BUDGET_MS);
+  await Promise.allSettled(userIds.map(uid => stopEngine(uid, deadline)));
 }
 
 /**
