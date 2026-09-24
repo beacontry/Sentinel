@@ -23,7 +23,9 @@ export function AuthShell({ children }: { children: ReactNode }) {
         </Link>
       </header>
 
-      <main id="main" className="flex flex-1 items-start justify-center px-[var(--gutter)] pb-10 pt-6 sm:items-center sm:pt-4">
+      {/* sm:py-6 rather than 16px over 40px: the sign-up card, the tallest
+          form, came to 902px at 1280x900 and scrolled by 2px. */}
+      <main id="main" className="flex flex-1 items-start justify-center px-[var(--gutter)] pb-10 pt-6 sm:items-center sm:py-6">
         <div className="w-full max-w-[26rem] sm:rounded-xl sm:border sm:border-border sm:bg-bg-secondary sm:p-8 sm:shadow-pop">
           {children}
         </div>
