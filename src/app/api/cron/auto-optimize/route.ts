@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db, withTimeout } from "@/lib/db";
-import { optimizationRuns } from "@/lib/db/schema";
+import { optimizationRuns, OPTIMIZATION_ONE_ACTIVE_INDEX } from "@/lib/db/schema";
+import { violatesIndex } from "@/lib/db-errors";
 import { safeCompare } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
 import { getMarketDataProvider } from "@/lib/market-data";
@@ -133,7 +134,10 @@ export async function GET(request: NextRequest) {
 
     if (pending) {
       const outcome = await evaluateAndDecide(serviceUserId, pending);
-      const phase = outcome.decision === "deferred" ? "deferred" : "evaluated";
+      const phase =
+        outcome.decision === "deferred" || outcome.decision === "incumbent_changed"
+          ? "deferred"
+          : "evaluated";
       return NextResponse.json({ status: "ok", phase, ...outcome });
     }
 
@@ -213,6 +217,7 @@ async function evaluateAndDecide(
       .select({ id: optimizationRuns.id, bestParams: optimizationRuns.bestParams })
       .from(optimizationRuns)
       .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+      .orderBy(desc(optimizationRuns.completedAt), desc(optimizationRuns.id))
       .limit(1)
   );
 
@@ -292,17 +297,17 @@ async function evaluateAndDecide(
   const decision = decidePromotion({ candidateOOS, incumbentOOS, margin, testDates });
 
   if (decision.promote) {
-    // Flip the single global active slot — identical semantics to save-preset.
-    await db.transaction(async (tx) => {
-      await tx
-        .update(optimizationRuns)
-        .set({ isActive: false })
-        .where(eq(optimizationRuns.isActive, true));
-      await tx
-        .update(optimizationRuns)
-        .set({ isActive: true, autoPromotionDecidedAt: new Date() })
-        .where(eq(optimizationRuns.id, run.id));
-    });
+    // The scoring above took minutes. If the active slot moved meanwhile (a
+    // save-preset), the comparison was against the wrong incumbent: write
+    // nothing and leave the run undecided so the next tick re-scores it.
+    const flip = await promoteFenced(run.id, incumbent?.id ?? null);
+    if (flip === "incumbent_changed") {
+      log.warn(
+        { runId: run.id, scoredIncumbent: incumbent?.id ?? null },
+        "Auto-optimizer: active preset changed during evaluation, not promoting; will re-score"
+      );
+      return { decision: "incumbent_changed", reason: "incumbent_changed", candidateOOS, incumbentOOS };
+    }
     await writeAudit({
       actor: { userId: serviceUserId, email: null, role: "system" },
       action: AuditAction.OPTIMIZER_AUTO_PROMOTED,
@@ -332,6 +337,58 @@ async function evaluateAndDecide(
     "Auto-optimizer kept the incumbent (candidate did not clear the margin)"
   );
   return { decision: "rejected", reason: decision.reason, candidateOOS, incumbentOOS };
+}
+
+class IncumbentChangedError extends Error {}
+
+/**
+ * Flip the single global active slot to `runId`, fenced on the incumbent that
+ * was scored. Inside one transaction: lock the active row(s) FOR UPDATE and
+ * abort unless they are exactly the scored incumbent (none when there was
+ * none), demote only that row (is_active AND id = incumbent), then promote the
+ * candidate. A concurrent save-preset either waits on the lock and then fails
+ * the one-active index, or has already committed and fails the fence here. A
+ * concurrent activation with no incumbent to lock is caught by the index.
+ */
+async function promoteFenced(
+  runId: string,
+  incumbentId: string | null
+): Promise<"promoted" | "incumbent_changed"> {
+  try {
+    return await db.transaction(async (tx) => {
+      const active = await tx
+        .select({ id: optimizationRuns.id })
+        .from(optimizationRuns)
+        .where(eq(optimizationRuns.isActive, true))
+        .orderBy(optimizationRuns.id)
+        .for("update");
+      const same = incumbentId
+        ? active.length === 1 && active[0].id === incumbentId
+        : active.length === 0;
+      if (!same) return "incumbent_changed" as const;
+
+      if (incumbentId) {
+        const demoted = await tx
+          .update(optimizationRuns)
+          .set({ isActive: false })
+          .where(and(eq(optimizationRuns.isActive, true), eq(optimizationRuns.id, incumbentId)))
+          .returning({ id: optimizationRuns.id });
+        if (demoted.length !== 1) throw new IncumbentChangedError();
+      }
+      const promoted = await tx
+        .update(optimizationRuns)
+        .set({ isActive: true, autoPromotionDecidedAt: new Date() })
+        .where(and(eq(optimizationRuns.id, runId), eq(optimizationRuns.status, "complete")))
+        .returning({ id: optimizationRuns.id });
+      if (promoted.length !== 1) throw new Error("candidate run no longer complete");
+      return "promoted" as const;
+    });
+  } catch (err) {
+    if (err instanceof IncumbentChangedError || violatesIndex(err, OPTIMIZATION_ONE_ACTIVE_INDEX)) {
+      return "incumbent_changed";
+    }
+    throw err;
+  }
 }
 
 async function markDecided(runId: string): Promise<void> {

@@ -545,6 +545,7 @@ export async function GET() {
           .select({ universe: optimizationRuns.universe, trainPct: optimizationRuns.trainPct })
           .from(optimizationRuns)
           .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+          .orderBy(desc(optimizationRuns.completedAt), desc(optimizationRuns.id))
           .limit(1);
         if (activeRun) return activeRun;
         const [fallback] = await tx
@@ -640,6 +641,7 @@ export async function GET() {
         const [activeParams] = await tx.select(sel)
           .from(optimizationRuns)
           .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+          .orderBy(desc(optimizationRuns.completedAt), desc(optimizationRuns.id))
           .limit(1);
         if (activeParams) return { row: activeParams, source: "active_run" as const };
         const [fallback] = await tx.select(sel)

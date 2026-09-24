@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { optimizationRuns } from "@/lib/db/schema";
+import { optimizationRuns, OPTIMIZATION_ONE_ACTIVE_INDEX } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
+import { violatesIndex } from "@/lib/db-errors";
 import { createRouteLogger } from "@/lib/logger";
 import { checkTier } from "@/lib/tiers-server";
 
@@ -57,15 +58,32 @@ export async function POST(request: NextRequest) {
     // chosen one — otherwise multiple users' active rows coexist and the
     // global LIMIT 1 lookup becomes nondeterministic. The SELECT above already
     // proved the caller owns `runId`, so this only activates their own run.
-    await db
-      .update(optimizationRuns)
-      .set({ isActive: false })
-      .where(eq(optimizationRuns.isActive, true));
+    // Both writes are one transaction: a failure between them must not leave
+    // the global slot empty, and the one-active index (migration 0050) means a
+    // concurrent flip that commits first fails this one rather than leaving
+    // two active rows.
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(optimizationRuns)
+          .set({ isActive: false })
+          .where(eq(optimizationRuns.isActive, true));
 
-    await db
-      .update(optimizationRuns)
-      .set({ isActive: true })
-      .where(and(eq(optimizationRuns.id, runId), eq(optimizationRuns.userId, auth.userId)));
+        await tx
+          .update(optimizationRuns)
+          .set({ isActive: true })
+          .where(and(eq(optimizationRuns.id, runId), eq(optimizationRuns.userId, auth.userId)));
+      });
+    } catch (err) {
+      if (violatesIndex(err, OPTIMIZATION_ONE_ACTIVE_INDEX)) {
+        log.warn({ runId }, "Active preset changed concurrently; save-preset not applied");
+        return NextResponse.json(
+          { error: "The active preset changed at the same time. Try again." },
+          { status: 409 }
+        );
+      }
+      throw err;
+    }
 
     log.info({ runId, params: run.bestParams }, "Saved optimization run as active preset");
 

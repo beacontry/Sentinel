@@ -285,3 +285,55 @@ describe("auto-optimize evaluate tick (WP08)", () => {
     expect(state.audits[0].metadata.coverage).toMatchObject({ attempted: 50, fetched: 50, failed: 0 });
   }, 30_000);
 });
+
+describe("auto-optimize fenced promotion (WP08)", () => {
+  beforeEach(() => {
+    vi.stubEnv("CRON_SECRET", "cron-test-secret");
+    vi.stubEnv("OPTIMIZER_CRON_USER_ID", "svc-user");
+    vi.stubEnv("OPTIMIZER_PROMOTE_MARGIN", "2");
+    state.selects = [];
+    state.returning = [];
+    state.committed = [];
+    state.audits = [];
+    state.backtestCalls = 0;
+    state.scores = { candidate: 10, incumbent: 1 }; // clears the margin
+    state.fetchBars = async () => bars(300);
+  });
+
+  it("promotes when the active row is still the scored incumbent", async () => {
+    queueEvaluate({ id: "inc", bestParams: GA_PARAMS });
+    state.selects.push([{ id: "inc" }]); // FOR UPDATE re-read inside the flip
+    state.returning.push([{ id: "inc" }], [{ id: "cand" }]);
+    const body = await (await GET(cronRequest() as never)).json();
+    expect(body).toMatchObject({ phase: "evaluated", decision: "promoted" });
+    expect(activeWrites().map((w) => w.set.isActive)).toEqual([false, true]);
+    expect(activeWrites().every((w) => w.inTx)).toBe(true);
+    expect(state.audits[0].metadata.demotedRunId).toBe("inc");
+  }, 30_000);
+
+  it("aborts with incumbent_changed and writes nothing when the active row moved", async () => {
+    queueEvaluate({ id: "inc", bestParams: GA_PARAMS });
+    state.selects.push([{ id: "saved-meanwhile" }]); // a save-preset landed during scoring
+    const body = await (await GET(cronRequest() as never)).json();
+    expect(body).toMatchObject({ phase: "deferred", decision: "incumbent_changed" });
+    expect(state.committed).toHaveLength(0); // no demote, no promote, no decided marker
+    expect(state.audits).toHaveLength(0);
+  }, 30_000);
+
+  it("aborts when a preset was activated where there was no incumbent", async () => {
+    queueEvaluate(null);
+    state.selects.push([{ id: "saved-meanwhile" }]);
+    const body = await (await GET(cronRequest() as never)).json();
+    expect(body).toMatchObject({ decision: "incumbent_changed" });
+    expect(state.committed).toHaveLength(0);
+  }, 30_000);
+
+  it("rolls back when the fenced demote matches no row", async () => {
+    queueEvaluate({ id: "inc", bestParams: GA_PARAMS });
+    state.selects.push([{ id: "inc" }]);
+    state.returning.push([]); // demote WHERE is_active AND id = inc hit nothing
+    const body = await (await GET(cronRequest() as never)).json();
+    expect(body).toMatchObject({ decision: "incumbent_changed" });
+    expect(state.committed).toHaveLength(0);
+  }, 30_000);
+});

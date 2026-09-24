@@ -7,9 +7,14 @@ import {
   real,
   boolean,
   index,
+  uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { users } from "./users";
+
+/** Migration 0050: at most one active optimization run, globally. */
+export const OPTIMIZATION_ONE_ACTIVE_INDEX = "optimization_runs_one_active_idx";
 
 export const optimizationRuns = pgTable("optimization_runs", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -43,7 +48,9 @@ export const optimizationRuns = pgTable("optimization_runs", {
   testTradeCount: integer("test_trade_count"),
   testAvgPositions: real("test_avg_positions"),
 
-  // Active preset — only one run should be active at a time
+  // Active preset: one GLOBAL slot, at most one row (partial unique index,
+  // migration 0050). Changed only by save-preset and the auto-optimize cron,
+  // each in one transaction that demotes before it promotes.
   isActive: boolean("is_active").default(false),
 
   // Auto-optimizer decision marker (migration 0048). Set once the
@@ -59,6 +66,7 @@ export const optimizationRuns = pgTable("optimization_runs", {
   error: text("error"),
 }, (t) => [
   index("optimization_runs_user_idx").on(t.userId),
+  uniqueIndex(OPTIMIZATION_ONE_ACTIVE_INDEX).on(sql`(true)`).where(sql`${t.isActive}`),
 ]);
 
 export const optimizationGenerations = pgTable("optimization_generations", {

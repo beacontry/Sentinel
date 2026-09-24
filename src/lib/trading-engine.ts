@@ -3401,6 +3401,7 @@ async function _loadOptimizedParams(userId: string | null): Promise<void> {
       .select({ bestParams: optimizationRuns.bestParams, bestTestReturn: optimizationRuns.bestTestReturn })
       .from(optimizationRuns)
       .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+      .orderBy(desc(optimizationRuns.completedAt), desc(optimizationRuns.id))
       .limit(1);
     // 2. Fallback: the engine owner's OWN latest completed run — scoped by
     //    userId so user B never inherits user A's params (audit #12). When

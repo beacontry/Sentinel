@@ -94,6 +94,7 @@ async function loadOptimizedParamsForSymbol(
         .select({ bestParams: optimizationRuns.bestParams })
         .from(optimizationRuns)
         .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+        .orderBy(desc(optimizationRuns.completedAt), desc(optimizationRuns.id))
         .limit(1)
     );
     const [run] = activeRun
