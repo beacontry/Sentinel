@@ -9,6 +9,7 @@ import {
   createBrokerClient,
   BrokerError,
   isAmbiguousOrderError,
+  isNotWorkingOrder,
   lookupOrderByClientId,
   type BrokerOrder,
 } from "@/lib/brokers";
@@ -166,6 +167,13 @@ export async function POST(request: Request) {
     );
   }
 
+  // One client_order_id per order intent. The ticket sends its own and
+  // reuses it on a resubmit, so the broker refuses a second order for the
+  // same intent. A caller that sends none gets one here, which still lets
+  // the lookup below resolve a lost response. Minted before the try so a
+  // refusal's audit row carries it too.
+  const clientOrderId = parsed.data.clientOrderId ?? randomUUID();
+
   try {
     const connection = await getActiveConnection(auth.userId);
     if (!connection) {
@@ -181,12 +189,6 @@ export async function POST(request: Request) {
       decrypt(connection.apiSecret),
       connection.environment
     );
-
-    // One client_order_id per order intent. The ticket sends its own and
-    // reuses it on a resubmit, so the broker refuses a second order for the
-    // same intent. A caller that sends none gets one here, which still lets
-    // the lookup below resolve a lost response.
-    const clientOrderId = parsed.data.clientOrderId ?? randomUUID();
 
     let order: BrokerOrder;
     let resolvedAfter: "unknown" | "duplicate" | null = null;
@@ -246,6 +248,46 @@ export async function POST(request: Request) {
             clientOrderId,
           },
           { status: 202 }
+        );
+      }
+      if (isNotWorkingOrder(found)) {
+        // The broker has an order under this id, but it was rejected,
+        // canceled or expired with nothing filled. Not placed, and the id is
+        // spent at the broker: the ticket must mint a new one to try again.
+        log.warn(
+          { clientOrderId, orderId: found.id, status: found.status, outcome: err.orderOutcome },
+          "Manual order found by client_order_id but not working"
+        );
+        await writeAudit({
+          actor: { userId: auth.userId, email: auth.email, role: auth.role },
+          action: AuditAction.ORDER_REJECTED,
+          resourceType: "order",
+          resourceId: found.id,
+          metadata: {
+            symbol: parsed.data.symbol,
+            side: parsed.data.side,
+            qty: parsed.data.qty ?? null,
+            notional: parsed.data.notional ?? null,
+            type: parsed.data.type,
+            clientOrderId,
+            brokerStatus: found.status,
+            resolvedAfter: err.orderOutcome,
+            reason: "found_not_working",
+            broker: connection.broker,
+            environment: connection.environment,
+            source: "manual_ui",
+          },
+          request,
+        });
+        return NextResponse.json(
+          {
+            error: `The broker has this order as ${found.status.toLowerCase()}, so it is not working. Submitting again places a new order.`,
+            code: "ORDER_NOT_WORKING",
+            retryable: false,
+            clientOrderId,
+            brokerStatus: found.status,
+          },
+          { status: 422 }
         );
       }
       order = found;
@@ -315,6 +357,7 @@ export async function POST(request: Request) {
         qty: parsed.data.qty ?? null,
         notional: parsed.data.notional ?? null,
         type: parsed.data.type,
+        clientOrderId,
         error: message.slice(0, 200),
         source: "manual_ui",
       },

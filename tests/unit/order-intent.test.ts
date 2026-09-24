@@ -48,6 +48,10 @@ describe("orderIntentAfterResponse", () => {
     expect(orderIntentAfterResponse(intent, { ok: false })).toBe(intent);
   });
 
+  it("retires the id when the broker holds a dead order under it", () => {
+    expect(orderIntentAfterResponse(intent, { ok: false, code: "ORDER_NOT_WORKING" })).toBeNull();
+  });
+
   it("an unknown outcome followed by a resubmit of the same order sends the same id", () => {
     const first = orderIntentFor(null, order, mint);
     const kept = orderIntentAfterResponse(first, { ok: true, code: "ORDER_STATUS_UNKNOWN" });

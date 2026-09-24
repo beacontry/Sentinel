@@ -54,13 +54,16 @@ export function orderIntentFor(
  * next order gets a new id. An unknown outcome keeps it: the order may be
  * live, and a resubmit must be refused as a duplicate rather than double it.
  * A definite refusal keeps it too; the broker created no order under it, so
- * reusing it on a corrected resubmit of the same order is harmless.
+ * reusing it on a corrected resubmit of the same order is harmless. The
+ * exception is ORDER_NOT_WORKING: the broker holds a rejected, canceled or
+ * expired order under that id, so the id is spent and a resubmit would only
+ * be refused as a duplicate of the dead order. It is retired.
  */
 export function orderIntentAfterResponse(
   current: OrderIntent | null,
   response: { ok: boolean; code?: unknown }
 ): OrderIntent | null {
   if (response.code === "ORDER_STATUS_UNKNOWN") return current;
-  if (response.ok) return null;
+  if (response.ok || response.code === "ORDER_NOT_WORKING") return null;
   return current;
 }

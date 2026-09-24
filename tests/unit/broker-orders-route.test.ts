@@ -208,7 +208,7 @@ describe("POST /api/broker/orders: ambiguous outcome", () => {
     expect(actions()).toEqual([AuditAction.ORDER_PLACED]);
   });
 
-  it("a definite refusal is still ORDER_REJECTED and is not looked up", async () => {
+  it("a definite refusal is still ORDER_REJECTED, carries the intent id, and is not looked up", async () => {
     state.placeImpl = async () => {
       throw new BrokerError("Alpaca order 403: insufficient buying power", 400, "Insufficient buying power for this order");
     };
@@ -217,6 +217,33 @@ describe("POST /api/broker/orders: ambiguous outcome", () => {
     expect(res.status).toBe(400);
     expect(state.lookups).toHaveLength(0);
     expect(actions()).toEqual([AuditAction.ORDER_REJECTED]);
+    expect((state.audits[0].metadata as Record<string, unknown>).clientOrderId).toBe(INTENT_ID);
+  });
+
+  for (const status of ["rejected", "canceled", "expired"]) {
+    it(`timeout, lookup finds the order ${status} with nothing filled: a refusal, not a placement`, async () => {
+      state.placeImpl = async () => { throw timeoutError(); };
+      state.lookupImpl = async () => ({ ...order("ord-dead"), status });
+
+      const res = await POST(orderRequest({ clientOrderId: INTENT_ID }));
+      expect(res.status).toBe(422);
+      const body = await res.json();
+      expect(body.code).toBe("ORDER_NOT_WORKING");
+      expect(body.retryable).toBe(false);
+      expect(actions()).toEqual([AuditAction.ORDER_REJECTED]);
+      expect(state.audits[0].metadata).toMatchObject({
+        clientOrderId: INTENT_ID, brokerStatus: status, reason: "found_not_working",
+      });
+    });
+  }
+
+  it("a found order canceled after a partial fill did trade, so it is placed", async () => {
+    state.placeImpl = async () => { throw timeoutError(); };
+    state.lookupImpl = async () => ({ ...order("ord-part"), status: "canceled", filledQty: 40 });
+
+    const res = await POST(orderRequest({ clientOrderId: INTENT_ID }));
+    expect(res.status).toBe(201);
+    expect(actions()).toEqual([AuditAction.ORDER_PLACED]);
   });
 });
 

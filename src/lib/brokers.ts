@@ -211,6 +211,20 @@ export function isAmbiguousOrderError(err: unknown): err is BrokerError {
   return err instanceof BrokerError && err.orderOutcome !== null;
 }
 
+/** Final statuses of an order that is not working at the broker. */
+const NOT_WORKING_STATUSES = new Set(["rejected", "canceled", "cancelled", "expired"]);
+
+/**
+ * True for an order the lookup found that never became a position and never
+ * will: rejected, canceled or expired with nothing filled. Such an order
+ * answers "did the broker accept it?" with no, so a caller must treat it as
+ * a refusal, not as placed. One that filled in part before it ended did
+ * trade, so it is not matched here. Compared lowercase (IBKR capitalises).
+ */
+export function isNotWorkingOrder(order: BrokerOrder): boolean {
+  return NOT_WORKING_STATUSES.has(order.status.toLowerCase()) && !(order.filledQty > 0);
+}
+
 /**
  * Upper bound on the lookup after an ambiguous submit. The lookup is a second
  * broker call on the order path, and every engine order goes through it,

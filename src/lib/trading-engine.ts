@@ -15,6 +15,7 @@ import {
   BrokerError,
   CancelAllPartialError,
   isAmbiguousOrderError,
+  isNotWorkingOrder,
   lookupOrderByClientId,
 } from "./brokers";
 import type { BrokerClient, BrokerAccount, BrokerPosition, BrokerOrder, PlaceOrderParams } from "./brokers";
@@ -1823,6 +1824,22 @@ export async function placeEngineOrder(
         "Engine order outcome unknown: lookup by client_order_id found nothing"
       );
       throw err;
+    }
+    if (isNotWorkingOrder(found)) {
+      // The broker has it, but rejected, canceled or expired with nothing
+      // filled: a refusal, not a placed order. A definite answer, so the
+      // caller neither counts it nor records a PENDING row for it.
+      log.warn(
+        { symbol: params.symbol, side: params.side, clientOrderId, orderId: found.id, status: found.status },
+        "Engine order found by client_order_id but not working; treated as refused"
+      );
+      const refused = new BrokerError(
+        `Order ${found.id} found by client_order_id with status ${found.status}`,
+        400,
+        "The broker did not accept the order"
+      );
+      refused.clientOrderId = clientOrderId;
+      throw refused;
     }
     log.warn(
       { symbol: params.symbol, side: params.side, clientOrderId, orderId: found.id, outcome: err.orderOutcome },

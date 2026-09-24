@@ -147,6 +147,28 @@ describe("placeEngineOrder: ambiguous outcome", () => {
     expect((err as BrokerError).clientOrderId).toBe(calls.placed[0]?.clientOrderId);
   });
 
+  it("a found order that was rejected is a refusal, not placed, and is not counted", async () => {
+    const engine = runningEngine();
+    const { client, calls } = fakeClient({
+      place: async () => { throw timeoutError(); },
+      lookup: async () => ({ ...brokerOrder("ord-dead"), status: "rejected" }),
+    });
+
+    const err = await placeEngineOrder(client, BUY, engine).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BrokerError);
+    expect((err as BrokerError).orderOutcome).toBeNull();
+    expect((err as BrokerError).clientOrderId).toBe(calls.placed[0]?.clientOrderId);
+
+    const before = { orders: engine.recentOrderTimestamps.length, notional: engine.dailyNotional };
+    const res = await recordFailedEngineBuy(engine, {
+      symbol: "NVDA", signal: "tactical_entry", qty: 10, buyNotional: 1001, err, source: "engine_tactical",
+    });
+    expect(res.unconfirmed).toBe(false);
+    expect(engine.recentOrderTimestamps.length).toBe(before.orders);
+    expect(engine.dailyNotional).toBe(before.notional);
+  });
+
   it("does not look up a definite refusal", async () => {
     const engine = runningEngine();
     const refusal = new BrokerError("Alpaca order 403: insufficient buying power", 400, "Insufficient buying power for this order");
