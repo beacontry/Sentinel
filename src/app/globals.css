@@ -183,6 +183,33 @@
   text-transform: uppercase;
 }
 
+/* Readout tiles that keep every money figure whole. A figure never breaks
+   mid-number (a sign cut off from its digits is a misread), so the tile
+   has to fit its widest token instead:
+
+   - tile-grid: at most --tile-cols across, but no tile narrower than
+     --tile-min (the widest token at the 12px floor, plus padding). A
+     figure too wide for that many columns drops a column.
+   - figure-fit: the tile's ladder size (--figure-max, stepped by
+     container query) or smaller, down to the 12px floor, so --figure-ch
+     characters of the mono face (0.6em advance) fit the tile's width.
+
+   Both are set by the readout from the formatted strings; see
+   src/components/trader/account-readout.tsx. */
+@utility tile-grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, max(var(--tile-min, 0px), (100% - (var(--tile-cols, 2) - 1) * 0.5rem) / var(--tile-cols, 2))), 1fr)
+  );
+}
+
+@utility figure-fit {
+  font-size: clamp(var(--text-xs), 100cqi / (var(--figure-ch, 1) * 0.6 + 0.4), var(--figure-max, var(--text-base)));
+  line-height: 1.3;
+}
+
 @layer base {
   * { margin: 0; padding: 0; box-sizing: border-box; }
 

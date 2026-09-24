@@ -105,22 +105,28 @@ describe("DeskReadout", () => {
     expect(html).toMatch(/Total equity<\/dt><dd class="[^"]*text-2xl[^"]*">\$10,000.00</);
   });
 
-  it("sizes tile figures to the tile and wraps them rather than overflowing", () => {
+  it("fits tile figures whole instead of splitting or overflowing them", () => {
     // "both" is the widest format: "+$1,234.57 (+10.00%)" does not fit a
-    // half-width phone tile, so a nowrap figure ran off the page.
+    // half-width phone tile. A nowrap figure ran off the page, and
+    // wrap-anywhere split it mid-number; the tiles now size to the widest
+    // whole token (tile-grid and figure-fit, checked in a browser by
+    // shots/tile-check).
     const html = renderToStaticMarkup(
       createElement(DeskReadout, { account, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "both" }),
     );
-    expect(html).toContain("wrap-anywhere");
-    expect(html).not.toContain("whitespace-nowrap");
-    expect(html).toContain("@min-[11.5rem]:text-xl");
+    expect(html).not.toContain("wrap-anywhere");
+    expect(html).toContain("tile-grid");
+    expect(html).toContain("figure-fit");
+    expect(html).toContain("@min-[11.5rem]:[--figure-max:var(--text-xl)]");
+    expect(html).toMatch(/--figure-ch:\d/);
+    expect(html).toMatch(/--tile-min:calc\([\d.]+ \* 0\.45rem \+ 1\.75rem\)/);
   });
 
   it("shows percents only against a real basis", () => {
     const withBasis = renderToStaticMarkup(
       createElement(DeskReadout, { account: { ...account, equity: 1000 }, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "both" }),
     );
-    expect(withBasis).toContain("+$100.00 (+10.00%)");
+    expect(withBasis.replace(/<[^>]+>/g, "")).toContain("+$100.00 (+10.00%)");
     const noBasis = renderToStaticMarkup(
       createElement(DeskReadout, { account: null, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "both" }),
     );

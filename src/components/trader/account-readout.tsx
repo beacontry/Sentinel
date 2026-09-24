@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Inset } from "@/components/ui/card";
-import { SignedValue } from "@/components/ui/signed-value";
+import { SignedValue, signedValueCh } from "@/components/ui/signed-value";
 import type { PnlFormat } from "@/lib/format-pnl";
 import { DeskPanel } from "./desk-panel";
 import type { TraderAnalytics, TraderData } from "./types";
@@ -18,12 +18,13 @@ import { usd } from "./types";
  *   trades today.
  *
  * Every gain or loss goes through SignedValue, so direction is printed,
- * not only coloured. Tile values size to their tile (a container query),
- * so a six-figure balance steps down a size before it has to wrap. When a
- * figure still does not fit (the "both" P&L format, "+$1,234.57 (+10.00%)",
- * in a half-width phone tile) it wraps inside the tile, at the space before
- * the percent first: a tile that runs past the page edge cuts the figure
- * off and scrolls the whole desk sideways.
+ * not only coloured. A figure is never split mid-number: the "both" P&L
+ * format breaks only between "+$1,234.57" and "(+10.00%)", and the tiles
+ * fit the widest whole token instead (tile-grid and figure-fit in
+ * globals.css). Each tile row steps its figures down from the container
+ * ladder towards the 12px floor to fit, and a figure too wide even at the
+ * floor drops the grid a column. A tile that ran past the page edge would
+ * cut the figure off and scroll the whole desk sideways.
  */
 
 type Account = NonNullable<TraderData["brokerAccount"]>;
@@ -33,12 +34,24 @@ function Tile({ label, children, sub }: { label: string; children: ReactNode; su
   return (
     <Inset className="@container min-w-0">
       <dt className="eyebrow text-text-muted">{label}</dt>
-      <dd className="mt-1 wrap-anywhere font-mono text-base font-semibold text-text-primary tabular-nums @min-[9.5rem]:text-lg @min-[11.5rem]:text-xl">
+      <dd className="mt-1 figure-fit font-mono font-semibold text-text-primary tabular-nums [--figure-max:var(--text-base)] @min-[9.5rem]:[--figure-max:var(--text-lg)] @min-[11.5rem]:[--figure-max:var(--text-xl)]">
         {children}
       </dd>
-      {sub && <dd className="mt-0.5 wrap-anywhere font-mono text-xs text-text-muted tabular-nums">{sub}</dd>}
+      {sub && <dd className="mt-0.5 font-mono text-xs text-text-muted tabular-nums">{sub}</dd>}
     </Inset>
   );
+}
+
+/**
+ * The custom properties a tile row sizes itself from: the widest main
+ * figure (in ch) for figure-fit, and the widest token of any line,
+ * figure or sub-line, at the 12px floor for the grid's minimum tile.
+ * 0.45rem is one ch of the mono face at 12px; 1.75rem is the tile's
+ * padding and border with a little slack.
+ */
+function tileRowVars(figureCh: number, subCh = 0): CSSProperties {
+  const widest = Math.max(figureCh, subCh);
+  return { "--figure-ch": figureCh, "--tile-min": `calc(${widest} * 0.45rem + 1.75rem)` } as CSSProperties;
 }
 
 function Balance({ label, children }: { label: string; children: ReactNode }) {
@@ -66,6 +79,9 @@ export function DeskReadout({ account, todayPnl, lifetimePnl, pnlFormat }: DeskR
   const realized = lifetimePnl?.realizedPnl ?? todayPnl?.realizedPnl ?? 0;
   const unrealized = lifetimePnl?.unrealizedPnl ?? todayPnl?.unrealizedPnl ?? 0;
   const hasPnl = Boolean(lifetimePnl || todayPnl);
+  // An eight-figure equity is wider than a phone at display size: it steps
+  // down to fit rather than running past the card.
+  const equity = account ? usd(account.equity) : "—";
 
   return (
     <section
@@ -77,10 +93,10 @@ export function DeskReadout({ account, todayPnl, lifetimePnl, pnlFormat }: DeskR
       </h2>
 
       <div className="grid gap-3 md:grid-cols-2 md:gap-6">
-        <dl className="min-w-0">
+        <dl className="@container min-w-0" style={{ "--figure-ch": equity.length } as CSSProperties}>
           <dt className="eyebrow text-text-muted">Total equity</dt>
-          <dd className="mt-1 font-mono text-2xl font-semibold text-text-primary tabular-nums">
-            {account ? usd(account.equity) : "—"}
+          <dd className="mt-1 figure-fit font-mono font-semibold text-text-primary tabular-nums [--figure-max:var(--text-2xl)]">
+            {equity}
           </dd>
           {todayPnl && (
             <>
@@ -114,7 +130,18 @@ export function DeskReadout({ account, todayPnl, lifetimePnl, pnlFormat }: DeskR
       </div>
 
       {hasPnl && (
-        <dl className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <dl
+          className="tile-grid [--tile-cols:2] md:[--tile-cols:4]"
+          style={tileRowVars(
+            Math.max(
+              signedValueCh(total, basis, pnlFormat),
+              signedValueCh(realized, basis, pnlFormat),
+              signedValueCh(unrealized, basis, pnlFormat),
+              String(todayPnl?.tradesCount ?? 0).length,
+            ),
+            lifetimePnl ? signedValueCh(lifetimePnl.realizedPnlToday, basis, pnlFormat, false) : 0,
+          )}
+        >
           <Tile label="Total P&L">
             <SignedValue value={total} basis={basis} format={pnlFormat} />
           </Tile>
@@ -143,24 +170,36 @@ export function DeskReadout({ account, todayPnl, lifetimePnl, pnlFormat }: DeskR
 export function PerformanceAnalytics({ analytics }: { analytics: TraderAnalytics }) {
   // Profit factor with no losing trade is undefined, sent as 999: shown as ∞.
   const pf = analytics.profitFactor === 999 ? "∞" : (analytics.profitFactor ?? 0).toFixed(2);
+  const winRate = `${(analytics.winRate ?? 0).toFixed(1)}%`;
+  const avgWin = usd(analytics.avgWin ?? 0);
+  const avgLoss = usd(analytics.avgLoss ?? 0);
+  const maxDrawdown = usd(analytics.maxDrawdown ?? 0);
+  const figureCh = Math.max(
+    signedValueCh(analytics.netPnl ?? 0),
+    winRate.length,
+    pf.length,
+    avgWin.length,
+    avgLoss.length,
+    maxDrawdown.length,
+  );
   return (
     <DeskPanel id="trader-analytics" title="Performance" description="Closed trades, all time." container>
-      <dl className="grid grid-cols-2 gap-2 @xl:grid-cols-3 @4xl:grid-cols-6">
+      <dl className="tile-grid [--tile-cols:2] @xl:[--tile-cols:3] @4xl:[--tile-cols:6]" style={tileRowVars(figureCh)}>
         <Tile label="Net P&L">
           <SignedValue value={analytics.netPnl ?? 0} />
         </Tile>
         <Tile label="Win rate" sub={`${analytics.winningTrades}W / ${analytics.losingTrades}L`}>
-          {(analytics.winRate ?? 0).toFixed(1)}%
+          {winRate}
         </Tile>
         <Tile label="Profit factor">{pf}</Tile>
         <Tile label="Avg win">
-          <span className="text-bullish">{usd(analytics.avgWin ?? 0)}</span>
+          <span className="text-bullish">{avgWin}</span>
         </Tile>
         <Tile label="Avg loss">
-          <span className="text-bearish">{usd(analytics.avgLoss ?? 0)}</span>
+          <span className="text-bearish">{avgLoss}</span>
         </Tile>
         <Tile label="Max drawdown">
-          <span className="text-bearish">{usd(analytics.maxDrawdown ?? 0)}</span>
+          <span className="text-bearish">{maxDrawdown}</span>
         </Tile>
       </dl>
       <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-[var(--color-hairline-inner)] pt-3 text-xs">
