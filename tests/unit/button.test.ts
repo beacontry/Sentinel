@@ -39,7 +39,15 @@ describe("Button sizes", () => {
     const classes = buttonClassList(render({ size: "sm" }));
     expect(classes).toContain("min-h-9");
     expect(classes).toContain("relative");
-    expect(classes).toContain("before:-inset-1.5");
+    expect(classes).toContain("before:-inset-y-1.5");
+  });
+
+  // A sideways overhang paints over the previous button in a gap-0.5 or
+  // gap-1 row and takes the click on its edge (Edit opening Delete).
+  it("pads the sm hit area vertically only, never onto a neighbour", () => {
+    const classes = buttonClassList(render({ size: "sm" }));
+    expect(classes).toContain("before:inset-x-0");
+    expect(classes.some((c) => /^before:-inset(-x)?-/.test(c) && !c.startsWith("before:-inset-y-"))).toBe(false);
   });
 
   // `.relative` is emitted after `.absolute` in the built CSS, so a sm
