@@ -525,6 +525,7 @@ The page keeps data orchestration only.
 10. **Optimizer.** `selectedId` becomes its own state. Only apply a detail response whose ID matches, and have the poll fetch `selectedId` (`optimizer/page.tsx:118-196`).
 11. **Leaderboard preferences** (`settings/page.tsx:1023-1046`). An error state renders a retry, and Save is only enabled after a successful load.
 12. **URL tabs.** Tax Report, Reports and Earnings use `useUrlParam` (`tax/page.tsx:78-81`, `reports/page.tsx:35`, `earnings/page.tsx:38`).
+13. **Tax Center and Tax Report disagree on the same year.** With the same defaults, the Tax Center (`/api/tax/report`) showed 18 lots matched, $3,540.86 net and $635.99 tax, while the Tax Report (`/api/tax/form8949`) showed 13 lots, $1,223.11 and $269.08 (Stage 3 review, 2026-09-24). The divergence predates the redesign. Find which lot matcher is wrong and make both pages read one calculation; until then the Tax Center line only states its defaults and does not claim the Tax Report edits its figure.
 
 ### Stage 4 verification
 
