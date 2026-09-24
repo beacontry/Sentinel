@@ -38,9 +38,20 @@ import { PRESET_LABELS } from "@/lib/strategy-presets";
 import { TraderTaxCallouts } from "@/components/trader/tax-callouts";
 import {
   applyEngineResponse,
+  diffRiskProfile,
+  emptyRiskForm,
   engineControls,
+  hasLoaded,
+  initialLoadState,
   lastKnownMode,
+  loadFailed,
+  loadStarted,
+  loadSucceeded,
+  mtmToggleBody,
+  profileToRiskForm,
+  riskFormToEngineParams,
   syncedPickerMode,
+  type LoadState,
 } from "@/lib/trader-view";
 
 // "Adaptive" doesn't have its own strategy preset — it picks one of the 7
@@ -180,7 +191,17 @@ async function sendCommand(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ command, ...payload }),
     });
-    return await res.json();
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      // A refusal must always carry a string error, whatever its body shape
+      // (the tier gate and the shutdown refusal answer an object).
+      const error =
+        (typeof body?.error === "string" && body.error) ||
+        (typeof body?.error?.message === "string" && body.error.message) ||
+        `Command failed (${res.status})`;
+      return { ...(body ?? {}), error };
+    }
+    return body ?? { error: "Empty response from the command route" };
   } catch {
     return { error: "Failed to send command" };
   }
@@ -262,19 +283,13 @@ export default function TraderPage() {
   // Batch 2 — position detail side-sheet. Stores the symbol currently
   // open (or null). Click on any position row to populate.
   const [detailSymbol, setDetailSymbol] = useState<string | null>(null);
-  const [riskForm, setRiskForm] = useState<Record<string, string>>({
-    accountSize: "",
-    maxDailyLossPct: "",
-    maxDrawdownPct: "",
-    maxPositionPct: "",
-    maxPositionSize: "",
-    maxSingleTradeLoss: "",
-    maxExposureMultiplier: "",
-    trailActivationProfitPct: "",
-    trailActivationBars: "",
-    maxSectorExposurePct: "",
-    earningsBlackoutDays: "",
-  });
+  // The form stays disabled until the saved profile has loaded: a Save from
+  // a blank, unloaded form used to overwrite every stored override with
+  // null. riskLoaded is the snapshot the Save diffs against.
+  const [riskForm, setRiskForm] = useState<Record<string, string>>(emptyRiskForm);
+  const [riskLoaded, setRiskLoaded] = useState<Record<string, string>>(emptyRiskForm);
+  const [riskLoad, setRiskLoad] = useState<LoadState>(initialLoadState);
+  const [riskSaveError, setRiskSaveError] = useState<string | null>(null);
   const [riskSaving, setRiskSaving] = useState(false);
   const [riskSaved, setRiskSaved] = useState(false);
 
@@ -282,39 +297,49 @@ export default function TraderPage() {
   const [summarizing, setSummarizing] = useState<Set<string>>(new Set());
   const [summaryByTradeId, setSummaryByTradeId] = useState<Record<string, string>>({});
 
-  // Phase 5 — MTM election state, loaded from /api/tax-status
+  // Phase 5 — MTM election state, loaded from /api/tax-status. The checkbox
+  // stays disabled until the status has loaded, so it never re-asserts from
+  // an unknown state.
   const [taxStatus, setTaxStatus] = useState<TaxStatus | null>(null);
+  const [taxLoad, setTaxLoad] = useState<LoadState>(initialLoadState);
   const [mtmSaving, setMtmSaving] = useState(false);
 
   async function loadTaxStatus() {
+    setTaxLoad(loadStarted);
     try {
       const res = await fetch("/api/tax-status");
-      if (res.ok) setTaxStatus(await res.json());
+      if (!res.ok) {
+        setTaxLoad((s) => loadFailed(s, `Could not load your tax election (${res.status}).`));
+        return;
+      }
+      setTaxStatus(await res.json());
+      setTaxLoad((s) => loadSucceeded(s, Date.now()));
     } catch {
-      /* non-critical */
+      setTaxLoad((s) => loadFailed(s, "Could not load your tax election."));
     }
   }
 
   async function toggleMtm(next: boolean) {
+    if (!hasLoaded(taxLoad)) return;
     setMtmSaving(true);
     try {
       const res = await fetch("/api/tax-status", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          hasTraderTaxStatus: next,
-          mtmElectionYear: next ? new Date().getFullYear() : null,
-          notes: taxStatus?.notes ?? null,
-        }),
+        // Notes are left out so the route keeps them; a re-assert keeps the
+        // prior election year.
+        body: JSON.stringify(mtmToggleBody(next, taxStatus, new Date().getFullYear())),
       });
       if (res.ok) {
         setTaxStatus(await res.json());
-        // Engine reads tax status at start; surface a hint that the change
-        // takes effect on the next engine start (or next scan for the
-        // wash-sale set refresh — capped at 5 min).
+        // Engine reads tax status at start; the wash-sale set refreshes on
+        // the next scan (capped at 5 min).
+        toast({ type: "success", message: "Tax election saved. It applies on the next engine start." });
+      } else {
+        toast({ type: "error", message: `Could not save your tax election (${res.status}). Nothing changed.` });
       }
     } catch {
-      /* non-critical */
+      toast({ type: "error", message: "Could not save your tax election (network error). Nothing changed." });
     } finally {
       setMtmSaving(false);
     }
@@ -347,42 +372,26 @@ export default function TraderPage() {
   usePolling(load, POLLING_INTERVALS.traderDashboard);
 
   // Load saved risk profile overrides
-  useEffect(() => {
-    async function loadRiskProfile() {
-      try {
-        const res = await fetch("/api/risk-profile");
-        if (!res.ok) return;
-        const { profile } = await res.json();
-        if (profile) {
-          setRiskForm({
-            accountSize: profile.accountSize != null ? String(profile.accountSize) : "",
-            maxDailyLossPct: profile.maxDailyLossPct != null ? String(profile.maxDailyLossPct) : "",
-            maxDrawdownPct: profile.maxDrawdownPct != null ? String(profile.maxDrawdownPct) : "",
-            maxPositionPct: profile.maxPositionPct != null ? String(profile.maxPositionPct) : "",
-            maxPositionSize: profile.maxPositionSize != null ? String(profile.maxPositionSize) : "",
-            maxSingleTradeLoss: profile.maxSingleTradeLoss != null ? String(profile.maxSingleTradeLoss) : "",
-            maxExposureMultiplier: profile.maxExposureMultiplier != null ? String(profile.maxExposureMultiplier) : "",
-            // The risk profile stores the gate as a fraction (0.05 = 5%); the form
-            // surfaces it as a percent for readability — display × 100, save / 100.
-            trailActivationProfitPct: profile.trailActivationProfitPct != null
-              ? String(profile.trailActivationProfitPct * 100)
-              : "",
-            trailActivationBars: profile.trailActivationBars != null
-              ? String(profile.trailActivationBars)
-              : "",
-            // Stored as a percent (0..100); shown as-is.
-            maxSectorExposurePct: profile.maxSectorExposurePct != null
-              ? String(profile.maxSectorExposurePct)
-              : "",
-            earningsBlackoutDays: profile.earningsBlackoutDays != null
-              ? String(profile.earningsBlackoutDays)
-              : "",
-          });
-        }
-      } catch {
-        // Silent — use empty form (all engine defaults)
+  async function loadRiskProfile() {
+    setRiskLoad(loadStarted);
+    try {
+      const res = await fetch("/api/risk-profile");
+      if (!res.ok) {
+        setRiskLoad((s) => loadFailed(s, `Could not load your saved overrides (${res.status}).`));
+        return;
       }
+      const { profile } = await res.json();
+      // A null profile means every field is engine-decided: a real answer.
+      const form = profileToRiskForm(profile);
+      setRiskForm(form);
+      setRiskLoaded(form);
+      setRiskLoad((s) => loadSucceeded(s, Date.now()));
+    } catch {
+      setRiskLoad((s) => loadFailed(s, "Could not load your saved overrides."));
     }
+  }
+
+  useEffect(() => {
     loadRiskProfile();
   }, []);
 
@@ -492,17 +501,6 @@ export default function TraderPage() {
   const modeOptions = ENGINE_MODES.some((m) => m.value === engineMode)
     ? ENGINE_MODES
     : [...ENGINE_MODES, { value: engineMode, label: engineMode }];
-
-  async function handleCommand(cmd: string, payload: Record<string, unknown> = {}) {
-    setCmdLoading(cmd);
-    await sendCommand(cmd, payload);
-    setCmdLoading(null);
-    // Refresh data
-    try {
-      const res = await fetch("/api/trader/dashboard");
-      if (res.ok) setData(await res.json());
-    } catch { /* silent */ }
-  }
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -1116,8 +1114,9 @@ export default function TraderPage() {
                 type="checkbox"
                 checked={taxStatus?.hasTraderTaxStatus === true}
                 onChange={(e) => toggleMtm(e.target.checked)}
-                disabled={mtmSaving}
-                className="h-4 w-4 rounded border-border accent-accent cursor-pointer"
+                disabled={mtmSaving || !hasLoaded(taxLoad)}
+                aria-busy={taxLoad.status === "loading" || mtmSaving}
+                className="h-4 w-4 rounded border-border accent-accent cursor-pointer disabled:cursor-not-allowed"
               />
               <span className="text-sm text-text-secondary">
                 I have elected <span className="font-medium text-text-primary">§475(f) Mark-to-Market</span>
@@ -1126,6 +1125,18 @@ export default function TraderPage() {
                 )}
               </span>
             </label>
+            {taxLoad.status === "error" && !hasLoaded(taxLoad) && (
+              <div role="alert" className="mt-1 flex items-center gap-2 text-xs text-bearish">
+                <span>{taxLoad.error}</span>
+                <button
+                  type="button"
+                  onClick={() => loadTaxStatus()}
+                  className="text-accent hover:underline"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             <div className="text-xs text-text-muted mt-1">
               Self-attested. MTM traders are exempt from §1091 wash-sale rule. Election deadline was Apr 15 of the prior tax year — Beacontry does not file or validate.
             </div>
@@ -1487,8 +1498,16 @@ export default function TraderPage() {
             Only set fields you want to override. Empty fields use engine defaults.
           </p>
         </CardHeader>
+        {showRisk && riskLoad.status === "error" && !hasLoaded(riskLoad) && (
+          <div role="alert" className="mb-3 flex items-center gap-3 text-sm text-bearish">
+            <span>{riskLoad.error} Saving is off until they load, so nothing is overwritten.</span>
+            <Button variant="secondary" size="sm" onClick={() => loadRiskProfile()}>
+              Retry
+            </Button>
+          </div>
+        )}
         {showRisk && (
-          <div className="space-y-4">
+          <div className="space-y-4" aria-busy={riskLoad.status === "loading"}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {([
                 {
@@ -1579,9 +1598,10 @@ export default function TraderPage() {
                     value={riskForm[key]}
                     placeholder={placeholder}
                     onChange={(e) => setRiskForm({ ...riskForm, [key]: e.target.value })}
+                    disabled={!hasLoaded(riskLoad) || riskSaving}
                     className="font-mono"
                   />
-                  {riskForm[key] === "" && (
+                  {riskForm[key] === "" && hasLoaded(riskLoad) && (
                     <span className="text-[11px] text-text-muted mt-0.5 block">Engine decides</span>
                   )}
                 </div>
@@ -1592,53 +1612,67 @@ export default function TraderPage() {
                 variant="primary"
                 loading={riskSaving}
                 onClick={async () => {
+                  if (!hasLoaded(riskLoad)) return;
                   setRiskSaving(true);
                   setRiskSaved(false);
+                  setRiskSaveError(null);
                   try {
-                    // Build payload: null for empty fields, number for set fields.
-                    // trailActivationProfitPct is rendered as a percent (5 = 5%) but
-                    // the DB stores the fraction (0.05), so divide on the way out.
-                    const payload: Record<string, number | null> = {};
-                    for (const [k, v] of Object.entries(riskForm)) {
-                      if (v === "") {
-                        payload[k] = null;
-                      } else {
-                        const num = parseFloat(v);
-                        if (!isNaN(num)) {
-                          payload[k] = k === "trailActivationProfitPct" ? num / 100 : num;
-                        }
-                      }
-                    }
-
-                    // Persist to DB risk profile
-                    await fetch("/api/risk-profile", {
+                    // Only the fields changed from the loaded snapshot. A
+                    // field the user never touched is not sent, so the route
+                    // leaves it as stored.
+                    const payload = diffRiskProfile(riskLoaded, riskForm);
+                    const res = await fetch("/api/risk-profile", {
                       method: "PATCH",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify(payload),
                     });
-
-                    // Push to live engine (only non-null params)
-                    const engineParams: Record<string, number> = {};
-                    for (const [k, v] of Object.entries(payload)) {
-                      if (v != null) engineParams[k] = v;
+                    if (!res.ok) {
+                      const body = await res.json().catch(() => null);
+                      const msg = typeof body?.error === "string" ? body.error : `request failed (${res.status})`;
+                      setRiskSaveError(`Not saved: ${msg}. Your stored overrides are unchanged.`);
+                      return;
                     }
+                    const saved = await res.json().catch(() => null);
+                    const form = saved && "profile" in saved ? profileToRiskForm(saved.profile) : riskForm;
+                    setRiskForm(form);
+                    setRiskLoaded(form);
+
+                    // Push the overrides that are set to the live engine.
+                    const engineParams = riskFormToEngineParams(form);
                     if (Object.keys(engineParams).length > 0) {
-                      await handleCommand("risk", { params: engineParams });
+                      const result = await sendCommand("risk", { params: engineParams });
+                      if (result.error) {
+                        setRiskSaveError(
+                          `Saved to your profile, but the engine did not take it: ${result.error}. It applies on the next engine start.`,
+                        );
+                        return;
+                      }
                     }
 
                     setRiskSaved(true);
                     setTimeout(() => setRiskSaved(false), 3000);
+                  } catch {
+                    setRiskSaveError("Save failed with a network error. Reload to see what is stored.");
                   } finally {
                     setRiskSaving(false);
                   }
                 }}
-                disabled={cmdLoading !== null}
+                disabled={
+                  cmdLoading !== null ||
+                  !hasLoaded(riskLoad) ||
+                  Object.keys(diffRiskProfile(riskLoaded, riskForm)).length === 0
+                }
               >
                 Save Overrides
               </Button>
               {riskSaved && (
                 <span className="flex items-center gap-1 text-sm text-bullish animate-fade-in">
                   <Check className="w-4 h-4" /> Saved
+                </span>
+              )}
+              {riskSaveError && (
+                <span role="alert" className="text-sm text-bearish">
+                  {riskSaveError}
                 </span>
               )}
             </div>

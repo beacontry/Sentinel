@@ -90,3 +90,134 @@ export function engineControls(
     switchTo: running && engine?.mode != null && engine.mode !== pickerMode,
   };
 }
+
+// ─── Load state ─────────────────────────────────────────────────────
+
+/**
+ * One source's load state. `error` with a non-null lastSuccessAt means the
+ * last good data is still on screen but a refresh failed.
+ */
+export interface LoadState {
+  status: "loading" | "ready" | "error";
+  lastSuccessAt: number | null;
+  error: string | null;
+}
+
+export function initialLoadState(): LoadState {
+  return { status: "loading", lastSuccessAt: null, error: null };
+}
+
+/** A (re)try starts. Data already loaded stays ready while it runs. */
+export function loadStarted(s: LoadState): LoadState {
+  return s.lastSuccessAt === null ? { ...s, status: "loading", error: null } : s;
+}
+
+export function loadSucceeded(_s: LoadState, now: number): LoadState {
+  return { status: "ready", lastSuccessAt: now, error: null };
+}
+
+/** Always a new object, so each failed poll re-renders the stale marker. */
+export function loadFailed(s: LoadState, error: string): LoadState {
+  return { status: "error", lastSuccessAt: s.lastSuccessAt, error };
+}
+
+/** Whether the source has produced data the user can act on. */
+export function hasLoaded(s: LoadState): boolean {
+  return s.lastSuccessAt !== null;
+}
+
+// ─── Risk overrides form ────────────────────────────────────────────
+
+export const RISK_FORM_KEYS = [
+  "accountSize",
+  "maxDailyLossPct",
+  "maxDrawdownPct",
+  "maxPositionPct",
+  "maxPositionSize",
+  "maxSingleTradeLoss",
+  "maxExposureMultiplier",
+  "trailActivationProfitPct",
+  "trailActivationBars",
+  "maxSectorExposurePct",
+  "earningsBlackoutDays",
+] as const;
+
+export type RiskFormKey = (typeof RISK_FORM_KEYS)[number];
+
+export function emptyRiskForm(): Record<RiskFormKey, string> {
+  return Object.fromEntries(RISK_FORM_KEYS.map((k) => [k, ""])) as Record<RiskFormKey, string>;
+}
+
+/**
+ * The stored profile as form strings. trailActivationProfitPct is stored as
+ * a fraction (0.05) and shown as a percent (5); the rest are shown as
+ * stored. A null profile means every field is engine-decided.
+ */
+export function profileToRiskForm(
+  profile: Partial<Record<RiskFormKey, number | null>> | null | undefined,
+): Record<RiskFormKey, string> {
+  const form = emptyRiskForm();
+  if (!profile) return form;
+  for (const k of RISK_FORM_KEYS) {
+    const v = profile[k];
+    if (v == null) continue;
+    form[k] = String(k === "trailActivationProfitPct" ? v * 100 : v);
+  }
+  return form;
+}
+
+function formValue(k: RiskFormKey, raw: string): number | null | undefined {
+  const v = raw.trim();
+  if (v === "") return null;
+  const num = parseFloat(v);
+  if (isNaN(num)) return undefined;
+  return k === "trailActivationProfitPct" ? num / 100 : num;
+}
+
+/**
+ * The PATCH body: only the fields the user changed from the loaded
+ * snapshot. A field cleared by the user becomes null (engine decides); a
+ * field left alone is not sent, so the route leaves it as stored.
+ */
+export function diffRiskProfile(
+  loaded: Record<string, string>,
+  form: Record<string, string>,
+): Record<string, number | null> {
+  const out: Record<string, number | null> = {};
+  for (const k of RISK_FORM_KEYS) {
+    const before = (loaded[k] ?? "").trim();
+    const after = (form[k] ?? "").trim();
+    if (before === after) continue;
+    const v = formValue(k, after);
+    if (v === undefined) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/** The overrides that are set, for the live-engine risk push. */
+export function riskFormToEngineParams(form: Record<string, string>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const k of RISK_FORM_KEYS) {
+    const v = formValue(k, form[k] ?? "");
+    if (v != null) out[k] = v;
+  }
+  return out;
+}
+
+// ─── Tax election (§475(f) MTM) ─────────────────────────────────────
+
+/**
+ * PUT body for the MTM checkbox. Notes are never sent (the route leaves
+ * them as stored). Re-asserting keeps a prior election year by omitting it;
+ * a first election records the current year; unticking clears it.
+ */
+export function mtmToggleBody(
+  next: boolean,
+  current: { mtmElectionYear: number | null } | null,
+  currentYear: number,
+): { hasTraderTaxStatus: boolean; mtmElectionYear?: number | null } {
+  if (!next) return { hasTraderTaxStatus: false, mtmElectionYear: null };
+  if (current?.mtmElectionYear != null) return { hasTraderTaxStatus: true };
+  return { hasTraderTaxStatus: true, mtmElectionYear: currentYear };
+}
