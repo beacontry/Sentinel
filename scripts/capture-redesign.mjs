@@ -10,10 +10,11 @@
 //           failure:
 //             - keyboard pass: Tab through every stop, each shows a 2px
 //               outline (on itself or on a focus-within wrapper);
-//             - hit areas: every control is at least 44px tall, counting a
-//               ::before / ::after hit-area pseudo-element;
-//             - hit overlap: 1px inside each edge of every control hits
-//               that control, not a neighbour's hit-area pseudo;
+//             - hit areas: every control is at least 44px tall, and every
+//               button 44px wide, counting a ::before / ::after hit-area
+//               pseudo-element;
+//             - hit overlap: 1px inside each edge of every control, and of
+//               its hit box, hits that control, not a neighbour's pseudo;
 //             - the primary button hover paints accent-hover (not struck
 //               through by a later class);
 //             - a positioned sm Button keeps its absolute position;
@@ -22,7 +23,8 @@
 //   (default) The app routes, against a running instance (BASE_URL,
 //           default http://localhost:3000) with a session cookie in
 //           BEACONTRY_SESSION, as in capture-readme-assets.mjs. Never point
-//           this at production.
+//           this at production. Runs the hit-area and hit-overlap checks
+//           once per width (light theme) and exits non-zero on a failure.
 //
 // Both capture 390x844 and 1440x900 at fullPage in every theme plus
 // colour-blind mode, assert scrollWidth <= innerWidth on every capture,
@@ -153,9 +155,75 @@ async function keyboardPass(page, where) {
   return stops;
 }
 
-/** Every interactive control reaches 44px, counting a hit-area pseudo-element. */
+/**
+ * The box a control can be clicked in: its own box, grown by a ::before
+ * or ::after pseudo, and by a wrapping <label> (Toggle).
+ *
+ * - On a positioned control the pseudo is its own hit-area pad. The sm
+ *   Button's is centred on it (left 50% and a -50% translate), so the pad
+ *   is taken as centred: the larger of the two widths and heights.
+ * - On a static control the pseudo belongs to the nearest positioned
+ *   ancestor: the stretched link of a tile (after:inset-0), which covers
+ *   that ancestor. It is placed from the ancestor's box.
+ *
+ * Installed in the page as window.__hitBox by a string evaluate, which
+ * the app's CSP does not see (an eval() inside a function would need
+ * unsafe-eval).
+ */
+const HIT_BOX = `(el) => {
+  const rect = el.getBoundingClientRect();
+  let box = { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+  const grow = (o) => {
+    box = {
+      left: Math.min(box.left, o.left),
+      right: Math.max(box.right, o.right),
+      top: Math.min(box.top, o.top),
+      bottom: Math.max(box.bottom, o.bottom),
+    };
+  };
+  const positioned = getComputedStyle(el).position !== "static";
+  let pad = false;
+  for (const pseudo of ["::before", "::after"]) {
+    const s = getComputedStyle(el, pseudo);
+    if (s.content === "none" || s.position !== "absolute") continue;
+    const pw = parseFloat(s.width);
+    const ph = parseFloat(s.height);
+    if (!Number.isFinite(pw) || !Number.isFinite(ph)) continue;
+    if (positioned) {
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      grow({ left: cx - pw / 2, right: cx + pw / 2, top: cy - ph / 2, bottom: cy + ph / 2 });
+      pad = true;
+    } else {
+      let cb = el.parentElement;
+      while (cb && getComputedStyle(cb).position === "static") cb = cb.parentElement;
+      if (!cb) continue;
+      const c = cb.getBoundingClientRect();
+      const left = c.left + cb.clientLeft + parseFloat(s.left);
+      const top = c.top + cb.clientTop + parseFloat(s.top);
+      grow({ left, right: left + pw, top, bottom: top + ph });
+    }
+  }
+  const label = el.closest("label");
+  if (label) grow(label.getBoundingClientRect());
+  return { ...box, pad, w: box.right - box.left, h: box.bottom - box.top };
+}`;
+
+/**
+ * Every interactive control reaches 44px tall, counting a hit-area
+ * pseudo-element, and every button reaches 44px wide as well: an
+ * icon-only sm button draws 36px and must pad sideways too. Text links
+ * and form fields are measured for height only; their width is their
+ * text or their layout.
+ */
+async function installHitBox(page) {
+  await page.evaluate(`window.__hitBox = ${HIT_BOX}`);
+}
+
 async function hitAreas(page, where) {
+  await installHitBox(page);
   const short = await page.evaluate(() => {
+    const hitBox = window.__hitBox;
     const out = [];
     const sel = 'button, a[href], input:not([type="hidden"]), select, textarea, [role="switch"], [role="tab"]';
     for (const el of document.querySelectorAll(sel)) {
@@ -163,20 +231,10 @@ async function hitAreas(page, where) {
       // Not a target: hidden, or a visually hidden native mirror (the
       // Radix Select keeps a 1px <select aria-hidden> for forms).
       if (rect.width <= 1 || rect.height <= 1 || el.closest('[aria-hidden="true"]')) continue;
-      let h = rect.height;
-      for (const pseudo of ["::before", "::after"]) {
-        const s = getComputedStyle(el, pseudo);
-        if (s.content === "none" || s.position !== "absolute") continue;
-        const top = parseFloat(s.top);
-        const bottom = parseFloat(s.bottom);
-        const own = parseFloat(s.height);
-        if (Number.isFinite(own)) h = Math.max(h, own);
-        else if (Number.isFinite(top) && Number.isFinite(bottom)) h = Math.max(h, rect.height - top - bottom);
-      }
-      // A label wrapping the control counts (Toggle).
-      const label = el.closest("label");
-      if (label) h = Math.max(h, label.getBoundingClientRect().height);
-      if (h < 44 - 0.5) out.push(`${(el.getAttribute("aria-label") || el.textContent || el.tagName).trim().slice(0, 30)} (${h.toFixed(1)}px)`);
+      const { w, h } = hitBox(el);
+      const checkWidth = el.tagName === "BUTTON" || el.getAttribute("role") === "switch";
+      const name = (el.getAttribute("aria-label") || el.textContent || el.tagName).trim().slice(0, 30);
+      if (h < 44 - 0.5 || (checkWidth && w < 44 - 0.5)) out.push(`${name} (${w.toFixed(1)}x${h.toFixed(1)}px)`);
     }
     return out;
   });
@@ -184,13 +242,17 @@ async function hitAreas(page, where) {
 }
 
 /**
- * No control's hit area reaches over another's visible box. A hit-area
- * pseudo is painted above earlier siblings, so an overhang silently moves
- * the click on a neighbour's edge (Edit opening Delete). Probe 1px inside
- * each edge of every control: the point must hit that control.
+ * No control's hit area reaches over another's visible box, or over the
+ * part of another's hit area that makes it 44px. A hit-area pseudo is
+ * painted above earlier siblings, so an overhang silently moves the click
+ * on a neighbour's edge (Edit opening Delete). Probe 1px inside each edge
+ * of every control and of its hit-area pad: the point must hit that
+ * control.
  */
 async function hitOverlap(page, where) {
+  await installHitBox(page);
   const stolen = await page.evaluate(() => {
+    const hitBox = window.__hitBox;
     const out = [];
     const sel = 'button, a[href], input:not([type="hidden"]), select, textarea, [role="switch"], [role="tab"]';
     const name = (el) => (el.getAttribute("aria-label") || el.textContent || el.tagName).trim().slice(0, 30);
@@ -199,19 +261,30 @@ async function hitOverlap(page, where) {
       // elementFromPoint sees only the viewport, so bring each control in.
       el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
       const r = el.getBoundingClientRect();
+      const b = hitBox(el);
       const cx = r.left + r.width / 2;
       const cy = r.top + r.height / 2;
       const points = [
-        [r.left + 1, cy],
-        [r.right - 1, cy],
-        [cx, r.top + 1],
-        [cx, r.bottom - 1],
+        ["edge", r.left + 1, cy],
+        ["edge", r.right - 1, cy],
+        ["edge", cx, r.top + 1],
+        ["edge", cx, r.bottom - 1],
       ];
-      for (const [x, y] of points) {
+      // A pad's edges are probed as well. A stretched link's overlay is
+      // not: the actions laid over it are meant to take the click.
+      if (b.pad) {
+        points.push(
+          ["hit box", b.left + 1, cy],
+          ["hit box", b.right - 1, cy],
+          ["hit box", cx, b.top + 1],
+          ["hit box", cx, b.bottom - 1],
+        );
+      }
+      for (const [kind, x, y] of points) {
         if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
         const hit = document.elementFromPoint(x, y)?.closest(sel);
         if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) {
-          out.push(`${name(el)} edge at (${Math.round(x)},${Math.round(y)}) hits ${name(hit)}`);
+          out.push(`${name(el)} ${kind} at (${Math.round(x)},${Math.round(y)}) hits ${name(hit)}`);
           break;
         }
       }
@@ -306,6 +379,12 @@ async function main() {
             await page.waitForTimeout(400);
             await assertNoSideScroll(page, where);
             await page.screenshot({ path: path.join(OUT, `${slug(route)}-${themeName}-${vp.width}.png`), fullPage: true });
+            // Hit areas do not depend on the theme: measure them once per
+            // width, on the first theme.
+            if (themeName === THEMES[0][0]) {
+              await hitAreas(page, where);
+              await hitOverlap(page, where);
+            }
             report.push({ where });
           }
           await ctx.close();
