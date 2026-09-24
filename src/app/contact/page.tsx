@@ -34,7 +34,7 @@ export default function ContactPage() {
             href="/"
             className="flex items-center gap-2.5 text-text-primary hover:text-accent transition-colors"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent">
               <Radar className="h-4 w-4" />
             </div>
             <span className="font-semibold">Beacontry</span>
@@ -76,7 +76,7 @@ export default function ContactPage() {
               </p>
               <a
                 href="mailto:hello@beacontry.com?subject=Beacontry%20inquiry"
-                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover transition-colors"
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-hover transition-colors"
               >
                 <Mail className="h-4 w-4" />
                 hello@beacontry.com

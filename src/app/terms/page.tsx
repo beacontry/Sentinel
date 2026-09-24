@@ -17,7 +17,7 @@ export default function TermsPage() {
       <header className="border-b border-border bg-bg-secondary">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <Link href="/" className="flex items-center gap-2.5 text-text-primary hover:text-accent transition-colors">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent">
               <Radar className="h-4 w-4" />
             </div>
             <span className="font-semibold">Beacontry</span>

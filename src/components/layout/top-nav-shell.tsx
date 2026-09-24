@@ -161,7 +161,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
           <div className="flex w-full items-center gap-2 px-4 py-1.5">
             {/* Logo */}
             <Link href="/dashboard" className="flex items-center gap-2.5 shrink-0 mr-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-white">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-on-accent">
                 <BeacontryMark className="h-3.5 w-3.5" aria-label="Beacontry" />
               </div>
               <span className="text-sm font-semibold text-text-primary">Beacontry</span>
@@ -382,7 +382,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                 onClick={() => setMobileOpen(false)}
                 className="flex items-center gap-2.5"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent">
                   <BeacontryMark className="h-4 w-4" aria-label="Beacontry" />
                 </div>
                 <div>

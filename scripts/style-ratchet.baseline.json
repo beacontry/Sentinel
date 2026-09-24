@@ -3,7 +3,7 @@
   "text-[arbitrary size]": 18,
   "rounded-[arbitrary]": 0,
   "shadow-[arbitrary]": 0,
-  "text-white": 42,
+  "text-white": 6,
   "transition-all": 0,
   "focus(-visible):outline-none": 24,
   "outline-none without focus-visible ring": 39,

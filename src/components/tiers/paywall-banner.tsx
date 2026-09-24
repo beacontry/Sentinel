@@ -71,7 +71,7 @@ export function PaywallBanner({
         <div className="flex flex-col gap-1.5 lg:items-end">
           <Link
             href="/dashboard/billing"
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent-hover transition-colors whitespace-nowrap"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-on-accent hover:bg-accent-hover transition-colors whitespace-nowrap"
           >
             Upgrade to {tierLabel}
             <ArrowRight className="h-4 w-4" />

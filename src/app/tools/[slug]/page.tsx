@@ -148,7 +148,7 @@ export default async function PublicCalculatorPage({
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-[background-color,border-color,color,transform]"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-ld-on-accent hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-[background-color,border-color,color,transform]"
         >
           Sign up free
         </Link>

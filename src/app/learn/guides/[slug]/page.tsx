@@ -149,7 +149,7 @@ export default async function PublicGuidePage({
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-[background-color,border-color,color,transform,box-shadow]"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-ld-on-accent hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-[background-color,border-color,color,transform,box-shadow]"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

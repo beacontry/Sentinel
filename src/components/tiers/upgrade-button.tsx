@@ -53,7 +53,7 @@ export function UpgradeButton({
   const widthCls = fullWidth ? "w-full" : "";
   const styleCls =
     variant === "primary"
-      ? "bg-accent text-white hover:bg-accent-hover"
+      ? "bg-accent text-on-accent hover:bg-accent-hover"
       : "border border-border text-text-primary hover:border-accent hover:bg-accent/[0.06]";
   const baseCls = `inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold transition-colors duration-200 ${widthCls} ${styleCls} ${className}`;
 

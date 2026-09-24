@@ -111,7 +111,7 @@ export default function PublicLearnPage() {
               onClick={() => setActiveTab(tab.id)}
               className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 activeTab === tab.id
-                  ? "bg-ld-accent text-white"
+                  ? "bg-ld-accent text-ld-on-accent"
                   : "border border-ld-border bg-ld-card text-ld-text-secondary hover:border-ld-accent/40 hover:text-ld-text"
               }`}
             >
@@ -173,7 +173,7 @@ export default function PublicLearnPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-[background-color,border-color,color,transform,box-shadow]"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-ld-on-accent hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-[background-color,border-color,color,transform,box-shadow]"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

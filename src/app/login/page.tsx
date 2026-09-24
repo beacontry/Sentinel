@@ -182,7 +182,7 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center">
             <Link href="/" className="inline-flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-on-accent">
                 <BeacontryMark variant="full" className="h-6 w-6" aria-label="Beacontry" />
               </div>
               <span className="text-xl font-semibold text-text-primary">Beacontry</span>
@@ -248,7 +248,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-on-accent">
               <BeacontryMark variant="full" className="h-6 w-6" aria-label="Beacontry" />
             </div>
             <span className="text-xl font-semibold text-text-primary">Beacontry</span>

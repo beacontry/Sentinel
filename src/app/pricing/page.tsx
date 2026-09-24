@@ -291,7 +291,7 @@ export default function PricingPage() {
       <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-[background-color,border-color,color,box-shadow] duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-pop" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
         <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
           <Link href="/" className="flex items-center gap-3 text-lg font-bold tracking-tight">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-white">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-ld-on-accent">
               <BeacontryMark variant="full" className="h-8 w-8" aria-label="Beacontry" />
             </div>
             Beacontry
@@ -314,7 +314,7 @@ export default function PricingPage() {
 
           <div className="hidden items-center gap-3 md:flex">
             <ThemePicker variant="icon" />
-            <Link href="/register" className="rounded-lg bg-ld-accent px-5 py-3 text-base font-semibold text-white transition-[background-color,border-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop">
+            <Link href="/register" className="rounded-lg bg-ld-accent px-5 py-3 text-base font-semibold text-ld-on-accent transition-[background-color,border-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop">
               Get Started
             </Link>
           </div>
@@ -337,7 +337,7 @@ export default function PricingPage() {
                 </li>
               ))}
             </ul>
-            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-lg bg-ld-accent py-3 text-center text-base font-semibold text-white">
+            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-lg bg-ld-accent py-3 text-center text-base font-semibold text-ld-on-accent">
               Get Started
             </Link>
           </div>
@@ -371,7 +371,7 @@ export default function PricingPage() {
               }`}
             >
               {tier.highlight && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-ld-accent px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider text-white">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-ld-accent px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider text-ld-on-accent">
                   {tier.tag}
                 </div>
               )}
@@ -401,7 +401,7 @@ export default function PricingPage() {
                 href={tier.ctaHref}
                 className={`mt-8 inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-base font-semibold transition-[background-color,border-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 ${
                   tier.highlight
-                    ? "bg-ld-accent text-white hover:bg-ld-accent-dim hover:shadow-pop"
+                    ? "bg-ld-accent text-ld-on-accent hover:bg-ld-accent-dim hover:shadow-pop"
                     : "border border-ld-border text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06]"
                 }`}
               >
@@ -537,7 +537,7 @@ export default function PricingPage() {
             with a 7-day free trial.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <Link href="/register" className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-8 py-4 text-base font-semibold text-white transition-[background-color,border-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop">
+            <Link href="/register" className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-8 py-4 text-base font-semibold text-ld-on-accent transition-[background-color,border-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop">
               Sign up free <ArrowRight className="h-4 w-4" />
             </Link>
             <Link href="/register?plan=trader&cadence=month" className="rounded-lg border border-ld-border px-8 py-4 text-base font-semibold text-ld-text transition-[background-color,border-color,color,transform] duration-200 hover:-translate-y-0.5 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
