@@ -10,7 +10,7 @@
   "raw <button": 152,
   "backdrop-blur": 9,
   "-[#hex]": 4,
-  "rgb()/rgba() literal": 7,
+  "rgb()/rgba() literal": 6,
   "bg-white/ or bg-black/": 8,
   "state colour alpha tint": 106,
   "border-l-2/4 stripe": 0,
