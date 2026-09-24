@@ -18,9 +18,10 @@
 //   2. IDEMPOTENCY. Stripe retries failed webhooks for up to 3 days
 //      AND sometimes delivers the same event twice in quick succession
 //      for at-least-once semantics. We dedup via the unique event ID
-//      (`evt_xxx`) into the `stripe_events_processed` table — second
-//      delivery of the same event returns 200 immediately without
-//      re-applying side effects.
+//      (`evt_xxx`) into the `stripe_events_processed` table. A delivery
+//      of an event whose row is marked completed returns 200 without
+//      re-applying side effects; an uncompleted claim is retried (see
+//      claimEvent below), so a failed handler is never deduped.
 //
 //   3. NEVER BREAK ON UNKNOWN EVENTS. Stripe occasionally introduces
 //      new event types. We handle the 6 we registered for; anything
@@ -32,7 +33,7 @@
 // `pathIsCsrfExempt()` in csrf-init.tsx already includes /api/webhooks/.
 
 import { NextResponse, type NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema/users";
 import { stripeEventsProcessed } from "@/lib/db/schema/stripe";
@@ -92,29 +93,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Idempotency: record the event AFTER the handler succeeds — never before.
-  // The previous ordering inserted the dedup row first and rolled it back
-  // with a best-effort DELETE on handler failure; if that DELETE failed on
-  // the same DB blip that broke the handler, the event was permanently
-  // marked processed and Stripe's retry was silently swallowed (lost tier
-  // grant / downgrade). Handlers here are state-idempotent (tier + billing
-  // status are set-to-value), so a rare *concurrent* duplicate delivery that
-  // slips past the pre-check below is harmless; sequential Stripe retries are
-  // deduped by the recorded row.
-
-  // Claim the event atomically BEFORE handling (audit #83). The pre-check +
-  // post-success insert let two concurrent deliveries both pass the check and
-  // both run handleEvent — duplicating append-only side effects (audit rows,
-  // notifications). The unique constraint on event_id makes this INSERT the
-  // lock: zero rows returned ⇒ another delivery already claimed it ⇒ dedup.
-  const claimed = await db
-    .insert(stripeEventsProcessed)
-    .values({ eventId: event.id, eventType: event.type })
-    .onConflictDoNothing()
-    .returning({ eventId: stripeEventsProcessed.eventId });
-  if (claimed.length === 0) {
+  // Idempotency: claim first, mark completed after. The INSERT below is the
+  // lock (audit #83): the unique event_id lets exactly one delivery claim the
+  // event, so two concurrent deliveries cannot both run handleEvent and
+  // duplicate append-only side effects (audit rows, notifications).
+  //
+  // A claim is only "done" once completed_at is set, which happens after the
+  // handler succeeds. A redelivery is deduped (200) only for a completed row.
+  // A claim without completed_at is either in flight or was abandoned: a
+  // failed handler whose rollback DELETE also failed on the same DB blip, or
+  // a crash or redeploy mid-handler. While it is younger than the grace
+  // window we answer 409 so Stripe retries later; once older it is re-claimed
+  // and reprocessed. Handlers are state-idempotent (tier and billing status
+  // are set-to-value), so reprocessing an abandoned claim is safe.
+  const claim = await claimEvent(event);
+  if (claim === "completed") {
     log.info({ eventId: event.id, type: event.type }, "Duplicate webhook event ignored");
     return NextResponse.json({ received: true, deduped: true });
+  }
+  if (claim === "in_flight") {
+    log.warn({ eventId: event.id, type: event.type }, "Webhook event claimed but not completed; asking Stripe to retry");
+    return NextResponse.json(
+      { error: { code: "EVENT_IN_FLIGHT", message: "Event is being processed; please retry", retryable: true } },
+      { status: 409 }
+    );
   }
 
   let result: HandlerResult;
@@ -123,30 +125,91 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     log.error({ err: message, eventId: event.id, type: event.type }, "Webhook handler error");
-    // Roll back the claim so Stripe's automatic retry re-handles the event
-    // (otherwise a failed handler would be permanently deduped).
+    // Release the claim so Stripe's next retry re-handles the event at once.
+    // If this DELETE fails too, the uncompleted claim is re-claimed after the
+    // grace window, so the event is delayed, not lost.
     await db
       .delete(stripeEventsProcessed)
-      .where(eq(stripeEventsProcessed.eventId, event.id))
-      .catch(() => {});
+      .where(and(eq(stripeEventsProcessed.eventId, event.id), isNull(stripeEventsProcessed.completedAt)))
+      .catch((delErr: unknown) => {
+        log.error(
+          { err: delErr instanceof Error ? delErr.message : "Unknown error", eventId: event.id, type: event.type },
+          "Webhook claim rollback failed; event is reclaimable after the grace window"
+        );
+      });
     return NextResponse.json(
       { error: { code: "HANDLER_FAILED", message: "Webhook handler error; please retry", retryable: true } },
       { status: 500 }
     );
   }
 
-  // Handler succeeded — backfill the audit metadata on the claimed row.
+  // Handler succeeded: mark the claim completed and record the audit metadata.
+  // If this write fails the side effects have still been applied, so answer
+  // 200; the row stays uncompleted and a later redelivery past the grace
+  // window reprocesses it (state-idempotent handlers).
   await db
     .update(stripeEventsProcessed)
-    .set({ userId: result.userId ?? null, actionTaken: result.actionTaken ?? null })
+    .set({ completedAt: new Date(), userId: result.userId ?? null, actionTaken: result.actionTaken ?? null })
     .where(eq(stripeEventsProcessed.eventId, event.id))
-    .catch(() => {});
+    .catch((updErr: unknown) => {
+      log.error(
+        { err: updErr instanceof Error ? updErr.message : "Unknown error", eventId: event.id, type: event.type },
+        "Webhook completion marker failed; event may be reprocessed on redelivery"
+      );
+    });
 
   log.info(
     { eventId: event.id, type: event.type, action: result.actionTaken, userId: result.userId },
     "Webhook processed"
   );
   return NextResponse.json({ received: true });
+}
+
+/**
+ * How long a claim without completed_at is treated as in flight. Far above
+ * maxDuration (30s), so a live handler is never re-claimed underneath itself.
+ */
+const CLAIM_GRACE_MS = 5 * 60 * 1000;
+
+type ClaimOutcome = "claimed" | "completed" | "in_flight";
+
+/**
+ * Claim `event` for processing. "claimed" means this delivery owns it and
+ * must run the handler; "completed" means a previous delivery finished it;
+ * "in_flight" means another claim without completed_at is younger than the
+ * grace window (or the row vanished mid-check), so Stripe should retry.
+ */
+async function claimEvent(event: Stripe.Event): Promise<ClaimOutcome> {
+  const inserted = await db
+    .insert(stripeEventsProcessed)
+    .values({ eventId: event.id, eventType: event.type })
+    .onConflictDoNothing()
+    .returning({ eventId: stripeEventsProcessed.eventId });
+  if (inserted.length > 0) return "claimed";
+
+  // Re-claim an abandoned claim. The predicate is in the statement, so of two
+  // concurrent redeliveries only one can win it.
+  const reclaimed = await db
+    .update(stripeEventsProcessed)
+    .set({ processedAt: sql`now()` })
+    .where(
+      and(
+        eq(stripeEventsProcessed.eventId, event.id),
+        isNull(stripeEventsProcessed.completedAt),
+        lt(stripeEventsProcessed.processedAt, sql`now() - make_interval(secs => ${CLAIM_GRACE_MS / 1000})`)
+      )
+    )
+    .returning({ eventId: stripeEventsProcessed.eventId });
+  if (reclaimed.length > 0) {
+    log.warn({ eventId: event.id, type: event.type }, "Re-claimed an abandoned webhook claim; reprocessing");
+    return "claimed";
+  }
+
+  const [row] = await db
+    .select({ completedAt: stripeEventsProcessed.completedAt })
+    .from(stripeEventsProcessed)
+    .where(eq(stripeEventsProcessed.eventId, event.id));
+  return row?.completedAt ? "completed" : "in_flight";
 }
 
 /** What the handler did, for audit trail. */
