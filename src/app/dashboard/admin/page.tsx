@@ -2,6 +2,8 @@
 
 import { Fragment, useState, useEffect, useCallback, useRef } from "react";
 import { usePolling } from "@/hooks/usePolling";
+import { useRecoveryPoll } from "@/hooks/useRecoveryPoll";
+import { accessRegained } from "@/lib/recovery-poll";
 import { accessLossStatus } from "@/lib/trader-view";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -111,8 +113,8 @@ export default function AdminPage() {
   // Set when a read answers 401/402/403 or the session expires: every
   // user's data is cleared and the page shows only the denial. Loads compare
   // their generation against genRef, so one already in flight when access
-  // was lost cannot repaint the table.
-  const [accessDenied, setAccessDenied] = useState(false);
+  // was lost cannot repaint the table. Holds the denying status (401/402/403).
+  const [accessDenied, setAccessDenied] = useState<number | null>(null);
   const genRef = useRef(0);
 
   // Modal state
@@ -152,7 +154,7 @@ export default function AdminPage() {
         ? "Your session ended. Sign in again to continue."
         : "You do not have permission to access this page",
     );
-    setAccessDenied(true);
+    setAccessDenied(status);
     setLoading(false);
   }, []);
 
@@ -172,6 +174,9 @@ export default function AdminPage() {
       const data = await res.json();
       if (gen !== genRef.current) return;
       setUsers(data.users ?? []);
+      // A good read after a denial means access is back (the denial was a
+      // role-read outage, or the role was restored).
+      setAccessDenied(null);
     } catch {
       if (gen === genRef.current) setError("Failed to load users");
     } finally {
@@ -396,7 +401,22 @@ export default function AdminPage() {
   // Refresh engine rows every 30s so admin sees state changes. usePolling
   // also pauses when the tab is hidden so we don't burn API calls in
   // backgrounded admin tabs.
-  usePolling(loadEngines, 30_000, { enabled: !accessDenied });
+  usePolling(loadEngines, 30_000, { enabled: accessDenied === null });
+  // getCurrentRole answers null on a DB error, so a 403 can be an outage
+  // rather than a demotion. Keep re-checking the users read with backoff; a
+  // 401 is a real sign-out and csrf-init redirects to login.
+  useRecoveryPoll(loadUsers, accessDenied !== null && accessDenied !== 401);
+  // Access came back: clear the denial message and reload what the denial
+  // wiped. (The slippage and drift reports stay on-demand.)
+  const prevDeniedRef = useRef<number | null>(null);
+  useEffect(() => {
+    const prev = prevDeniedRef.current;
+    prevDeniedRef.current = accessDenied;
+    if (!accessRegained(prev, accessDenied)) return;
+    setError("");
+    loadInvites();
+    loadEngines();
+  }, [accessDenied, loadInvites, loadEngines]);
 
   async function handleSendInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -562,7 +582,7 @@ export default function AdminPage() {
     );
   }
 
-  if (accessDenied || (error && users.length === 0)) {
+  if (accessDenied !== null || (error && users.length === 0)) {
     return (
       <div className="p-4 lg:p-6">
         <div className="flex flex-col items-center justify-center py-20">

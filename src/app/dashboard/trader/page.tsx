@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePolling } from "@/hooks/usePolling";
+import { useRecoveryPoll } from "@/hooks/useRecoveryPoll";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { isMarketOpen } from "@/lib/market-hours";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -446,6 +447,11 @@ export default function TraderPage() {
 
   // Poll for updates
   usePolling(load, POLLING_INTERVALS.traderDashboard, { enabled: accessLost === null });
+  // A 402 is also what a tier-read outage answers (getUserTier falls back to
+  // free), and a 403 what a role-read outage answers, so neither is final:
+  // keep re-checking with backoff and let the first good load() restore the
+  // page. A 401 is a real sign-out; csrf-init redirects to login.
+  useRecoveryPoll(load, accessLost === 402 || accessLost === 403);
 
   // Load saved risk profile overrides
   async function loadRiskProfile() {
@@ -569,7 +575,9 @@ export default function TraderPage() {
             </h3>
             <p className="text-sm text-text-secondary max-w-sm mx-auto">
               Trading data was cleared from this screen.{" "}
-              {accessLost === 401 ? "Sign in again to continue." : "Ask an administrator if this is unexpected."}
+              {accessLost === 401
+                ? "Sign in again to continue."
+                : "This page checks again on its own. Ask an administrator if this is unexpected."}
             </p>
             {accessLost === 401 && (
               <Link href="/login" className="mt-4 inline-block text-sm text-accent hover:underline">
@@ -584,7 +592,7 @@ export default function TraderPage() {
               <h3 className="font-display text-lg font-semibold mb-2">Trader plan required</h3>
               <p className="text-sm text-text-secondary max-w-sm mx-auto">
                 The trader desk needs an active Trader plan. If you already have one, the plan check
-                may have failed; try again in a moment.
+                may have failed; this page checks again on its own, or you can retry now.
               </p>
               <Button variant="secondary" size="sm" className="mt-4" onClick={() => load()}>
                 <RefreshCw className="w-4 h-4" /> Retry

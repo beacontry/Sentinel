@@ -89,6 +89,10 @@ export const POLLING_INTERVALS = {
   dashboardRefresh: 60_000,
   feedRefresh: 30_000,
   traderDashboard: 10_000,
+  // Re-check after a 402/403 that may be an outage (useRecoveryPoll):
+  // 15s, doubling to a 5 minute ceiling.
+  accessRecheckBase: 15_000,
+  accessRecheckMax: 300_000,
   optimizerActiveRuns: 3_000,
   screenerCache: 30_000,
   newsRefresh: 300_000,
