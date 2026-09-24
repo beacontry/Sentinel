@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Inset } from "@/components/ui/card";
 import { SignedValue, signedValueCh } from "@/components/ui/signed-value";
+import { tileRowVars } from "@/lib/figure-fit";
 import type { PnlFormat } from "@/lib/format-pnl";
 import { DeskPanel } from "./desk-panel";
 import type { TraderAnalytics, TraderData } from "./types";
@@ -40,18 +41,6 @@ function Tile({ label, children, sub }: { label: string; children: ReactNode; su
       {sub && <dd className="mt-0.5 font-mono text-xs text-text-muted tabular-nums">{sub}</dd>}
     </Inset>
   );
-}
-
-/**
- * The custom properties a tile row sizes itself from: the widest main
- * figure (in ch) for figure-fit, and the widest token of any line,
- * figure or sub-line, at the 12px floor for the grid's minimum tile.
- * 0.45rem is one ch of the mono face at 12px; 1.75rem is the tile's
- * padding and border with a little slack.
- */
-function tileRowVars(figureCh: number, subCh = 0): CSSProperties {
-  const widest = Math.max(figureCh, subCh);
-  return { "--figure-ch": figureCh, "--tile-min": `calc(${widest} * 0.45rem + 1.75rem)` } as CSSProperties;
 }
 
 function Balance({ label, children }: { label: string; children: ReactNode }) {
