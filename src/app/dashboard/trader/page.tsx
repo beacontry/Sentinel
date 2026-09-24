@@ -46,13 +46,13 @@ import {
   engineControls,
   hasLoaded,
   initialLoadState,
-  lastKnownMode,
   loadFailed,
   loadStarted,
   loadSucceeded,
   mtmToggleBody,
   profileToRiskForm,
   refreshFailureMessage,
+  resumeModeFor,
   riskFormToEngineParams,
   syncedPickerMode,
   type AccessLoss,
@@ -82,6 +82,8 @@ interface TraderData {
   status: {
     connected: boolean;
     mode: string;
+    /** Persisted traderStatus.mode (env:mode), not gated on heartbeat age. */
+    lastMode?: string | null;
     lastHeartbeat: string | null;
     watchlist: string[];
   };
@@ -642,7 +644,7 @@ export default function TraderPage() {
   const controls = engineControls(engine, engineMode);
   const nowMs = Date.now();
   const connection = connectionStat(status.connected, dashLoad, nowMs, POLLING_INTERVALS.traderDashboard);
-  const resumeMode = lastKnownMode(status.mode, engine?.mode, engineMode);
+  const resumeMode = resumeModeFor(status, engine?.mode, engineMode);
   // A legacy mode the picker no longer lists (conservative, moderate,
   // aggressive) still has to show as the selected value when it is running.
   const modeOptions = ENGINE_MODES.some((m) => m.value === engineMode)

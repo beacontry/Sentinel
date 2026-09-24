@@ -23,6 +23,7 @@ import {
   parseStatusMode,
   profileToRiskForm,
   refreshFailureMessage,
+  resumeModeFor,
   riskFormToEngineParams,
   syncedPickerMode,
   ticketEngineState,
@@ -104,6 +105,21 @@ describe("resume mode for the engine-offline banner (#31)", () => {
     expect(lastKnownMode("live:adaptive", "optimized", "optimized")).toBe("adaptive");
     expect(lastKnownMode("paper", "tactical", "optimized")).toBe("tactical");
     expect(lastKnownMode("unknown", undefined, "tactical-smart")).toBe("tactical-smart");
+  });
+
+  it("resumes in the persisted mode after the heartbeat has gone stale", () => {
+    // Engine offline for over 5 minutes: the dashboard's mode is the broker
+    // environment, and a restarted container's engine sits in its default.
+    const status = { mode: "live", lastMode: "live:adaptive" };
+    expect(resumeModeFor(status, "optimized", "optimized")).toBe("adaptive");
+    // Without lastMode it could only fall back to the engine's default.
+    expect(resumeModeFor({ mode: "live" }, "optimized", "tactical")).toBe("optimized");
+  });
+
+  it("falls back when there is no persisted mode", () => {
+    expect(resumeModeFor({ mode: "paper", lastMode: null }, "tactical", "optimized")).toBe("tactical");
+    expect(resumeModeFor({ mode: "paper:tactical-smart" }, undefined, "optimized")).toBe("tactical-smart");
+    expect(resumeModeFor({ mode: "unknown", lastMode: "garbage" }, undefined, "adaptive")).toBe("adaptive");
   });
 });
 

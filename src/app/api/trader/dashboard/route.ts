@@ -323,6 +323,12 @@ export async function GET() {
           : brokerConnected
             ? brokerEnv
             : "unknown",
+        // The engine's last persisted mode (env:mode), whatever the
+        // heartbeat's age. `mode` above falls back to the broker
+        // environment once the heartbeat is 5 minutes old, which is exactly
+        // when a resume needs the mode the engine was running in. Same
+        // source autoStartIfNeeded resumes from.
+        lastMode: status?.mode ?? null,
         lastHeartbeat: status?.lastHeartbeat?.toISOString() ?? (brokerConnected ? new Date().toISOString() : null),
         watchlist: status?.watchlist ?? [],
         broker: brokerConnected ? brokerName : undefined,

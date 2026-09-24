@@ -51,7 +51,10 @@ export function parseStatusMode(raw: string | null | undefined): string | null {
 /**
  * The mode a resume should use: the persisted heartbeat mode first (it
  * survives a container restart, which resets the in-memory engine to its
- * default), then the in-memory engine's mode, then the picker.
+ * default), then the in-memory engine's mode, then the picker. Pass the
+ * dashboard's status.lastMode: status.mode turns into the broker
+ * environment ("paper"/"live", rejected here) once the heartbeat is 5
+ * minutes old, which is the long-offline case a resume is for.
  */
 export function lastKnownMode(
   statusMode: string | null | undefined,
@@ -59,6 +62,18 @@ export function lastKnownMode(
   pickerMode: string,
 ): string {
   return parseStatusMode(statusMode) ?? (isEngineMode(engineMode) ? engineMode : null) ?? pickerMode;
+}
+
+/**
+ * The resume mode from a dashboard payload: the persisted lastMode when the
+ * route sent it, else the liveness-gated mode (an older route).
+ */
+export function resumeModeFor(
+  status: { mode?: string | null; lastMode?: string | null },
+  engineMode: string | null | undefined,
+  pickerMode: string,
+): string {
+  return lastKnownMode(status.lastMode ?? status.mode, engineMode, pickerMode);
 }
 
 /**
