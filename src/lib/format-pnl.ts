@@ -80,10 +80,26 @@ export function formatSignedPercent(pct: number): string {
   return `${signOf(direction)}${direction === "flat" ? "0.00" : Math.abs(pct).toFixed(2)}%`;
 }
 
-export function formatPnl(amountUsd: number, basis: number | undefined, format: PnlFormat): string {
+/**
+ * The tokens of a formatted P&L: the signed figure, and for the "both"
+ * format the parenthesised percent after it. A renderer that wraps keeps
+ * each token whole and breaks only between them, so a sign never lands on
+ * a different line from its digits.
+ */
+export interface PnlParts {
+  amount: string;
+  percent?: string;
+}
+
+export function formatPnlParts(amountUsd: number, basis: number | undefined, format: PnlFormat): PnlParts {
   const dollar = formatSignedUsd(amountUsd);
-  if (basis === undefined || basis === 0 || !Number.isFinite(basis) || format === "dollar") return dollar;
+  if (basis === undefined || basis === 0 || !Number.isFinite(basis) || format === "dollar") return { amount: dollar };
   const pct = formatSignedPercent((amountUsd / basis) * 100);
-  if (format === "percent") return pct;
-  return `${dollar} (${pct})`;
+  if (format === "percent") return { amount: pct };
+  return { amount: dollar, percent: `(${pct})` };
+}
+
+export function formatPnl(amountUsd: number, basis: number | undefined, format: PnlFormat): string {
+  const { amount, percent } = formatPnlParts(amountUsd, basis, format);
+  return percent ? `${amount} ${percent}` : amount;
 }

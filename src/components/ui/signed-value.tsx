@@ -1,5 +1,5 @@
 import {
-  formatPnl,
+  formatPnlParts,
   formatSignedPercent,
   percentDirection,
   pnlDirection,
@@ -58,22 +58,48 @@ export function DirectionWord({ direction }: { direction: PnlDirection }) {
   return <span className="sr-only"> {direction}</span>;
 }
 
+/**
+ * Wrapping keeps each token whole. The glyph and the signed figure are one
+ * unbreakable group, and the "both" format's percent is a second one, so
+ * the only place a narrow container can break is the gap between them:
+ * never mid-number, and never between a sign and its digits. The percent
+ * carries a real leading space (collapsed at the start of its box) so the
+ * text copies and reads as "+$12.50 (+1.25%)".
+ */
 export function SignedValue({ value, basis, format = "dollar", glyph = true, className = "" }: SignedValueProps) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return <span className={`font-mono tabular-nums text-text-muted ${className}`}>n/a</span>;
   }
   const direction = pnlDirection(value);
+  const { amount, percent } = formatPnlParts(value, basis, format);
   return (
-    <span className={`inline-flex items-baseline gap-1 font-mono tabular-nums ${TONE[direction]} ${className}`}>
-      {glyph && (
-        <span aria-hidden="true" className="leading-none">
-          {GLYPH[direction]}
-        </span>
-      )}
-      <span>{formatPnl(value, basis, format)}</span>
+    <span className={`inline-flex flex-wrap items-baseline gap-x-[1ch] font-mono tabular-nums ${TONE[direction]} ${className}`}>
+      <span className="inline-flex items-baseline gap-1 whitespace-nowrap">
+        {glyph && (
+          <span aria-hidden="true" className="leading-none">
+            {GLYPH[direction]}
+          </span>
+        )}
+        <span>{amount}</span>
+      </span>
+      {percent && <span className="whitespace-nowrap">{` ${percent}`}</span>}
       {direction !== "flat" && <span className="sr-only">{direction}</span>}
     </span>
   );
+}
+
+/** What the glyph and its gap take, in ch, beside the figure. */
+const GLYPH_CH = 1.75;
+
+/**
+ * The width in ch of the widest unbreakable line a SignedValue prints:
+ * the glyph and signed figure together, or the percent alone. A container
+ * that has to hold the figure whole sizes itself from this.
+ */
+export function signedValueCh(value: number | null | undefined, basis?: number, format: PnlFormat = "dollar", glyph = true): number {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 3;
+  const { amount, percent } = formatPnlParts(value, basis, format);
+  return Math.max(amount.length + (glyph ? GLYPH_CH : 0), percent ? percent.length : 0);
 }
 
 /**

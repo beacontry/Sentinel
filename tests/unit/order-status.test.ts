@@ -10,7 +10,7 @@ import { orderStatusMeta } from "@/lib/order-status";
 import { tradeStatusTone } from "@/lib/status-tone";
 import { OrderStatusChip, StatusChip } from "@/components/ui/status-chip";
 import { SignalBadge } from "@/components/ui/signal-badge";
-import { SignedValue } from "@/components/ui/signed-value";
+import { SignedValue, signedValueCh } from "@/components/ui/signed-value";
 import { Badge } from "@/components/ui/badge";
 
 describe("orderStatusMeta", () => {
@@ -130,6 +130,25 @@ describe("SignedValue", () => {
   });
 
   it("shows the percent when it has a basis and is asked for one", () => {
-    expect(render(-12.5, { basis: 1000, format: "both" })).toContain("−$12.50 (−1.25%)");
+    const text = render(-12.5, { basis: 1000, format: "both" }).replace(/<[^>]+>/g, "");
+    expect(text).toContain("−$12.50 (−1.25%)");
+  });
+
+  it("keeps the glyph, sign and figure in one unbreakable group, the percent in another", () => {
+    // A narrow container may break only between the two groups: never
+    // mid-number, and never between the sign and its digits.
+    const html = render(-123456.7, { basis: 1234567, format: "both" });
+    expect(html).toMatch(/<span class="[^"]*whitespace-nowrap[^"]*"><span aria-hidden="true"[^>]*>▼<\/span><span>−\$123,456\.70<\/span><\/span>/);
+    expect(html).toContain('<span class="whitespace-nowrap"> (−10.00%)</span>');
+    expect(html).not.toContain("wrap-anywhere");
+  });
+});
+
+describe("signedValueCh", () => {
+  it("measures the widest unbreakable line: glyph and figure, or the percent", () => {
+    expect(signedValueCh(-123456.7)).toBe("−$123,456.70".length + 1.75);
+    expect(signedValueCh(-123456.7, 1234567, "both", false)).toBe("−$123,456.70".length);
+    expect(signedValueCh(0.05, 1, "both", false)).toBe("(+5.00%)".length);
+    expect(signedValueCh(null)).toBe(3);
   });
 });

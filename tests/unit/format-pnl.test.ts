@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { formatPnl, formatSignedPercent, formatSignedUsd, formatUsd, MINUS, percentDirection, pnlDirection } from "@/lib/format-pnl";
+import { formatPnl, formatPnlParts, formatSignedPercent, formatSignedUsd, formatUsd, MINUS, percentDirection, pnlDirection } from "@/lib/format-pnl";
 import { formatPnl as reExported } from "@/components/display-prefs-provider";
 
 describe("formatPnl", () => {
@@ -98,5 +98,24 @@ describe("formatUsd", () => {
 
   it("prints n/a for an unknown", () => {
     expect(formatUsd(Number.NaN)).toBe("n/a");
+  });
+});
+
+describe("formatPnlParts", () => {
+  it("splits the both format into the signed figure and the percent", () => {
+    expect(formatPnlParts(-12.5, 1000, "both")).toEqual({ amount: `${MINUS}$12.50`, percent: `(${MINUS}1.25%)` });
+  });
+
+  it("is one token for a single format or without a basis", () => {
+    expect(formatPnlParts(12.5, 1000, "dollar")).toEqual({ amount: "+$12.50" });
+    expect(formatPnlParts(12.5, 1000, "percent")).toEqual({ amount: "+1.25%" });
+    expect(formatPnlParts(12.5, undefined, "both")).toEqual({ amount: "+$12.50" });
+  });
+
+  it("joins back to exactly what formatPnl prints", () => {
+    for (const [v, b] of [[123456.7, 1234567], [-0.004, 10], [5, 0]] as const) {
+      const { amount, percent } = formatPnlParts(v, b, "both");
+      expect(percent ? `${amount} ${percent}` : amount).toBe(formatPnl(v, b, "both"));
+    }
   });
 });
