@@ -308,9 +308,11 @@
     --color-border: oklch(90% 0.018 38);
     --color-border-hover: oklch(84% 0.024 36);
     --color-border-control: oklch(60% 0.030 36);
-    --color-text-primary: oklch(24% 0.040 38);
-    --color-text-secondary: oklch(38% 0.040 38);
-    --color-text-muted: oklch(47% 0.035 38);
+    /* Warm, but at chroma 0.02: at 0.04 the text took the room that a
+       loss needs in colour-blind mode, where the loss is warm too. */
+    --color-text-primary: oklch(24% 0.020 38);
+    --color-text-secondary: oklch(38% 0.020 38);
+    --color-text-muted: oklch(47% 0.018 38);
     --color-accent: oklch(54% 0.14 40);
     --color-accent-hover: oklch(49% 0.14 40);
     --color-on-accent: oklch(99.5% 0.003 40);
@@ -381,13 +383,17 @@
     --color-warning-line: oklch(82% 0.13 100);
   }
   /* Coral's accent is an orange at hue 40, where the vermillion loss
-     above would land on it; coral's colour-blind loss is a darker
-     burnt orange instead. */
+     above would land on it. The loss cannot go redder (under hue 40 is
+     the red band the test forbids) or yellower (the warning holds hue
+     100), so it goes darker: a deep rust, well below the accent and the
+     warning in lightness and well above the text neutrals in chroma. The
+     burnt orange it replaces (38% 0.10 65) was 0.055 deltaE OK from the
+     secondary text, so a loss figure read as ordinary text. */
   html.colorblind.coral {
-    --color-bearish: oklch(38% 0.10 65);
-    --color-bearish-fg: oklch(30% 0.09 50);
-    --color-bearish-fill: oklch(95% 0.035 65);
-    --color-bearish-line: oklch(58% 0.11 62);
+    --color-bearish: oklch(33% 0.11 40);
+    --color-bearish-fg: oklch(33% 0.11 40);
+    --color-bearish-fill: oklch(95% 0.030 50);
+    --color-bearish-line: oklch(58% 0.12 45);
   }
   /* The -muted mixes are declared once per theme and resolve on <html>,
      so each picks up the swapped colour without being repeated here. */

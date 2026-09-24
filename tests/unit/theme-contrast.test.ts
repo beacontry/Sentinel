@@ -16,8 +16,9 @@
  * - Gain and loss text must clear 4.5:1 on a card, and each chip's
  *   foreground must clear 4.5:1 on its own fill.
  * - Two colours that mean different things must look different: the
- *   accent (and its hover) against a loss and the danger fill, and in
- *   colour-blind mode a loss against a warning. Measured as deltaE OK,
+ *   accent (and its hover) against a loss and the danger fill, a loss
+ *   and a warning against the body text, and in colour-blind mode a loss
+ *   against a warning. Measured as deltaE OK,
  *   floor 0.10. Contrast ratio cannot catch this: two reds of equal
  *   lightness are 1.0:1 whatever their hue.
  */
@@ -158,6 +159,19 @@ describe.each(MODES)("%s", (_mode, vars) => {
     ),
   )("%s is distinct from %s", (a, b) => {
     expect(deltaEOK(resolve(vars, a), resolve(vars, b))).toBeGreaterThanOrEqual(DISTINCT);
+  });
+
+  // A loss figure or a warning printed in its state colour must not look
+  // like the ordinary text around it. Coral in colour-blind mode once put
+  // the loss 0.055 from the secondary text. The -fg tokens are left out:
+  // they only ever sit on their own -fill (status-tone.ts), which carries
+  // the difference.
+  it.each(
+    ["--color-bearish", "--color-warning"].flatMap((s) =>
+      ["--color-text-primary", "--color-text-secondary", "--color-text-muted"].map((t) => [s, t]),
+    ),
+  )("%s is distinct from %s", (state, text) => {
+    expect(deltaEOK(resolve(vars, state), resolve(vars, text))).toBeGreaterThanOrEqual(DISTINCT);
   });
 });
 
