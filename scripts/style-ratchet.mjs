@@ -41,7 +41,11 @@ export const PATTERNS = {
   "transition-all": { re: /(?<![\w-])transition-all(?![\w-])/g },
   "focus(-visible):outline-none": { re: /focus(?:-visible)?:outline-none/g },
   "outline-none without focus-visible ring": { custom: "outlineWithoutRing" },
-  "raw <button": { re: /<button\b/g },
+  // Call sites that bypass the primitives. The primitives themselves
+  // (src/components/ui/) have to render the element, so they are not
+  // counted: a new primitive should not look like a regression.
+  "raw <button": { re: /<button\b/g, outsidePrimitives: true },
+  "raw <input": { re: /<input\b/g, outsidePrimitives: true },
   "backdrop-blur": { re: /backdrop-blur/g },
   "-[#hex]": { re: /-\[#[0-9a-fA-F]{3,8}\]/g },
   "rgb()/rgba() literal": { re: /\brgba?\(\s*\d/g },
@@ -107,21 +111,29 @@ function walk(dir, acc = []) {
 
 export { walk };
 
-export function count(sources) {
+/** Where the primitives live; see `outsidePrimitives` above. */
+export const PRIMITIVES_DIR = path.join("src", "components", "ui") + path.sep;
+
+/**
+ * Counts per pattern. `paths`, parallel to `sources`, lets a pattern skip
+ * the primitives directory; without it every source counts.
+ */
+export function count(sources, paths) {
   const out = {};
   for (const [name, p] of Object.entries(PATTERNS)) {
-    out[name] = sources.reduce(
-      (n, src) => n + (p.custom ? CUSTOM[p.custom](src) : (src.match(p.re)?.length ?? 0)),
-      0,
-    );
+    out[name] = sources.reduce((n, src, i) => {
+      if (p.outsidePrimitives && paths?.[i] && path.relative(ROOT, paths[i]).startsWith(PRIMITIVES_DIR)) return n;
+      return n + (p.custom ? CUSTOM[p.custom](src) : (src.match(p.re)?.length ?? 0));
+    }, 0);
   }
   return out;
 }
 
 function main() {
   const update = process.argv.includes("--update");
-  const sources = walk(path.join(ROOT, "src")).map((f) => fs.readFileSync(f, "utf8"));
-  const now = count(sources);
+  const files = walk(path.join(ROOT, "src"));
+  const sources = files.map((f) => fs.readFileSync(f, "utf8"));
+  const now = count(sources, files);
   const base = fs.existsSync(BASELINE) ? JSON.parse(fs.readFileSync(BASELINE, "utf8")) : {};
 
   const over = [];

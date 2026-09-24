@@ -173,6 +173,15 @@ describe("style-ratchet: counts", () => {
     expect(c["uppercase + tracking-[arbitrary]"]).toBe(2);
   });
 
+  it("counts raw buttons and inputs at call sites, not inside the primitives", () => {
+    const root = join(__dirname, "..", "..");
+    const src = `<button type="button" /> <input />`;
+    const paths = [join(root, "src", "components", "ui", "segmented.tsx"), join(root, "src", "app", "page.tsx")];
+    const c = countRaw([src, src], paths) as Record<string, number>;
+    expect(c["raw <button"]).toBe(1);
+    expect(c["raw <input"]).toBe(1);
+  });
+
   it("walks .ts class maps as well as .tsx, and skips declaration files", () => {
     const root = join(__dirname, "..", "..");
     const files = (walkRaw(join(root, "src")) as string[]).map((f) => f.replace(/\\/g, "/"));
