@@ -7,6 +7,7 @@ import {
   getEngineStatus,
   HALT_BROKER_UNRESOLVED,
   HALT_LIQUIDATION_FAILED,
+  HALT_MARKET_CLOSED,
 } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
@@ -158,6 +159,7 @@ export async function POST(request: NextRequest) {
             ok: result.ok,
             code: result.code ?? null,
             environment: result.environment ?? null,
+            closedSymbols: result.closedSymbols ?? [],
             failedSymbols: result.failedSymbols ?? [],
             unprotectedSymbols: result.unprotectedSymbols ?? [],
           },
@@ -169,12 +171,17 @@ export async function POST(request: NextRequest) {
               error: result.error,
               code: result.code ?? null,
               environment: result.environment ?? null,
+              closedSymbols: result.closedSymbols ?? [],
               failedSymbols: result.failedSymbols ?? [],
               unprotectedSymbols: result.unprotectedSymbols ?? [],
             },
             {
               status:
-                result.code === HALT_BROKER_UNRESOLVED ? 503 : result.code === HALT_LIQUIDATION_FAILED ? 409 : 400,
+                result.code === HALT_BROKER_UNRESOLVED
+                  ? 503
+                  : result.code === HALT_LIQUIDATION_FAILED || result.code === HALT_MARKET_CLOSED
+                    ? 409
+                    : 400,
             }
           );
         }
@@ -182,10 +189,16 @@ export async function POST(request: NextRequest) {
         // account it was submitted on: the protective resolver prefers an
         // active paper connection, so a paper flatten must not read as live.
         const account = result.environment ? `${result.environment} account` : "account";
+        const closed = result.closedSymbols ?? [];
         return NextResponse.json({
           data: {
-            message: `Trading engine halted. Liquidation orders submitted for every open position on your ${account}.`,
+            // "Submitted", not "closed": a market sell is accepted before it fills.
+            message:
+              closed.length > 0
+                ? `Trading engine halted. Liquidation orders submitted on your ${account} for: ${closed.join(", ")}.`
+                : `Trading engine halted. No open positions on your ${account}.`,
             haltEnvironment: result.environment ?? null,
+            closedSymbols: closed,
             failedSymbols: [],
             ...getEngineStatus(auth.userId),
           },

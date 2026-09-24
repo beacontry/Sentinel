@@ -9,7 +9,7 @@
 // flag, full error isolation per symbol.
 
 import type { Bar } from "@/types";
-import { createBrokerClient, BrokerError } from "./brokers";
+import { createBrokerClient, BrokerError, CancelAllPartialError } from "./brokers";
 import type { BrokerClient, BrokerAccount, BrokerPosition, BrokerOrder, PlaceOrderParams } from "./brokers";
 import { decrypt } from "./crypto";
 import { getMarketDataProvider } from "./market-data";
@@ -7631,23 +7631,119 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
  * actually release from `held_for_orders`. Without this wait, immediately placing
  * a new sell stop fails with 403 "insufficient qty available".
  */
-async function cancelAllAndWait(client: BrokerClient, maxMs = 5000): Promise<void> {
-  if (!client.cancelAllOrders) return;
-  await client.cancelAllOrders();
+export async function cancelAllAndWait(
+  client: BrokerClient,
+  maxMs = 5000
+): Promise<{
+  /** True when the broker reported no open or pending_cancel order before the deadline. */
+  released: boolean;
+  /**
+   * Orders the broker said it could not cancel (207 partial). Null when the
+   * cancel was not partial; an empty array means partial with unknown ids.
+   */
+  failedOrderIds: string[] | null;
+}> {
+  if (!client.cancelAllOrders) return { released: false, failedOrderIds: null };
+  let failedOrderIds: string[] | null = null;
+  try {
+    await client.cancelAllOrders();
+  } catch (err) {
+    // A 207 partial still cancelled the other orders, so wait for those to
+    // release and hand the failures to the caller. Any other error throws,
+    // as before.
+    if (!(err instanceof CancelAllPartialError)) throw err;
+    failedOrderIds = err.failedOrderIds;
+    log.warn({ failedOrderIds }, "Cancel-all was partial; waiting for the orders that did cancel");
+  }
+  const failed = new Set(failedOrderIds ?? []);
   const deadline = Date.now() + maxMs;
   const PENDING = new Set(["new", "accepted", "pending_new", "partially_filled", "held", "pending_cancel"]);
   while (Date.now() < deadline) {
     try {
       // status="open" — same Alpaca default-status trap as the per-scan guards.
       // Without it, a still-pending cancel can be hidden behind filled noise
-      // and we'd return early thinking the broker is clean.
+      // and we'd return early thinking the broker is clean. Orders the broker
+      // already said it could not cancel are not waited on.
       const orders = await client.getOrders(100, "open");
-      if (!orders.some((o) => PENDING.has(o.status))) return;
+      if (!orders.some((o) => PENDING.has(o.status) && !failed.has(o.id))) {
+        return { released: true, failedOrderIds };
+      }
     } catch {
       // Transient broker error — keep polling until deadline
     }
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, CANCEL_POLL_MS));
   }
+  log.warn({ maxMs }, "Cancelled orders were still pending at the deadline");
+  return { released: false, failedOrderIds };
+}
+
+/** Poll interval while waiting for cancelled orders to release held shares. */
+const CANCEL_POLL_MS = 250;
+
+/**
+ * Cancel one symbol's open orders, then poll until none of the cancelled
+ * orders is still open or pending_cancel, so the shares they held are free
+ * before a sell. Alpaca cancels asynchronously: a sell sent while a stop is
+ * pending_cancel is rejected for insufficient qty (finding #42). Never throws.
+ */
+async function cancelSymbolOrdersAndWait(
+  client: BrokerClient,
+  symbol: string,
+  maxMs = 5000
+): Promise<{ released: boolean; failedOrderIds: string[] }> {
+  const failedOrderIds: string[] = [];
+  if (!client.cancelOrder) return { released: false, failedOrderIds };
+  const cancelled = new Set<string>();
+  try {
+    // status="open" for the same Alpaca default-status reason as
+    // cancelPendingOrdersForSymbol.
+    const orders = await client.getOrders(100, "open");
+    const pending = orders.filter(
+      (o) => o.symbol === symbol && ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)
+    );
+    for (const o of pending) {
+      try {
+        await client.cancelOrder(o.id);
+        cancelled.add(o.id);
+        log.info({ symbol, orderId: o.id, type: o.type }, "Cancelled order before halt sell");
+      } catch (err) {
+        failedOrderIds.push(o.id);
+        log.warn(
+          { symbol, orderId: o.id, err: err instanceof Error ? err.message : "unknown" },
+          "Failed to cancel order before halt sell"
+        );
+      }
+    }
+  } catch (err) {
+    log.warn(
+      { symbol, err: err instanceof Error ? err.message : "unknown" },
+      "Could not list open orders before halt sell"
+    );
+    return { released: false, failedOrderIds };
+  }
+  if (cancelled.size === 0) return { released: failedOrderIds.length === 0, failedOrderIds };
+
+  const HOLDING = new Set(["new", "accepted", "pending_new", "partially_filled", "held", "pending_cancel"]);
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, CANCEL_POLL_MS));
+    try {
+      const orders = await client.getOrders(100, "open");
+      if (!orders.some((o) => cancelled.has(o.id) && HOLDING.has(o.status))) {
+        return { released: failedOrderIds.length === 0, failedOrderIds };
+      }
+    } catch {
+      // Transient broker error: keep polling until the deadline.
+    }
+  }
+  log.warn({ symbol, maxMs }, "Cancelled orders still pending at the deadline; selling anyway");
+  return { released: false, failedOrderIds };
+}
+
+/** An Alpaca rejection because shares are still held by an open order. */
+function isInsufficientQtyError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /insufficient qty|held_for_orders|order 403/i.test(msg);
 }
 
 /**
@@ -7815,13 +7911,21 @@ export const HALT_BROKER_UNRESOLVED = "BROKER_UNRESOLVED";
  * not liquidated (market closed, order rejected, or the halt failed part way).
  */
 export const HALT_LIQUIDATION_FAILED = "LIQUIDATION_FAILED";
+/**
+ * Stable code when the market is closed: no market sell can be placed, so
+ * nothing was liquidated and every resting broker stop was left in place.
+ * The engine is still halted (no new entries).
+ */
+export const HALT_MARKET_CLOSED = "MARKET_CLOSED";
 
 export async function haltEngine(userId?: string): Promise<{
   ok: boolean;
   error?: string;
-  code?: typeof HALT_BROKER_UNRESOLVED | typeof HALT_LIQUIDATION_FAILED;
+  code?: typeof HALT_BROKER_UNRESOLVED | typeof HALT_LIQUIDATION_FAILED | typeof HALT_MARKET_CLOSED;
   /** The account the halt acted on, when a broker client resolved. */
   environment?: "paper" | "live";
+  /** Symbols whose liquidation (market sell) order the broker accepted. */
+  closedSymbols?: string[];
   /** Symbols whose liquidation order could not be placed. */
   failedSymbols?: string[];
   /**
@@ -7842,6 +7946,7 @@ export async function haltEngine(userId?: string): Promise<{
   // point is a partial liquidation, not an unreachable broker.
   let liquidationStarted = false;
   let haltIncomplete = false;
+  const closedSymbols: string[] = [];
   const failedSymbols: string[] = [];
   const unprotectedSymbols: string[] = [];
 
@@ -7915,7 +8020,10 @@ export async function haltEngine(userId?: string): Promise<{
             await client.cancelAllOrders();
             log.info("Cancelled all pending orders on halt (no open positions)");
           } catch (err) {
-            log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders on halt");
+            // A partial (207) or failed cancel-all can leave a pending BUY
+            // that fills after the halt. Fall back to cancelling buys one by one.
+            log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders on halt; cancelling entries individually");
+            await cancelOpenEntryOrders(client, shortSymbols);
           }
         } else {
           await cancelOpenEntryOrders(client, shortSymbols);
@@ -7940,18 +8048,33 @@ export async function haltEngine(userId?: string): Promise<{
         liquidationStarted = true;
         for (const pos of marketClosed ? [] : longs) {
           // Cancel this symbol's pending orders (bracket legs, resting stops,
-          // take-profits) just before its sell, as runExitCheck does, since
-          // held shares block the sell. Never a broker-wide cancel here.
+          // take-profits) just before its sell, and WAIT until the broker
+          // has released them: Alpaca cancels asynchronously, and a sell sent
+          // while a stop is pending_cancel is rejected because its shares are
+          // still held (finding #42). Never a broker-wide cancel here.
           let haltOrder: BrokerOrder;
+          const sellParams = {
+            symbol: pos.symbol,
+            side: "sell" as const,
+            qty: String(pos.qty),
+            type: "market" as const,
+            timeInForce: "day" as const,
+          };
           try {
-            await cancelPendingOrdersForSymbol(client, pos.symbol);
-            haltOrder = await placeEngineOrder(client, {
-              symbol: pos.symbol,
-              side: "sell",
-              qty: String(pos.qty),
-              type: "market",
-              timeInForce: "day",
-            });
+            await cancelSymbolOrdersAndWait(client, pos.symbol);
+            try {
+              haltOrder = await placeEngineOrder(client, sellParams);
+            } catch (firstErr) {
+              if (!isInsufficientQtyError(firstErr)) throw firstErr;
+              // Shares still held: re-poll this symbol's orders (cancelling
+              // anything that appeared since) and retry once.
+              log.warn(
+                { symbol: pos.symbol, err: firstErr instanceof Error ? firstErr.message : "unknown" },
+                "Halt sell rejected for held qty; re-polling orders and retrying once"
+              );
+              await cancelSymbolOrdersAndWait(client, pos.symbol);
+              haltOrder = await placeEngineOrder(client, sellParams);
+            }
           } catch (err) {
             const msg = err instanceof Error ? err.message : "unknown";
             failedSymbols.push(pos.symbol);
@@ -7975,10 +8098,18 @@ export async function haltEngine(userId?: string): Promise<{
           // The sell is submitted. Bookkeeping failures below must not be
           // reported as a failed liquidation (or trigger a re-protect stop
           // against shares that are being sold).
+          closedSymbols.push(pos.symbol);
           positionMap.delete(pos.symbol);
           try {
             const quote = await getMarketDataProvider().fetchQuote(pos.symbol);
-            const closePrice = quote?.price ?? pos.currentPrice ?? pos.avgEntryPrice;
+            // Only a positive price is a price: a 0 quote would log the whole
+            // position value as a loss.
+            const closePrice =
+              quote && quote.price > 0
+                ? quote.price
+                : pos.currentPrice > 0
+                  ? pos.currentPrice
+                  : pos.avgEntryPrice;
             const pnl = (closePrice - pos.avgEntryPrice) * pos.qty;
 
             await logTrade(
@@ -7989,7 +8120,7 @@ export async function haltEngine(userId?: string): Promise<{
               closePrice,
               "PENDING",
               pnl,
-              "Emergency halt — all positions closed",
+              "Emergency halt liquidation",
               haltOrder.id,
               null,
               haltUserId
@@ -8065,6 +8196,9 @@ export async function haltEngine(userId?: string): Promise<{
     // Never ok:true over a position the halt did not close: the UI treats ok
     // as "flattened".
     const parts = [`Engine halted, but not every position on your ${account} was closed.`];
+    if (closedSymbols.length > 0) {
+      parts.push(`Liquidation orders were submitted for: ${closedSymbols.join(", ")}.`);
+    }
     if (marketClosed) {
       parts.push(
         `The market is closed, so no liquidation orders were placed for ${failedSymbols.join(", ")}. Existing broker-side stops were left in place.`
@@ -8086,16 +8220,17 @@ export async function haltEngine(userId?: string): Promise<{
     log.warn({ environment, failedSymbols, unprotectedSymbols, marketClosed }, "Trading engine emergency halted with positions left open");
     return {
       ok: false,
-      code: HALT_LIQUIDATION_FAILED,
+      code: marketClosed && !haltIncomplete ? HALT_MARKET_CLOSED : HALT_LIQUIDATION_FAILED,
       environment,
+      closedSymbols,
       failedSymbols,
       unprotectedSymbols,
       error: parts.join(" "),
     };
   }
 
-  log.warn({ environment }, "Trading engine emergency halted");
-  return { ok: true, environment, failedSymbols, unprotectedSymbols };
+  log.warn({ environment, closedSymbols }, "Trading engine emergency halted");
+  return { ok: true, environment, closedSymbols, failedSymbols, unprotectedSymbols };
 }
 
 /**

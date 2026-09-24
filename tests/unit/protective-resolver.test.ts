@@ -141,6 +141,7 @@ import {
   placeSafetyStops,
   HALT_BROKER_UNRESOLVED,
   HALT_LIQUIDATION_FAILED,
+  HALT_MARKET_CLOSED,
 } from "@/lib/trading-engine";
 import { AuditAction } from "@/lib/audit";
 
@@ -305,7 +306,7 @@ describe("haltEngine", () => {
 
     const res = await haltEngine(userId);
     expect(res.ok).toBe(false);
-    expect(res.code).toBe(HALT_LIQUIDATION_FAILED);
+    expect(res.code).toBe(HALT_MARKET_CLOSED);
     expect(res.environment).toBe("live");
     expect(res.failedSymbols).toEqual(["AAPL"]);
     expect(res.error).toMatch(/market is closed/i);

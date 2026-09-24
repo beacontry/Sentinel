@@ -10,7 +10,7 @@ import { writeAudit, AuditAction } from "@/lib/audit";
 import { rateLimit } from "@/lib/rate-limiter";
 import { checkTier } from "@/lib/tiers-server";
 import { getETDateString } from "@/lib/market-hours";
-import { reserveManualFlatten } from "@/lib/trading-engine";
+import { reserveManualFlatten, cancelAllAndWait } from "@/lib/trading-engine";
 import { z } from "zod";
 
 const commandSchema = z.object({
@@ -113,8 +113,17 @@ export async function POST(request: NextRequest) {
               await new Promise(r => setTimeout(r, 500)); // settle time
             }
           } else if (client.cancelAllOrders) {
-            await client.cancelAllOrders();
-            await new Promise(r => setTimeout(r, 500)); // settle time
+            // Poll until the broker has actually released the cancelled
+            // orders instead of a fixed 500ms: Alpaca cancels asynchronously
+            // and a sell sent while a stop is pending_cancel is rejected for
+            // insufficient qty.
+            const cancel = await cancelAllAndWait(client);
+            if (!cancel.released || cancel.failedOrderIds) {
+              log.warn(
+                { released: cancel.released, failedOrderIds: cancel.failedOrderIds },
+                "Cancel-all before flatten did not fully release; some sells may be rejected",
+              );
+            }
           }
         } catch (err) {
           log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders before flatten");

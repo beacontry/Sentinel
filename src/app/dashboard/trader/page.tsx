@@ -684,12 +684,10 @@ export default function TraderPage() {
                   toast({
                     type: "warning",
                     // Prefer the server's message: it names the account
-                    // (paper or live) the liquidation was submitted on.
-                    message:
-                      r.message ??
-                      (posCount > 0
-                        ? `Engine halted — ${posCount} liquidation order${posCount === 1 ? "" : "s"} submitted. Watching fills.`
-                        : "Engine halted."),
+                    // (paper or live) and the symbols whose liquidation was
+                    // actually submitted. The fallback claims nothing about
+                    // how many positions were closed.
+                    message: r.message ?? "Engine halted. Check your positions for liquidation fills.",
                   });
                 },
               });

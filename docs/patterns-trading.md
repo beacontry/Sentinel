@@ -227,7 +227,7 @@ Pass `riskLimits.earningsBlackoutDays` to `isInEarningsBlackout` instead of hard
 
 ### `cancelAllOrders`: 207 Multi-Status != success
 
-**Audit:** DELETE /v2/orders returns 207 (Multi-Status) when SOME orders canceled but others failed. Old code checked `res.ok` (true for 207) and returned success, assuming all canceled — position fully exposed. **Fix:** explicitly check for 207, log warning with response body, return normally (partial cancel better than full fail). Callers independently re-verify broker positions after flatten so they catch position leakage from partial cancel.
+**Audit:** DELETE /v2/orders answers 207 (Multi-Status) with a per-order `{ id, status }` array, including when SOME orders could not be cancelled. Old code checked `res.ok` (true for 207) and returned success. A later fix logged the 207 and still returned normally, so a stop that failed to cancel stayed invisible to the caller. **Fix (WP02):** parse the body; throw `CancelAllPartialError` with the failed order ids when any entry is not 2xx or the body is unreadable, and return normally only when every entry is 2xx. `cancelAllAndWait` catches the partial, still waits for the orders that did cancel, and returns `failedOrderIds` to the caller.
 
 ### `brokerFetch`: 10s timeout, AbortController
 

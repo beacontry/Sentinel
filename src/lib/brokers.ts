@@ -182,6 +182,24 @@ class BrokerError extends Error {
   }
 }
 
+/**
+ * Thrown by cancelAllOrders when the broker accepted the request but reported
+ * that some orders could not be cancelled (Alpaca 207 Multi-Status with a
+ * non-2xx entry, or a 207 body that could not be read). `failedOrderIds` lists
+ * the orders the broker named; it is empty when the body was unreadable, which
+ * callers must treat as "unknown", never as "none failed".
+ */
+class CancelAllPartialError extends BrokerError {
+  constructor(public readonly failedOrderIds: string[], detail: string) {
+    super(
+      `Cancel all orders was partial: ${detail}`,
+      207,
+      "Some orders could not be cancelled"
+    );
+    this.name = "CancelAllPartialError";
+  }
+}
+
 /** Parse a Retry-After header (delta-seconds or HTTP-date) into ms, or null. */
 function parseRetryAfterMs(header: string | null): number | null {
   if (!header) return null;
@@ -608,17 +626,40 @@ export class AlpacaClient implements BrokerClient {
       method: "DELETE",
       headers: this.headers,
     });
-    // DELETE /v2/orders returns 207 Multi-Status when SOME orders couldn't be
-    // canceled. The old code treated 207 as success (res.ok) and merely logged
-    // a hard failure (audit #43). Surface the partial, and THROW on a hard
-    // non-2xx so callers don't silently assume a clean flatten — every caller
-    // wraps this in try/catch and independently re-verifies positions.
+    // DELETE /v2/orders answers 207 Multi-Status with one entry per order,
+    // { id, status }, whether or not every cancel succeeded. The old code
+    // logged the 207 and returned, so a stop that failed to cancel was
+    // invisible to the caller (audit #43, finding #42). Read the per-order
+    // statuses and THROW CancelAllPartialError when any entry is not 2xx, or
+    // when the body cannot be read (unknown is not success). A hard non-2xx
+    // still throws BrokerError.
     if (res.status === 207) {
       const body = await res.text().catch(() => "");
-      log.warn(
-        { broker: "alpaca", status: 207, body: body.slice(0, 500) },
-        "Cancel-all returned 207 Multi-Status — some orders may not have canceled"
+      let entries: Array<{ id?: unknown; status?: unknown }> | null = null;
+      try {
+        const parsed: unknown = JSON.parse(body);
+        if (Array.isArray(parsed)) entries = parsed as Array<{ id?: unknown; status?: unknown }>;
+      } catch {
+        entries = null;
+      }
+      if (!entries) {
+        log.warn(
+          { broker: "alpaca", status: 207, body: body.slice(0, 500) },
+          "Cancel-all returned an unreadable 207 body; treating as partial"
+        );
+        throw new CancelAllPartialError([], "unreadable 207 response");
+      }
+      const failed = entries.filter(
+        (e) => !(typeof e.status === "number" && e.status >= 200 && e.status < 300)
       );
+      if (failed.length > 0) {
+        const failedOrderIds = failed.map((e) => String(e.id ?? "unknown"));
+        log.warn(
+          { broker: "alpaca", status: 207, failedOrderIds, total: entries.length },
+          "Cancel-all was partial: some orders could not be cancelled"
+        );
+        throw new CancelAllPartialError(failedOrderIds, `${failed.length} of ${entries.length} orders not cancelled`);
+      }
       return;
     }
     if (!res.ok) {
@@ -1419,4 +1460,4 @@ export function createBrokerClient(
   }
 }
 
-export { BrokerError };
+export { BrokerError, CancelAllPartialError };
