@@ -70,4 +70,21 @@ describe("Segmented", () => {
     expect(busy.match(/disabled=""/g)).toHaveLength(2);
     expect(busy).not.toContain('aria-pressed="true"');
   });
+
+  it("is one row by default", () => {
+    expect(html).toMatch(/^<div[^>]*class="inline-flex gap-1 /);
+  });
+
+  // Four engine modes do not fit one row at 360px. Two rows sit 8px
+  // apart so the 4px hit-area pads above and below meet, not overlap.
+  it("can lay out two to a row on phones and one row from sm", () => {
+    const modes = renderToStaticMarkup(
+      createElement(Segmented, { options: side, value: "buy", onChange: noop, label: "Engine mode", twoUpOnPhone: true }),
+    );
+    expect(modes).toMatch(/^<div[^>]*class="grid grid-cols-2 gap-x-1 gap-y-2 sm:inline-flex /);
+    const filled = renderToStaticMarkup(
+      createElement(Segmented, { options: side, value: "buy", onChange: noop, label: "Engine mode", twoUpOnPhone: true, fullWidth: true }),
+    );
+    expect(filled).toMatch(/^<div[^>]*class="grid grid-cols-2 gap-x-1 gap-y-2 sm:flex /);
+  });
 });

@@ -50,6 +50,7 @@ export function UiKitGallery() {
   const [on, setOn] = useState(true);
   const [select, setSelect] = useState("day");
   const [units, setUnits] = useState<"shares" | "dollars">("shares");
+  const [mode, setMode] = useState("optimized");
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-4 lg:p-6">
@@ -142,6 +143,18 @@ export function UiKitGallery() {
             options={[
               { value: "shares", label: "Shares" },
               { value: "dollars", label: "Dollars" },
+            ]}
+          />
+          <Segmented
+            label="Engine mode, two to a row on phones"
+            value={mode}
+            onChange={setMode}
+            twoUpOnPhone
+            options={[
+              { value: "optimized", label: "Optimized" },
+              { value: "tactical", label: "Tactical" },
+              { value: "tactical-smart", label: "Tactical Smart" },
+              { value: "adaptive", label: "Adaptive" },
             ]}
           />
           <Segmented label="Engine mode" value={null} onChange={noop} busy options={[{ value: "a", label: "Loading" }]} />

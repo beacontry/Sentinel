@@ -39,6 +39,12 @@ interface SegmentedProps<T extends string> {
   busy?: boolean;
   /** Stretch the buttons to fill the track. */
   fullWidth?: boolean;
+  /**
+   * Below sm, lay the choices out two to a row instead of one row. For
+   * four longer labels (engine modes) that cannot share 360px without
+   * clipping; from sm up the track is a single row again.
+   */
+  twoUpOnPhone?: boolean;
   className?: string;
 }
 
@@ -60,14 +66,25 @@ export function Segmented<T extends string>({
   disabled = false,
   busy = false,
   fullWidth = false,
+  twoUpOnPhone = false,
   className = "",
 }: SegmentedProps<T>) {
+  // Whole class names, so the Tailwind scanner sees every one. Two rows
+  // are 8px apart, so each button's 4px hit-area pad meets its
+  // neighbour's instead of overlapping it.
+  const layout = twoUpOnPhone
+    ? fullWidth
+      ? "grid grid-cols-2 gap-x-1 gap-y-2 sm:flex"
+      : "grid grid-cols-2 gap-x-1 gap-y-2 sm:inline-flex"
+    : fullWidth
+      ? "flex gap-1"
+      : "inline-flex gap-1";
   return (
     <div
       role="group"
       aria-label={label}
       aria-busy={busy || undefined}
-      className={`${fullWidth ? "flex" : "inline-flex"} max-w-full gap-1 rounded-lg bg-bg-primary p-1 ${className}`}
+      className={`${layout} max-w-full rounded-lg bg-bg-primary p-1 ${className}`}
     >
       {options.map((opt) => {
         const pressed = value === opt.value;
