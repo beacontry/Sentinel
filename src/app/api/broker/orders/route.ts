@@ -159,6 +159,43 @@ export async function POST(request: Request) {
       );
     }
 
+    // The ticket names the connection it was showing. If the active one has
+    // changed since (a switch in the sidebar, another tab or another device),
+    // refuse before the broker is contacted: the user confirmed an order for
+    // a different account, possibly paper where this one is live.
+    if (
+      connection.id !== parsed.data.expectedConnectionId ||
+      (parsed.data.expectedEnvironment !== undefined &&
+        connection.environment !== parsed.data.expectedEnvironment)
+    ) {
+      log.warn(
+        {
+          userId: auth.userId,
+          expectedConnectionId: parsed.data.expectedConnectionId,
+          expectedEnvironment: parsed.data.expectedEnvironment ?? null,
+          activeConnectionId: connection.id,
+          activeEnvironment: connection.environment,
+        },
+        "Manual order refused: active broker connection changed since the ticket loaded"
+      );
+      return NextResponse.json(
+        {
+          error:
+            connection.environment === "live"
+              ? "Your active broker account changed to LIVE since this ticket loaded. Review the order and submit again."
+              : "Your active broker account changed since this ticket loaded. Review the order and submit again.",
+          code: "CONNECTION_CHANGED",
+          retryable: false,
+          activeConnection: {
+            id: connection.id,
+            environment: connection.environment,
+            broker: connection.broker,
+            label: connection.label,
+          },
+        },
+        { status: 409 }
+      );
+    }
 
     const client = createBrokerClient(
       connection.broker,

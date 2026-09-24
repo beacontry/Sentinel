@@ -14,6 +14,7 @@ import { useEffect, useState, useCallback, useRef, use } from "react";
 import Link from "next/link";
 import { SmartBackButton } from "@/components/ui/smart-back-button";
 import { orderIntentFor, orderIntentAfterResponse, type OrderIntent } from "@/lib/order-intent";
+import { BROKER_CHANGED_EVENT } from "@/lib/broker-events";
 import {
   AlertCircle,
   DollarSign,
@@ -55,6 +56,11 @@ interface QuoteSnapshot {
   changePct: number | undefined;
 }
 
+// The active connection from a /api/broker/connections response, or null.
+function activeConnectionFrom(d: { connections?: ConnectionMeta[] }): ConnectionMeta | null {
+  return (d.connections ?? []).find((c) => c.isActive) ?? null;
+}
+
 type OrderType = "market" | "limit" | "stop" | "stop_limit";
 type TimeInForce = "day" | "gtc" | "ioc" | "fok";
 type SizingMode = "shares" | "dollars";
@@ -91,71 +97,109 @@ export default function TradePage({
   const [submitting, setSubmitting] = useState(false);
 
   // ─── Boot context ────────────────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const [engineRes, accountRes, connectionsRes, quoteRes] = await Promise.all([
-          fetch("/api/trader/engine"),
-          fetch("/api/broker/account"),
-          fetch("/api/broker/connections"),
-          fetch(`/api/analyze?symbol=${encodeURIComponent(symbol)}`),
-        ]);
-        if (cancelled) return;
-        if (engineRes.ok) {
-          const d = await engineRes.json();
-          setEngineStatus({
-            running: d.data?.running === true,
-            environment: d.data?.environment ?? null,
+  // Loaded on mount and again whenever the active broker connection changes
+  // (the sidebar switcher's broker-changed event, a pre-submit re-read that
+  // finds a different account, or the route's 409 CONNECTION_CHANGED). The
+  // generation counter drops a load that a newer one or an unmount superseded.
+  const contextGenRef = useRef(0);
+  const loadContext = useCallback(async () => {
+    const gen = ++contextGenRef.current;
+    try {
+      const [engineRes, accountRes, connectionsRes, quoteRes] = await Promise.all([
+        fetch("/api/trader/engine"),
+        fetch("/api/broker/account"),
+        fetch("/api/broker/connections"),
+        fetch(`/api/analyze?symbol=${encodeURIComponent(symbol)}`),
+      ]);
+      if (gen !== contextGenRef.current) return;
+      if (engineRes.ok) {
+        const d = await engineRes.json();
+        setEngineStatus({
+          running: d.data?.running === true,
+          environment: d.data?.environment ?? null,
+        });
+      }
+      if (accountRes.ok) {
+        const d = await accountRes.json();
+        // /api/broker/account returns { account: {...}, positions: [...] }
+        if (d.account) {
+          setAccount({
+            equity: d.account.equity,
+            buyingPower: d.account.buyingPower,
+            cash: d.account.cash,
+            currency: d.account.currency ?? "USD",
           });
         }
-        if (accountRes.ok) {
-          const d = await accountRes.json();
-          // /api/broker/account returns { account: {...}, positions: [...] }
-          if (d.account) {
-            setAccount({
-              equity: d.account.equity,
-              buyingPower: d.account.buyingPower,
-              cash: d.account.cash,
-              currency: d.account.currency ?? "USD",
-            });
-          }
-        }
-        if (connectionsRes.ok) {
-          const d = await connectionsRes.json();
-          const active = (d.connections ?? []).find((c: ConnectionMeta) => c.isActive);
-          if (active) setConnection(active);
-        }
-        if (quoteRes.ok) {
-          const d = await quoteRes.json();
-          const bars = d.bars ?? [];
-          if (bars.length >= 2) {
-            const last = bars[bars.length - 1].close;
-            const prev = bars[bars.length - 2].close;
-            setQuote({
-              price: last,
-              changePct: ((last - prev) / prev) * 100,
-            });
-          } else if (bars.length === 1) {
-            setQuote({ price: bars[0].close, changePct: undefined });
-          }
-        }
-      } catch {
-        // Non-critical — fields can still be filled in manually
-      } finally {
-        if (!cancelled) setLoadingContext(false);
       }
+      if (connectionsRes.ok) {
+        setConnection(activeConnectionFrom(await connectionsRes.json()));
+      }
+      if (quoteRes.ok) {
+        const d = await quoteRes.json();
+        const bars = d.bars ?? [];
+        if (bars.length >= 2) {
+          const last = bars[bars.length - 1].close;
+          const prev = bars[bars.length - 2].close;
+          setQuote({
+            price: last,
+            changePct: ((last - prev) / prev) * 100,
+          });
+        } else if (bars.length === 1) {
+          setQuote({ price: bars[0].close, changePct: undefined });
+        }
+      }
+    } catch {
+      // Non-critical — fields can still be filled in manually
+    } finally {
+      if (gen === contextGenRef.current) setLoadingContext(false);
     }
-    load();
-    return () => {
-      cancelled = true;
-    };
   }, [symbol]);
+
+  useEffect(() => {
+    void loadContext();
+    return () => {
+      // Invalidate any load still in flight.
+      contextGenRef.current++;
+    };
+  }, [loadContext]);
 
   // Idempotency key for the order intent on the ticket. Minted on the first
   // submit, reused on every resubmit of the same order so the broker refuses
   // a duplicate, and replaced only after a success or when the order changes.
   const orderIntentRef = useRef<OrderIntent | null>(null);
+
+  // Clear everything sized for the previous account and drop its order
+  // intent. Side, order type and TIF are kept.
+  const resetTicket = useCallback(() => {
+    setQty("");
+    setNotional("");
+    setLimitPrice("");
+    setStopPrice("");
+    setUseBracket(false);
+    setTakeProfitPrice("");
+    setStopLossPrice("");
+    orderIntentRef.current = null;
+  }, []);
+
+  // Another account became active (this tab's sidebar, or another tab or
+  // device as seen by the sidebar's poll): drop this account's context and
+  // form and load the new one, so the LIVE banner and confirm follow it.
+  const reloadForNewConnection = useCallback(() => {
+    resetTicket();
+    setConnection(null);
+    setAccount(null);
+    setLoadingContext(true);
+    void loadContext();
+  }, [resetTicket, loadContext]);
+
+  useEffect(() => {
+    function onBrokerChanged() {
+      reloadForNewConnection();
+      toast.toast({ type: "info", message: "Active broker account changed. The ticket was reset." });
+    }
+    window.addEventListener(BROKER_CHANGED_EVENT, onBrokerChanged);
+    return () => window.removeEventListener(BROKER_CHANGED_EVENT, onBrokerChanged);
+  }, [reloadForNewConnection, toast]);
 
   // ─── Derived state ──────────────────────────────────────────────
   const isLive = connection?.environment === "live";
@@ -224,9 +268,42 @@ export default function TradePage({
       return;
     }
 
+    // Re-read the active connection before deciding on the live confirm: the
+    // one loaded with the page may have been switched since, here or in
+    // another tab. Fail closed if it cannot be read.
+    let current: ConnectionMeta | null;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/broker/connections");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      current = activeConnectionFrom(await res.json());
+    } catch {
+      toast.toast({
+        type: "error",
+        message: "Could not confirm which broker account is active. Nothing was sent.",
+      });
+      return;
+    } finally {
+      setSubmitting(false);
+    }
+    if (!current) {
+      setConnection(null);
+      toast.toast({ type: "error", message: "No active broker connection. Nothing was sent." });
+      return;
+    }
+    if (current.id !== connection?.id) {
+      reloadForNewConnection();
+      toast.toast({
+        type: "error",
+        message: `Your active broker account changed to ${current.environment === "live" ? "LIVE" : "paper"} (${current.label}). The ticket was reset: review it and submit again. Nothing was sent.`,
+      });
+      return;
+    }
+    const target = current;
+
     // Friction on LIVE orders — a real modal with the order summary, not the
     // browser's system dialog (2026-07-15 crisis-path UX pass).
-    if (isLive) {
+    if (target.environment === "live") {
       const sizing = sizingMode === "dollars" ? `$${notional}` : `${qty} shares`;
       requestConfirm({
         title: `Live ${side.toUpperCase()} — real money`,
@@ -243,15 +320,15 @@ export default function TradePage({
           { label: "Order type", value: orderType.replace("_", " ").toUpperCase() },
         ],
         confirmLabel: `Place live ${side}`,
-        onConfirm: placeOrder,
+        onConfirm: () => placeOrder(target),
       });
       return;
     }
 
-    await placeOrder();
+    await placeOrder(target);
   }
 
-  async function placeOrder() {
+  async function placeOrder(target: ConnectionMeta) {
     setSubmitting(true);
     // Set once the request is handed to fetch: before that nothing can have
     // reached the broker, and the error must say so.
@@ -273,6 +350,11 @@ export default function TradePage({
         if (stopLossPrice) body.stopLossPrice = stopLossPrice;
       }
 
+      // The account this ticket showed and the user confirmed. The route
+      // refuses with 409 CONNECTION_CHANGED if another is active by now.
+      body.expectedConnectionId = target.id;
+      body.expectedEnvironment = target.environment;
+
       orderIntentRef.current = orderIntentFor(orderIntentRef.current, body);
       body.clientOrderId = orderIntentRef.current.clientOrderId;
 
@@ -284,6 +366,16 @@ export default function TradePage({
       });
       const data = await res.json();
       orderIntentRef.current = orderIntentAfterResponse(orderIntentRef.current, { ok: res.ok, code: data.code });
+      if (data.code === "CONNECTION_CHANGED") {
+        // Refused before the broker: the active account is not the one this
+        // ticket showed. Reload for the new account and make the user look.
+        reloadForNewConnection();
+        toast.toast({
+          type: "error",
+          message: typeof data.error === "string" ? data.error : "Your active broker account changed. Nothing was sent.",
+        });
+        return;
+      }
       if (data.code === "ORDER_STATUS_UNKNOWN") {
         // The order may be live. Keep the same clientOrderId so a resubmit
         // of this ticket is refused by the broker instead of doubling it.

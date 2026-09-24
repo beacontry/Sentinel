@@ -1,5 +1,6 @@
 /**
- * One active broker connection per user (WP05, finding #50).
+ * One active broker connection per user, and a server-checked expected
+ * connection on manual orders (WP05, findings #50 and #29).
  *
  *   - resolveActiveConnection returns the single active row, and with several
  *     (before migration 0049) picks the one the engine always preferred:
@@ -9,7 +10,9 @@
  *     and manual orders act on;
  *   - PATCH cannot set isActive, and cannot change the environment of the
  *     active connection (fenced in the UPDATE);
- *   - manual orders go to the same connection the engine resolves.
+ *   - POST /api/broker/orders refuses with 409 CONNECTION_CHANGED, before the
+ *     broker is contacted, when the ticket's expectedConnectionId (or
+ *     expectedEnvironment) is not the active connection.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -242,8 +245,55 @@ describe("PATCH /api/broker/connections", () => {
   });
 });
 
-describe("POST /api/broker/orders: active connection", () => {
+describe("POST /api/broker/orders: expected connection", () => {
   const order = { symbol: "AAPL", side: "buy", qty: "1" };
+
+  it("a stale expectedConnectionId gets 409 CONNECTION_CHANGED and the broker is never called", async () => {
+    // The ticket loaded on paper; the live connection is active now.
+    state.selectRows = [conn(LIVE_ID, "live", "2026-01-01")];
+    const res = await placeOrderRoute(
+      jsonRequest("http://localhost/api/broker/orders", "POST", {
+        ...order, expectedConnectionId: PAPER_ID, expectedEnvironment: "paper",
+      })
+    );
+    expect(res.status).toBe(409);
+    const data = await res.json();
+    expect(data.code).toBe("CONNECTION_CHANGED");
+    expect(data.retryable).toBe(false);
+    expect(data.activeConnection.environment).toBe("live");
+    expect(state.placed).toHaveLength(0);
+    expect(state.createdEnvironments).toHaveLength(0);
+  });
+
+  it("a matching id but a different expectedEnvironment is refused too", async () => {
+    state.selectRows = [conn(LIVE_ID, "live", "2026-01-01")];
+    const res = await placeOrderRoute(
+      jsonRequest("http://localhost/api/broker/orders", "POST", {
+        ...order, expectedConnectionId: LIVE_ID, expectedEnvironment: "paper",
+      })
+    );
+    expect(res.status).toBe(409);
+    expect(state.placed).toHaveLength(0);
+  });
+
+  it("an order without expectedConnectionId is rejected before the broker", async () => {
+    state.selectRows = [conn(PAPER_ID, "paper", "2026-01-01")];
+    const res = await placeOrderRoute(jsonRequest("http://localhost/api/broker/orders", "POST", order));
+    expect(res.status).toBe(400);
+    expect(state.placed).toHaveLength(0);
+  });
+
+  it("the matching connection places the order on it", async () => {
+    state.selectRows = [conn(LIVE_ID, "live", "2026-01-01")];
+    const res = await placeOrderRoute(
+      jsonRequest("http://localhost/api/broker/orders", "POST", {
+        ...order, expectedConnectionId: LIVE_ID, expectedEnvironment: "live",
+      })
+    );
+    expect(res.status).toBe(201);
+    expect(state.placed).toHaveLength(1);
+    expect(state.createdEnvironments).toEqual(["live"]);
+  });
 
   it("with two active rows the order goes to the paper one the engine uses, not an arbitrary one", async () => {
     state.selectRows = [conn(LIVE_ID, "live", "2026-01-01"), conn(PAPER_ID, "paper", "2026-02-01")];

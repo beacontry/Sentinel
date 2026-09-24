@@ -17,7 +17,14 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 
 let seq = 0;
 const mint = () => `id-${++seq}`;
-const order = { symbol: "AAPL", side: "buy", type: "market", timeInForce: "day", qty: "10" };
+const order = {
+  symbol: "AAPL",
+  side: "buy",
+  type: "market",
+  timeInForce: "day",
+  qty: "10",
+  expectedConnectionId: "5d0c7a3e-2b4f-4c1d-9e8a-7f6b5a4c3d2e",
+};
 
 describe("orderIntentFor", () => {
   it("reuses the id on a resubmit of the same order", () => {

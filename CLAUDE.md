@@ -235,6 +235,8 @@ Manual orders go through `/dashboard/trade` (index: symbol search + recently-vie
 
 The block prevents position-map drift: the engine's in-memory map lags the broker by up to one scan interval, risking a protective stop sized for the wrong quantity.
 
+**Account-gated too.** Every order names the connection the ticket showed (`expectedConnectionId`, required, plus `expectedEnvironment`); the route answers 409 `CONNECTION_CHANGED` before the broker is contacted when the active connection is a different one, so a switch to LIVE in the sidebar, another tab or another device can never send an order the ticket showed as paper. The ticket re-reads the active connection before it decides on the live confirm, and reloads and resets on the switcher's `broker-changed` window event.
+
 Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.source = "manual_ui"`) as engine fills, the same journal auto-stub, and merge into the same Tax Center (`/api/tax/report` reads `trader_trades.action IN ('BUY', 'SELL', 'manual_close')`).
 
 ## Adaptive engine mode (8th mode, regime-driven)
@@ -352,7 +354,7 @@ Wrap in `div.overflow-x-auto` → `table.w-full text-sm`; header row `border-b b
 65 pages at `src/app/dashboard/*/page.tsx`. Public (no auth) pages: `/terms`, `/risk`, `/privacy`, `/contact`, `/pricing`, `/learn`, `/tools`, `/glossary`, `/congress`, `/articles`, `/w/[token]` (shared watchlist). See § Sub-Navigation Groups below for how they're organized in the top-bar dropdowns.
 
 ### API Routes
-Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed` — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
+Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed` — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user and 409 `CONNECTION_CHANGED` if `expectedConnectionId` is not the active connection, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
 
 ## Migrations
 Browse `drizzle/*.sql` for the full list (50 migrations as of `0049_single_active_broker_connection.sql`). All idempotent (`IF NOT EXISTS`). **Post-deploy, verify each new migration actually applied** (`information_schema.columns`) — the deploy pipeline does NOT run migrations.
