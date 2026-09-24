@@ -42,6 +42,7 @@ import {
 import { eq, and, desc, gt, inArray, lt, isNotNull, sql } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
 import { DRAIN_BUDGET_MS } from "./shutdown-config";
+import { isShuttingDown, SHUTTING_DOWN_CODE, SHUTTING_DOWN_MESSAGE } from "./shutdown-state";
 import { writeAudit, AuditAction } from "./audit";
 import { detectMarketRegime } from "./market-regime";
 import { createAutoJournalStub } from "./journal-auto-stub";
@@ -6639,7 +6640,17 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
 export async function startEngine(userId: string, mode: EngineMode = "optimized"): Promise<{
   ok: boolean;
   error?: string;
+  /** SHUTTING_DOWN when refused because the process is draining. */
+  code?: string;
 }> {
+  // No start once the shutdown drain has begun, from a route, the watchdog or
+  // boot. placeDisasterStops below cancels every order before re-placing
+  // stops, and the drain's exit can land between the two.
+  if (isShuttingDown()) {
+    log.warn({ userId, mode }, "Engine start refused; process is shutting down");
+    return { ok: false, error: SHUTTING_DOWN_MESSAGE, code: SHUTTING_DOWN_CODE };
+  }
+
   const engine = getEngine(userId);
 
   if (engine.running || engine.starting) {
@@ -6752,6 +6763,15 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
 
   // PDT preemptive block fully removed 2026-06-04 (FINRA Rule 4210 amended,
   // PDT designation retired). Intraday mode itself was removed earlier.
+
+  // A shutdown that began during the awaits above: stop before the
+  // cancel-all. Once placeDisasterStops has started, shutdownAllEngines waits
+  // for this boot to finish and then stops the engine normally.
+  if (isShuttingDown()) {
+    engine.starting = false;
+    log.warn({ userId, mode }, "Engine start abandoned before disaster stops; process is shutting down");
+    return { ok: false, error: SHUTTING_DOWN_MESSAGE, code: SHUTTING_DOWN_CODE };
+  }
 
   // Replace old safety stops with wide disaster stops (engine manages tighter exits dynamically).
   // placeDisasterStops cancels existing orders and waits for shares to release before placing.
@@ -8917,8 +8937,23 @@ export async function shutdownAllEngines(): Promise<void> {
 
   log.info({ engines: userIds.length }, "Graceful shutdown — stopping all engines");
   const deadline = AbortSignal.timeout(DRAIN_BUDGET_MS);
-  await Promise.allSettled(userIds.map(uid => stopEngine(uid, deadline)));
+  await Promise.allSettled(
+    userIds.map(async (uid) => {
+      // A start already inside placeDisasterStops has cancelled that user's
+      // orders and not yet re-placed the stops. Wait for the boot to finish
+      // (bounded by the deadline), then stop it like any running engine, so
+      // the drain does not return while that boot is between cancel and place.
+      const engine = g.__tradingEngines?.get(uid);
+      while (engine?.starting && !deadline.aborted) {
+        await new Promise((r) => setTimeout(r, SHUTDOWN_BOOT_POLL_MS));
+      }
+      return stopEngine(uid, deadline);
+    })
+  );
 }
+
+/** Poll interval while the shutdown drain waits for an in-flight engine start. */
+const SHUTDOWN_BOOT_POLL_MS = 100;
 
 /**
  * Peek at the engine state for a user WITHOUT auto-creating one. Returns

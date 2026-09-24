@@ -12,6 +12,7 @@ import { checkTier } from "@/lib/tiers-server";
 import { getETDateString } from "@/lib/market-hours";
 import { reserveManualFlatten, cancelAllAndWait, cancelSymbolOrdersAndWait } from "@/lib/trading-engine";
 import { z } from "zod";
+import { isShuttingDown, shuttingDownResponseInit } from "@/lib/shutdown-state";
 
 const commandSchema = z.object({
   command: z.enum(["flatten", "risk"]),
@@ -50,6 +51,15 @@ export async function POST(request: NextRequest) {
   }
 
   const { command, symbol } = parsed.data;
+
+  // Flatten cancels the symbol's stops before its market sell. During the
+  // shutdown drain the exit can land between the two and leave the position
+  // with neither, so it waits for the new container. The emergency halt on
+  // /api/trader/engine stays available.
+  if (command === "flatten" && isShuttingDown()) {
+    const { body: refusal, init } = shuttingDownResponseInit();
+    return NextResponse.json(refusal, init);
+  }
 
   // Flatten reservation tracked at handler scope so the catch below can
   // release it if a per-symbol audit-write throws and escapes the loop.

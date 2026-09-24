@@ -13,6 +13,7 @@ import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { z } from "zod";
 import { checkTier } from "@/lib/tiers-server";
+import { isShuttingDown, shuttingDownResponseInit, SHUTTING_DOWN_CODE } from "@/lib/shutdown-state";
 
 const log = createRouteLogger("trader-engine-api");
 
@@ -61,6 +62,14 @@ export async function POST(request: NextRequest) {
 
   const { action, mode } = parsed.data;
 
+  // Stop and halt stay available: they only add or keep protection. A start
+  // or switch during the shutdown drain would cancel every order in
+  // placeDisasterStops with the exit about to land.
+  if ((action === "start" || action === "switch") && isShuttingDown()) {
+    const { body: refusal, init } = shuttingDownResponseInit();
+    return NextResponse.json(refusal, init);
+  }
+
   try {
     switch (action) {
       case "switch": {
@@ -80,6 +89,10 @@ export async function POST(request: NextRequest) {
             metadata: { ok: false, from: previousMode, to: mode, error: result.error },
             request,
           });
+          if (result.code === SHUTTING_DOWN_CODE) {
+            const { body: refusal, init } = shuttingDownResponseInit();
+            return NextResponse.json(refusal, init);
+          }
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         const newStatus = getEngineStatus(auth.userId);
@@ -108,6 +121,10 @@ export async function POST(request: NextRequest) {
             metadata: { ok: false, mode, error: result.error },
             request,
           });
+          if (result.code === SHUTTING_DOWN_CODE) {
+            const { body: refusal, init } = shuttingDownResponseInit();
+            return NextResponse.json(refusal, init);
+          }
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         const newStatus = getEngineStatus(auth.userId);

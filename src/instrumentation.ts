@@ -85,28 +85,36 @@ export async function register() {
       g.__shutdownRegistered = true;
 
       const { FORCE_EXIT_MS } = await import("./lib/shutdown-config");
+      const { runShutdownOnce } = await import("./lib/shutdown-state");
 
-      const handleShutdown = async (sig: string) => {
-        console.log(`[shutdown] ${sig} received — stopping engines`);
-        const forceExit = setTimeout(() => {
-          console.error("[shutdown] timeout exceeded, forcing exit");
-          process.exit(1);
-        }, FORCE_EXIT_MS); // above the drain budget, below the container stop grace
+      // runShutdownOnce marks the process as shutting down before anything
+      // else (startEngine and the order routes refuse from then on), and runs
+      // the drain once. A second signal during the drain waits for it instead
+      // of starting another drain whose finally would exit part-way.
+      const handleShutdown = (sig: string) => {
+        const { first } = runShutdownOnce(async () => {
+          console.log(`[shutdown] ${sig} received, stopping engines`);
+          const forceExit = setTimeout(() => {
+            console.error("[shutdown] timeout exceeded, forcing exit");
+            process.exit(1);
+          }, FORCE_EXIT_MS); // above the drain budget, below the container stop grace
 
-        try {
-          const { shutdownAllEngines } = await import("./lib/trading-engine");
-          await shutdownAllEngines();
-          console.log("[shutdown] engines stopped, safety stops placed");
-        } catch (err) {
-          console.error("[shutdown] error during shutdown:", err);
-        } finally {
-          clearTimeout(forceExit);
-          process.exit(0);
-        }
+          try {
+            const { shutdownAllEngines } = await import("./lib/trading-engine");
+            await shutdownAllEngines();
+            console.log("[shutdown] engines stopped, safety stops placed");
+          } catch (err) {
+            console.error("[shutdown] error during shutdown:", err);
+          } finally {
+            clearTimeout(forceExit);
+            process.exit(0);
+          }
+        });
+        if (!first) console.log(`[shutdown] ${sig} received during the drain; waiting for it to finish`);
       };
 
-      process.on("SIGTERM", () => void handleShutdown("SIGTERM"));
-      process.on("SIGINT", () => void handleShutdown("SIGINT"));
+      process.on("SIGTERM", () => handleShutdown("SIGTERM"));
+      process.on("SIGINT", () => handleShutdown("SIGINT"));
 
       // Any other SIGTERM listener (Next's own cleanup, when
       // NEXT_MANUAL_SIG_HANDLE is unset) races this one to process.exit and

@@ -25,6 +25,7 @@ import {
   peekEngineStatus,
 } from "@/lib/trading-engine";
 import { writeAudit, AuditAction } from "@/lib/audit";
+import { isShuttingDown, shuttingDownResponseInit, SHUTTING_DOWN_CODE } from "@/lib/shutdown-state";
 import { createRouteLogger } from "@/lib/logger";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
@@ -130,6 +131,13 @@ export async function POST(request: NextRequest) {
 
   const { targetUserId, action, mode } = parsed.data;
 
+  // Stop and halt stay available during the shutdown drain; start and switch
+  // would cancel every order in placeDisasterStops with the exit about to land.
+  if ((action === "start" || action === "switch") && isShuttingDown()) {
+    const { body: refusal, init } = shuttingDownResponseInit();
+    return NextResponse.json(refusal, init);
+  }
+
   // Verify the target user exists.
   const [target] = await db
     .select({ id: users.id, email: users.email, name: users.name })
@@ -167,7 +175,7 @@ export async function POST(request: NextRequest) {
   );
 
   try {
-    let result: { ok: boolean; error?: string };
+    let result: { ok: boolean; error?: string; code?: string };
 
     if (action === "start") {
       result = await startEngine(targetUserId, mode);
@@ -204,6 +212,10 @@ export async function POST(request: NextRequest) {
     });
 
     if (!result.ok) {
+      if (result.code === SHUTTING_DOWN_CODE) {
+        const { body: refusal, init } = shuttingDownResponseInit();
+        return NextResponse.json(refusal, init);
+      }
       return NextResponse.json({ error: result.error ?? "Action failed" }, { status: 400 });
     }
 

@@ -10,6 +10,7 @@ import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
 import { peekEngineStatus } from "@/lib/trading-engine";
 import { checkTier } from "@/lib/tiers-server";
+import { isShuttingDown, shuttingDownResponseInit } from "@/lib/shutdown-state";
 
 const log = createRouteLogger("broker-orders");
 
@@ -103,6 +104,13 @@ export async function GET() {
 export async function POST(request: Request) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
+
+  // No new orders while the process drains for shutdown: the exit can land
+  // between the order and anything that should follow it.
+  if (isShuttingDown()) {
+    const { body: refusal, init } = shuttingDownResponseInit();
+    return NextResponse.json(refusal, init);
+  }
 
   // Trader tier or higher — manual order placement requires a paid
   // sub. Free users can browse / educate / watch; can't actually trade.
