@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -28,6 +28,14 @@ import type {
   FilingStatus,
 } from "@/lib/tax-engine";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
+import { useToast } from "@/components/ui/toast";
+import { useUrlParam } from "@/hooks/use-url-param";
+import { useLatestRequest } from "@/hooks/use-latest-request";
+import {
+  DEFAULT_ORDINARY_INCOME,
+  commitIncomeDraft,
+  isIncomeParam,
+} from "@/lib/tax-inputs";
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -47,6 +55,8 @@ const yearOptions = Array.from({ length: 5 }, (_, i) => ({
   label: String(currentYear - i),
 }));
 
+const YEAR_VALUES = yearOptions.map((o) => o.value);
+
 const filingStatusOptions: { value: FilingStatus; label: string }[] = [
   { value: "single", label: "Single" },
   { value: "married_joint", label: "Married Filing Jointly" },
@@ -54,7 +64,12 @@ const filingStatusOptions: { value: FilingStatus; label: string }[] = [
   { value: "head_of_household", label: "Head of Household" },
 ];
 
-const TABS = [
+const FILING_STATUSES = filingStatusOptions.map((o) => o.value);
+
+const TAB_IDS = ["form8949", "scheduled"] as const;
+type TaxTab = (typeof TAB_IDS)[number];
+
+const TABS: { id: TaxTab; label: string }[] = [
   { id: "form8949", label: "Form 8949" },
   { id: "scheduled", label: "Schedule D" },
 ];
@@ -74,47 +89,111 @@ function formatDate(iso: string): string {
 
 // ─── Page ─────────────────────────────────────────────────────────
 
-export default function TaxReportPage() {
-  const [year, setYear] = useState(String(currentYear));
-  const [filingStatus, setFilingStatus] = useState<FilingStatus>("single");
-  const [ordinaryIncome, setOrdinaryIncome] = useState("50000");
-  const [activeTab, setActiveTab] = useState("form8949");
-  const [data, setData] = useState<Form8949Response | null>(null);
-  const [loading, setLoading] = useState(true);
+// Wrap in Suspense: useUrlParam reads useSearchParams, and Next.js 15
+// requires a Suspense boundary so the SSR shell can render while the
+// client hydrates.
+export default function TaxReportPageWrapper() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <TaxReportPage />
+    </Suspense>
+  );
+}
+
+function isForm8949Response(json: unknown): json is Form8949Response {
+  if (typeof json !== "object" || json === null) return false;
+  const d = json as Record<string, unknown>;
+  return (
+    Array.isArray(d.lines) &&
+    typeof d.summary === "object" && d.summary !== null &&
+    typeof d.scheduleDSummary === "object" && d.scheduleDSummary !== null
+  );
+}
+
+function TaxReportPage() {
+  const { toast } = useToast();
+  // View and filing inputs live in the URL, so a reload or the 401
+  // redirect back from /login shows the same report.
+  const [year, setYear] = useUrlParam("year", String(currentYear), YEAR_VALUES);
+  const [filingStatus, setFilingStatus] = useUrlParam<FilingStatus>("filing", "single", FILING_STATUSES);
+  const [ordinaryIncome, setOrdinaryIncome] = useUrlParam(
+    "income",
+    String(DEFAULT_ORDINARY_INCOME),
+    isIncomeParam,
+  );
+  const [activeTab, setActiveTab] = useUrlParam<TaxTab>("tab", "form8949", TAB_IDS);
+  // The income field is a draft, committed on blur or Enter. The report is
+  // fetched for committed values only, never per keystroke, and an empty
+  // or invalid field reverts rather than becoming the $50,000 default.
+  const [incomeDraft, setIncomeDraft] = useState(ordinaryIncome);
+  useEffect(() => {
+    setIncomeDraft(ordinaryIncome);
+  }, [ordinaryIncome]);
+  const commitIncome = () => {
+    const next = commitIncomeDraft(incomeDraft, ordinaryIncome);
+    setIncomeDraft(next);
+    if (next !== ordinaryIncome) setOrdinaryIncome(next);
+  };
+
+  // Responses are stored with the inputs they were computed for and shown
+  // only while those are still the current inputs, so a slower response
+  // for earlier inputs can never paint over the current ones. A failed
+  // fetch is its own state, not "No Realized Trades".
+  const reportKey = `${year}|${filingStatus}|${ordinaryIncome}`;
+  const [report, setReport] = useState<{ key: string; data: Form8949Response } | null>(null);
+  const [reportError, setReportError] = useState<{ key: string; locked: boolean } | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const reportRequest = useLatestRequest();
   const [exporting, setExporting] = useState(false);
 
-  const fetchReport = useCallback(async () => {
-    setLoading(true);
-    try {
-      const income = Number(ordinaryIncome) || 50000;
-      const params = new URLSearchParams({
-        year,
-        filingStatus,
-        ordinaryIncome: String(income),
-      });
-      const res = await fetch(`/api/tax/form8949?${params}`);
-      if (!res.ok) throw new Error("Failed to fetch");
-      const json: Form8949Response = await res.json();
-      setData(json);
-    } catch {
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [year, filingStatus, ordinaryIncome]);
-
   useEffect(() => {
-    fetchReport();
-  }, [fetchReport]);
+    const ticket = reportRequest.begin();
+    const key = `${year}|${filingStatus}|${ordinaryIncome}`;
+    const params = new URLSearchParams({ year, filingStatus, ordinaryIncome });
+    (async () => {
+      try {
+        const res = await fetch(`/api/tax/form8949?${params}`, { signal: ticket.signal });
+        if (!ticket.isCurrent()) return;
+        if (!res.ok) {
+          // 402 is the tier gate. The PaywallBanner explains it, so it
+          // gets no Retry.
+          setReportError({ key, locked: res.status === 402 });
+          return;
+        }
+        const json: unknown = await res.json();
+        if (!ticket.isCurrent()) return;
+        if (!isForm8949Response(json)) throw new Error("Unexpected tax report response");
+        setReport({ key, data: json });
+      } catch {
+        if (ticket.isCurrent()) setReportError({ key, locked: false });
+      }
+    })();
+  }, [year, filingStatus, ordinaryIncome, reloadNonce, reportRequest]);
+
+  const data = report?.key === reportKey ? report.data : null;
+  const failed = !data && reportError?.key === reportKey ? reportError : null;
+  const loading = !data && !failed;
+
+  const retryReport = () => {
+    setReportError(null);
+    setReloadNonce((n) => n + 1);
+  };
 
   async function handleExport() {
     setExporting(true);
     try {
-      const income = Number(ordinaryIncome) || 50000;
       const params = new URLSearchParams({
         year,
         filingStatus,
-        ordinaryIncome: String(income),
+        // Clicking Export blurs the income field in the same gesture, before
+        // its commit has re-rendered, so read the draft as the commit would.
+        ordinaryIncome: commitIncomeDraft(incomeDraft, ordinaryIncome),
         format: "csv",
       });
       const res = await fetch(`/api/tax/form8949?${params}`);
@@ -129,7 +208,7 @@ export default function TaxReportPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      // Silent fail for export
+      toast({ type: "error", message: "Form 8949 export failed. Try again in a moment." });
     } finally {
       setExporting(false);
     }
@@ -191,7 +270,7 @@ export default function TaxReportPage() {
           },
           {
             label: "Wash Sales",
-            value: String(washSaleCount),
+            value: data ? String(washSaleCount) : "--",
             tone: washSaleCount > 0 ? "bearish" : "neutral",
           },
         ]}
@@ -215,8 +294,12 @@ export default function TaxReportPage() {
           <Input
             label="Other Ordinary Income"
             type="number"
-            value={ordinaryIncome}
-            onChange={(e) => setOrdinaryIncome(e.target.value)}
+            value={incomeDraft}
+            onChange={(e) => setIncomeDraft(e.target.value)}
+            onBlur={commitIncome}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitIncome();
+            }}
             min="0"
             step="1000"
           />
@@ -246,7 +329,11 @@ export default function TaxReportPage() {
       </Card>
 
       {/* Tabs: Form 8949 / Schedule D */}
-      <Tabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab} />
+      <Tabs
+        tabs={TABS}
+        activeTab={activeTab}
+        onChange={(id) => setActiveTab(id as TaxTab)}
+      />
 
       {loading ? (
         <div className="space-y-4">
@@ -254,7 +341,20 @@ export default function TaxReportPage() {
             <Skeleton key={i} className="h-24" rounded="lg" />
           ))}
         </div>
-      ) : !data || data.lines.length === 0 ? (
+      ) : failed?.locked ? (
+        <EmptyState
+          icon={<Receipt className="h-7 w-7" />}
+          title="Tax Reports Need the Trader Plan"
+          description="Upgrade to generate Form 8949 and Schedule D from your trades."
+        />
+      ) : failed || !data ? (
+        <EmptyState
+          icon={<AlertTriangle className="h-7 w-7" />}
+          title="Couldn't Load the Tax Report"
+          description={`The ${year} report did not load, so nothing here reflects your trades yet.`}
+          action={{ label: "Retry", onClick: retryReport }}
+        />
+      ) : data.lines.length === 0 ? (
         <EmptyState
           icon={<Receipt className="h-7 w-7" />}
           title="No Realized Trades"

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -22,6 +22,8 @@ import {
 import { PageIntro } from "@/components/layout/page-intro";
 import { TaxStatusCard } from "@/components/education/tax-status-card";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
+import { useToast } from "@/components/ui/toast";
+import { useLatestRequest } from "@/hooks/use-latest-request";
 
 interface TaxSummary {
   shortTermGains: number;
@@ -60,51 +62,77 @@ const yearOptions = Array.from({ length: 5 }, (_, i) => ({
 }));
 
 export default function TaxCenterPage() {
+  const { toast } = useToast();
   const [year, setYear] = useState(String(currentYear));
-  const [summary, setSummary] = useState<TaxSummary | null>(null);
+  // The summary is stored with the year it was fetched for and shown only
+  // while that year is selected, so a slower response for the previous
+  // year cannot paint over this one. A failed fetch is its own state, not
+  // "No Trade Data".
+  const [report, setReport] = useState<{ year: string; summary: TaxSummary | null } | null>(null);
+  const [reportError, setReportError] = useState<{ year: string; locked: boolean } | null>(null);
+  const [reportNonce, setReportNonce] = useState(0);
+  const reportRequest = useLatestRequest();
   const [suggestions, setSuggestions] = useState<HarvestingSuggestion[]>([]);
   const [unpricedSymbols, setUnpricedSymbols] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
   const [harvestLoading, setHarvestLoading] = useState(true);
+  const [harvestError, setHarvestError] = useState(false);
+  const [harvestNonce, setHarvestNonce] = useState(0);
+  const harvestRequest = useLatestRequest();
   const [exporting, setExporting] = useState(false);
 
-  const fetchReport = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/tax/report?year=${year}`);
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setSummary(data.summary);
-    } catch {
-      setSummary(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [year]);
+  useEffect(() => {
+    const ticket = reportRequest.begin();
+    (async () => {
+      try {
+        const res = await fetch(`/api/tax/report?year=${year}`, { signal: ticket.signal });
+        if (!ticket.isCurrent()) return;
+        if (!res.ok) {
+          // 402 is the tier gate. The PaywallBanner explains it, so it
+          // gets no Retry.
+          setReportError({ year, locked: res.status === 402 });
+          return;
+        }
+        const data = await res.json();
+        if (!ticket.isCurrent()) return;
+        setReport({ year, summary: data?.summary ?? null });
+      } catch {
+        if (ticket.isCurrent()) setReportError({ year, locked: false });
+      }
+    })();
+  }, [year, reportNonce, reportRequest]);
 
-  const fetchHarvesting = useCallback(async () => {
+  useEffect(() => {
+    const ticket = harvestRequest.begin();
     setHarvestLoading(true);
-    try {
-      const res = await fetch("/api/tax/harvesting");
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setSuggestions(data.suggestions ?? []);
-      setUnpricedSymbols(Array.isArray(data.unpricedSymbols) ? data.unpricedSymbols : []);
-    } catch {
-      setSuggestions([]);
-      setUnpricedSymbols([]);
-    } finally {
-      setHarvestLoading(false);
-    }
-  }, []);
+    setHarvestError(false);
+    (async () => {
+      try {
+        const res = await fetch("/api/tax/harvesting", { signal: ticket.signal });
+        if (!res.ok) throw new Error("Failed to fetch");
+        const data = await res.json();
+        if (!ticket.isCurrent()) return;
+        setSuggestions(Array.isArray(data?.suggestions) ? data.suggestions : []);
+        setUnpricedSymbols(Array.isArray(data?.unpricedSymbols) ? data.unpricedSymbols : []);
+      } catch {
+        if (!ticket.isCurrent()) return;
+        setSuggestions([]);
+        setUnpricedSymbols([]);
+        setHarvestError(true);
+      } finally {
+        if (ticket.isCurrent()) setHarvestLoading(false);
+      }
+    })();
+  }, [harvestNonce, harvestRequest]);
 
-  useEffect(() => {
-    fetchReport();
-  }, [fetchReport]);
+  const reportForYear = report?.year === year ? report : null;
+  const summary = reportForYear?.summary ?? null;
+  const failed = !reportForYear && reportError?.year === year ? reportError : null;
+  const loading = !reportForYear && !failed;
 
-  useEffect(() => {
-    fetchHarvesting();
-  }, [fetchHarvesting]);
+  const retryReport = () => {
+    setReportError(null);
+    setReportNonce((n) => n + 1);
+  };
 
   async function handleExport() {
     setExporting(true);
@@ -121,7 +149,7 @@ export default function TaxCenterPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      // Silent fail for export
+      toast({ type: "error", message: "Tax CSV export failed. Try again in a moment." });
     } finally {
       setExporting(false);
     }
@@ -157,7 +185,7 @@ export default function TaxCenterPage() {
           { label: "Net Gain", value: summary ? formatCurrency(summary.netGain) : "--", tone: summary ? (summary.netGain >= 0 ? "bullish" : "bearish") : "neutral" },
           { label: "Estimated Tax", value: summary ? formatCurrency(summary.estimatedTax) : "--" },
           { label: "Total Trades", value: summary ? String(summary.tradeCount) : "--" },
-          { label: "Harvest Opps", value: String(suggestions.length), tone: suggestions.length > 0 ? "bullish" : "neutral" },
+          { label: "Harvest Opps", value: harvestLoading || harvestError ? "--" : String(suggestions.length), tone: suggestions.length > 0 ? "bullish" : "neutral" },
         ]}
       />
 
@@ -249,6 +277,19 @@ export default function TaxCenterPage() {
             </div>
           </Card>
         </div>
+      ) : failed?.locked ? (
+        <EmptyState
+          icon={<Receipt className="w-12 h-12" />}
+          title="Tax Center Needs the Trader Plan"
+          description="Upgrade to see realized gains and estimated tax from your trades."
+        />
+      ) : failed ? (
+        <EmptyState
+          icon={<AlertTriangle className="w-12 h-12" />}
+          title="Couldn't Load the Tax Report"
+          description={`The ${year} summary did not load, so nothing here reflects your trades yet.`}
+          action={{ label: "Retry", onClick: retryReport }}
+        />
       ) : (
         <EmptyState
           icon={<Receipt className="w-12 h-12" />}
@@ -361,6 +402,16 @@ export default function TaxCenterPage() {
             {Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-16" rounded="lg" />
             ))}
+          </div>
+        ) : harvestError ? (
+          <div className="py-8 text-center space-y-3">
+            <p className="text-sm text-bearish">
+              Couldn&apos;t load harvesting suggestions. This is not the same as
+              having none.
+            </p>
+            <Button variant="secondary" size="sm" onClick={() => setHarvestNonce((n) => n + 1)}>
+              Retry
+            </Button>
           </div>
         ) : suggestions.length === 0 ? (
           <div className="py-8 text-center space-y-3">
