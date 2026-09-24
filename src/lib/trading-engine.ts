@@ -9,7 +9,14 @@
 // flag, full error isolation per symbol.
 
 import type { Bar } from "@/types";
-import { createBrokerClient, BrokerError, CancelAllPartialError } from "./brokers";
+import { randomUUID } from "crypto";
+import {
+  createBrokerClient,
+  BrokerError,
+  CancelAllPartialError,
+  isAmbiguousOrderError,
+  lookupOrderByClientId,
+} from "./brokers";
 import type { BrokerClient, BrokerAccount, BrokerPosition, BrokerOrder, PlaceOrderParams } from "./brokers";
 import { decrypt } from "./crypto";
 import { getMarketDataProvider } from "./market-data";
@@ -1783,10 +1790,82 @@ export async function placeEngineOrder(
     throw new MarketClosedError(params.symbol, params.side);
   }
 
-  return client.placeOrder({
-    ...params,
-    positionIntent: params.side === "buy" ? "buy_to_open" : "sell_to_close",
-  });
+  // The client_order_id is fixed before the POST so a lost response can be
+  // resolved by looking the order up, instead of logging a live order FAILED.
+  const clientOrderId = params.clientOrderId ?? randomUUID();
+  log.info(
+    { symbol: params.symbol, side: params.side, type: params.type, qty: params.qty, clientOrderId },
+    "Submitting engine order"
+  );
+  try {
+    return await client.placeOrder({
+      ...params,
+      clientOrderId,
+      positionIntent: params.side === "buy" ? "buy_to_open" : "sell_to_close",
+    });
+  } catch (err) {
+    // A timeout, dropped connection or 5xx after the POST was sent does not
+    // prove the broker refused the order. Look it up before the caller writes
+    // FAILED and skips the notional and rate counters for a live order.
+    if (!isAmbiguousOrderError(err)) throw err;
+    err.clientOrderId = clientOrderId;
+    const found = await lookupOrderByClientId(client, clientOrderId);
+    if (!found) {
+      log.warn(
+        { symbol: params.symbol, side: params.side, clientOrderId, outcome: err.orderOutcome, err: err.message },
+        "Engine order outcome unknown: lookup by client_order_id found nothing"
+      );
+      throw err;
+    }
+    log.warn(
+      { symbol: params.symbol, side: params.side, clientOrderId, orderId: found.id, outcome: err.orderOutcome },
+      "Engine order confirmed by client_order_id lookup after an ambiguous submit"
+    );
+    return found;
+  }
+}
+
+/**
+ * A BUY whose placement threw: log it, put it on the engine's error list and
+ * write a FAILED trade row carrying the client_order_id. When the outcome is
+ * unknown (placeEngineOrder's lookup could not confirm or rule out the order),
+ * the BUY is also counted against the order-rate and daily notional caps as
+ * if placed, because under-counting real exposure is the unsafe direction.
+ * Returns `unconfirmed: true` in that case so the caller can also keep the
+ * symbol out of the rest of the scan. Exported for tests.
+ */
+export async function recordFailedEngineBuy(
+  engine: EngineState,
+  failure: { symbol: string; signal: string; qty: number; buyNotional: number; err: unknown; source: string }
+): Promise<{ unconfirmed: boolean }> {
+  const { symbol, signal, qty, buyNotional, err, source } = failure;
+  const msg = err instanceof Error ? err.message : "unknown";
+  const unconfirmed = isAmbiguousOrderError(err);
+  const clientOrderId = err instanceof BrokerError ? err.clientOrderId : null;
+  log.error({ err: msg, symbol, source, clientOrderId, unconfirmed }, "Failed to place buy order");
+  pushError(
+    engine,
+    unconfirmed
+      ? `Buy order status unknown for ${symbol} (client id ${clientOrderId ?? "n/a"}): ${msg}`
+      : `Buy order failed for ${symbol}: ${msg}`
+  );
+  if (unconfirmed) recordOrderPlacement(engine, "buy", buyNotional);
+  await logTrade(
+    symbol,
+    signal,
+    "BUY",
+    qty,
+    null,
+    "FAILED",
+    null,
+    unconfirmed
+      ? `Order status unknown (client_order_id ${clientOrderId ?? "n/a"}): ${msg}`
+      : `Order failed: ${msg}`,
+    null,
+    null,
+    engine.userId
+  );
+  return { unconfirmed };
 }
 
 // ─── Phase 5: MTM / Wash-Sale helpers ─────────────────────────────────────────
@@ -4634,6 +4713,9 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
       // placing orders against the newer scan's state.
       throwIfScanCancelled(engine, myGeneration);
 
+      // Set around the placement so the catch can tell a failed order from a
+      // failed quote or gate read.
+      let placing: { qty: number; buyNotional: number } | null = null;
       try {
         const quote = await provider.fetchQuote(symbol);
         if (!quote || quote.price <= 0) continue;
@@ -4671,7 +4753,9 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
           });
           continue;
         }
+        placing = { qty, buyNotional };
         const tentryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
+        placing = null;
         recordOrderPlacement(engine, "buy", buyNotional);
         // Accumulate this buy in the sector context so a later same-sector buy
         // in this same scan sees it — otherwise N same-sector buys each read a
@@ -4685,7 +4769,17 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
           stopLoss: quote.price * 0.88, takeProfit: quote.price * 1.5,
           trailingStopPct: 0.117, entryDate: new Date(), holdPeriod: 999,
         });
-      } catch { /* skip */ }
+      } catch (err) {
+        if (placing) {
+          const { unconfirmed } = await recordFailedEngineBuy(engine, {
+            symbol, signal: "tactical_entry", qty: placing.qty, buyNotional: placing.buyNotional, err,
+            source: "engine_tactical",
+          });
+          if (unconfirmed) pendingBuySymbols.add(symbol);
+        } else {
+          log.warn({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Tactical entry skipped for symbol");
+        }
+      }
       await new Promise(r => setTimeout(r, 100));
     }
     engine.positionCount = positionMap.size;
@@ -6346,23 +6440,11 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           );
 
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "unknown";
-          log.error({ err: msg, symbol }, "Failed to place buy order");
-          pushError(engine, `Buy order failed for ${symbol}: ${msg}`);
-
-          await logTrade(
-            symbol,
-            signal,
-            "BUY",
-            qty,
-            null,
-            "FAILED",
-            null,
-            `Order failed: ${msg}`,
-            null,
-            null,
-            engine.userId
-          );
+          const { unconfirmed } = await recordFailedEngineBuy(engine, {
+            symbol, signal, qty, buyNotional, err, source: "engine_scan",
+          });
+          // The order may be live: no second BUY for this symbol this scan.
+          if (unconfirmed) pendingBuySymbols.add(symbol);
         }
       }
     } catch (err) {
