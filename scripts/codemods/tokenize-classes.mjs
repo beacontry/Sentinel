@@ -167,7 +167,10 @@ export function literalSpans(src) {
       i++;
       while (i < n && src[i] !== c) {
         if (src[i] === "\\") i++;
-        else if (c !== "`" && src[i] === "\n") break; // not a string (JSX text apostrophe)
+        // A single-quoted run that reaches a newline is an apostrophe in JSX
+        // text, not a string. Double quotes may span lines: JSX attribute
+        // values often do, with the class list wrapped over two lines.
+        else if (c === "'" && src[i] === "\n") break;
         i++;
       }
       if (i < n && src[i] === c) spans.push([start, i + 1]);

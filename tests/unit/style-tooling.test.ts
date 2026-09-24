@@ -20,6 +20,11 @@ describe("tokenize-classes: literal scanner", () => {
     expect(spans).toEqual([`"text-[10px]"`, "`x ${y} text-[9px]`"]);
   });
 
+  it("follows a double-quoted JSX attribute across lines", () => {
+    const src = `<a className="flex text-[11px] uppercase\n  tracking-[0.08em] text-[10px]">x</a>`;
+    expect(run(src, "text").out).toBe(`<a className="flex text-xs uppercase\n  tracking-[0.08em] text-xs">x</a>`);
+  });
+
   it("does not treat an apostrophe in JSX text as a string", () => {
     const src = `<p>Don't panic</p>\n<p className="text-[10px]">x</p>`;
     expect(run(src, "text").out).toBe(`<p>Don't panic</p>\n<p className="text-xs">x</p>`);
