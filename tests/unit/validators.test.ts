@@ -220,6 +220,28 @@ describe("placeBrokerOrderSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("keeps a UUID clientOrderId (the ticket's idempotency key)", () => {
+    const id = "3f6c1a52-8b1e-4c7a-9d2e-5b7f0a1c2d3e";
+    const result = placeBrokerOrderSchema.safeParse({
+      symbol: "AAPL",
+      side: "buy",
+      qty: "10",
+      clientOrderId: id,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.clientOrderId).toBe(id);
+  });
+
+  it("rejects a clientOrderId that is not a UUID", () => {
+    const result = placeBrokerOrderSchema.safeParse({
+      symbol: "AAPL",
+      side: "buy",
+      qty: "10",
+      clientOrderId: "retry-1",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 // ─── updateRiskProfileSchema ────────────────────────────────────

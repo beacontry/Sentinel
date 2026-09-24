@@ -10,7 +10,7 @@
 // is constrained by Alpaca to market + day/ioc TIF — the validator enforces.
 // Bracket orders are share-count only (notional + bracket not supported).
 
-import { useEffect, useState, useCallback, use } from "react";
+import { useEffect, useState, useCallback, useRef, use } from "react";
 import Link from "next/link";
 import { SmartBackButton } from "@/components/ui/smart-back-button";
 import {
@@ -151,6 +151,11 @@ export default function TradePage({
     };
   }, [symbol]);
 
+  // Idempotency key for the order intent on the ticket. Minted on the first
+  // submit, reused on every resubmit of the same order so the broker refuses
+  // a duplicate, and replaced only after a success or when the order changes.
+  const orderIntentRef = useRef<{ key: string; clientOrderId: string } | null>(null);
+
   // ─── Derived state ──────────────────────────────────────────────
   const isLive = connection?.environment === "live";
   const engineBlocked = engineStatus?.running === true;
@@ -264,12 +269,27 @@ export default function TradePage({
         if (stopLossPrice) body.stopLossPrice = stopLossPrice;
       }
 
+      const intentKey = JSON.stringify(body);
+      if (orderIntentRef.current?.key !== intentKey) {
+        orderIntentRef.current = { key: intentKey, clientOrderId: crypto.randomUUID() };
+      }
+      body.clientOrderId = orderIntentRef.current.clientOrderId;
+
       const res = await fetch("/api/broker/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await res.json();
+      if (data.code === "ORDER_STATUS_UNKNOWN") {
+        // The order may be live. Keep the same clientOrderId so a resubmit
+        // of this ticket is refused by the broker instead of doubling it.
+        toast.toast({
+          type: "error",
+          message: "Order status unknown: the broker did not confirm it. Check open orders before placing it again.",
+        });
+        return;
+      }
       if (!res.ok) {
         toast.toast({
           type: "error",
@@ -279,8 +299,11 @@ export default function TradePage({
       }
       toast.toast({
         type: "success",
-        message: `${side.toUpperCase()} ${symbol} submitted — status: ${data.order?.status ?? "accepted"}.`,
+        message: data.deduplicated
+          ? `${side.toUpperCase()} ${symbol} was already submitted; no second order placed. Status: ${data.order?.status ?? "accepted"}.`
+          : `${side.toUpperCase()} ${symbol} submitted — status: ${data.order?.status ?? "accepted"}.`,
       });
+      orderIntentRef.current = null;
       // Reset qty/notional but keep order type + side selection
       setQty("");
       setNotional("");
@@ -288,7 +311,7 @@ export default function TradePage({
       const msg = err instanceof Error ? err.message : "network error";
       toast.toast({
         type: "error",
-        message: `Order couldn't reach the broker (${msg}). Check your connection and retry.`,
+        message: `No answer from the server (${msg}). The order may have gone through: check open orders before placing it again.`,
       });
     } finally {
       setSubmitting(false);

@@ -46,6 +46,7 @@ const ACTION_FILTER_OPTIONS = [
   { value: "engine.live_protective_action", label: "engine.live_protective_action" },
   { value: "order.placed", label: "order.placed" },
   { value: "order.rejected", label: "order.rejected" },
+  { value: "order.unconfirmed", label: "order.unconfirmed" },
   { value: "broker.connection.created", label: "broker.connection.created" },
   { value: "broker.connection.updated", label: "broker.connection.updated" },
   { value: "broker.connection.deleted", label: "broker.connection.deleted" },

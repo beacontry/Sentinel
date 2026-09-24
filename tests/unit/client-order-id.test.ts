@@ -10,14 +10,14 @@
  *
  * The Alpaca client adds the field via `randomUUID()` when callers don't
  * provide one — so every placement gets idempotency by default. Callers
- * CAN provide their own for deterministic-retry-of-the-same-intent flows
- * (not yet used; this PR adds the mechanism, not the policy).
+ * CAN provide their own for deterministic-retry-of-the-same-intent flows:
+ * the manual order ticket sends one per order intent (WP04).
  *
  * We intercept the broker HTTP call by mocking global fetch.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { AlpacaClient } from "@/lib/brokers";
+import { AlpacaClient, BrokerError, isAmbiguousOrderError, lookupOrderByClientId, type BrokerClient } from "@/lib/brokers";
 
 let fetchMock: ReturnType<typeof vi.fn>;
 let originalFetch: typeof globalThis.fetch;
@@ -197,5 +197,78 @@ describe("Alpaca placeOrder — client_order_id idempotency", () => {
 
     const body = captureRequestBody();
     expect(body.client_order_id).toBe("intentional-duplicate-key");
+  });
+});
+
+describe("Alpaca order outcome classification and lookup by client_order_id (WP04)", () => {
+  it("getOrderByClientId hits GET /v2/orders:by_client_order_id with the id encoded", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        id: "broker-id-9", symbol: "AAPL", side: "buy", qty: "100", filled_qty: "0",
+        type: "market", status: "accepted", time_in_force: "day",
+        submitted_at: new Date().toISOString(),
+      })
+    );
+    const client = new AlpacaClient("KEY", "SECRET", "paper");
+    const found = await client.getOrderByClientId("3f6c1a52-8b1e-4c7a-9d2e-5b7f0a1c2d3e");
+
+    expect(found?.id).toBe("broker-id-9");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit | undefined];
+    expect(url).toBe(
+      "https://paper-api.alpaca.markets/v2/orders:by_client_order_id?client_order_id=3f6c1a52-8b1e-4c7a-9d2e-5b7f0a1c2d3e"
+    );
+    expect(init?.method ?? "GET").toBe("GET");
+  });
+
+  it("getOrderByClientId returns null on 404", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "order not found" }, 404));
+    const client = new AlpacaClient("KEY", "SECRET", "paper");
+    expect(await client.getOrderByClientId("x")).toBeNull();
+  });
+
+  it("a timed-out POST is an ambiguous outcome carrying the client_order_id it sent", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("This operation was aborted"));
+    const client = new AlpacaClient("KEY", "SECRET", "paper");
+    const err = await client
+      .placeOrder({ symbol: "AAPL", side: "buy", qty: "100", type: "market", timeInForce: "day", clientOrderId: "intent-1" })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BrokerError);
+    expect(isAmbiguousOrderError(err)).toBe(true);
+    expect((err as BrokerError).statusCode).toBe(504);
+    expect((err as BrokerError).orderOutcome).toBe("unknown");
+    expect((err as BrokerError).clientOrderId).toBe("intent-1");
+  });
+
+  it("a 5xx or an unreadable 2xx body is ambiguous; a duplicate is 'duplicate'; a refusal is not ambiguous", async () => {
+    const client = new AlpacaClient("KEY", "SECRET", "paper");
+    const place = (): Promise<BrokerError> =>
+      client
+        .placeOrder({ symbol: "AAPL", side: "buy", qty: "1", type: "market", timeInForce: "day", clientOrderId: "intent-2" })
+        .then(
+          () => { throw new Error("expected placeOrder to fail"); },
+          (e: unknown) => e as BrokerError
+        );
+
+    fetchMock.mockResolvedValueOnce(new Response("upstream error", { status: 503 }));
+    expect((await place()).orderOutcome).toBe("unknown");
+
+    fetchMock.mockResolvedValueOnce(new Response("not json", { status: 200 }));
+    expect((await place()).orderOutcome).toBe("unknown");
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "client_order_id must be unique" }, 422));
+    expect((await place()).orderOutcome).toBe("duplicate");
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: "insufficient buying power" }, 403));
+    const refused = await place();
+    expect(refused.orderOutcome).toBeNull();
+    expect(isAmbiguousOrderError(refused)).toBe(false);
+  });
+
+  it("lookupOrderByClientId turns a failing or missing lookup into null (unknown)", async () => {
+    const failing = { getOrderByClientId: async () => { throw new Error("down"); } } as unknown as BrokerClient;
+    expect(await lookupOrderByClientId(failing, "x")).toBeNull();
+    const without = {} as unknown as BrokerClient;
+    expect(await lookupOrderByClientId(without, "x")).toBeNull();
   });
 });

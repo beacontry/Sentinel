@@ -387,6 +387,11 @@ Reference list of all gates a main-scan BUY traverses:
 - **Type:** Market order (immediate execution)
 - **Trigger:** Any exit condition met during scan
 
+### Ambiguous Order Outcomes (2026-09-23)
+Every order carries a `client_order_id`. A submit that times out, loses its connection, gets a 5xx or returns an unreadable 2xx body may still have been accepted, so it is never reported as a rejection on that evidence alone: the caller first looks the order up with `GET /v2/orders:by_client_order_id` (`getOrderByClientId`, optional on the broker interface; `isAmbiguousOrderError` and `lookupOrderByClientId` in `src/lib/brokers.ts`). A lookup that finds nothing means "unknown", not "rejected", since the POST may still be in flight.
+
+- **Manual ticket** (`POST /api/broker/orders`): the page mints one UUID per order intent and reuses it on every resubmit of the same order, replacing it only after a success or a change to the order. The route forwards it. If the lookup finds the order it answers 201 and audits `order.placed`; a resubmit refused as a duplicate answers with the original order (`deduplicated: true`). Otherwise it answers 202 `ORDER_STATUS_UNKNOWN` (`retryable: false`) and audits `order.unconfirmed`, and the page tells the user to check open orders.
+
 ---
 
 ## Safety Systems
@@ -849,7 +854,7 @@ Append-only, hash-chained record of every privileged action. Schema in `drizzle/
 
 **Write path**: `writeAudit()` opens a Postgres transaction, takes `pg_advisory_xact_lock(8493920100)` (auto-released on commit), reads the tail row's hash, computes the new hash, inserts. Concurrent writers serialize on the lock so the chain can't fork. The helper **never throws** — failures log and return null. Audit problems must not cascade into request failures.
 
-**What's logged**: `auth.login_success` / `login_failed` (attacker IP captured via X-Forwarded-For); `auth.user_registered`; `invite.sent` / `invite.consumed`; `broker.connection.created` / `.updated` / `.deleted` (rotated secrets flagged in metadata, never logged in plaintext); `engine.started` / `.stopped` / `.halted` / `.mode_switched`; `engine.live_blocked`; `engine.pdt_vulnerable`; `order.placed` / `.rejected` (with safeguard reason); `risk_profile.updated` (field-level diff); `system_config.updated` (key name + actor + whether prior value existed — never the value itself); `user.profile_updated` (ToS acceptance, future user-profile mutations).
+**What's logged**: `auth.login_success` / `login_failed` (attacker IP captured via X-Forwarded-For); `auth.user_registered`; `invite.sent` / `invite.consumed`; `broker.connection.created` / `.updated` / `.deleted` (rotated secrets flagged in metadata, never logged in plaintext); `engine.started` / `.stopped` / `.halted` / `.mode_switched`; `engine.live_blocked`; `engine.pdt_vulnerable`; `order.placed` / `.rejected` (with safeguard reason) / `.unconfirmed` (outcome unknown after a timeout or 5xx, see Ambiguous Order Outcomes); `risk_profile.updated` (field-level diff); `system_config.updated` (key name + actor + whether prior value existed — never the value itself); `user.profile_updated` (ToS acceptance, future user-profile mutations).
 
 **Verification**: `/dashboard/admin/audit` has a "Verify chain" button that calls `POST /api/admin/audit/verify`. Walks every row in id order, recomputes each hash. Returns "intact" or the first row where the chain breaks. ~2s per 100k rows.
 

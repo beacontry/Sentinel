@@ -136,6 +136,14 @@ export interface BrokerClient {
    * PENDING row's broker_order_id has aged out of the recent-orders batch.
    */
   getOrder?(orderId: string): Promise<BrokerOrder | null>;
+  /**
+   * Fetch a single order by the client_order_id it was submitted with.
+   * Returns null when the broker has no such order. Used after a placeOrder
+   * whose outcome is unknown (timeout, dropped connection, 5xx, unreadable
+   * body) to find out whether the order was accepted before reporting
+   * anything. Optional: a broker without it leaves such outcomes unknown.
+   */
+  getOrderByClientId?(clientOrderId: string): Promise<BrokerOrder | null>;
   placeOrder(params: PlaceOrderParams): Promise<BrokerOrder>;
   cancelOrder?(orderId: string): Promise<void>;
   cancelAllOrders?(): Promise<void>;
@@ -175,10 +183,53 @@ class BrokerError extends Error {
      *  than treating it as a connectivity failure (audit #14). */
     public retryable: boolean = false,
     /** Parsed Retry-After in ms when the broker supplied one, else null. */
-    public retryAfterMs: number | null = null
+    public retryAfterMs: number | null = null,
+    /**
+     * For an order submission: "unknown" when the request may have reached
+     * the broker but no usable answer came back (timeout, dropped connection,
+     * 5xx, unreadable body), so the order may be live; "duplicate" when the
+     * broker refused the client_order_id as already used, so an order with
+     * that id exists. Null for a definite answer.
+     */
+    public orderOutcome: "unknown" | "duplicate" | null = null
   ) {
     super(message);
     this.name = "BrokerError";
+  }
+
+  /** The client_order_id the failed submission carried, when known. */
+  clientOrderId: string | null = null;
+}
+
+/**
+ * True when a placeOrder failure does not prove the order was refused: the
+ * order may be live at the broker (outcome unknown) or already exists under
+ * the same client_order_id (duplicate). Callers must look the order up by its
+ * client_order_id before reporting a failure.
+ */
+export function isAmbiguousOrderError(err: unknown): err is BrokerError {
+  return err instanceof BrokerError && err.orderOutcome !== null;
+}
+
+/**
+ * Look an order up by client_order_id after an ambiguous placeOrder failure.
+ * Returns the order, or null when it cannot be confirmed: the broker has no
+ * lookup, the lookup found nothing, or the lookup itself failed. Null means
+ * "unknown", never "rejected": the original POST may still be in flight.
+ */
+export async function lookupOrderByClientId(
+  client: BrokerClient,
+  clientOrderId: string
+): Promise<BrokerOrder | null> {
+  if (!client.getOrderByClientId) return null;
+  try {
+    return await client.getOrderByClientId(clientOrderId);
+  } catch (err) {
+    log.warn(
+      { clientOrderId, err: err instanceof Error ? err.message : "unknown" },
+      "Order lookup by client_order_id failed; outcome stays unknown"
+    );
+    return null;
   }
 }
 
@@ -239,14 +290,18 @@ async function brokerFetch(
   } catch (err) {
     if (err instanceof BrokerError) throw err; // already classified (e.g. 429)
     const message = err instanceof Error ? err.message : "Unknown error";
+    // Both cases can happen after the request was sent, so for an order
+    // submission the broker may have accepted it: outcome unknown.
     if (message.includes("abort")) {
-      throw new BrokerError("Connection timed out", 504, "Connection timed out", true);
+      throw new BrokerError("Connection timed out", 504, "Connection timed out", true, null, "unknown");
     }
     throw new BrokerError(
       `Fetch failed: ${message}`,
       502,
       "Failed to connect to broker",
-      true
+      true,
+      null,
+      "unknown"
     );
   } finally {
     clearTimeout(timeout);
@@ -493,6 +548,27 @@ export class AlpacaClient implements BrokerClient {
     return mapAlpacaOrder(data);
   }
 
+  async getOrderByClientId(clientOrderId: string): Promise<BrokerOrder | null> {
+    // GET /v2/orders:by_client_order_id. 404 means Alpaca has no order with
+    // this client_order_id (yet: a POST still in flight is not visible).
+    const res = await brokerFetch(
+      `${this.baseUrl}/v2/orders:by_client_order_id?client_order_id=${encodeURIComponent(clientOrderId)}`,
+      { headers: this.headers }
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      log.error({ broker: "alpaca", clientOrderId, status: res.status }, "Order fetch by client id failed");
+      throw new BrokerError(`Alpaca order by client id ${res.status}`, 502, "Failed to fetch order");
+    }
+    let data: Record<string, unknown>;
+    try {
+      data = await res.json();
+    } catch {
+      throw new BrokerError("Invalid JSON from Alpaca order", 502, "Invalid response from broker");
+    }
+    return mapAlpacaOrder(data);
+  }
+
   async placeOrder(params: PlaceOrderParams): Promise<BrokerOrder> {
     // Idempotency: every order gets a client_order_id. Caller-provided when
     // set (useful for deterministic retry-the-same-intent flows), else a
@@ -539,14 +615,20 @@ export class AlpacaClient implements BrokerClient {
       if (params.stopPrice) payload.stop_price = params.stopPrice;
     }
 
-    const res = await brokerFetch(`${this.baseUrl}/v2/orders`, {
-      method: "POST",
-      headers: {
-        ...this.headers,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+    let res: Response;
+    try {
+      res = await brokerFetch(`${this.baseUrl}/v2/orders`, {
+        method: "POST",
+        headers: {
+          ...this.headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      if (err instanceof BrokerError) err.clientOrderId = clientOrderId;
+      throw err;
+    }
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
@@ -563,33 +645,48 @@ export class AlpacaClient implements BrokerClient {
       // reason codes, and isn't a stable contract — audit #13). The full text
       // is already logged server-side above; map only known cases.
       let userError = "Failed to place order";
+      // A 5xx does not prove Alpaca refused the order: its gateway can fail
+      // after the order was accepted.
+      let orderOutcome: "unknown" | "duplicate" | null = res.status >= 500 ? "unknown" : null;
       const lc = errorText.toLowerCase();
       if (lc.includes("buying power") || lc.includes("insufficient")) {
         userError = "Insufficient buying power for this order";
       } else if (lc.includes("client_order_id must be unique")) {
         userError = "Duplicate order — this trade was already submitted";
+        orderOutcome = "duplicate";
       } else if (lc.includes("not tradable") || lc.includes("not_tradable") || lc.includes("not active") || lc.includes("not allowed")) {
         userError = "This symbol is not currently tradable";
       } else if (lc.includes("wash")) {
         userError = "Order blocked by the broker's wash-trade check";
       }
 
-      throw new BrokerError(
+      const placeErr = new BrokerError(
         `Alpaca order ${res.status}: ${errorText}`,
         400,
-        userError
+        userError,
+        false,
+        null,
+        orderOutcome
       );
+      placeErr.clientOrderId = clientOrderId;
+      throw placeErr;
     }
 
     let o: Record<string, unknown>;
     try {
       o = await res.json();
     } catch {
-      throw new BrokerError(
+      // Alpaca answered 2xx, so the order was accepted; only the body is lost.
+      const bodyErr = new BrokerError(
         "Invalid JSON from Alpaca order",
         502,
-        "Invalid response from broker"
+        "Invalid response from broker",
+        false,
+        null,
+        "unknown"
       );
+      bodyErr.clientOrderId = clientOrderId;
+      throw bodyErr;
     }
 
     return {

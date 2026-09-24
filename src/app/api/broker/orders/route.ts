@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { getSession, requireAuthWithCsrf } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { brokerConnections } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { placeBrokerOrderSchema } from "@/lib/validators";
-import { createBrokerClient, BrokerError } from "@/lib/brokers";
+import {
+  createBrokerClient,
+  BrokerError,
+  isAmbiguousOrderError,
+  lookupOrderByClientId,
+  type BrokerOrder,
+} from "@/lib/brokers";
 import { decrypt } from "@/lib/crypto";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
@@ -164,19 +171,79 @@ export async function POST(request: Request) {
       connection.environment
     );
 
-    const order = await client.placeOrder({
-      symbol: parsed.data.symbol,
-      side: parsed.data.side as "buy" | "sell",
-      qty: parsed.data.qty,
-      notional: parsed.data.notional,
-      type: parsed.data.type as "market" | "limit" | "stop" | "stop_limit",
-      timeInForce: parsed.data.timeInForce,
-      limitPrice: parsed.data.limitPrice,
-      stopPrice: parsed.data.stopPrice,
-      orderClass: parsed.data.orderClass,
-      takeProfitPrice: parsed.data.takeProfitPrice,
-      stopLossPrice: parsed.data.stopLossPrice,
-    });
+    // One client_order_id per order intent. The ticket sends its own and
+    // reuses it on a resubmit, so the broker refuses a second order for the
+    // same intent. A caller that sends none gets one here, which still lets
+    // the lookup below resolve a lost response.
+    const clientOrderId = parsed.data.clientOrderId ?? randomUUID();
+
+    let order: BrokerOrder;
+    let resolvedAfter: "unknown" | "duplicate" | null = null;
+    try {
+      order = await client.placeOrder({
+        symbol: parsed.data.symbol,
+        side: parsed.data.side as "buy" | "sell",
+        qty: parsed.data.qty,
+        notional: parsed.data.notional,
+        type: parsed.data.type as "market" | "limit" | "stop" | "stop_limit",
+        timeInForce: parsed.data.timeInForce,
+        limitPrice: parsed.data.limitPrice,
+        stopPrice: parsed.data.stopPrice,
+        orderClass: parsed.data.orderClass,
+        takeProfitPrice: parsed.data.takeProfitPrice,
+        stopLossPrice: parsed.data.stopLossPrice,
+        clientOrderId,
+      });
+    } catch (err) {
+      // A timeout, dropped connection or 5xx after the POST was sent does not
+      // mean the broker refused the order, and a duplicate client_order_id
+      // means an order for this intent already exists. Ask the broker before
+      // answering: reporting a live order as failed invites a second one.
+      if (!isAmbiguousOrderError(err)) throw err;
+      const found = await lookupOrderByClientId(client, clientOrderId);
+      if (!found) {
+        log.warn(
+          { clientOrderId, outcome: err.orderOutcome, err: err.message.slice(0, 200) },
+          "Manual order outcome unknown"
+        );
+        await writeAudit({
+          actor: { userId: auth.userId, email: auth.email, role: auth.role },
+          action: AuditAction.ORDER_UNCONFIRMED,
+          resourceType: "order",
+          resourceId: clientOrderId,
+          metadata: {
+            symbol: parsed.data.symbol,
+            side: parsed.data.side,
+            qty: parsed.data.qty ?? null,
+            notional: parsed.data.notional ?? null,
+            type: parsed.data.type,
+            clientOrderId,
+            outcome: err.orderOutcome,
+            error: err.message.slice(0, 200),
+            broker: connection.broker,
+            environment: connection.environment,
+            source: "manual_ui",
+          },
+          request,
+        });
+        return NextResponse.json(
+          {
+            error:
+              "Order status unknown: the broker did not confirm it. Check your open orders before placing it again.",
+            code: "ORDER_STATUS_UNKNOWN",
+            retryable: false,
+            clientOrderId,
+          },
+          { status: 202 }
+        );
+      }
+      order = found;
+      resolvedAfter = err.orderOutcome;
+      log.warn(
+        { clientOrderId, orderId: found.id, outcome: err.orderOutcome },
+        "Manual order confirmed by client_order_id lookup after an ambiguous submit"
+      );
+    }
 
     await writeAudit({
       actor: { userId: auth.userId, email: auth.email, role: auth.role },
@@ -197,6 +264,8 @@ export async function POST(request: Request) {
         stopLossPrice: parsed.data.stopLossPrice ?? null,
         broker: connection.broker,
         environment: connection.environment,
+        clientOrderId,
+        resolvedAfter,
         source: "manual_ui",
       },
       request,
@@ -216,6 +285,10 @@ export async function POST(request: Request) {
           stopPrice: order.stopPrice,
           submittedAt: order.submittedAt,
         },
+        clientOrderId,
+        // The order already existed under this client_order_id: a resubmit
+        // of the same intent, answered with the original order.
+        deduplicated: resolvedAfter === "duplicate",
       },
       { status: 201 }
     );

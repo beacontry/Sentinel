@@ -303,6 +303,11 @@ export const AuditAction = {
   // Orders
   ORDER_PLACED: "order.placed",
   ORDER_REJECTED: "order.rejected",
+  // An order submission whose outcome is unknown: the request may have
+  // reached the broker (timeout, dropped connection, 5xx) and a lookup by
+  // client_order_id could not confirm it either way. Never ORDER_REJECTED,
+  // since the order may be live.
+  ORDER_UNCONFIRMED: "order.unconfirmed",
   ORDER_CANCELLED: "order.cancelled",
   // Risk
   RISK_PROFILE_UPDATED: "risk_profile.updated",
