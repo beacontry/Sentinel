@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useTier } from "./tier-gate";
 
+import { Button } from "@/components/ui/button";
 const DISMISS_KEY = "beacontry-free-welcome-dismissed-v1";
 
 const FEATURES = [
@@ -79,14 +80,15 @@ export function FreeTierWelcome() {
 
   return (
     <section className="relative mb-6 overflow-hidden rounded-xl border border-accent/22 bg-accent/[0.05] p-5 sm:p-6">
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={handleDismiss}
         aria-label="Dismiss welcome message"
-        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-text-secondary transition-colors"
+        className="absolute right-1.5 top-1.5 w-11 px-0"
       >
-        <X className="h-4 w-4" />
-      </button>
+        <X className="h-4 w-4" aria-hidden="true" />
+      </Button>
 
       <div className="mb-4 flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-accent" />

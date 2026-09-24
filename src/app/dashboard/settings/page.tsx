@@ -23,6 +23,7 @@ import {
   type LandingPage,
 } from "@/components/display-prefs-provider";
 
+import { Segmented } from "@/components/ui/segmented";
 // ─── Types ──────────────────────────────────────────────────────────
 
 interface BrokerConnection {
@@ -853,42 +854,33 @@ Any trade you place will use real money. The engine remains stopped — you must
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* P&L format */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-text-secondary">P&L format</label>
-            <div className="flex gap-0.5 rounded-lg border border-border bg-bg-secondary p-0.5">
-              {(["dollar", "percent", "both"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setPnlFormat(v)}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors
-                    ${pnlFormat === v
-                      ? "bg-bg-elevated text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                    }`}
-                >
-                  {v === "dollar" ? "Dollars" : v === "percent" ? "Percent" : "Both"}
-                </button>
-              ))}
-            </div>
+            <p className="text-xs font-medium text-text-secondary" aria-hidden="true">P&L format</p>
+            <Segmented
+              label="P&L format"
+              fullWidth
+              value={pnlFormat}
+              onChange={setPnlFormat}
+              options={[
+                { value: "dollar", label: "Dollars" },
+                { value: "percent", label: "Percent" },
+                { value: "both", label: "Both" },
+              ]}
+            />
           </div>
 
           {/* Time format */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-text-secondary">Time format</label>
-            <div className="flex gap-0.5 rounded-lg border border-border bg-bg-secondary p-0.5">
-              {(["12h", "24h"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setTimeFormat(v)}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors
-                    ${timeFormat === v
-                      ? "bg-bg-elevated text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                    }`}
-                >
-                  {v === "12h" ? "12-hour" : "24-hour"}
-                </button>
-              ))}
-            </div>
+            <p className="text-xs font-medium text-text-secondary" aria-hidden="true">Time format</p>
+            <Segmented
+              label="Time format"
+              fullWidth
+              value={timeFormat}
+              onChange={setTimeFormat}
+              options={[
+                { value: "12h", label: "12-hour" },
+                { value: "24h", label: "24-hour" },
+              ]}
+            />
           </div>
 
           {/* Default landing page */}

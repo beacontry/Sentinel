@@ -36,6 +36,7 @@ import { BrokerSwitcher } from "./broker-switcher";
 import { PnlFormatToggle } from "./pnl-format-toggle";
 import { SidebarTierBadge } from "@/components/tiers/sidebar-tier-badge";
 
+import { Button } from "@/components/ui/button";
 // NAV_ITEMS doesn't carry its SUB_NAV key directly; map by href so
 // nav-config.ts can stay unmodified (cleaner revert).
 const SUB_NAV_KEY_FOR_HREF: Record<string, keyof typeof SUB_NAV | undefined> = {
@@ -380,14 +381,16 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
           >
             <div className="flex items-center justify-between px-4 py-3">
               <span className="text-sm font-semibold text-text-primary">Menu</span>
-              <button
+              <Button
                 ref={mobileCloseRef}
+                type="button"
+                variant="ghost"
                 onClick={() => setMobileOpen(false)}
                 aria-label="Close navigation menu"
-                className="flex h-11 w-11 items-center justify-center rounded-lg text-text-secondary"
+                className="w-11 px-0"
               >
-                <X className="h-5 w-5" />
-              </button>
+                <X className="h-5 w-5" aria-hidden="true" />
+              </Button>
             </div>
 
             <div className="px-4 pb-2.5">

@@ -402,13 +402,9 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
                   Add Module
                 </h3>
               </div>
-              <button
-                onClick={() => setShowAddPanel(false)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <Button variant="ghost" onClick={() => setShowAddPanel(false)} className="w-11 px-0" aria-label="Close">
+                <X className="w-5 h-5" aria-hidden="true" />
+              </Button>
             </div>
 
             <div className="space-y-5 p-5">

@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, X } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 interface MeTier {
   tier: string;
   authenticated: boolean;
@@ -83,13 +84,9 @@ export function BillingStatusBanner() {
             Update payment method →
           </Link>
         </div>
-        <button
-          onClick={handleDismiss}
-          aria-label="Dismiss"
-          className="shrink-0 text-text-muted hover:text-text-secondary -m-1 p-1"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <Button variant="ghost" onClick={handleDismiss} aria-label="Dismiss" className="-my-2 w-11 shrink-0 px-0">
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
       </div>
     </div>
   );

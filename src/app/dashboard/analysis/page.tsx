@@ -52,6 +52,7 @@ import {
 import { ChartFullscreenOverlay } from "@/components/ui/chart-fullscreen-overlay";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
+import { Segmented } from "@/components/ui/segmented";
 const FOCUS_STORAGE_KEY = "sentinel-focus-mode";
 
 const POPULAR_SYMBOLS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"];
@@ -612,38 +613,24 @@ function AnalysisCockpit() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
-                    <button
-                      onClick={() => switchChartMode("engine")}
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium uppercase tracking-wide transition-colors
-                        ${chartMode === "engine"
-                          ? "bg-bg-elevated text-text-primary"
-                          : "text-text-muted hover:text-text-secondary"
-                        }`}
-                      title="Beacontry's chart with signal/earnings markers"
-                    >
-                      Engine view
-                    </button>
-                    <button
-                      onClick={() => switchChartMode("tradingview")}
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium uppercase tracking-wide transition-colors
-                        ${chartMode === "tradingview"
-                          ? "bg-bg-elevated text-text-primary"
-                          : "text-text-muted hover:text-text-secondary"
-                        }`}
-                      title="TradingView Advanced Chart with full drawing tools"
-                    >
-                      TradingView
-                    </button>
-                  </div>
-                  <button
+                  <Segmented
+                    label="Chart"
+                    value={chartMode}
+                    onChange={switchChartMode}
+                    options={[
+                      { value: "engine", label: "Engine view" },
+                      { value: "tradingview", label: "TradingView" },
+                    ]}
+                  />
+                  <Button
+                    variant="secondary"
                     onClick={() => setChartFullscreen(true)}
-                    className="rounded-md border border-border bg-bg-secondary p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+                    className="w-11 px-0"
                     title="Expand chart to full screen (Esc to exit)"
                     aria-label="Expand chart to full screen"
                   >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                  </button>
+                    <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  </Button>
                 </div>
               </div>
             )}

@@ -168,14 +168,15 @@ export function PositionDetailSheet({
               </div>
             )}
           </div>
-          <button
+          <Button
             ref={closeButtonRef}
+            variant="ghost"
             onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center rounded-lg text-text-muted hover:bg-bg-hover hover:text-text-primary"
+            className="w-11 px-0"
             aria-label="Close position details"
           >
-            <X className="w-5 h-5" />
-          </button>
+            <X className="w-5 h-5" aria-hidden="true" />
+          </Button>
         </div>
 
         {/* Stat grid */}

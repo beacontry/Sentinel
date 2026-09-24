@@ -165,9 +165,9 @@ export function PinSetupBanner() {
           {!expanded && (
             <Button size="sm" onClick={handleExpand}>Set PIN</Button>
           )}
-          <button onClick={dismiss} className="text-text-muted hover:text-text-secondary p-1" aria-label="Dismiss">
-            <X className="h-4 w-4" />
-          </button>
+          <Button variant="ghost" onClick={dismiss} className="w-11 px-0" aria-label="Dismiss">
+            <X className="h-4 w-4" aria-hidden="true" />
+          </Button>
         </div>
       </div>
 

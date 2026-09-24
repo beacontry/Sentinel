@@ -150,9 +150,9 @@ export default function StrategyBuilderPage() {
                   className="bg-bg-elevated border border-border rounded-lg px-2 py-1.5 text-sm text-text-primary font-mono w-20 min-h-[36px]"
                 />
               )}
-              <button onClick={() => removeRule(type, rule.id)} className="p-1 text-text-muted hover:text-bearish transition-colors">
-                <X className="w-4 h-4" />
-              </button>
+              <Button variant="ghost" onClick={() => removeRule(type, rule.id)} className="w-11 px-0" aria-label="Remove rule">
+                <X className="w-4 h-4" aria-hidden="true" />
+              </Button>
             </div>
           );
         })}
