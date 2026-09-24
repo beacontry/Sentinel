@@ -379,6 +379,17 @@ There are 149 raw `<button>` elements. Do not codemod them. Migrate each file wh
 - Run tsc, lint, `lint:style`, test and build.
 - **Risk: low to medium.** The prop APIs keep aliases, and the visible changes are heights (Button md goes from 40 to 44) and control borders.
 
+**Recorded 2026-09-24.** The first Stage 2 pass shipped without these checks, and a review then found four defects that the gallery screenshots would have shown: a positioned sm Button pulled back into flow, a direction glyph read off colour tone, a neutral Segmented choice under 3:1, and a confirm summary on its own dialog fill. The checks now run as `npm run capture:kit` (`scripts/capture-redesign.mjs --kit`):
+
+- The gallery lives in `src/components/ui-kit/ui-kit-gallery.tsx`. The admin page gates it, and the script renders it to static HTML with no app, database or session, styled by `globals.css` compiled through Tailwind.
+- 14 captures: 390x844 and 1440x900, full page, in light, dark, coral, light-blue, gray, and colour-blind on light and on dark. No capture scrolls sideways.
+- Keyboard pass: 35 stops per capture, each with a 2px ring (an outline, or the ring-2 box-shadow the field primitives draw).
+- Hit areas: every control reaches 44px, counting a hit-area pseudo-element. This found the sm Button at 42px on bordered variants, fixed in the same series.
+- The primary hover paints `accent-hover`. The tile Remove button computes `position: absolute`. The confirm summary fill differs from its dialog.
+- The screenshots also showed the SearchInput icon floating below its field in a grid row, fixed in the same series.
+
+What the static render cannot cover: open popovers (Select, dropdowns), toasts, and hover or pressed states other than the primary hover. Those need the app, which this worktree cannot run without a database. The app-route mode of the same script covers them against a local instance with a session cookie.
+
 ---
 
 ## Stage 3: Page-level changes
@@ -535,4 +546,5 @@ The page keeps data orchestration only.
   - captures viewports of 390x844 and 1440x900 at `fullPage: true`, never a 3000px-tall viewport;
   - covers these routes: `/`, `/login`, `/dashboard`, `/dashboard/trader`, `/dashboard/trade/AAPL`, `/dashboard/watchlists`, `/dashboard/tax-center`, `/dashboard/tax`, and `/dashboard/admin/ui-kit`;
   - asserts `scrollWidth <= innerWidth` on every capture and writes `shots/<stage>/<route>-<theme>-<w>.png`.
+  - **Built 2026-09-24** as `npm run capture:redesign` (the routes; needs `BEACONTRY_SESSION` and a local instance) and `npm run capture:kit` (the UI kit with no app; see Stage 2 verification). `shots/` is gitignored.
 - **Every PR's gate:** `npx tsc --noEmit`, `npm run lint`, `npm run lint:style`, `npm test` and `npm run build`. A money-path PR also needs the paper-account smoke test.
