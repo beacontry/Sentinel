@@ -36,6 +36,12 @@ import {
 } from "lucide-react";
 import { PRESET_LABELS } from "@/lib/strategy-presets";
 import { TraderTaxCallouts } from "@/components/trader/tax-callouts";
+import {
+  applyEngineResponse,
+  engineControls,
+  lastKnownMode,
+  syncedPickerMode,
+} from "@/lib/trader-view";
 
 // "Adaptive" doesn't have its own strategy preset — it picks one of the 7
 // base modes per-scan from market regime. Label it inline.
@@ -231,6 +237,13 @@ export default function TraderPage() {
   const [loading, setLoading] = useState(true);
   const [cmdLoading, setCmdLoading] = useState<string | null>(null);
   const [engineMode, setEngineMode] = useState<string>("optimized");
+  // The picker follows the running engine's mode until the user picks one,
+  // so a reload never offers Switch (a restart in the default mode) where
+  // Stop belongs.
+  const [modeTouched, setModeTouched] = useState(false);
+  useEffect(() => {
+    setEngineMode((m) => syncedPickerMode(m, modeTouched, engine?.mode));
+  }, [engine?.mode, modeTouched]);
   // Persist showRisk across reloads — power-user QoL. Reads from localStorage
   // on mount (after hydration to avoid SSR mismatch) and writes on toggle.
   const [showRisk, setShowRisk] = useState(false);
@@ -315,8 +328,7 @@ export default function TraderPage() {
       ]);
       if (dashRes.status === "fulfilled" && dashRes.value.ok) setData(await dashRes.value.json());
       if (engRes.status === "fulfilled" && engRes.value.ok) {
-        const engJson = await engRes.value.json();
-        setEngine(engJson.data ?? engJson);
+        setEngine(applyEngineResponse<EngineStatus>(await engRes.value.json()));
       }
     } catch {
       // Silent
@@ -375,7 +387,8 @@ export default function TraderPage() {
   }, []);
 
   async function handleEngine(
-    action: "start" | "stop" | "halt" | "switch"
+    action: "start" | "stop" | "halt" | "switch",
+    mode: string = engineMode,
   ): Promise<{ ok: boolean; error?: string; message?: string }> {
     setCmdLoading(action);
     let outcome: { ok: boolean; error?: string; message?: string } = { ok: true };
@@ -383,7 +396,7 @@ export default function TraderPage() {
       const res = await fetch("/api/trader/engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, mode: engineMode }),
+        body: JSON.stringify({ action, mode }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -397,14 +410,13 @@ export default function TraderPage() {
       } else {
         const body = await res.json().catch(() => null);
         if (typeof body?.data?.message === "string") outcome.message = body.data.message;
+        // The engine now runs in (or stopped from) the mode it reports; let
+        // the picker follow it again.
+        setModeTouched(false);
       }
-      // Refresh
-      const [dashRes, engRes] = await Promise.allSettled([
-        fetch("/api/trader/dashboard"),
-        fetch("/api/trader/engine"),
-      ]);
-      if (dashRes.status === "fulfilled" && dashRes.value.ok) setData(await dashRes.value.json());
-      if (engRes.status === "fulfilled" && engRes.value.ok) setEngine(await engRes.value.json());
+      // Refresh through the same path as the poll, so the engine status is
+      // unwrapped from its { data } envelope exactly once.
+      await load();
     } catch {
       outcome = { ok: false, error: "Network error — the engine may not have received the command." };
     }
@@ -473,6 +485,13 @@ export default function TraderPage() {
   }
 
   const { status, todayPnl, lifetimePnl, positions, openOrders = [], trades, signals, pnlHistory, analytics } = data;
+  const controls = engineControls(engine, engineMode);
+  const resumeMode = lastKnownMode(status.mode, engine?.mode, engineMode);
+  // A legacy mode the picker no longer lists (conservative, moderate,
+  // aggressive) still has to show as the selected value when it is running.
+  const modeOptions = ENGINE_MODES.some((m) => m.value === engineMode)
+    ? ENGINE_MODES
+    : [...ENGINE_MODES, { value: engineMode, label: engineMode }];
 
   async function handleCommand(cmd: string, payload: Record<string, unknown> = {}) {
     setCmdLoading(cmd);
@@ -534,10 +553,15 @@ export default function TraderPage() {
           </div>
           <Button
             size="sm"
-            onClick={() => handleEngine("start")}
+            onClick={async () => {
+              // Resume in the mode it was running, not the picker default.
+              const r = await handleEngine("start", resumeMode);
+              if (!r.ok) toast({ type: "error", message: `Start failed: ${r.error}` });
+            }}
+            disabled={cmdLoading !== null}
             loading={cmdLoading === "start"}
           >
-            Start engine
+            Start engine ({resumeMode})
           </Button>
         </div>
       )}
@@ -603,14 +627,18 @@ export default function TraderPage() {
         <div className="flex items-center gap-2">
           <select
             value={engineMode}
-            onChange={(e) => setEngineMode(e.target.value)}
+            onChange={(e) => {
+              setModeTouched(true);
+              setEngineMode(e.target.value);
+            }}
+            aria-label="Engine mode"
             className="min-h-[44px] rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary"
           >
-            {ENGINE_MODES.map(m => (
+            {modeOptions.map(m => (
               <option key={m.value} value={m.value}>{m.label}</option>
             ))}
           </select>
-          {!engine?.running ? (
+          {controls.start && (
             <Button
               onClick={async () => {
                 const r = await handleEngine("start");
@@ -622,7 +650,8 @@ export default function TraderPage() {
               <Play className="w-4 h-4" />
               <span className="hidden sm:inline">Start</span>
             </Button>
-          ) : engine?.mode !== engineMode ? (
+          )}
+          {controls.switchTo && (
             <Button
               onClick={async () => {
                 const r = await handleEngine("switch");
@@ -634,7 +663,8 @@ export default function TraderPage() {
               <RefreshCw className="w-4 h-4" />
               <span className="hidden sm:inline">Switch</span>
             </Button>
-          ) : (
+          )}
+          {controls.stop && (
             <Button
               variant="secondary"
               onClick={async () => {
