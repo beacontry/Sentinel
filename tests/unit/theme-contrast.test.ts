@@ -24,12 +24,18 @@
  *   colour-blind mode a loss against a warning. Measured as deltaE OK,
  *   floor 0.10. Contrast ratio cannot catch this: two reds of equal
  *   lightness are 1.0:1 whatever their hue.
+ * - The semantic set as a whole: gain, loss and warning pairwise, each
+ *   against every text colour, and the accent against the gain and the
+ *   secondary text. Fixing one pair at a time is how coral kept moving
+ *   its collision from one pair to the next.
+ * - In colour-blind mode the same set is measured again as a
+ *   deuteranope and a protanope see it (Machado 2009 simulation).
  */
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { contrastRatio, deltaEOK, flatten, parseColor, toHex } from "@/lib/color-contrast";
+import { contrastRatio, deltaEOK, flatten, parseColor, toHex, type Vision } from "@/lib/color-contrast";
 
 const CSS = readFileSync(join(__dirname, "..", "..", "src", "app", "globals.css"), "utf8");
 
@@ -231,6 +237,73 @@ describe.each(MODES)("%s", (_mode, vars) => {
   });
 });
 
+/** The trading states: gain, loss, warning. */
+const STATES = ["--color-bullish", "--color-bearish", "--color-warning"];
+const TEXTS = ["--color-text-primary", "--color-text-secondary", "--color-text-muted"];
+
+/**
+ * Modes whose accent is the gain green on purpose (the emerald brand):
+ * there a filled button and a gain figure share a hue by design, and the
+ * button's shape and label carry the difference.
+ */
+const ACCENT_IS_GAIN = new Set(["light", "dark", "gray"]);
+
+/**
+ * Pairs below the 0.10 floor today in themes not yet reworked as a set,
+ * held at what they measure: a ratchet, so none can get worse. Coral and
+ * colour-blind coral have no entry; they were chosen as one set and hold
+ * 0.10 everywhere. Raise or delete an entry when a palette improves;
+ * never lower one. Keyed "mode | vision | a | b".
+ */
+const KNOWN_GAPS: Record<string, number> = {
+  "light | normal | --color-bullish | --color-text-muted": 0.094,
+  "light-blue + colour-blind | normal | --color-bullish | --color-text-muted": 0.088,
+  // light-blue's accent is blue, and so is the colour-blind gain.
+  "light-blue + colour-blind | normal | --color-accent | --color-bullish": 0.077,
+  "light-blue + colour-blind | normal | --color-accent-hover | --color-bullish": 0.082,
+  // The shared light colour-blind loss (vermillion) and warning (yellow)
+  // sit at one lightness, so a dichromat sees one orange.
+  "light + colour-blind | deuteranopia | --color-bearish | --color-warning": 0.028,
+  "light + colour-blind | protanopia | --color-bearish | --color-warning": 0.039,
+  "light-blue + colour-blind | deuteranopia | --color-bearish | --color-warning": 0.028,
+  "light-blue + colour-blind | protanopia | --color-bearish | --color-warning": 0.039,
+  "light + colour-blind | deuteranopia | --color-accent | --color-bearish": 0.098,
+  "light + colour-blind | deuteranopia | --color-accent | --color-warning": 0.077,
+  "light + colour-blind | protanopia | --color-accent | --color-bearish": 0.07,
+  "light + colour-blind | protanopia | --color-accent | --color-warning": 0.054,
+  "light + colour-blind | protanopia | --color-accent-hover | --color-bearish": 0.048,
+  "light + colour-blind | protanopia | --color-accent-hover | --color-warning": 0.067,
+  "dark + colour-blind | deuteranopia | --color-accent-hover | --color-bearish": 0.097,
+  "dark + colour-blind | protanopia | --color-accent | --color-bearish": 0.083,
+  "gray + colour-blind | deuteranopia | --color-accent-hover | --color-bearish": 0.097,
+  "gray + colour-blind | protanopia | --color-accent | --color-bearish": 0.083,
+  "gray + colour-blind | protanopia | --color-bullish | --color-text-secondary": 0.099,
+};
+const floorFor = (mode: string, vision: Vision, a: string, b: string) =>
+  KNOWN_GAPS[`${mode} | ${vision} | ${a} | ${b}`] ?? DISTINCT;
+
+describe.each(MODES)("%s: the semantic set", (mode, vars) => {
+  const d = (a: string, b: string) => deltaEOK(resolve(vars, a), resolve(vars, b));
+  const floor = (a: string, b: string) => floorFor(mode, "normal", a, b);
+
+  it.each([
+    [STATES[0], STATES[1]],
+    [STATES[0], STATES[2]],
+    [STATES[1], STATES[2]],
+    ...TEXTS.map((t) => [STATES[0], t]),
+    ["--color-accent", "--color-text-secondary"],
+  ])("%s is distinct from %s", (a, b) => {
+    expect(d(a, b)).toBeGreaterThanOrEqual(floor(a, b));
+  });
+
+  it.skipIf(ACCENT_IS_GAIN.has(mode)).each(["--color-accent", "--color-accent-hover"])(
+    "%s is distinct from the gain",
+    (a) => {
+      expect(d(a, "--color-bullish")).toBeGreaterThanOrEqual(floor(a, "--color-bullish"));
+    },
+  );
+});
+
 describe("colour-blind pair", () => {
   it.each(Object.keys(THEMES))("%s: gain is blue and loss is orange", (theme) => {
     const cb = withColorblind(theme);
@@ -253,6 +326,33 @@ describe("colour-blind pair", () => {
     expect(
       deltaEOK(resolve(cb, `--color-bearish${suffix}`), resolve(cb, `--color-warning${suffix}`)),
     ).toBeGreaterThanOrEqual(DISTINCT);
+  });
+});
+
+/**
+ * Colour-blind mode as its readers see it. A deuteranope or protanope
+ * keeps lightness and the blue-yellow axis, so two colours 0.13 apart to
+ * typical vision can be one colour to them: coral's old orange accent
+ * and yellow warning measured 0.007 for a deuteranope. The states, the
+ * secondary text, and the accent and its hover against a loss or a
+ * warning, measured as each would see them. Floors as in KNOWN_GAPS.
+ */
+describe.each(
+  Object.keys(THEMES).flatMap((theme) =>
+    (["deuteranopia", "protanopia"] as Vision[]).map((vision) => [theme, vision] as [string, Vision]),
+  ),
+)("%s + colour-blind, seen with %s", (theme, vision) => {
+  const cb = withColorblind(theme);
+  const mode = `${theme} + colour-blind`;
+
+  it.each([
+    [STATES[0], STATES[1]],
+    [STATES[0], STATES[2]],
+    [STATES[1], STATES[2]],
+    ...STATES.map((s) => [s, "--color-text-secondary"]),
+    ...["--color-accent", "--color-accent-hover"].flatMap((a) => [STATES[1], STATES[2]].map((s) => [a, s])),
+  ])("%s is distinct from %s", (a, b) => {
+    expect(deltaEOK(resolve(cb, a), resolve(cb, b), vision)).toBeGreaterThanOrEqual(floorFor(mode, vision, a, b));
   });
 });
 

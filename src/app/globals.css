@@ -321,15 +321,26 @@
   }
 
   /* ── Coral: the light ladder turned to a warm hue 40, coral accent ──
-     A coral accent is warm, and so are a loss and a warning, so coral
-     spaces all three on purpose. The accent sits at orange (hue 40), the
-     loss moves to a darker crimson (hue 10), and the warning moves off
-     the shared amber (hue 65) to yellow (hue 100), the ladder colour-blind
-     mode uses. The hover turns toward hue 50 to stay clear of the crimson.
-     theme-contrast.test.ts holds the accent and its hover at least 0.10
-     deltaE OK from each. The shared hue-27 values once measured 0.02: the
-     Get started fill and a loss figure were the same colour. With the
-     amber warning, a hovered button was the colour of a HOLD chip. */
+     Coral puts a warm accent among a loss and a warning that are warm
+     too, so its semantic colours are chosen as one set rather than a
+     pair at a time: accent, hover, gain, loss, warning and the text
+     ladder, in plain coral and in colour-blind coral (below), which
+     share the accent and the text. Each state keeps 0.10 deltaE OK or
+     more from every other state, from the accent and hover, and from
+     the text; theme-contrast.test.ts measures the whole set, and in
+     colour-blind mode under simulated deuteranopia and protanopia too.
+
+     - The accent is a terracotta (hue 29), not an orange. Orange reads
+       as yellow to a deuteranope, the colour of the warning; every
+       orange accent that cleared 4.5:1 left the two at 0.05 or less.
+     - The loss is a raspberry (hue 1): red, but bluer than the accent.
+     - The warning is amber (hue 62). The yellow it replaces (hue 100)
+       sat 0.108 from the base green gain; amber is 0.17 from it.
+     - The text carries less tint (chroma 0.01) and the primary sits
+       darker: a tinted near-black was within 0.10 of the loss.
+     Earlier rounds, pair by pair: the shared hue-27 accent measured
+     0.02 from the loss, and then the amber warning matched a hovered
+     button. */
   html.coral {
     --color-bg-primary: oklch(96.5% 0.010 40);
     --color-bg-secondary: oklch(99.5% 0.003 40);
@@ -339,24 +350,22 @@
     --color-border: oklch(90% 0.018 38);
     --color-border-hover: oklch(84% 0.024 36);
     --color-border-control: oklch(60% 0.030 36);
-    /* Warm, but at chroma 0.02: at 0.04 the text took the room that a
-       loss needs in colour-blind mode, where the loss is warm too. */
-    --color-text-primary: oklch(24% 0.020 38);
-    --color-text-secondary: oklch(38% 0.020 38);
+    --color-text-primary: oklch(18% 0.010 38);
+    --color-text-secondary: oklch(38.5% 0.010 38);
     --color-text-muted: oklch(47% 0.018 38);
-    --color-accent: oklch(50% 0.15 40);
-    --color-accent-hover: oklch(46% 0.13 50);
+    --color-accent: oklch(41% 0.13 29);
+    --color-accent-hover: oklch(41% 0.125 41);
     --color-on-accent: oklch(99.5% 0.003 40);
-    --color-warning: oklch(50% 0.11 100);
-    --color-warning-fg: oklch(38% 0.085 102);
-    --color-warning-fill: oklch(95% 0.060 100);
-    --color-warning-line: oklch(66% 0.12 100);
-    --color-bearish: oklch(42% 0.16 10);
-    --color-bearish-fg: oklch(38% 0.13 10);
-    --color-bearish-fill: oklch(95% 0.025 10);
-    --color-bearish-line: oklch(60% 0.14 10);
-    --color-bearish-solid: oklch(42% 0.16 10);
-    --color-on-bearish: oklch(99.5% 0.003 10);
+    --color-warning: oklch(52% 0.112 62);
+    --color-warning-fg: oklch(42% 0.090 62);
+    --color-warning-fill: oklch(95% 0.040 75);
+    --color-warning-line: oklch(66% 0.12 68);
+    --color-bearish: oklch(50% 0.168 1);
+    --color-bearish-fg: oklch(42% 0.14 1);
+    --color-bearish-fill: oklch(95% 0.025 1);
+    --color-bearish-line: oklch(62% 0.15 1);
+    --color-bearish-solid: oklch(50% 0.168 1);
+    --color-on-bearish: oklch(99.5% 0.003 1);
     --color-neutral: oklch(66% 0.025 40);
   }
 
@@ -417,18 +426,26 @@
     --color-warning-fill: oklch(28% 0.045 100);
     --color-warning-line: oklch(82% 0.13 100);
   }
-  /* Coral's accent is an orange at hue 40, where the vermillion loss
-     above would land on it. The loss cannot go redder (under hue 40 is
-     the red band the test forbids) or yellower (the warning holds hue
-     100), so it goes darker: a deep rust, well below the accent and the
-     warning in lightness and well above the text neutrals in chroma. The
-     burnt orange it replaces (38% 0.10 65) was 0.055 deltaE OK from the
-     secondary text, so a loss figure read as ordinary text. */
+  /* Colour-blind coral: the gain, loss and warning of the set chosen
+     with plain coral above. A deuteranope or protanope keeps lightness
+     and the blue-yellow axis only, so the three warm meanings (accent,
+     loss, warning) are spread along lightness: a deep rust loss (27%),
+     the terracotta accent (41%) and a yellow warning (52%), with the
+     blue gain darker (39%) and more saturated than the shared one so it
+     stays clear of the text under both simulations. */
   html.colorblind.coral {
-    --color-bearish: oklch(33% 0.11 40);
-    --color-bearish-fg: oklch(33% 0.11 40);
+    --color-bullish: oklch(39% 0.19 264);
+    --color-bullish-fg: oklch(38% 0.15 264);
+    --color-bullish-fill: oklch(95% 0.025 264);
+    --color-bullish-line: oklch(60% 0.14 262);
+    --color-bearish: oklch(27% 0.09 40);
+    --color-bearish-fg: oklch(27% 0.09 40);
     --color-bearish-fill: oklch(95% 0.030 50);
-    --color-bearish-line: oklch(58% 0.12 45);
+    --color-bearish-line: oklch(52% 0.11 45);
+    --color-warning: oklch(52% 0.107 96);
+    --color-warning-fg: oklch(40% 0.085 100);
+    --color-warning-fill: oklch(95% 0.060 100);
+    --color-warning-line: oklch(64% 0.12 100);
   }
   /* The -muted mixes are declared once per theme and resolve on <html>,
      so each picks up the swapped colour without being repeated here. */
