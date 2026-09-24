@@ -41,6 +41,21 @@ describe("Button sizes", () => {
     expect(classes).toContain("relative");
     expect(classes).toContain("before:-inset-1");
   });
+
+  // `.relative` is emitted after `.absolute` in the built CSS, so a sm
+  // button carrying both lands back in flow (the watchlist tile's Remove).
+  it("lets a caller's position win over the sm hit-area context", () => {
+    for (const pos of ["absolute", "fixed", "sticky"]) {
+      const classes = buttonClassList(render({ size: "sm", className: `${pos} top-1 right-1` }));
+      expect(classes, pos).toContain(pos);
+      expect(classes, pos).not.toContain("relative");
+    }
+  });
+
+  it("keeps its own context when the caller positions it only at a breakpoint", () => {
+    const classes = buttonClassList(render({ size: "sm", className: "sm:absolute" }));
+    expect(classes).toContain("relative");
+  });
 });
 
 describe("Button styling", () => {

@@ -50,8 +50,12 @@ export const BUTTON_BASE =
 
 export const BUTTON_SIZES: Record<ButtonSize, string> = {
   md: "min-h-11 px-4 text-sm",
-  // 36px visual; the pseudo-element pads the hit area out to 44px.
-  sm: "relative min-h-9 px-3 text-sm before:absolute before:-inset-1 before:content-['']",
+  // 36px visual; the pseudo-element pads the hit area out to 44px. It
+  // needs a positioning context, which buttonClasses adds as `relative`
+  // only when the caller has not positioned the button itself: `relative`
+  // is emitted after `absolute` in the built CSS, so adding both would
+  // silently pull an absolutely placed button back into flow.
+  sm: "min-h-9 px-3 text-sm before:absolute before:-inset-1 before:content-['']",
   lg: "min-h-11 px-4 text-sm",
 };
 
@@ -73,9 +77,16 @@ export const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
     "border border-border-control bg-bg-surface text-text-primary enabled:hover:bg-bg-hover",
 };
 
+// Unprefixed only: `sm:absolute` leaves the phone layout unpositioned,
+// so the button still needs its own `relative` there.
+const POSITIONED = /(^|\s)(?:absolute|fixed|sticky|relative)(?=\s|$)/;
+
 /** The class string for a button, for elements that cannot be a Button. */
 export function buttonClasses(variant: ButtonVariant = "primary", size: ButtonSize = "md", className = ""): string {
-  return `${BUTTON_BASE} ${BUTTON_SIZES[size]} ${BUTTON_VARIANTS[variant]} ${className}`.trim();
+  const position = size === "sm" && !POSITIONED.test(className) ? "relative" : "";
+  return `${BUTTON_BASE} ${BUTTON_SIZES[size]} ${position} ${BUTTON_VARIANTS[variant]} ${className}`
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function Spinner({ className = "h-4 w-4" }: { className?: string }) {
