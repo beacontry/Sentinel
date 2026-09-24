@@ -1,5 +1,86 @@
 # Sentinel / Beacontry UI redesign plan
 
+## Status (2026-09-24)
+
+Stages 1 to 3 landed on `design/foundation-2026-09-24`, stacked on `fix/lessons-2026-09-23` (115 commits, `a4b2602..06a5dcf`). Stages 4 and 5 were out of scope for this branch.
+
+**Final gate, run on `06a5dcf`:** `npx tsc --noEmit` clean; `npm run lint` 0 errors and 86 warnings, none new (each changed file was compared against its base version, and the one apparent new warning in `use-ticket-context.ts` moved there from the old ticket page); `npx vitest run` 129 files and 2,383 tests passing; a clean `rm -rf .next` build passing. Under full parallel load on a busy machine the suite threw 5s timeouts in unrelated base tests (upsert-routes, client-fetch-routes, engine-safeguards and others), all of which pass alone and with `--maxWorkers=4`. The one timeout this branch caused, the style-ratchet baseline test, now has a 30s budget (`06a5dcf`).
+
+### What landed, by stage
+
+**Stage 1, tokens, codemod and ratchet.**
+- Tokens, scales and charts: `f6944bd`, `841c742`, `b0b3609`, `cc87637`, `86f5db3`, `14350d2`, `20da062`, `3a159b0`, `96a6d03`.
+- Codemod and ratchet: `8164970`, `b4b8d8c`, `2906c7f`, `ae6b185`, `9a1c9e5`, `2136add`, `5617e3e`, `395e1c6`, `7b6a4ca`, `77eb22e`, `f6a430e`.
+- Contrast and theme fixes found on the way: `7539f19`, `cd5a27a`, `ff17af1`, `3a5c2e1`, `ff4ba05`, `e05035b`, `c66682a`, `2dc0e85`.
+- Findings from the pass: Focus mode (finding 2) `09fd63c`; phone overflow on three dashboard pages and the engine-mode picker `cd8db8d`, `f6b30e6`; skip-link base rule (1.3) `ed24673`; calculator warning `0aef921`.
+
+**Stage 2, primitives.**
+- Primitives: `d628a06` Button, `1e5fabd` fields, `5e1e81e` Inset, `9e8b547` one P&L formatter (finding 5), `76f4058` StatusChip and SignedValue, `f35048e` empty and error states, `10a219b` skeleton (finding 4), `26c8e18` toast, `6340ecc` Segmented, `e33004a` tabs and toggle, `fade76e` stat tiles, `4c5d07c` shell accessibility (finding 7), `55110e3` confirm tone.
+- Migration of call sites: `a8ef5b0`, `2ac2971`, `5026b16`, `89cf494`.
+- UI kit and its verification run: `f52d455`, `5f4c4dc`, `8ca5189`, `aec3e7d`, `67788a0`.
+- Review fixes: `f05d15e`, `3d1a559`, `50a4e9e`, `7975b44`, `8ac7c12`, `3810408`, `164ab57`, `aace305`, `14086db`.
+- Direction read from the printed figure, not the colour: `3c85a80`, `a871f46`, `b7f3985`, `6358c52`.
+
+**Stage 3, pages.** A first pass moved each page onto the primitives (`7e2a55c`, `24933f1`, `ab0b29e`, `ab4c95a`, `83ef6c8`, `fd04fc2`, `543633f`, `42b845e`, `a8cbdcb`). The page-level redesign followed:
+- 3a Trader: `eda4f05`, `668a39b`, `c1868ac`, `06ae377`, `9071b4d`, then the tile-wrapping fixes `2b4385a`, `377fefc`, `1bda454`, `efc59c9`.
+- 3b Order ticket: `b9f3707`, `530d3ec`, `2ad96e2`, `2a430b3`.
+- 3c Dashboard home and watchlists: `2a5048c`, `ed125c9`, `6a623c0`, `6607187`, `11ef344`, `6724676`, `4f8e519`, `dff00c5`.
+- 3d Tax Center and Tax Report: `0379d7f`, `8a15e3b`, `afc24fa`, `82e723a`, `835f422`, `c302bed`, `41fdf99`, `6705cb7`, `0a16c57`, `6e6db90`.
+- 3e Public site and login: `a0a4b1a`, `a1aea25`, `35bbfab`, `a0bd4fe`, `305908e`.
+
+### Skipped, because the fix branch already did it
+
+- Stage 4a money-safety work: `CONNECTION_CHANGED`, `applyEngineResponse`, the broker-changed event and `useUrlParam` were all present on `fix/lessons-2026-09-23` before this branch started.
+- Finding 6 and item 7, the broken quote and bars fetches, and the client-fetch-routes test: `17e54f0` on the fix branch.
+- 3e login: always-mounted live regions for sign-in and toasts, `6450c0e`. The landing's nested bordered cards, `b1bd692`.
+- 4b items 9 to 12 (475(f) and risk-override load gating, optimizer selection, leaderboard save, URL tabs): `a16deae`, `5efdd05`, `0e79d76`, `8ef10f7`, `e91c339`, `e4e32e2`.
+
+### Ratchet baselines
+
+`scripts/style-ratchet.baseline.json` as of `305908e`, against the plan's opening counts (finding 8):
+
+| Pattern | Plan start | Now |
+|---|---|---|
+| `text-[8-11px]` | 370 | 0 |
+| `text-[arbitrary size]` | not counted | 9 |
+| `rounded-[…]` | 56 | 0 |
+| `shadow-[…]` | 15 | 0 |
+| `text-white` | 50 | 2 |
+| `transition-all` | 96 | 0 |
+| `focus(-visible):outline-none` | 29 | 18 |
+| `outline-none` without a focus-visible ring | not counted | 32 |
+| raw `<button` (call sites, not primitives) | 149 | 85 |
+| raw `<input` | not counted | 8 |
+| `backdrop-blur` | 9 | 3 |
+| `-[#hex]` | 4 | 0 |
+| `rgb()`/`rgba()` literal | not counted | 6 |
+| `bg-white/` or `bg-black/` | not counted | 4 |
+| state colour alpha tint | not counted | 82 |
+| `uppercase` plus `tracking-[…]` | not counted | 65 |
+| inline `fontSize` 8-11 | 6 | 0 |
+
+The ratchet also holds at zero: `border-l-2/4` stripes, `text-3xl` and up, off-scale `rounded-*`, stock `shadow-*`, and an accent fill with a literal label.
+
+### Screenshots
+
+Before and after pairs for 22 pages at 1280 and 390, dark theme, on the local preview harness with fake data. The clearest gains: the trader phone page no longer scrolls sideways (213px before), and every public content page (articles, congress, glossary, learn, tools, legal) fit at 390px after being clipped on the right before. What got worse or stayed wrong is listed under What remains.
+
+### What remains
+
+**Stage 3 leftovers.**
+- `/contact`, `/privacy`, `/risk` and `/terms` still carry their own minimal header and no site footer. `a1aea25` says every public page; it reached the pages that used PublicShell and the landing, not these four. The 404 page has no nav at all.
+- The phone pricing comparison table still shows only the Feature and Free columns and scrolls sideways inside itself.
+- Longer pages: pricing (5479 to 5858px desktop), order ticket phone (864 to 1224px), tax report phone (2127 to 2780px), dashboard phone (2217 to 2759px) and trader phone (5012 to 5875px). Mostly the card-row layouts that replaced clipped tables, but pricing is just looser spacing.
+- The order ticket no longer shows equity and cash, only buying power. Decide whether that is intended.
+- Small visual defects from the after set: on phone, the Post-mortem link in trader SELL rows sits against the card edge, and the two Tax Report headline figures almost touch; the register page is 902px tall at 1280x900, a 2px scroll; the landing mockup drops its annotations and axis on phone.
+- Stage 3 verification not yet done: captures in light and colour-blind dark (only dark was shot), the 360px long-symbol check, a keyboard and screen-reader pass per page, and the paper-account smoke test (place, confirm, cancel, engine start and stop). The preview harness answers every broker write with a 403, so that smoke test needs a real paper account.
+
+**Stage 4 leftovers.** `useKeyedResource` (`src/lib/client/resource.ts`) was never added, so 4b items 6 and 8 (per-source trader freshness, keyed tax responses) still need a check against what the fix branch built instead. Item 13, the Tax Center and Tax Report showing different figures for one year, is open.
+
+**Stage 5.** This plan has no Stage 5 section; the work order named one, and nothing was started under it. If it means the remaining 4b items, see the paragraph above.
+
+---
+
 The plan is grounded in `C:/Users/Avalon/dev/Sentinel-review` at `fcf362a`. Every contrast figure below was computed with an OKLCH to sRGB script. The script is at `C:/Users/Avalon/AppData/Local/Temp/claude/C--Users-Avalon-dev-lab/9d6b2ae6-d444-43e9-bbea-fdc39115ae81/scratchpad/ok.mjs`: `node ok.mjs cr "L C H" "L C H"` prints a contrast ratio and `node ok.mjs tohex "L C H"` prints a hex value.
 
 ## Findings from this pass (not in the input list)
