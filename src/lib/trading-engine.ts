@@ -7630,6 +7630,11 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
  * Alpaca's DELETE /v2/orders ack is async — the response returns before shares
  * actually release from `held_for_orders`. Without this wait, immediately placing
  * a new sell stop fails with 403 "insufficient qty available".
+ *
+ * A 207 partial still waits on every open order, including the ones the
+ * broker named as failed: if the 207 body were misread, every order would
+ * look failed and skipping them would skip the wait entirely. A genuinely
+ * failed cancel costs at most the deadline and shows up as released=false.
  */
 export async function cancelAllAndWait(
   client: BrokerClient,
@@ -7653,19 +7658,18 @@ export async function cancelAllAndWait(
     // as before.
     if (!(err instanceof CancelAllPartialError)) throw err;
     failedOrderIds = err.failedOrderIds;
-    log.warn({ failedOrderIds }, "Cancel-all was partial; waiting for the orders that did cancel");
+    log.warn({ failedOrderIds }, "Cancel-all was partial; still waiting for every order to release");
   }
-  const failed = new Set(failedOrderIds ?? []);
   const deadline = Date.now() + maxMs;
   const PENDING = new Set(["new", "accepted", "pending_new", "partially_filled", "held", "pending_cancel"]);
   while (Date.now() < deadline) {
     try {
       // status="open" — same Alpaca default-status trap as the per-scan guards.
       // Without it, a still-pending cancel can be hidden behind filled noise
-      // and we'd return early thinking the broker is clean. Orders the broker
-      // already said it could not cancel are not waited on.
-      const orders = await client.getOrders(100, "open");
-      if (!orders.some((o) => PENDING.has(o.status) && !failed.has(o.id))) {
+      // and we'd return early thinking the broker is clean. A full page
+      // cannot prove the rest are released, so it counts as still pending.
+      const orders = await client.getOrders(OPEN_ORDERS_PAGE, "open");
+      if (orders.length < OPEN_ORDERS_PAGE && !orders.some((o) => PENDING.has(o.status))) {
         return { released: true, failedOrderIds };
       }
     } catch {
@@ -7679,63 +7683,98 @@ export async function cancelAllAndWait(
 
 /** Poll interval while waiting for cancelled orders to release held shares. */
 const CANCEL_POLL_MS = 250;
+/**
+ * Page size for the kill-switch and cancel-and-wait order listings. Alpaca
+ * caps /v2/orders at 500 and truncates silently, so every reader of these
+ * pages treats a full page as incomplete rather than as the whole book.
+ */
+const OPEN_ORDERS_PAGE = 500;
 
 /**
- * Cancel one symbol's open orders, then poll until none of the cancelled
- * orders is still open or pending_cancel, so the shares they held are free
- * before a sell. Alpaca cancels asynchronously: a sell sent while a stop is
- * pending_cancel is rejected for insufficient qty (finding #42). Never throws.
+ * Cancel one symbol's open orders, then poll until none of them is still open
+ * or pending_cancel, so the shares they held are free before a sell. Alpaca
+ * cancels asynchronously: a sell sent while a stop is pending_cancel is
+ * rejected for insufficient qty (finding #42). Orders of the symbol that are
+ * already pending_cancel (cancelled by an earlier call or another path) are
+ * waited on too, so a second call really does re-poll instead of returning
+ * at once. `minWait` sleeps at least one poll interval even when there is
+ * nothing to wait on: Alpaca can show an order canceled a beat before its
+ * shares leave held_for_orders. `filter` narrows which open orders are
+ * cancelled (default: all of the symbol's). Never throws.
  */
-async function cancelSymbolOrdersAndWait(
+export async function cancelSymbolOrdersAndWait(
   client: BrokerClient,
   symbol: string,
-  maxMs = 5000
+  opts: { maxMs?: number; minWait?: boolean; filter?: (o: BrokerOrder) => boolean } = {}
 ): Promise<{ released: boolean; failedOrderIds: string[] }> {
+  const maxMs = opts.maxMs ?? 5000;
   const failedOrderIds: string[] = [];
   if (!client.cancelOrder) return { released: false, failedOrderIds };
-  const cancelled = new Set<string>();
+  const CANCELLABLE = ["new", "accepted", "pending_new", "partially_filled", "held"];
+  const HOLDING = new Set([...CANCELLABLE, "pending_cancel"]);
+  // Orders whose release this call waits for: the ones it cancels plus any of
+  // the symbol's orders already in pending_cancel.
+  const waitIds = new Set<string>();
+  let pageFull = false;
   try {
     // status="open" for the same Alpaca default-status reason as
     // cancelPendingOrdersForSymbol.
-    const orders = await client.getOrders(100, "open");
+    const orders = await client.getOrders(OPEN_ORDERS_PAGE, "open");
+    if (orders.length >= OPEN_ORDERS_PAGE) {
+      pageFull = true;
+      log.warn({ symbol, count: orders.length }, "Open-order page is full; some of this symbol's orders may not be listed");
+    }
+    for (const o of orders) {
+      if (o.symbol === symbol && o.status === "pending_cancel") waitIds.add(o.id);
+    }
     const pending = orders.filter(
-      (o) => o.symbol === symbol && ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)
+      (o) => o.symbol === symbol && CANCELLABLE.includes(o.status) && (!opts.filter || opts.filter(o))
     );
     for (const o of pending) {
       try {
         await client.cancelOrder(o.id);
-        cancelled.add(o.id);
-        log.info({ symbol, orderId: o.id, type: o.type }, "Cancelled order before halt sell");
+        waitIds.add(o.id);
+        log.info({ symbol, orderId: o.id, type: o.type }, "Cancelled order before sell");
       } catch (err) {
         failedOrderIds.push(o.id);
         log.warn(
           { symbol, orderId: o.id, err: err instanceof Error ? err.message : "unknown" },
-          "Failed to cancel order before halt sell"
+          "Failed to cancel order before sell"
         );
       }
     }
   } catch (err) {
     log.warn(
       { symbol, err: err instanceof Error ? err.message : "unknown" },
-      "Could not list open orders before halt sell"
+      "Could not list open orders before sell"
     );
+    if (opts.minWait) await new Promise((r) => setTimeout(r, CANCEL_POLL_MS));
     return { released: false, failedOrderIds };
   }
-  if (cancelled.size === 0) return { released: failedOrderIds.length === 0, failedOrderIds };
+  if (waitIds.size === 0 && !pageFull) {
+    if (opts.minWait) await new Promise((r) => setTimeout(r, CANCEL_POLL_MS));
+    return { released: failedOrderIds.length === 0, failedOrderIds };
+  }
 
-  const HOLDING = new Set(["new", "accepted", "pending_new", "partially_filled", "held", "pending_cancel"]);
+  // Poll at least once, even when the caller's budget is already spent.
   const deadline = Date.now() + maxMs;
-  while (Date.now() < deadline) {
+  do {
     await new Promise((r) => setTimeout(r, CANCEL_POLL_MS));
     try {
-      const orders = await client.getOrders(100, "open");
-      if (!orders.some((o) => cancelled.has(o.id) && HOLDING.has(o.status))) {
+      const orders = await client.getOrders(OPEN_ORDERS_PAGE, "open");
+      const stillHeld = orders.some(
+        (o) =>
+          o.symbol === symbol &&
+          (o.status === "pending_cancel" || (waitIds.has(o.id) && HOLDING.has(o.status)))
+      );
+      // A full page cannot prove the symbol's orders are gone.
+      if (!stillHeld && orders.length < OPEN_ORDERS_PAGE) {
         return { released: failedOrderIds.length === 0, failedOrderIds };
       }
     } catch {
       // Transient broker error: keep polling until the deadline.
     }
-  }
+  } while (Date.now() < deadline);
   log.warn({ symbol, maxMs }, "Cancelled orders still pending at the deadline; selling anyway");
   return { released: false, failedOrderIds };
 }
@@ -7868,7 +7907,7 @@ async function placeSafetyStopForPosition(
  */
 async function cancelOpenEntryOrders(client: BrokerClient, keepSymbols: Set<string>): Promise<void> {
   if (!client.cancelOrder) return;
-  const PAGE = 100;
+  const PAGE = OPEN_ORDERS_PAGE;
   try {
     // status="open" for the same Alpaca default-status reason as
     // cancelPendingOrdersForSymbol.
@@ -7917,6 +7956,17 @@ export const HALT_LIQUIDATION_FAILED = "LIQUIDATION_FAILED";
  * The engine is still halted (no new entries).
  */
 export const HALT_MARKET_CLOSED = "MARKET_CLOSED";
+
+/**
+ * Overall budget for the kill switch's cancel-and-wait polling across every
+ * symbol. Each symbol waits up to 5s for its stops to release (plus a retry),
+ * so without a cap a book of many positions on a slow broker could outlast a
+ * proxy timeout (Cloudflare gives up at 100s) and the UI would show an error
+ * while the halt was still running. Once the budget is spent each symbol
+ * still gets its cancel, one release poll and its sell: the budget bounds the
+ * waiting, it never skips a liquidation.
+ */
+const HALT_WAIT_BUDGET_MS = 45_000;
 
 export async function haltEngine(userId?: string): Promise<{
   ok: boolean;
@@ -8046,6 +8096,8 @@ export async function haltEngine(userId?: string): Promise<{
         }
 
         liquidationStarted = true;
+        const waitDeadline = Date.now() + HALT_WAIT_BUDGET_MS;
+        const waitMs = () => Math.max(0, Math.min(5000, waitDeadline - Date.now()));
         for (const pos of marketClosed ? [] : longs) {
           // Cancel this symbol's pending orders (bracket legs, resting stops,
           // take-profits) just before its sell, and WAIT until the broker
@@ -8060,23 +8112,42 @@ export async function haltEngine(userId?: string): Promise<{
             type: "market" as const,
             timeInForce: "day" as const,
           };
+          // Orders of this symbol the broker refused to cancel. The sell is
+          // still attempted (a cancel that fails because the order already
+          // filled or is already cancelling does not block it), but a
+          // failure is then reported with this as its likely cause.
+          let uncancelled: string[] = [];
           try {
-            await cancelSymbolOrdersAndWait(client, pos.symbol);
+            const cancel = await cancelSymbolOrdersAndWait(client, pos.symbol, { maxMs: waitMs() });
+            uncancelled = cancel.failedOrderIds;
+            if (!cancel.released) {
+              log.warn(
+                { symbol: pos.symbol, failedOrderIds: cancel.failedOrderIds },
+                "Halt could not confirm this symbol's orders released; selling anyway"
+              );
+            }
             try {
               haltOrder = await placeEngineOrder(client, sellParams);
             } catch (firstErr) {
               if (!isInsufficientQtyError(firstErr)) throw firstErr;
               // Shares still held: re-poll this symbol's orders (cancelling
-              // anything that appeared since) and retry once.
+              // anything that appeared since and waiting on any still
+              // pending_cancel), wait at least one poll interval, and retry
+              // once.
               log.warn(
                 { symbol: pos.symbol, err: firstErr instanceof Error ? firstErr.message : "unknown" },
                 "Halt sell rejected for held qty; re-polling orders and retrying once"
               );
-              await cancelSymbolOrdersAndWait(client, pos.symbol);
+              const retry = await cancelSymbolOrdersAndWait(client, pos.symbol, { maxMs: waitMs(), minWait: true });
+              uncancelled = [...new Set([...uncancelled, ...retry.failedOrderIds])];
               haltOrder = await placeEngineOrder(client, sellParams);
             }
           } catch (err) {
-            const msg = err instanceof Error ? err.message : "unknown";
+            const baseMsg = err instanceof Error ? err.message : "unknown";
+            const msg =
+              uncancelled.length > 0
+                ? `${baseMsg} (${uncancelled.length} of its orders could not be cancelled: ${uncancelled.join(", ")})`
+                : baseMsg;
             failedSymbols.push(pos.symbol);
             log.error(
               { err: msg, symbol: pos.symbol },
@@ -8137,6 +8208,14 @@ export async function haltEngine(userId?: string): Promise<{
             );
           }
         }
+
+        // Second entry sweep. A BUY that was already inside placeOrder when
+        // the halt started got past both entry guards, and if the broker
+        // accepted it after the first listing above, that sweep missed it.
+        // Cancel buys once more now that liquidation is done. Known residual:
+        // a BUY whose request is still in flight after this sweep can still
+        // land and fill; the halt result cannot see it.
+        await cancelOpenEntryOrders(client, shortSymbols);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "unknown";

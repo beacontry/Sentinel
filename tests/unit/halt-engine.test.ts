@@ -45,6 +45,19 @@ const state = vi.hoisted(() => ({
   insufficientOnceSymbols: [] as string[],
   marketOpen: true,
   inserts: [] as Array<Record<string, unknown>>,
+  /** When set, cancelAllOrders throws this. */
+  cancelAllError: null as Error | null,
+  /** Order ids whose cancel the broker refuses. */
+  failCancelIds: [] as string[],
+  /**
+   * After a cancel, a market sell for that symbol is rejected for held qty
+   * for this long even once the order list shows the stop canceled (Alpaca
+   * can report canceled a beat before held_for_orders is released).
+   */
+  holdAfterCancelMs: 0,
+  heldUntil: {} as Record<string, number>,
+  /** Called on each accepted market sell, to inject broker events mid-halt. */
+  onSell: null as ((symbol: string) => void) | null,
 }));
 
 const HOLDING = ["new", "accepted", "pending_new", "partially_filled", "held", "pending_cancel"];
@@ -110,7 +123,9 @@ function makeFakeClient(environment: string) {
     },
     cancelOrder: async (id: string) => {
       state.cancelOrderCalls.push(id);
+      if (state.failCancelIds.includes(id)) throw new Error(`Alpaca cancel 422: order ${id} is not cancelable`);
       const o = state.orders.find((x) => x.id === id);
+      if (o && state.holdAfterCancelMs > 0) state.heldUntil[o.symbol] = Date.now() + state.holdAfterCancelMs;
       if (o) {
         o.status = "pending_cancel";
         o.pollsLeft = state.releaseAfterPolls;
@@ -118,6 +133,7 @@ function makeFakeClient(environment: string) {
     },
     cancelAllOrders: async () => {
       state.cancelAllCalls++;
+      if (state.cancelAllError) throw state.cancelAllError;
     },
     placeOrder: async (params: Record<string, unknown>) => {
       const symbol = params.symbol as string;
@@ -127,13 +143,16 @@ function makeFakeClient(environment: string) {
           throw new Error(`Alpaca order 422: symbol ${symbol} is not tradable`);
         }
         const once = state.insufficientOnceSymbols.indexOf(symbol);
-        const held = state.orders.some((o) => o.symbol === symbol && o.side === "sell" && HOLDING.includes(o.status));
+        const held =
+          state.orders.some((o) => o.symbol === symbol && o.side === "sell" && HOLDING.includes(o.status)) ||
+          Date.now() < (state.heldUntil[symbol] ?? 0);
         if (held || once >= 0) {
           if (once >= 0) state.insufficientOnceSymbols.splice(once, 1);
           throw new Error(`Alpaca order 403: {"message":"insufficient qty available for order"}`);
         }
       }
       state.placed.push({ ...params });
+      if (params.side === "sell" && params.type === "market") state.onSell?.(symbol);
       return { id: `ord-${state.placed.length}`, status: "accepted" };
     },
   };
@@ -152,6 +171,7 @@ import {
   placeEngineOrder,
   canPlaceBuyOrder,
   cancelAllAndWait,
+  cancelSymbolOrdersAndWait,
   EngineClosedForEntriesError,
   HALT_LIQUIDATION_FAILED,
   HALT_MARKET_CLOSED,
@@ -192,6 +212,10 @@ function stop(id: string, symbol: string, qty: number): FakeOrder {
   return { id, symbol, side: "sell", type: "stop", status: "new", qty };
 }
 
+function buy(id: string, symbol: string, qty: number): FakeOrder {
+  return { id, symbol, side: "buy", type: "limit", status: "new", qty };
+}
+
 beforeEach(() => {
   state.connections = [];
   state.positions = [];
@@ -205,6 +229,11 @@ beforeEach(() => {
   state.insufficientOnceSymbols = [];
   state.marketOpen = true;
   state.inserts = [];
+  state.cancelAllError = null;
+  state.failCancelIds = [];
+  state.holdAfterCancelMs = 0;
+  state.heldUntil = {};
+  state.onSell = null;
 });
 
 // ─── #43 in-flight scan and BUY gates ───────────────────────────────────────
@@ -252,6 +281,49 @@ describe("halt stops in-flight entries (finding #43)", () => {
   });
 });
 
+describe("halt sweeps entries again after liquidation (finding #43 residual)", () => {
+  it("cancels a BUY the broker accepted after the first entry sweep", async () => {
+    const userId = freshUser();
+    state.connections = [paperConnection(userId)];
+    state.positions = [AAPL];
+    // A BUY that was already inside placeOrder when the halt began lands at
+    // the broker while the halt is liquidating.
+    state.onSell = () => {
+      if (!state.orders.some((o) => o.id === "late-buy")) state.orders.push(buy("late-buy", "NVDA", 3));
+    };
+
+    const res = await haltEngine(userId);
+    expect(res.ok).toBe(true);
+    expect(state.cancelOrderCalls).toContain("late-buy");
+    expect(state.orders.find((o) => o.id === "late-buy")?.status).not.toBe("new");
+  });
+
+  it("with no positions, falls back to cancelling BUYs one by one when cancel-all is partial", async () => {
+    const userId = freshUser();
+    state.connections = [paperConnection(userId)];
+    state.positions = [];
+    state.orders = [buy("buy-1", "NVDA", 2), stop("manual-stop", "XYZ", 1)];
+    state.cancelAllError = new CancelAllPartialError(["buy-1"], "1 of 2 orders not cancelled");
+
+    const res = await haltEngine(userId);
+    expect(res.ok).toBe(true);
+    expect(state.cancelAllCalls).toBe(1);
+    expect(state.cancelOrderCalls).toContain("buy-1");
+    expect(state.cancelOrderCalls).not.toContain("manual-stop");
+  });
+
+  it("with no positions, falls back to cancelling BUYs one by one when cancel-all fails outright", async () => {
+    const userId = freshUser();
+    state.connections = [paperConnection(userId)];
+    state.positions = [];
+    state.orders = [buy("buy-2", "AMD", 4)];
+    state.cancelAllError = new Error("Alpaca cancel-all 500");
+
+    await haltEngine(userId);
+    expect(state.cancelOrderCalls).toContain("buy-2");
+  });
+});
+
 // ─── #42 cancel-and-wait per symbol ─────────────────────────────────────────
 
 describe("halt waits for each symbol's orders to release before selling (finding #42)", () => {
@@ -281,6 +353,72 @@ describe("halt waits for each symbol's orders to release before selling (finding
     expect(res.ok).toBe(true);
     expect(state.sellAttempts).toEqual(["AAPL", "AAPL"]);
     expect(res.closedSymbols).toEqual(["AAPL"]);
+  });
+
+  it("waits on a stop another path already put in pending_cancel before selling", async () => {
+    const userId = freshUser();
+    state.connections = [paperConnection(userId)];
+    state.positions = [AAPL];
+    // Cancelled before the halt began: no longer cancellable, but its shares
+    // stay held for three more polls. The old helper found nothing to cancel
+    // and returned without waiting.
+    state.orders = [{ ...stop("stop-aapl", "AAPL", 10), status: "pending_cancel", pollsLeft: 3 }];
+
+    const res = await haltEngine(userId);
+    expect(res.ok).toBe(true);
+    expect(state.sellAttempts).toEqual(["AAPL"]); // no rejected first attempt
+    expect(state.cancelOrderCalls).toEqual([]);
+    expect(res.closedSymbols).toEqual(["AAPL"]);
+  });
+
+  it("waits a poll interval before the retry when the stop reads canceled but its shares are still held", async () => {
+    const userId = freshUser();
+    state.connections = [paperConnection(userId)];
+    state.positions = [AAPL];
+    state.orders = [stop("stop-aapl", "AAPL", 10)];
+    // Canceled on the first poll (about 250ms after the cancel), shares held
+    // until 400ms. The first sell is rejected; the old retry found nothing to
+    // wait on, resent at once and was rejected again.
+    state.holdAfterCancelMs = 400;
+
+    const res = await haltEngine(userId);
+    expect(state.orders[0].status).toBe("canceled");
+    expect(state.sellAttempts).toEqual(["AAPL", "AAPL"]);
+    expect(res.ok).toBe(true);
+    expect(res.closedSymbols).toEqual(["AAPL"]);
+    expect(res.unprotectedSymbols).toEqual([]);
+  });
+
+  it("a second call re-polls a stop still pending_cancel after the first call's deadline", async () => {
+    state.orders = [stop("stop-aapl", "AAPL", 10)];
+    state.releaseAfterPolls = 6;
+    const client = makeFakeClient("paper") as unknown as BrokerClient;
+
+    const first = await cancelSymbolOrdersAndWait(client, "AAPL", { maxMs: 300 });
+    expect(first.released).toBe(false);
+    expect(state.orders[0].status).toBe("pending_cancel");
+
+    // Nothing left to cancel: the second call must still wait on the
+    // pending_cancel stop instead of returning at once.
+    const second = await cancelSymbolOrdersAndWait(client, "AAPL", { minWait: true });
+    expect(second.released).toBe(true);
+    expect(state.orders[0].status).toBe("canceled");
+    expect(state.cancelOrderCalls).toEqual(["stop-aapl"]);
+  });
+
+  it("names the orders it could not cancel as the reason a symbol's sell failed", async () => {
+    const userId = freshUser();
+    state.connections = [paperConnection(userId)];
+    state.positions = [AAPL];
+    state.orders = [stop("stop-aapl", "AAPL", 10)];
+    state.failCancelIds = ["stop-aapl"]; // the stop keeps holding the shares
+
+    const res = await haltEngine(userId);
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe(HALT_LIQUIDATION_FAILED);
+    expect(res.failedSymbols).toEqual(["AAPL"]);
+    const engine = engines().get(userId)!;
+    expect(engine.errors.some((e) => e.includes("could not be cancelled: stop-aapl"))).toBe(true);
   });
 
   it("re-places a stop for the symbol whose sell failed and reports it, while the other closes", async () => {
@@ -348,7 +486,7 @@ describe("207 partial cancel is surfaced (finding #42)", () => {
     expect((err as CancelAllPartialError).failedOrderIds).toEqual([]);
   });
 
-  it("cancelAllAndWait hands the partial to the caller instead of reporting a clean cancel", async () => {
+  it("cancelAllAndWait hands the partial to the caller and does not call a still-open order released", async () => {
     const client = {
       ...makeFakeClient("paper"),
       cancelAllOrders: async () => {
@@ -356,9 +494,27 @@ describe("207 partial cancel is surfaced (finding #42)", () => {
       },
     } as unknown as BrokerClient;
     state.orders = [stop("stop-x", "X", 1)]; // still open: the one that failed
-    const res = await cancelAllAndWait(client, 1000);
+    const res = await cancelAllAndWait(client, 600);
     expect(res.failedOrderIds).toEqual(["stop-x"]);
-    expect(res.released).toBe(true); // nothing it did cancel is still pending
+    expect(res.released).toBe(false);
+  });
+
+  it("cancelAllAndWait still waits when a misread 207 names every order as failed", async () => {
+    // Every order did cancel and sits in pending_cancel, but the partial
+    // names all of them. Skipping "failed" orders would skip the wait.
+    state.orders = [
+      { ...stop("stop-a", "A", 1), status: "pending_cancel", pollsLeft: 2 },
+      { ...stop("stop-b", "B", 1), status: "pending_cancel", pollsLeft: 2 },
+    ];
+    const client = {
+      ...makeFakeClient("paper"),
+      cancelAllOrders: async () => {
+        throw new CancelAllPartialError(["stop-a", "stop-b"], "2 of 2 orders not cancelled");
+      },
+    } as unknown as BrokerClient;
+    const res = await cancelAllAndWait(client, 5000);
+    expect(res.released).toBe(true);
+    expect(state.orders.every((o) => o.status === "canceled")).toBe(true);
   });
 });
 
