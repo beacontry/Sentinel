@@ -105,8 +105,10 @@ export function PerformanceWidget() {
               stats.avgReturn >= 0 ? "text-bullish" : "text-bearish"
             }`}
           >
+            {/* /api/performance sends avgReturn already in percent
+                (pnl * 100 / cost basis), as the Performance page reads it. */}
             {stats.avgReturn >= 0 ? "+" : ""}
-            {(stats.avgReturn * 100).toFixed(2)}%
+            {stats.avgReturn.toFixed(2)}%
           </p>
         </div>
       )}
