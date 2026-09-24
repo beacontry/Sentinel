@@ -7,26 +7,17 @@ import { useRecoveryPoll } from "@/hooks/useRecoveryPoll";
 import { accessRegained } from "@/lib/recovery-poll";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { isMarketOpen } from "@/lib/market-hours";
-import { tradeStatusTone } from "@/lib/status-tone";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { SignalBadge } from "@/components/ui/signal-badge";
-import { SymbolLink } from "@/components/ui/symbol-link";
 import { useToast } from "@/components/ui/toast";
 import { useConfirmAction } from "@/components/ui/confirm-action-modal";
-import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
+import { useDisplayPrefs } from "@/components/display-prefs-provider";
 import { PositionDetailSheet } from "@/components/dashboard/position-detail-sheet";
-import type { SignalType } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageIntro } from "@/components/layout/page-intro";
 import { TraderTierRequired } from "@/components/tiers/trader-tier-required";
-import { PostMortemButton } from "@/components/trader/post-mortem-button";
 import {
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  BarChart3,
   AlertTriangle,
   Square,
   Play,
@@ -37,6 +28,16 @@ import {
   Shield,
 } from "lucide-react";
 import { PRESET_LABELS } from "@/lib/strategy-presets";
+import { formatSignedUsd } from "@/lib/format-pnl";
+import { SignedValue } from "@/components/ui/signed-value";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingRegion } from "@/components/ui/live-region";
+import { ErrorState } from "@/components/ui/error-state";
+import { timeAgo, usd, type TraderData, type TraderPosition } from "@/components/trader/types";
+import { PositionsTable } from "@/components/trader/positions-table";
+import { OpenOrdersTable } from "@/components/trader/open-orders-table";
+import { RecentSignals, RecentTrades } from "@/components/trader/recent-activity";
+import { AccountReadout, PerformanceAnalytics, PnlReadout } from "@/components/trader/account-readout";
 import { TraderTaxCallouts } from "@/components/trader/tax-callouts";
 import {
   accessLossStatus,
@@ -80,115 +81,6 @@ const ENGINE_MODES: { value: string; label: string }[] = [
   { value: "adaptive", label: ADAPTIVE_MODE_LABEL },
 ];
 
-interface TraderData {
-  status: {
-    connected: boolean;
-    mode: string;
-    /** Persisted traderStatus.mode (env:mode), not gated on heartbeat age. */
-    lastMode?: string | null;
-    lastHeartbeat: string | null;
-    watchlist: string[];
-  };
-  brokerAccount?: {
-    equity: number;
-    cash: number;
-    buyingPower: number;
-    portfolioValue: number;
-    /** Gross long market value (positions × current price). Greater than
-     *  equity when there's a margin loan; equal to equity in a cash account. */
-    longMarketValue: number;
-  } | null;
-  todayPnl: {
-    realizedPnl: number;
-    unrealizedPnl: number;
-    totalPnl: number;
-    tradesCount: number;
-    halted: boolean;
-    haltReason: string | null;
-  } | null;
-  lifetimePnl: {
-    realizedPnl: number;
-    realizedPnlToday: number;
-    unrealizedPnl: number;
-    totalPnl: number;
-  } | null;
-  positions: Array<{
-    symbol: string;
-    quantity: number;
-    entryPrice: number;
-    currentPrice: number;
-    unrealizedPnl: number;
-    stopPrice: number | null;
-  }>;
-  /** Symbols whose protective broker stop is currently missing (broker
-   *  rejected the place call — typically PDT). Surfaced as a banner because
-   *  the position is only protected by the 1-min exit poll. */
-  unprotectedSymbols?: string[];
-  openOrders: Array<{
-    id: string;
-    symbol: string;
-    side: string;
-    type: string;
-    qty: number;
-    filledQty: number;
-    status: string;
-    stopPrice: string | null;
-    limitPrice: string | null;
-    timeInForce: string;
-    submittedAt: string;
-  }>;
-  trades: Array<{
-    id: string;
-    symbol: string;
-    action: string;
-    signal: string;
-    quantity: number;
-    orderType: string;
-    fillPrice: number | null;
-    status: string;
-    pnl: number | null;
-    traderTimestamp: string;
-    aiSummary?: string | null;
-  }>;
-  signals: Array<{
-    id: string;
-    symbol: string;
-    signal: string;
-    price: number;
-    actedOn: boolean;
-    traderTimestamp: string;
-  }>;
-  pnlHistory: Array<{
-    date: string;
-    realizedPnl: number;
-    unrealizedPnl: number;
-    totalPnl: number;
-    tradesCount: number;
-    halted: boolean;
-  }>;
-  analytics: {
-    totalTrades: number;
-    winningTrades: number;
-    losingTrades: number;
-    winRate: number;
-    netPnl: number;
-    grossProfit: number;
-    grossLoss: number;
-    avgWin: number;
-    avgLoss: number;
-    profitFactor: number;
-    maxDrawdown: number;
-    sharpeRatio: number;
-  } | null;
-}
-
-function timeAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
 
 async function sendCommand(
   command: string,
@@ -563,36 +455,90 @@ export default function TraderPage() {
     return outcome;
   }
 
+  /** Asks for an AI summary of one trade; the list shows it under the row. */
+  async function summarizeTrade(tradeId: string) {
+    setSummarizing((prev) => new Set(prev).add(tradeId));
+    try {
+      const res = await fetch("/api/trader/summarize-trade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tradeId }),
+      });
+      if (res.ok) {
+        const body = await res.json();
+        setSummaryByTradeId((prev) => ({ ...prev, [tradeId]: body.summary }));
+      } else {
+        const body = await res.json().catch(() => ({}));
+        toast({
+          type: "error",
+          message: body?.error || `AI summary failed (${res.status}) — check admin → System Config`,
+        });
+      }
+    } catch (err) {
+      toast({
+        type: "error",
+        message: "AI summary failed — " + ((err as Error)?.message ?? "network error"),
+      });
+    } finally {
+      setSummarizing((prev) => {
+        const next = new Set(prev);
+        next.delete(tradeId);
+        return next;
+      });
+    }
+  }
+
+  /** Close one position: confirm with its numbers, then market-sell it. */
+  function confirmClosePosition(p: TraderPosition) {
+    requestConfirm({
+      title: `Close ${p.symbol}`,
+      description: <>Market-sells the full position. Its broker stop is cancelled as the sell fills.</>,
+      summary: [
+        { label: "Shares", value: String(p.quantity ?? 0) },
+        { label: "Current price", value: `$${(p.currentPrice ?? 0).toFixed(2)}` },
+        { label: "Est. proceeds", value: usd((p.currentPrice ?? 0) * (p.quantity ?? 0)) },
+        {
+          label: "Unrealized P&L",
+          value: formatSignedUsd(p.unrealizedPnl ?? 0),
+          tone: (p.unrealizedPnl ?? 0) >= 0 ? "bullish" : "bearish",
+        },
+      ],
+      confirmLabel: `Sell ${p.quantity} ${p.symbol}`,
+      onConfirm: async () => {
+        setCmdLoading("flatten");
+        const result = await sendCommand("flatten", { symbol: p.symbol });
+        setCmdLoading(null);
+        if (result.error) throw new Error(result.error);
+        toast({ type: "success", message: result.queuedForOpen && result.message ? result.message : `Sell order for ${p.symbol} submitted.` });
+        await load();
+      },
+    });
+  }
+
   if (loading) {
     // Skeleton of the real layout (status strip + stat grid + two tables)
     // instead of a bare centered spinner — the most-visited page shouldn't
     // flash empty. Shapes mirror the loaded page so nothing jumps.
     return (
-      <div className="p-4 lg:p-6 space-y-6" aria-busy="true" aria-label="Loading trader dashboard">
+      <LoadingRegion label="the trader dashboard" busy className="p-4 lg:p-6 space-y-6">
         <div className="space-y-2">
-          <div className="h-4 w-24 rounded bg-bg-elevated animate-pulse" />
-          <div className="h-8 w-48 rounded bg-bg-elevated animate-pulse" />
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-4 w-72 max-w-full" />
         </div>
+        <Skeleton className="h-24 rounded-xl" />
         <div className="flex items-center gap-2">
-          <div className="h-11 w-64 rounded-lg bg-bg-elevated animate-pulse" />
-          <div className="h-11 w-24 rounded-lg bg-bg-elevated animate-pulse" />
-          <div className="h-11 w-24 rounded-lg bg-bg-elevated animate-pulse" />
+          <Skeleton className="h-11 w-64" rounded="lg" />
+          <Skeleton className="h-11 w-24" rounded="lg" />
+          <Skeleton className="h-11 w-24" rounded="lg" />
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-xl border border-border bg-bg-surface p-4 space-y-2">
-              <div className="h-3 w-20 rounded bg-bg-elevated animate-pulse" />
-              <div className="h-7 w-28 rounded bg-bg-elevated animate-pulse" />
-            </div>
-          ))}
-        </div>
-        <div className="rounded-xl border border-border bg-bg-surface p-4 space-y-3">
-          <div className="h-4 w-36 rounded bg-bg-elevated animate-pulse" />
+        <Skeleton className="h-24 rounded-xl" />
+        <div className="space-y-2 rounded-xl border border-border bg-bg-secondary p-4">
+          <Skeleton className="h-4 w-36" />
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-9 rounded bg-bg-elevated/60 animate-pulse" />
+            <Skeleton key={i} className="h-10" />
           ))}
         </div>
-      </div>
+      </LoadingRegion>
     );
   }
 
@@ -602,7 +548,6 @@ export default function TraderPage() {
     return (
       <div className="p-4 lg:p-6 space-y-6">
         <PageIntro
-          eyebrow="Execution Desk"
           title="Live Trader"
           description="Monitor the automated trader as a risk system first and an execution engine second."
           stats={[{ label: "Connection", value: "Unknown", tone: "neutral" }]}
@@ -639,16 +584,13 @@ export default function TraderPage() {
             </div>
           </>
         ) : (
-          <div role="alert" className="rounded-xl border border-bearish-line bg-bearish-fill p-8 text-center">
-            <AlertTriangle className="w-10 h-10 text-bearish mx-auto mb-3" />
-            <h3 className="font-display text-lg font-semibold mb-2">Could not load trader data</h3>
-            <p className="text-sm text-text-secondary max-w-sm mx-auto">
-              Your positions and engine state could not be read, so nothing is shown rather than
-              something wrong. {dashLoad.error ? `(${dashLoad.error})` : ""}
-            </p>
-            <Button variant="secondary" size="sm" className="mt-4" onClick={() => load()}>
-              <RefreshCw className="w-4 h-4" /> Retry
-            </Button>
+          <div className="rounded-xl border border-border bg-bg-secondary">
+            <ErrorState
+              headingLevel={2}
+              title="Could not load trader data"
+              description={`Your positions and engine state could not be read, so nothing is shown rather than something wrong.${dashLoad.error ? ` (${dashLoad.error})` : ""}`}
+              onRetry={() => load()}
+            />
           </div>
         )}
       </div>
@@ -675,7 +617,6 @@ export default function TraderPage() {
           mutations are blocked at the API layer). */}
       <TraderTierRequired />
       <PageIntro
-        eyebrow="Execution Desk"
         title="Live Trader"
         description="Monitor the automated trader as a risk system first and an execution engine second."
         stats={[
@@ -683,11 +624,7 @@ export default function TraderPage() {
           // Mode dropped 2026-07-15 — it already lives in the picker and the
           // Running badge directly below. Today P&L is what a returning
           // trader actually glances for.
-          {
-            label: "Today P&L",
-            value: `${(todayPnl?.totalPnl ?? 0) >= 0 ? "+" : "−"}$${Math.abs(todayPnl?.totalPnl ?? 0).toFixed(2)}`,
-            tone: (todayPnl?.totalPnl ?? 0) >= 0 ? "bullish" : "bearish",
-          },
+          { label: "Today P&L", value: <SignedValue value={todayPnl?.totalPnl ?? 0} /> },
           { label: "Positions", value: positions.length },
           { label: "Signals", value: signals.length },
         ]}
@@ -902,7 +839,7 @@ export default function TraderPage() {
                         },
                         {
                           label: "Unrealized P&L",
-                          value: `${unreal >= 0 ? "+" : "−"}$${Math.abs(unreal).toFixed(2)}`,
+                          value: formatSignedUsd(unreal),
                           tone: unreal >= 0 ? "bullish" : "bearish",
                         },
                       ]
@@ -1048,7 +985,7 @@ export default function TraderPage() {
                       },
                       {
                         label: "Unrealized P&L",
-                        value: `${openUnrealized >= 0 ? "+" : "−"}$${Math.abs(openUnrealized).toFixed(2)}`,
+                        value: formatSignedUsd(openUnrealized),
                         tone: openUnrealized >= 0 ? "bullish" : "bearish",
                       },
                     ],
@@ -1077,27 +1014,23 @@ export default function TraderPage() {
                 Flatten All
               </Button>
             </div>
-            <div className="grid grid-cols-3 gap-3 mb-3">
+            <dl className="grid grid-cols-1 gap-3 mb-3 sm:grid-cols-3">
               <div>
-                <div className="text-xs uppercase tracking-wide text-text-muted">Open positions</div>
-                <div className="font-mono text-lg font-semibold text-text-primary">{positions.length}</div>
+                <dt className="eyebrow text-text-muted">Open positions</dt>
+                <dd className="font-mono text-lg font-semibold text-text-primary">{positions.length}</dd>
               </div>
               <div>
-                <div className="text-xs uppercase tracking-wide text-text-muted">Unrealized P&L</div>
-                <div className={`font-mono text-lg font-semibold ${openUnrealized >= 0 ? "text-bullish" : "text-bearish"}`}>
-                  ${openUnrealized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
+                <dt className="eyebrow text-text-muted">Unrealized P&L</dt>
+                <dd className="text-lg font-semibold"><SignedValue value={openUnrealized} /></dd>
               </div>
               <div>
-                <div className="text-xs uppercase tracking-wide text-text-muted">Realized today</div>
-                <div className={`font-mono text-lg font-semibold ${todayPnl.realizedPnl >= 0 ? "text-bullish" : "text-bearish"}`}>
-                  ${todayPnl.realizedPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
+                <dt className="eyebrow text-text-muted">Realized today</dt>
+                <dd className="text-lg font-semibold"><SignedValue value={todayPnl.realizedPnl} /></dd>
               </div>
-            </div>
+            </dl>
             {losers.length > 0 && (
-              <div className="border-t border-border/50 pt-3">
-                <div className="text-xs uppercase tracking-wide text-text-muted mb-2">Worst bleeding ({Math.min(losers.length, 5)} of {losers.length})</div>
+              <div className="border-t border-[var(--color-hairline-inner)] pt-3">
+                <div className="eyebrow text-text-muted mb-2">Worst bleeding ({Math.min(losers.length, 5)} of {losers.length})</div>
                 <div className="space-y-1.5">
                   {losers.slice(0, 5).map((p) => {
                     const movePct = p.entryPrice > 0 ? ((p.currentPrice - p.entryPrice) / p.entryPrice) * 100 : 0;
@@ -1108,8 +1041,8 @@ export default function TraderPage() {
                           <span className="text-xs text-text-muted">{p.quantity} sh @ ${p.entryPrice.toFixed(2)}</span>
                         </div>
                         <div className="flex items-center gap-3 font-mono text-xs">
-                          <span className="text-bearish">{movePct.toFixed(2)}%</span>
-                          <span className="text-bearish min-w-[80px] text-right">${p.unrealizedPnl.toFixed(2)}</span>
+                          <span className="text-bearish">{movePct.toFixed(2).replace("-", "\u2212")}%</span>
+                          <SignedValue value={p.unrealizedPnl} glyph={false} className="min-w-[80px] justify-end" />
                         </div>
                       </div>
                     );
@@ -1121,165 +1054,22 @@ export default function TraderPage() {
         );
       })()}
 
-      {/* Account Balance */}
-      {data?.brokerAccount && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card>
-            <div className="flex items-center gap-2 mb-1">
-              <DollarSign className="w-4 h-4 text-accent" />
-              <span className="text-xs text-text-muted">Total Equity</span>
-            </div>
-            <p className="text-xl font-mono font-bold text-text-primary">
-              ${data.brokerAccount.equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
-          </Card>
-          <Card>
-            <div className="flex items-center gap-2 mb-1">
-              <BarChart3 className="w-4 h-4 text-accent" />
-              <span className="text-xs text-text-muted">Long Market Value</span>
-            </div>
-            <p className="text-xl font-mono font-bold text-text-primary">
-              ${data.brokerAccount.longMarketValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
-            {/* When margin is in use (negative cash), show the gap so the
-                user sees the loan size at a glance: LMV - equity = margin loan. */}
-            {data.brokerAccount.cash < 0 && (
-              <p className="text-xs text-text-muted mt-1 font-mono">
-                ${Math.abs(data.brokerAccount.cash).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} on margin
-              </p>
-            )}
-          </Card>
-          <Card>
-            <div className="flex items-center gap-2 mb-1">
-              <DollarSign className="w-4 h-4 text-bullish" />
-              <span className="text-xs text-text-muted">Cash</span>
-            </div>
-            <p className="text-xl font-mono font-bold text-text-primary">
-              ${data.brokerAccount.cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
-          </Card>
-          <Card>
-            <div className="flex items-center gap-2 mb-1">
-              <TrendingUp className="w-4 h-4 text-bullish" />
-              <span className="text-xs text-text-muted">Buying Power</span>
-            </div>
-            <p className="text-xl font-mono font-bold text-text-primary">
-              ${data.brokerAccount.buyingPower.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </p>
-          </Card>
-        </div>
-      )}
+      {/* Account balance */}
+      {data?.brokerAccount && <AccountReadout account={data.brokerAccount} />}
 
-      {/* P&L (lifetime realized + current unrealized) */}
-      {(lifetimePnl || todayPnl) && (() => {
-        const totalPnlVal = lifetimePnl?.totalPnl ?? todayPnl?.totalPnl ?? 0;
-        const realizedVal = lifetimePnl?.realizedPnl ?? todayPnl?.realizedPnl ?? 0;
-        const unrealizedVal = lifetimePnl?.unrealizedPnl ?? todayPnl?.unrealizedPnl ?? 0;
-        // Use account equity as the basis for percent — gives a "X% of
-        // account" reading that's most intuitive for the headline cards.
-        // No equity (broker unreachable) → undefined basis, so formatPnl()
-        // shows dollar-only rather than a fabricated ±100%.
-        const basis =
-          (data.brokerAccount?.equity ?? 0) > 0
-            ? (data.brokerAccount?.equity as number)
-            : undefined;
-        return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card>
-            <div className="flex items-center gap-2 mb-1">
-              <DollarSign className="w-4 h-4 text-accent" />
-              <span className="text-xs text-text-muted">Total P&L</span>
-            </div>
-            <p className={`text-xl font-mono font-bold ${totalPnlVal >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {formatPnl(totalPnlVal, basis, pnlFormat)}
-            </p>
-            {lifetimePnl && todayPnl && (
-              <p className="mt-0.5 text-xs text-text-muted font-mono">
-                Today: {formatPnl(todayPnl.totalPnl ?? 0, basis, pnlFormat)}
-              </p>
-            )}
-          </Card>
-          <Card>
-            <div className="flex items-center gap-2 mb-1">
-              <TrendingUp className="w-4 h-4 text-bullish" />
-              <span className="text-xs text-text-muted">Realized</span>
-            </div>
-            <p className={`text-xl font-mono font-bold ${realizedVal >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {formatPnl(realizedVal, basis, pnlFormat)}
-            </p>
-            {lifetimePnl && (
-              <p className="mt-0.5 text-xs text-text-muted font-mono">
-                Today: {formatPnl(lifetimePnl.realizedPnlToday, basis, pnlFormat)}
-              </p>
-            )}
-          </Card>
-          <Card>
-            <div className="flex items-center gap-2 mb-1">
-              <TrendingDown className="w-4 h-4 text-warning" />
-              <span className="text-xs text-text-muted">Unrealized</span>
-            </div>
-            <p className={`text-xl font-mono font-bold ${unrealizedVal >= 0 ? "text-bullish" : "text-bearish"}`}>
-              {formatPnl(unrealizedVal, basis, pnlFormat)}
-            </p>
-          </Card>
-          <Card>
-            <div className="flex items-center gap-2 mb-1">
-              <BarChart3 className="w-4 h-4 text-accent" />
-              <span className="text-xs text-text-muted">Trades Today</span>
-            </div>
-            <p className="text-xl font-mono font-bold">{todayPnl?.tradesCount ?? 0}</p>
-          </Card>
-        </div>
-        );
-      })()}
+      {/* P&L (lifetime realized + current unrealized). Account equity is the
+          basis for a percent ("X% of account"); without it, dollars only. */}
+      {(lifetimePnl || todayPnl) && (
+        <PnlReadout
+          todayPnl={todayPnl}
+          lifetimePnl={lifetimePnl}
+          basis={(data.brokerAccount?.equity ?? 0) > 0 ? (data.brokerAccount?.equity as number) : undefined}
+          pnlFormat={pnlFormat}
+        />
+      )}
 
       {/* Performance Analytics */}
-      {analytics && analytics.totalTrades > 0 && (
-        <Card>
-          <CardHeader className="p-0 pb-3">
-            <CardTitle>Performance Analytics (All Time)</CardTitle>
-          </CardHeader>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div className="rounded-lg bg-bg-elevated p-3">
-              <span className="text-xs text-text-muted block">Net P&L</span>
-              <span className={`text-lg font-mono font-bold ${(analytics.netPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-                {(analytics.netPnl ?? 0) >= 0 ? "+" : ""}${(analytics.netPnl ?? 0).toFixed(2)}
-              </span>
-            </div>
-            <div className="rounded-lg bg-bg-elevated p-3">
-              <span className="text-xs text-text-muted block">Win Rate</span>
-              <span className={`text-lg font-mono font-bold ${(analytics.winRate ?? 0) >= 50 ? "text-bullish" : "text-bearish"}`}>
-                {(analytics.winRate ?? 0).toFixed(1)}%
-              </span>
-              <span className="text-xs text-text-muted block">{analytics.winningTrades}W / {analytics.losingTrades}L</span>
-            </div>
-            <div className="rounded-lg bg-bg-elevated p-3">
-              <span className="text-xs text-text-muted block">Profit Factor</span>
-              <span className={`text-lg font-mono font-bold ${(analytics.profitFactor ?? 0) >= 1 ? "text-bullish" : "text-bearish"}`}>
-                {analytics.profitFactor === 999 ? "∞" : (analytics.profitFactor ?? 0).toFixed(2)}
-              </span>
-            </div>
-            <div className="rounded-lg bg-bg-elevated p-3">
-              <span className="text-xs text-text-muted block">Avg Win</span>
-              <span className="text-lg font-mono font-bold text-bullish">${(analytics.avgWin ?? 0).toFixed(2)}</span>
-            </div>
-            <div className="rounded-lg bg-bg-elevated p-3">
-              <span className="text-xs text-text-muted block">Avg Loss</span>
-              <span className="text-lg font-mono font-bold text-bearish">${(analytics.avgLoss ?? 0).toFixed(2)}</span>
-            </div>
-            <div className="rounded-lg bg-bg-elevated p-3">
-              <span className="text-xs text-text-muted block">Max Drawdown</span>
-              <span className="text-lg font-mono font-bold text-bearish">${(analytics.maxDrawdown ?? 0).toFixed(2)}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 mt-3 pt-3 border-t border-border text-xs text-text-muted">
-            <span>Sharpe: <span className="font-mono font-medium text-text-primary">{(analytics.sharpeRatio ?? 0).toFixed(2)}</span></span>
-            <span>Gross Profit: <span className="font-mono text-bullish">${(analytics.grossProfit ?? 0).toFixed(2)}</span></span>
-            <span>Gross Loss: <span className="font-mono text-bearish">${(analytics.grossLoss ?? 0).toFixed(2)}</span></span>
-            <span>Total Trades: <span className="font-mono text-text-primary">{analytics.totalTrades}</span></span>
-          </div>
-        </Card>
-      )}
+      {analytics && analytics.totalTrades > 0 && <PerformanceAnalytics analytics={analytics} />}
 
       {/* Tax election (§475(f) MTM) + wash-sale protection status.
           Moved below the money/analytics fold 2026-07-15 — it's a
@@ -1358,91 +1148,13 @@ export default function TraderPage() {
         <CardHeader className="p-0 pb-3">
           <CardTitle>Open Positions ({positions.length})</CardTitle>
         </CardHeader>
-        {positions.length === 0 ? (
-          <p className="text-sm text-text-muted py-4 text-center">No open positions</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-text-muted text-left">
-                  <th className="pb-2 pr-4 font-medium">Symbol</th>
-                  <th className="pb-2 pr-4 font-medium text-right">Qty</th>
-                  <th className="pb-2 pr-4 font-medium text-right">Entry</th>
-                  <th className="pb-2 pr-4 font-medium text-right">Current</th>
-                  <th className="pb-2 pr-4 font-medium text-right">Stop</th>
-                  <th className="pb-2 pr-4 font-medium text-right">P&L</th>
-                  <th className="pb-2 font-medium text-right"></th>
-                </tr>
-              </thead>
-              <tbody className="font-mono">
-                {positions.map((p) => (
-                  <tr
-                    key={p.symbol}
-                    className="border-b border-border/50 hover:bg-bg-hover cursor-pointer transition-colors"
-                    onClick={() => setDetailSymbol(p.symbol)}
-                  >
-                    <td className="py-2 pr-4 font-medium text-text-primary">
-                      {p.symbol}
-                    </td>
-                    <td className="py-2 pr-4 text-right">{p.quantity ?? 0}</td>
-                    <td className="py-2 pr-4 text-right">${(p.entryPrice ?? 0).toFixed(2)}</td>
-                    <td className="py-2 pr-4 text-right">${(p.currentPrice ?? 0).toFixed(2)}</td>
-                    <td className="py-2 pr-4 text-right text-text-muted">
-                      {p.stopPrice ? `$${p.stopPrice.toFixed(2)}` : "\u2014"}
-                    </td>
-                    <td className={`py-2 pr-4 text-right ${(p.unrealizedPnl ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
-                      {formatPnl(
-                        p.unrealizedPnl ?? 0,
-                        (p.entryPrice ?? 0) * (p.quantity ?? 0),
-                        pnlFormat
-                      )}
-                    </td>
-                    <td className="py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          requestConfirm({
-                            title: `Close ${p.symbol}`,
-                            description: (
-                              <>Market-sells the full position. Its broker stop is cancelled as the sell fills.</>
-                            ),
-                            summary: [
-                              { label: "Shares", value: String(p.quantity ?? 0) },
-                              { label: "Current price", value: `$${(p.currentPrice ?? 0).toFixed(2)}` },
-                              {
-                                label: "Est. proceeds",
-                                value: `$${((p.currentPrice ?? 0) * (p.quantity ?? 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                              },
-                              {
-                                label: "Unrealized P&L",
-                                value: `${(p.unrealizedPnl ?? 0) >= 0 ? "+" : "−"}$${Math.abs(p.unrealizedPnl ?? 0).toFixed(2)}`,
-                                tone: (p.unrealizedPnl ?? 0) >= 0 ? "bullish" : "bearish",
-                              },
-                            ],
-                            confirmLabel: `Sell ${p.quantity} ${p.symbol}`,
-                            onConfirm: async () => {
-                              setCmdLoading("flatten");
-                              const result = await sendCommand("flatten", { symbol: p.symbol });
-                              setCmdLoading(null);
-                              if (result.error) throw new Error(result.error);
-                              toast({ type: "success", message: result.queuedForOpen && result.message ? result.message : `Sell order for ${p.symbol} submitted.` });
-                              await load();
-                            },
-                          });
-                        }}
-                        disabled={cmdLoading !== null}
-                      >
-                        Close
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <PositionsTable
+          positions={positions}
+          pnlFormat={pnlFormat}
+          busy={cmdLoading !== null}
+          onOpen={setDetailSymbol}
+          onClose={confirmClosePosition}
+        />
       </Card>
 
       {/* Open Orders — always renders so the 2xl:grid-cols-2 right slot
@@ -1467,53 +1179,7 @@ export default function TraderPage() {
           <CardHeader className="p-0 pb-3">
             <CardTitle>Open Orders ({openOrders.length})</CardTitle>
           </CardHeader>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-text-muted text-left">
-                  <th className="pb-2 pr-4 font-medium">Symbol</th>
-                  <th className="pb-2 pr-4 font-medium">Side</th>
-                  <th className="pb-2 pr-4 font-medium">Type</th>
-                  <th className="pb-2 font-medium text-right">Qty</th>
-                  <th className="pb-2 font-medium text-right">Price</th>
-                  <th className="pb-2 pr-4 font-medium">TIF</th>
-                  <th className="pb-2 pr-4 font-medium">Status</th>
-                  <th className="pb-2 font-medium">Age</th>
-                </tr>
-              </thead>
-              <tbody className="font-mono">
-                {openOrders.map((o) => (
-                  <tr key={o.id} className="border-b border-border/50">
-                    <td className="py-2 pr-4 font-medium text-text-primary">
-                      <SymbolLink symbol={o.symbol} className="font-medium" />
-                    </td>
-                    <td className={`py-2 pr-4 ${o.side === "buy" ? "text-bullish" : "text-bearish"}`}>
-                      {o.side.toUpperCase()}
-                    </td>
-                    <td className="py-2 pr-4 text-text-secondary">
-                      {o.type === "stop" ? `Stop @ $${Number(o.stopPrice).toFixed(2)}` :
-                       o.type === "limit" ? `Limit @ $${Number(o.limitPrice).toFixed(2)}` :
-                       o.type === "stop_limit" ? `Stop-Limit $${Number(o.stopPrice).toFixed(2)}` :
-                       o.type}
-                    </td>
-                    <td className="py-2 text-right">{o.qty}</td>
-                    <td className="py-2 text-right text-text-secondary">
-                      {o.stopPrice ? `$${Number(o.stopPrice).toFixed(2)}` : o.limitPrice ? `$${Number(o.limitPrice).toFixed(2)}` : "\u2014"}
-                    </td>
-                    <td className="py-2 pr-4 text-text-muted uppercase text-xs">{o.timeInForce}</td>
-                    <td className="py-2 pr-4">
-                      <Badge variant={o.filledQty > 0 ? "warning" : "neutral"}>
-                        {o.filledQty > 0 ? `Partial ${o.filledQty}/${o.qty}` : o.status}
-                      </Badge>
-                    </td>
-                    <td className="py-2 text-text-muted text-xs whitespace-nowrap" title={o.submittedAt}>
-                      {timeAgo(o.submittedAt)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <OpenOrdersTable orders={openOrders} />
         </Card>
       )}
       </div>{/* end 2xl:grid-cols-2 positions+orders wrap */}
@@ -1524,33 +1190,7 @@ export default function TraderPage() {
           <CardHeader className="p-0 pb-3">
             <CardTitle>Recent Signals</CardTitle>
           </CardHeader>
-          {signals.length === 0 ? (
-            <div className="py-8 text-center">
-              <p className="text-sm text-text-muted">No signals yet</p>
-              <p className="text-xs text-text-muted mt-1">
-                Signals appear here once the engine scans your watchlist. Start the engine above, or browse the{" "}
-                <Link href="/dashboard/screener" className="text-accent hover:underline">Screener</Link>{" "}
-                for ideas.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {signals.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center gap-3 p-2 rounded-lg bg-bg-elevated"
-                >
-                  <SignalBadge signal={s.signal as SignalType} size="sm" />
-                  <SymbolLink symbol={s.symbol} className="text-sm font-medium" />
-                  <span className="text-xs font-mono text-text-muted">${(s.price ?? 0).toFixed(2)}</span>
-                  {s.actedOn && <Badge variant="bullish">Acted</Badge>}
-                  <span className="text-xs text-text-muted ml-auto">
-                    {timeAgo(s.traderTimestamp)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <RecentSignals signals={signals} />
         </Card>
 
         {/* Recent trades */}
@@ -1558,96 +1198,13 @@ export default function TraderPage() {
           <CardHeader className="p-0 pb-3">
             <CardTitle>Recent Trades</CardTitle>
           </CardHeader>
-          {trades.length === 0 ? (
-            <div className="py-8 text-center">
-              <p className="text-sm text-text-muted">No trades yet</p>
-              <p className="text-xs text-text-muted mt-1">
-                Trades show here after the engine fires a BUY/SELL on a signal. New to this?{" "}
-                <Link href="/dashboard/education" className="text-accent hover:underline">Browse the Education hub →</Link>
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[500px] overflow-y-auto">
-              {trades.map((t) => (
-                <div key={t.id} className="rounded-lg bg-bg-elevated">
-                  <div className="flex items-center gap-3 p-2">
-                    <Badge variant={t.action === "BUY" ? "bullish" : "bearish"}>{t.action}</Badge>
-                    <SymbolLink symbol={t.symbol} className="text-sm font-medium" />
-                    <span className="text-xs font-mono text-text-muted">{t.quantity} shares</span>
-                    <Badge variant={tradeStatusTone(t.status)}>{t.status}</Badge>
-                    {t.pnl != null && (() => {
-                      // Percent basis must be the ENTRY cost, not the exit
-                      // proceeds. cost = proceeds − realized P&L = entryPrice ×
-                      // qty. The old basis (proceeds) understated the return
-                      // (e.g. a real +89% trade showed +47%). Guard ≤ 0 so a
-                      // missing fill price falls back to dollar-only.
-                      const costBasis = (t.fillPrice ?? 0) * t.quantity - t.pnl;
-                      return (
-                        <span className={`text-xs font-mono ml-auto ${t.pnl >= 0 ? "text-bullish" : "text-bearish"}`}>
-                          {formatPnl(t.pnl, costBasis > 0 ? costBasis : undefined, pnlFormat)}
-                        </span>
-                      );
-                    })()}
-                    <span className="text-xs text-text-muted">
-                      {timeAgo(t.traderTimestamp)}
-                    </span>
-                    <button
-                      onClick={async () => {
-                        const tradeId = t.id;
-                        setSummarizing((prev) => new Set(prev).add(tradeId));
-                        try {
-                          const res = await fetch("/api/trader/summarize-trade", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ tradeId }),
-                          });
-                          if (res.ok) {
-                            const data = await res.json();
-                            setSummaryByTradeId((prev) => ({ ...prev, [tradeId]: data.summary }));
-                          } else {
-                            const data = await res.json().catch(() => ({}));
-                            toast({
-                              type: "error",
-                              message:
-                                data?.error ||
-                                `AI summary failed (${res.status}) — check admin → System Config`,
-                            });
-                          }
-                        } catch (err) {
-                          toast({
-                            type: "error",
-                            message:
-                              "AI summary failed — " +
-                              ((err as Error)?.message ?? "network error"),
-                          });
-                        } finally {
-                          setSummarizing((prev) => {
-                            const next = new Set(prev);
-                            next.delete(tradeId);
-                            return next;
-                          });
-                        }
-                      }}
-                      disabled={summarizing.has(t.id)}
-                      className="text-xs uppercase tracking-wider px-2 py-0.5 rounded
-                        text-text-muted hover:text-accent hover:bg-accent/10
-                        disabled:opacity-50 transition-colors"
-                      title="AI summary of this trade"
-                    >
-                      {summarizing.has(t.id) ? "..." : (summaryByTradeId[t.id] || t.aiSummary) ? "↻" : "AI ✨"}
-                    </button>
-                    <PostMortemButton tradeId={t.id} action={t.action} />
-                  </div>
-                  {(summaryByTradeId[t.id] || t.aiSummary) && (
-                    <div className="px-3 pb-2 text-xs text-text-secondary leading-relaxed border-t border-border/30 pt-2">
-                      <span className="text-xs uppercase tracking-wider text-text-muted mr-2">summary</span>
-                      {summaryByTradeId[t.id] || t.aiSummary}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          <RecentTrades
+            trades={trades}
+            pnlFormat={pnlFormat}
+            summarizing={summarizing}
+            summaries={summaryByTradeId}
+            onSummarize={summarizeTrade}
+          />
         </Card>
       </div>
 
@@ -1874,7 +1431,7 @@ export default function TraderPage() {
                   { label: "Current price", value: `$${(pos.currentPrice ?? 0).toFixed(2)}` },
                   {
                     label: "Unrealized P&L",
-                    value: `${(pos.unrealizedPnl ?? 0) >= 0 ? "+" : "−"}$${Math.abs(pos.unrealizedPnl ?? 0).toFixed(2)}`,
+                    value: formatSignedUsd(pos.unrealizedPnl ?? 0),
                     tone: (pos.unrealizedPnl ?? 0) >= 0 ? "bullish" : "bearish",
                   },
                 ]
