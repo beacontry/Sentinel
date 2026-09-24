@@ -7,7 +7,7 @@
   "transition-all": 0,
   "focus(-visible):outline-none": 18,
   "outline-none without focus-visible ring": 32,
-  "raw <button": 94,
+  "raw <button": 91,
   "raw <input": 9,
   "backdrop-blur": 9,
   "-[#hex]": 4,

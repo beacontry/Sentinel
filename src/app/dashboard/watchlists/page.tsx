@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatSignedPercent } from "@/lib/format-pnl";
 import { useToast } from "@/components/ui/toast";
 import { useConfirmAction } from "@/components/ui/confirm-action-modal";
 import { PageIntro } from "@/components/layout/page-intro";
@@ -351,44 +352,52 @@ export default function WatchlistsPage() {
             </p>
           ) : (
             lists.map((l) => (
-              <Card
+              // The row selects the list through one stretched button; the
+              // row actions are siblings above it, visible at rest because
+              // touch has no hover.
+              <div
                 key={l.id}
-                hover
-                className={`group cursor-pointer transition-colors ${l.id === activeId ? "border-accent/50" : ""}`}
-                onClick={() => setActiveId(l.id)}
+                className={`relative flex items-center justify-between gap-2 rounded-xl border bg-bg-secondary p-3 transition-colors hover:border-border-hover ${
+                  l.id === activeId ? "border-accent" : "border-border"
+                }`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-medium text-text-primary truncate">{l.name}</span>
-                      {l.isDefault && (
-                        <Badge variant="default" className="text-xs px-1.5">DEFAULT</Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-text-muted">{l.itemCount} symbols</div>
-                  </div>
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    {!l.isDefault && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); makeDefault(l.id); }}
-                        className="p-1 text-text-muted hover:text-accent"
-                        title="Make default"
-                        aria-label={`Make ${l.name} default`}
-                      >
-                        <Star className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteList(l.id); }}
-                      className="p-1 text-text-muted hover:text-bearish"
-                      title="Delete"
-                      aria-label={`Delete ${l.name}`}
+                <button
+                  type="button"
+                  onClick={() => setActiveId(l.id)}
+                  aria-pressed={l.id === activeId}
+                  className="min-w-0 flex-1 text-left after:absolute after:inset-0 after:rounded-xl"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-sm font-medium text-text-primary truncate">{l.name}</span>
+                    {l.isDefault && <Badge variant="default">Default</Badge>}
+                  </span>
+                  <span className="block text-xs text-text-muted">{l.itemCount} symbols</span>
+                </button>
+                <div className="relative z-10 flex shrink-0 items-center gap-0.5">
+                  {!l.isDefault && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => makeDefault(l.id)}
+                      className="w-9 px-0"
+                      title="Make default"
+                      aria-label={`Make ${l.name} default`}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                      <Star className="w-3.5 h-3.5" aria-hidden="true" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteList(l.id)}
+                    className="w-9 px-0"
+                    title="Delete"
+                    aria-label={`Delete ${l.name}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  </Button>
                 </div>
-              </Card>
+              </div>
             ))
           )}
         </div>
@@ -433,17 +442,17 @@ export default function WatchlistsPage() {
                         <h2 className="text-lg font-semibold text-text-primary truncate">
                           {active.name}
                         </h2>
-                        {active.isDefault && (
-                          <Badge variant="default" className="text-xs">DEFAULT</Badge>
-                        )}
-                        <button
+                        {active.isDefault && <Badge variant="default">Default</Badge>}
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => { setRenameDraft(active.name); setEditingName(true); }}
-                          className="p-1 text-text-muted hover:text-text-primary"
-                          aria-label="Rename"
+                          className="w-9 px-0"
+                          aria-label={`Rename ${active.name}`}
                           title="Rename"
                         >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
+                          <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                        </Button>
                       </div>
                     )}
                     <p className="text-xs text-text-muted">{active.symbols.length} / {MAX_SYMBOLS} symbols</p>
@@ -485,36 +494,39 @@ export default function WatchlistsPage() {
                     description="Add symbols to start tracking."
                   />
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                     {active.symbols.map((sym) => {
                       const q = quotes[sym];
                       return (
-                        <Link
+                        // One link per tile, stretched over it; Remove is a
+                        // sibling above the link, not a button inside it.
+                        <li
                           key={sym}
-                          href={`/dashboard/analysis?symbol=${encodeURIComponent(sym)}`}
-                          className="rounded-xl border border-border bg-bg-surface p-3 relative group hover:border-border-hover transition-colors"
+                          className="group relative rounded-lg bg-bg-surface p-3 transition-colors hover:bg-bg-hover"
                         >
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              removeSymbol(sym);
-                            }}
-                            className="absolute top-2 right-2 p-0.5 opacity-0 group-hover:opacity-100 text-text-muted hover:text-bearish transition-[background-color,border-color,color,opacity]"
+                          <Link
+                            href={`/dashboard/analysis?symbol=${encodeURIComponent(sym)}`}
+                            className="font-mono font-semibold text-text-primary after:absolute after:inset-0 after:rounded-lg group-hover:text-accent transition-colors"
+                          >
+                            {sym}
+                          </Link>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeSymbol(sym)}
+                            className="absolute top-1 right-1 z-10 w-9 px-0"
                             aria-label={`Remove ${sym}`}
                           >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                          <div className="font-mono font-semibold text-text-primary group-hover:text-accent transition-colors">
-                            {sym}
-                          </div>
+                            <X className="w-3.5 h-3.5" aria-hidden="true" />
+                          </Button>
                           {q === null ? (
                             <div className="mt-1 text-xs text-text-muted">Price unavailable</div>
                           ) : q ? (
                             <div className="mt-1">
-                              <div className="font-mono text-sm">${q.price.toFixed(2)}</div>
-                              <div className={`font-mono text-xs ${q.change >= 0 ? "text-bullish" : "text-bearish"}`}>
-                                {q.change >= 0 ? "+" : ""}{q.change.toFixed(2)}%
+                              <div className="font-mono text-sm tabular-nums">${q.price.toFixed(2)}</div>
+                              <div className={`font-mono text-xs tabular-nums ${q.change >= 0 ? "text-bullish" : "text-bearish"}`}>
+                                <span aria-hidden="true">{q.change >= 0 ? "▲ " : "▼ "}</span>
+                                {formatSignedPercent(q.change)}
                               </div>
                             </div>
                           ) : (
@@ -523,10 +535,10 @@ export default function WatchlistsPage() {
                               <Skeleton className="h-3 w-12" rounded="sm" />
                             </div>
                           )}
-                        </Link>
+                        </li>
                       );
                     })}
-                  </div>
+                  </ul>
                 )}
               </Card>
             </>
