@@ -29,6 +29,23 @@ interface SignedValueProps {
 const TONE = { gain: "text-bullish", loss: "text-bearish", flat: "text-text-secondary" } as const;
 const GLYPH = { gain: "▲", loss: "▼", flat: "–" } as const;
 
+/**
+ * The glyph and hidden word for a value whose direction is known but which
+ * arrives as a preformatted string (a stat tile, an intro readout). Put
+ * the value between them: glyph, value, word.
+ */
+export function DirectionGlyph({ direction }: { direction: "gain" | "loss" }) {
+  return (
+    <span aria-hidden="true" className="mr-1 leading-none">
+      {GLYPH[direction]}
+    </span>
+  );
+}
+
+export function DirectionWord({ direction }: { direction: "gain" | "loss" }) {
+  return <span className="sr-only"> {direction}</span>;
+}
+
 export function SignedValue({ value, basis, format = "dollar", glyph = true, className = "" }: SignedValueProps) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return <span className={`font-mono tabular-nums text-text-muted ${className}`}>n/a</span>;
