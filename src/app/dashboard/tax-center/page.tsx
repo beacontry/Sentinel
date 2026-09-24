@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -20,6 +20,7 @@ import { TaxStatusCard } from "@/components/education/tax-status-card";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 import { useToast } from "@/components/ui/toast";
 import { useLatestRequest } from "@/hooks/use-latest-request";
+import { useUrlParam } from "@/hooks/use-url-param";
 import { ErrorState } from "@/components/ui/error-state";
 import { SignedValue } from "@/components/ui/signed-value";
 import { formatCurrency, type TaxSummary } from "@/components/tax/tax-format";
@@ -44,10 +45,23 @@ const yearOptions = Array.from({ length: 5 }, (_, i) => ({
   value: String(currentYear - i),
   label: String(currentYear - i),
 }));
+const YEAR_VALUES = yearOptions.map((o) => o.value);
 
-export default function TaxCenterPage() {
+// useUrlParam reads useSearchParams, which needs a Suspense boundary so
+// the SSR shell can render while the client hydrates.
+export default function TaxCenterPageWrapper() {
+  return (
+    <Suspense fallback={null}>
+      <TaxCenterPage />
+    </Suspense>
+  );
+}
+
+function TaxCenterPage() {
   const { toast } = useToast();
-  const [year, setYear] = useState(String(currentYear));
+  // The year lives in the URL, like the Tax Report's, so a reload or a
+  // shared link shows the same year.
+  const [year, setYear] = useUrlParam("year", String(currentYear), YEAR_VALUES);
   // The summary is stored with the year it was fetched for and shown only
   // while that year is selected, so a slower response for the previous
   // year cannot paint over this one. A failed fetch is its own state, not
