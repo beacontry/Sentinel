@@ -6,6 +6,7 @@
  * showed both. The "both" format also printed a loss's dollar part with
  * no sign at all ("$12.50 (-1.20%)").
  *
+ * - Dollars are grouped in thousands ("+$1,284.50").
  * - A gain gets "+", a loss the typographic minus U+2212 (the width of
  *   "+", so columns of figures line up), in the dollar and percent parts.
  * - Zero, and anything that rounds to zero at two decimals, is "$0.00"
@@ -37,9 +38,13 @@ function signOf(direction: PnlDirection): string {
   return direction === "gain" ? "+" : direction === "loss" ? MINUS : "";
 }
 
-/** Dollars to the cent, no sign. */
+// Grouped like every other money figure in the app ("$12,345.00"), so
+// one page does not mix "+$1284.50" with "$12,345".
+const CENTS = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Dollars to the cent, grouped, no sign. */
 function dollars(abs: number): string {
-  return `$${abs.toFixed(2)}`;
+  return `$${CENTS.format(abs)}`;
 }
 
 export function formatSignedUsd(amountUsd: number): string {

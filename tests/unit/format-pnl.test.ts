@@ -22,6 +22,12 @@ describe("formatPnl", () => {
     expect(formatPnl(-12.5, undefined, "dollar")).not.toContain("-");
   });
 
+  it("groups dollars in thousands, like the app's other money figures", () => {
+    expect(formatSignedUsd(1284.5)).toBe("+$1,284.50");
+    expect(formatSignedUsd(-12345.678)).toBe(`${MINUS}$12,345.68`);
+    expect(formatSignedUsd(999.999)).toBe("+$1,000.00");
+  });
+
   it("writes zero, and a value that rounds to zero, with no sign", () => {
     expect(formatPnl(0, undefined, "dollar")).toBe("$0.00");
     expect(formatPnl(-0.004, undefined, "dollar")).toBe("$0.00");
