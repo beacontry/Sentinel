@@ -82,6 +82,9 @@ export default function TaxCenterPage() {
 
   useEffect(() => {
     const ticket = reportRequest.begin();
+    // An error left by an earlier request for the same inputs must not
+    // show while this one is in flight; the skeleton does until it lands.
+    setReportError(null);
     (async () => {
       try {
         const res = await fetch(`/api/tax/report?year=${year}`, { signal: ticket.signal });

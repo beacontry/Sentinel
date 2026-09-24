@@ -154,6 +154,9 @@ function TaxReportPage() {
 
   useEffect(() => {
     const ticket = reportRequest.begin();
+    // An error left by an earlier request for the same inputs must not
+    // show while this one is in flight; the skeleton does until it lands.
+    setReportError(null);
     const key = `${year}|${filingStatus}|${ordinaryIncome}`;
     const params = new URLSearchParams({ year, filingStatus, ordinaryIncome });
     (async () => {
