@@ -10,9 +10,9 @@
   "raw <button": 152,
   "backdrop-blur": 9,
   "-[#hex]": 4,
-  "rgb()/rgba() in tsx": 5,
+  "rgb()/rgba() literal": 7,
   "bg-white/ or bg-black/": 8,
-  "state colour alpha tint": 107,
+  "state colour alpha tint": 108,
   "border-l-2/4 stripe": 0,
   "inline fontSize 8-11": 6
 }

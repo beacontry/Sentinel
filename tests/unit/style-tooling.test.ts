@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { transform, literalSpans } from "../../scripts/codemods/tokenize-classes.mjs";
-import { count as countRaw } from "../../scripts/style-ratchet.mjs";
+import { count as countRaw, walk as walkRaw } from "../../scripts/style-ratchet.mjs";
 
 type Result = { out: string; count: number; review: string[] };
 const run = (src: string, family: string): Result => transform(src, family);
@@ -163,6 +163,14 @@ describe("style-ratchet: counts", () => {
       `"bg-accent text-on-accent" "bg-ld-accent text-ld-on-accent" "bg-accent/10 text-white"`,
     ]);
     expect(c["accent fill with a literal label"]).toBe(3);
+  });
+
+  it("walks .ts class maps as well as .tsx, and skips declaration files", () => {
+    const root = join(__dirname, "..", "..");
+    const files = (walkRaw(join(root, "src")) as string[]).map((f) => f.replace(/\\/g, "/"));
+    expect(files.some((f) => f.endsWith("src/lib/status-tone.ts"))).toBe(true);
+    expect(files.some((f) => f.endsWith(".tsx"))).toBe(true);
+    expect(files.some((f) => f.endsWith(".d.ts"))).toBe(false);
   });
 
   it("passes against the committed baseline", () => {

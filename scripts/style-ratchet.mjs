@@ -27,7 +27,11 @@ import path from "node:path";
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..");
 const BASELINE = path.join(ROOT, "scripts", "style-ratchet.baseline.json");
 
-/** Occurrences, not lines. Each regex runs over every src/**\/*.tsx file. */
+/**
+ * Occurrences, not lines. Each regex runs over every src/**\/*.{ts,tsx}
+ * file: Tailwind scans .ts too, and class maps such as src/lib/status-tone.ts
+ * live there, so a .tsx-only walk let an off-scale class in through them.
+ */
 export const PATTERNS = {
   "text-[8-11px]": { re: /(?<![\w-])(?:[a-z0-9-]+:)*text-\[(?:[89]|1[01])px\]/g },
   "text-[arbitrary size]": { re: /(?<![\w-])(?:[a-z0-9-]+:)*text-\[(?:[\d.]+(?:px|rem|em)|clamp\([^\]]*\))\]/g },
@@ -40,7 +44,7 @@ export const PATTERNS = {
   "raw <button": { re: /<button\b/g },
   "backdrop-blur": { re: /backdrop-blur/g },
   "-[#hex]": { re: /-\[#[0-9a-fA-F]{3,8}\]/g },
-  "rgb()/rgba() in tsx": { re: /\brgba?\(\s*\d/g },
+  "rgb()/rgba() literal": { re: /\brgba?\(\s*\d/g },
   "bg-white/ or bg-black/": { re: /(?<![\w-])(?:[a-z0-9-]+:)*bg-(?:white|black)\/[\d.[\]]+/g },
   // State colour through alpha instead of the -fill/-fg/-line triplet
   // (src/lib/status-tone.ts). Solid bars at /60-/90 count too: each is a
@@ -83,10 +87,12 @@ function walk(dir, acc = []) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, ent.name);
     if (ent.isDirectory()) walk(p, acc);
-    else if (ent.name.endsWith(".tsx")) acc.push(p);
+    else if (/\.tsx?$/.test(ent.name) && !ent.name.endsWith(".d.ts")) acc.push(p);
   }
   return acc;
 }
+
+export { walk };
 
 export function count(sources) {
   const out = {};
