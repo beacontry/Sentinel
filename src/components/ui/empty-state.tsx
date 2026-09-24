@@ -29,6 +29,12 @@ interface EmptyStateProps {
   headingLevel?: 2 | 3 | 4;
   /** A smaller version for a widget or table body, matching ErrorState's. */
   compact?: boolean;
+  /**
+   * A control that belongs to the explanation rather than an action, such
+   * as a period switcher under "Nothing for 2026". Rendered after the
+   * description and before the action.
+   */
+  children?: ReactNode;
   className?: string;
 }
 
@@ -42,6 +48,7 @@ export function EmptyState({
   action,
   headingLevel = 3,
   compact = false,
+  children,
   className = "",
 }: EmptyStateProps) {
   const Heading = `h${headingLevel}` as const;
@@ -59,6 +66,7 @@ export function EmptyState({
       )}
       <Heading className={`mb-1 font-semibold text-text-primary ${compact ? "text-sm" : "text-lg"}`}>{title}</Heading>
       {description && <p className={`max-w-sm text-sm text-text-secondary ${compact ? "mb-3" : "mb-6"}`}>{description}</p>}
+      {children && <div className={shown ? "mb-4" : undefined}>{children}</div>}
       {shown &&
         ("href" in shown ? (
           <ButtonLink href={shown.href} variant="secondary">
