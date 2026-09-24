@@ -14,9 +14,23 @@ import { Fragment, useState } from "react";
 import { ArrowRight, Check, Minus } from "lucide-react";
 import { SiteNav, LANDING_NAV_LINKS_ABSOLUTE } from "@/components/marketing/site-nav";
 import { SiteFooter } from "@/components/marketing/site-footer";
+import { Segmented } from "@/components/ui/segmented";
+
+type PlanKey = "free" | "trader" | "premium" | "selfHosted";
+
+/** The comparison's columns, in table order. */
+const PLANS: { key: PlanKey; label: string }[] = [
+  { key: "free", label: "Free" },
+  { key: "trader", label: "Trader" },
+  { key: "premium", label: "Premium" },
+  { key: "selfHosted", label: "Self-hosted" },
+];
 
 export default function PricingPage() {
   const [openFaq, setOpenFaq] = useState<string | null>(null);
+  // Below sm the comparison shows one plan at a time instead of a table
+  // that scrolls sideways; Trader is the plan most readers came for.
+  const [phonePlan, setPhonePlan] = useState<PlanKey>("trader");
 
   // ─── Tier cards (kept in sync with landing teaser) ──────────────────
   //
@@ -125,13 +139,7 @@ export default function PricingPage() {
   // Categories with rows. Each row shows which tiers include the feature.
   // Values: true (✓), false (—), or a string (e.g. "1" / "3" / "Unlimited").
   type Cell = boolean | string;
-  type Row = {
-    label: string;
-    free: Cell;
-    trader: Cell;
-    premium: Cell;
-    selfHosted: Cell;
-  };
+  type Row = { label: string } & Record<PlanKey, Cell>;
   type Category = { name: string; rows: Row[] };
 
   const matrix: Category[] = [
@@ -213,8 +221,20 @@ export default function PricingPage() {
   ];
 
   function renderCell(value: Cell) {
-    if (value === true) return <Check className="mx-auto h-4 w-4 text-ld-accent" />;
-    if (value === false) return <Minus className="mx-auto h-4 w-4 text-ld-text-muted opacity-50" />;
+    if (value === true)
+      return (
+        <>
+          <Check className="mx-auto h-4 w-4 text-ld-accent" aria-hidden="true" />
+          <span className="sr-only">Included</span>
+        </>
+      );
+    if (value === false)
+      return (
+        <>
+          <Minus className="mx-auto h-4 w-4 text-ld-text-muted opacity-50" aria-hidden="true" />
+          <span className="sr-only">Not included</span>
+        </>
+      );
     return <span className="text-sm text-ld-text-secondary">{value}</span>;
   }
 
@@ -350,9 +370,42 @@ export default function PricingPage() {
         </div>
 
         <div className="mx-auto max-w-[1100px] px-4 lg:px-7">
-          <div className="overflow-hidden rounded-xl border border-ld-border bg-ld-card">
+          {/* Phone: one plan at a time, every feature stacked under it. A
+              five-column table cannot fit 360px without scrolling sideways. */}
+          <div className="sm:hidden">
+            <Segmented
+              options={PLANS.map((p) => ({ value: p.key, label: p.label }))}
+              value={phonePlan}
+              onChange={setPhonePlan}
+              label="Plan to show"
+              fullWidth
+              twoUpOnPhone
+            />
+            <div className="mt-4 overflow-hidden rounded-xl border border-ld-border bg-ld-card">
+              {matrix.map((category) => (
+                <div key={category.name}>
+                  <h3 className="border-b border-ld-border/60 bg-ld-deep/30 px-4 py-2.5 text-xs font-mono uppercase tracking-[0.1em] text-ld-accent">
+                    {category.name}
+                  </h3>
+                  <dl>
+                    {category.rows.map((row) => (
+                      <div
+                        key={row.label}
+                        className="flex items-center justify-between gap-4 border-b border-ld-border/30 px-4 py-3"
+                      >
+                        <dt className="min-w-0 text-base text-ld-text-secondary">{row.label}</dt>
+                        <dd className="shrink-0 text-right">{renderCell(row[phonePlan])}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="hidden overflow-hidden rounded-xl border border-ld-border bg-ld-card sm:block">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-left">
+              <table className="w-full text-left">
                 {/* Sticky header */}
                 <thead>
                   <tr className="border-b border-ld-border bg-ld-panel/60">
