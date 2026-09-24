@@ -257,3 +257,17 @@ export function mtmToggleBody(
   if (current?.mtmElectionYear != null) return { hasTraderTaxStatus: true };
   return { hasTraderTaxStatus: true, mtmElectionYear: currentYear };
 }
+
+// ─── Access loss ────────────────────────────────────────────────────
+
+/**
+ * Statuses on a screen's primary data that mean the viewer lost access:
+ * 401 (session gone), 402 (plan lapsed; checkTier), 403 (role removed).
+ * The screen clears its private data before showing the denial, rather
+ * than leaving the last authorized payload on screen looking live.
+ */
+export type AccessLoss = 401 | 402 | 403;
+
+export function accessLossStatus(status: number | null | undefined): AccessLoss | null {
+  return status === 401 || status === 402 || status === 403 ? status : null;
+}

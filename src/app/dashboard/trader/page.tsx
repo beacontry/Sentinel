@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePolling } from "@/hooks/usePolling";
 import { POLLING_INTERVALS } from "@/lib/config";
@@ -36,6 +36,7 @@ import {
 import { PRESET_LABELS } from "@/lib/strategy-presets";
 import { TraderTaxCallouts } from "@/components/trader/tax-callouts";
 import {
+  accessLossStatus,
   applyEngineResponse,
   connectionStat,
   diffRiskProfile,
@@ -52,6 +53,7 @@ import {
   refreshFailureMessage,
   riskFormToEngineParams,
   syncedPickerMode,
+  type AccessLoss,
   type LoadState,
 } from "@/lib/trader-view";
 
@@ -263,6 +265,11 @@ export default function TraderPage() {
   const [dashLoad, setDashLoad] = useState<LoadState>(initialLoadState);
   // The dashboard answered 402: the plan does not include the trader desk.
   const [tierRequired, setTierRequired] = useState(false);
+  // Access lost (401/402/403 on a primary read, or the session-expired
+  // event): private state is cleared and the generation bumped, so a
+  // response already in flight cannot repaint it.
+  const [accessLost, setAccessLost] = useState<AccessLoss | null>(null);
+  const genRef = useRef(0);
   const [cmdLoading, setCmdLoading] = useState<string | null>(null);
   const [engineMode, setEngineMode] = useState<string>("optimized");
   // The picker follows the running engine's mode until the user picks one,
@@ -312,14 +319,23 @@ export default function TraderPage() {
   const [mtmSaving, setMtmSaving] = useState(false);
 
   async function loadTaxStatus() {
+    const gen = genRef.current;
     setTaxLoad(loadStarted);
     try {
       const res = await fetch("/api/tax-status");
+      if (gen !== genRef.current) return;
+      const lost = accessLossStatus(res.status);
+      if (lost) {
+        loseAccess(lost);
+        return;
+      }
       if (!res.ok) {
         setTaxLoad((s) => loadFailed(s, `Could not load your tax election (${res.status}).`));
         return;
       }
-      setTaxStatus(await res.json());
+      const json = await res.json();
+      if (gen !== genRef.current) return;
+      setTaxStatus(json);
       setTaxLoad((s) => loadSucceeded(s, Date.now()));
     } catch {
       setTaxLoad((s) => loadFailed(s, "Could not load your tax election."));
@@ -352,23 +368,61 @@ export default function TraderPage() {
     }
   }
 
+  function loseAccess(code: AccessLoss) {
+    genRef.current++;
+    setData(null);
+    setEngine(null);
+    setTaxStatus(null);
+    setRiskForm(emptyRiskForm());
+    setRiskLoaded(emptyRiskForm());
+    setSummaryByTradeId({});
+    setDetailSymbol(null);
+    setTierRequired(code === 402);
+    setAccessLost(code);
+    setLoading(false);
+  }
+
+  // csrf-init dispatches session-expired on a 401 before its redirect
+  // delay; wipe the screen then rather than after.
+  useEffect(() => {
+    const onExpired = () => loseAccess(401);
+    window.addEventListener("session-expired", onExpired);
+    return () => window.removeEventListener("session-expired", onExpired);
+  }, []);
+
   async function load() {
+    const gen = genRef.current;
+    const stale = () => gen !== genRef.current;
     try {
       const [dashRes, engRes] = await Promise.allSettled([
         fetch("/api/trader/dashboard"),
         fetch("/api/trader/engine"),
       ]);
+      if (stale()) return;
+      const lost =
+        accessLossStatus(dashRes.status === "fulfilled" ? dashRes.value.status : null) ??
+        accessLossStatus(engRes.status === "fulfilled" ? engRes.value.status : null);
+      if (lost) {
+        loseAccess(lost);
+        return;
+      }
       let failure: string | null = null;
       if (dashRes.status === "fulfilled" && dashRes.value.ok) {
-        setData(await dashRes.value.json());
+        const json = await dashRes.value.json();
+        if (stale()) return;
+        setData(json);
         setTierRequired(false);
+        setAccessLost(null);
       } else {
-        const code = dashRes.status === "fulfilled" ? dashRes.value.status : null;
-        if (code === 402) setTierRequired(true);
-        failure = refreshFailureMessage("Dashboard", code);
+        failure = refreshFailureMessage(
+          "Dashboard",
+          dashRes.status === "fulfilled" ? dashRes.value.status : null,
+        );
       }
       if (engRes.status === "fulfilled" && engRes.value.ok) {
-        setEngine(applyEngineResponse<EngineStatus>(await engRes.value.json()));
+        const json = await engRes.value.json();
+        if (stale()) return;
+        setEngine(applyEngineResponse<EngineStatus>(json));
       } else {
         failure ??= refreshFailureMessage(
           "Engine status",
@@ -377,31 +431,40 @@ export default function TraderPage() {
       }
       setDashLoad((s) => (failure ? loadFailed(s, failure) : loadSucceeded(s, Date.now())));
     } catch {
-      setDashLoad((s) => loadFailed(s, refreshFailureMessage("Dashboard", null)));
+      if (!stale()) setDashLoad((s) => loadFailed(s, refreshFailureMessage("Dashboard", null)));
     } finally {
-      setLoading(false);
+      if (!stale()) setLoading(false);
     }
   }
 
-  // Initial load
+  // Initial load (mount only; the loaders read state through refs and setters)
   useEffect(() => {
     load();
     loadTaxStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Poll for updates
-  usePolling(load, POLLING_INTERVALS.traderDashboard);
+  usePolling(load, POLLING_INTERVALS.traderDashboard, { enabled: accessLost === null });
 
   // Load saved risk profile overrides
   async function loadRiskProfile() {
+    const gen = genRef.current;
     setRiskLoad(loadStarted);
     try {
       const res = await fetch("/api/risk-profile");
+      if (gen !== genRef.current) return;
+      const lost = accessLossStatus(res.status);
+      if (lost) {
+        loseAccess(lost);
+        return;
+      }
       if (!res.ok) {
         setRiskLoad((s) => loadFailed(s, `Could not load your saved overrides (${res.status}).`));
         return;
       }
       const { profile } = await res.json();
+      if (gen !== genRef.current) return;
       // A null profile means every field is engine-decided: a real answer.
       const form = profileToRiskForm(profile);
       setRiskForm(form);
@@ -414,6 +477,7 @@ export default function TraderPage() {
 
   useEffect(() => {
     loadRiskProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleEngine(
@@ -498,7 +562,22 @@ export default function TraderPage() {
           description="Monitor the automated trader as a risk system first and an execution engine second."
           stats={[{ label: "Connection", value: "Unknown", tone: "neutral" }]}
         />
-        {tierRequired ? (
+        {accessLost === 401 || accessLost === 403 ? (
+          <div role="alert" className="rounded-xl border border-border bg-bg-surface p-8 text-center">
+            <h3 className="font-display text-lg font-semibold mb-2">
+              {accessLost === 401 ? "Your session ended" : "You no longer have access"}
+            </h3>
+            <p className="text-sm text-text-secondary max-w-sm mx-auto">
+              Trading data was cleared from this screen.{" "}
+              {accessLost === 401 ? "Sign in again to continue." : "Ask an administrator if this is unexpected."}
+            </p>
+            {accessLost === 401 && (
+              <Link href="/login" className="mt-4 inline-block text-sm text-accent hover:underline">
+                Sign in
+              </Link>
+            )}
+          </div>
+        ) : tierRequired ? (
           <>
             <TraderTierRequired />
             <div role="alert" className="rounded-xl border border-border bg-bg-surface p-8 text-center">
@@ -942,12 +1021,8 @@ export default function TraderPage() {
                           ? result.message
                           : `${count} sell order${count === 1 ? "" : "s"} submitted — watching fills.`,
                       });
-                      try {
-                        const res = await fetch("/api/trader/dashboard");
-                        if (res.ok) setData(await res.json());
-                      } catch {
-                        // Refresh failure is non-fatal
-                      }
+                      // Refresh through load(): fenced, and it marks a failure.
+                      await load();
                     },
                   });
                 }}
@@ -1306,10 +1381,7 @@ export default function TraderPage() {
                               setCmdLoading(null);
                               if (result.error) throw new Error(result.error);
                               toast({ type: "success", message: result.queuedForOpen && result.message ? result.message : `Sell order for ${p.symbol} submitted.` });
-                              try {
-                                const res = await fetch("/api/trader/dashboard");
-                                if (res.ok) setData(await res.json());
-                              } catch { /* silent */ }
+                              await load();
                             },
                           });
                         }}
@@ -1771,12 +1843,8 @@ export default function TraderPage() {
               setCmdLoading(null);
               if (result.error) throw new Error(result.error);
               toast({ type: "success", message: result.queuedForOpen && result.message ? result.message : `Sell order for ${sym} submitted.` });
-              try {
-                const res = await fetch("/api/trader/dashboard");
-                if (res.ok) setData(await res.json());
-              } catch {
-                // Refresh failure is non-fatal
-              }
+              // Refresh through load(): fenced, and it marks a failure.
+              await load();
             },
           });
         }}

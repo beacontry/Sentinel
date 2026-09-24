@@ -1,7 +1,8 @@
 "use client";
 
-import { Fragment, useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback, useRef } from "react";
 import { usePolling } from "@/hooks/usePolling";
+import { accessLossStatus } from "@/lib/trader-view";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -107,6 +108,12 @@ export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Set when a read answers 401/402/403 or the session expires: every
+  // user's data is cleared and the page shows only the denial. Loads compare
+  // their generation against genRef, so one already in flight when access
+  // was lost cannot repaint the table.
+  const [accessDenied, setAccessDenied] = useState(false);
+  const genRef = useRef(0);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -133,11 +140,29 @@ export default function AdminPage() {
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [copiedUrl, setCopiedUrl] = useState("");
 
+  // Defined before the loaders so each can call it; the setters it uses are
+  // stable, and the slices declared further down are cleared through
+  // clearPrivateRef once they exist.
+  const clearPrivateRef = useRef<() => void>(() => {});
+  const revokeAccess = useCallback((status: number) => {
+    genRef.current++;
+    clearPrivateRef.current();
+    setError(
+      status === 401
+        ? "Your session ended. Sign in again to continue."
+        : "You do not have permission to access this page",
+    );
+    setAccessDenied(true);
+    setLoading(false);
+  }, []);
+
   const loadUsers = useCallback(async () => {
+    const gen = genRef.current;
     try {
       const res = await fetch("/api/admin/users");
-      if (res.status === 403) {
-        setError("You do not have permission to access this page");
+      if (gen !== genRef.current) return;
+      if (accessLossStatus(res.status)) {
+        revokeAccess(res.status);
         return;
       }
       if (!res.ok) {
@@ -145,23 +170,31 @@ export default function AdminPage() {
         return;
       }
       const data = await res.json();
+      if (gen !== genRef.current) return;
       setUsers(data.users ?? []);
     } catch {
-      setError("Failed to load users");
+      if (gen === genRef.current) setError("Failed to load users");
     } finally {
-      setLoading(false);
+      if (gen === genRef.current) setLoading(false);
     }
-  }, []);
+  }, [revokeAccess]);
 
   const loadInvites = useCallback(async () => {
+    const gen = genRef.current;
     try {
       const res = await fetch("/api/admin/invites");
+      if (gen !== genRef.current) return;
+      if (accessLossStatus(res.status)) {
+        revokeAccess(res.status);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
+        if (gen !== genRef.current) return;
         setInviteList(data.invites ?? []);
       }
     } catch { /* ignore — invites are secondary */ }
-  }, []);
+  }, [revokeAccess]);
 
   // Phase 16 — slippage report
   const [slippageUsers, setSlippageUsers] = useState<UserSlippage[]>([]);
@@ -170,16 +203,23 @@ export default function AdminPage() {
   const [slippageDays, setSlippageDays] = useState(30);
 
   const loadSlippage = useCallback(async () => {
+    const gen = genRef.current;
     setSlippageLoading(true);
     try {
       const res = await fetch(`/api/admin/slippage-report?days=${slippageDays}`);
+      if (gen !== genRef.current) return;
+      if (accessLossStatus(res.status)) {
+        revokeAccess(res.status);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
+        if (gen !== genRef.current) return;
         setSlippageUsers(data.users ?? []);
         setSlippageNote(data.note ?? "");
       }
     } catch { /* ignore */ } finally { setSlippageLoading(false); }
-  }, [slippageDays]);
+  }, [slippageDays, revokeAccess]);
 
   // Phase 12 — position drift audit
   const [driftUsers, setDriftUsers] = useState<UserDrift[]>([]);
@@ -187,15 +227,22 @@ export default function AdminPage() {
   const [expandedDrift, setExpandedDrift] = useState<Set<string>>(new Set());
 
   const loadDrift = useCallback(async () => {
+    const gen = genRef.current;
     setDriftLoading(true);
     try {
       const res = await fetch("/api/admin/position-drift");
+      if (gen !== genRef.current) return;
+      if (accessLossStatus(res.status)) {
+        revokeAccess(res.status);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
+        if (gen !== genRef.current) return;
         setDriftUsers(data.users ?? []);
       }
     } catch { /* ignore */ } finally { setDriftLoading(false); }
-  }, []);
+  }, [revokeAccess]);
 
   function toggleDriftExpanded(userId: string) {
     setExpandedDrift((prev) => {
@@ -212,14 +259,42 @@ export default function AdminPage() {
   const [engineCmdError, setEngineCmdError] = useState("");
 
   const loadEngines = useCallback(async () => {
+    const gen = genRef.current;
     try {
       const res = await fetch("/api/admin/engine");
+      if (gen !== genRef.current) return;
+      if (accessLossStatus(res.status)) {
+        revokeAccess(res.status);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
+        if (gen !== genRef.current) return;
         setEngineRows(data.rows ?? []);
       }
     } catch { /* ignore */ }
-  }, []);
+  }, [revokeAccess]);
+
+  // Every slice that holds other users' data, cleared on loss of access.
+  clearPrivateRef.current = () => {
+    setUsers([]);
+    setEngineRows([]);
+    setInviteList([]);
+    setSlippageUsers([]);
+    setSlippageNote("");
+    setDriftUsers([]);
+    setExpandedDrift(new Set());
+    setModalOpen(false);
+    setEditingUser(null);
+    setDeletingId(null);
+  };
+
+  // csrf-init dispatches session-expired on a 401 before its redirect delay.
+  useEffect(() => {
+    const onExpired = () => revokeAccess(401);
+    window.addEventListener("session-expired", onExpired);
+    return () => window.removeEventListener("session-expired", onExpired);
+  }, [revokeAccess]);
 
   function toggleUserLiveTrading(targetUserId: string, enabled: boolean) {
     const target = engineRows.find((r) => r.user.id === targetUserId);
@@ -321,7 +396,7 @@ export default function AdminPage() {
   // Refresh engine rows every 30s so admin sees state changes. usePolling
   // also pauses when the tab is hidden so we don't burn API calls in
   // backgrounded admin tabs.
-  usePolling(loadEngines, 30_000);
+  usePolling(loadEngines, 30_000, { enabled: !accessDenied });
 
   async function handleSendInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -487,7 +562,7 @@ export default function AdminPage() {
     );
   }
 
-  if (error && users.length === 0) {
+  if (accessDenied || (error && users.length === 0)) {
     return (
       <div className="p-4 lg:p-6">
         <div className="flex flex-col items-center justify-center py-20">

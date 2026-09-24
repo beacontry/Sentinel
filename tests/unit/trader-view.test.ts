@@ -6,6 +6,7 @@
 
 import { describe, it, expect } from "vitest";
 import {
+  accessLossStatus,
   applyEngineResponse,
   connectionStat,
   diffRiskProfile,
@@ -248,5 +249,19 @@ describe("stale dashboard data (#33)", () => {
     expect(refreshFailureMessage("Dashboard", 500)).toBe("Dashboard: HTTP 500");
     expect(refreshFailureMessage("Dashboard", 429)).toBe("Dashboard: rate limited (429)");
     expect(refreshFailureMessage("Engine status", null)).toBe("Engine status: network error");
+  });
+});
+
+describe("loss of access on a primary read (#3)", () => {
+  it("treats 401, 402 (plan lapsed) and 403 as loss of access", () => {
+    expect(accessLossStatus(401)).toBe(401);
+    expect(accessLossStatus(402)).toBe(402);
+    expect(accessLossStatus(403)).toBe(403);
+  });
+
+  it("leaves transient failures to the stale-data path", () => {
+    for (const code of [200, 404, 429, 500, 502, 504, null, undefined]) {
+      expect(accessLossStatus(code)).toBeNull();
+    }
   });
 });
