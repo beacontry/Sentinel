@@ -12,6 +12,7 @@ import { Modal, ModalHeader, ModalTitle, ModalDescription, ModalFooter } from "@
 import { PageIntro } from "@/components/layout/page-intro";
 import { useToast } from "@/components/ui/toast";
 import { dispatchBrokerChanged } from "@/lib/broker-events";
+import { leaderboardPrefsPayload, isLeaderboardPrefs } from "@/lib/leaderboard-prefs";
 import {
   Webhook, Plus, Trash2, TestTube, Check, X, Shield,
   Link, Unlink, Pencil, CircleDot, Zap, Sliders,
@@ -1046,40 +1047,58 @@ Any trade you place will use real money. The engine remains stopped — you must
 // ─── Phase 19 — Leaderboard opt-in settings ───────────────────────────
 
 function LeaderboardSettings() {
+  // null until a load succeeds. A failed load sets loadError instead of
+  // pretending the user is opted out: saving that fallback form would
+  // overwrite their real opt-in and handle.
   const [optIn, setOptIn] = useState<boolean | null>(null);
   const [displayName, setDisplayName] = useState("");
+  const [loadedDisplayName, setLoadedDisplayName] = useState("");
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    setOptIn(null);
+    setLoadError(false);
     fetch("/api/leaderboard/preferences")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data) {
-          setOptIn(data.optIn ?? false);
-          setDisplayName(data.displayName ?? "");
-        } else {
-          setOptIn(false);
-        }
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data: unknown) => {
+        if (cancelled) return;
+        if (!isLeaderboardPrefs(data)) throw new Error("Unexpected response");
+        const name = data.displayName ?? "";
+        setOptIn(data.optIn);
+        setDisplayName(name);
+        setLoadedDisplayName(name);
       })
-      .catch(() => setOptIn(false));
-  }, []);
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadAttempt]);
 
   async function save() {
+    // Only a successfully loaded form can be saved.
+    if (optIn === null || loadError) return;
     setSaving(true);
     setError("");
     setSaved(false);
     try {
+      const payload = leaderboardPrefsPayload(optIn, displayName, loadedDisplayName);
       const res = await fetch("/api/leaderboard/preferences", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ optIn: optIn === true, displayName: displayName.trim() || null }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Failed" }));
         setError(data.error ?? "Failed to save");
       } else {
+        if (payload.displayName !== undefined) setLoadedDisplayName(payload.displayName ?? "");
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
       }
@@ -1088,6 +1107,17 @@ function LeaderboardSettings() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-sm text-bearish">Couldn&apos;t load your leaderboard settings.</p>
+        <Button variant="secondary" size="sm" onClick={() => setLoadAttempt((n) => n + 1)}>
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   if (optIn === null) {
