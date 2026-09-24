@@ -47,6 +47,13 @@ vi.mock("@/lib/audit", async (importOriginal) => {
 
 vi.mock("@/lib/crypto", () => ({ decrypt: (v: string) => v, encrypt: (v: string) => v }));
 
+// Regular hours, so a flatten reports "sold" rather than "queued for the open"
+// whatever time the suite runs.
+vi.mock("@/lib/market-hours", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/market-hours")>();
+  return { ...actual, isMarketOpen: () => true };
+});
+
 vi.mock("@/lib/db", () => {
   function chain(): unknown {
     const proxy: unknown = new Proxy(

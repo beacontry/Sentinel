@@ -4339,9 +4339,9 @@ async function syncPositionMapFromBroker(
  * concurrent sync raced us), the INSERT silently no-ops.
  *
  * Never throws — failures are logged but don't propagate, so a transient
- * broker hiccup doesn't block positionMap cleanup.
+ * broker hiccup doesn't block positionMap cleanup. Exported for tests.
  */
-async function reconcileBrokerSideExit(
+export async function reconcileBrokerSideExit(
   client: BrokerClient,
   symbol: string,
   expectedPos: TrackedPosition,
@@ -4485,6 +4485,29 @@ async function reconcileBrokerSideExit(
   }
 }
 
+/** Fold one filled manual flatten into the day's accumulator row. Atomic
+ *  upsert, like upsertDailyPnl, but touches only the realized total and the
+ *  trade count, so it needs no engine. Logs and returns on failure. */
+async function recordManualCloseDailyPnl(userId: string, date: string, realizedPnl: number): Promise<void> {
+  try {
+    await db
+      .insert(traderDailyPnl)
+      .values({ userId, date, realizedPnl, unrealizedPnl: 0, tradesCount: 1, halted: false })
+      .onConflictDoUpdate({
+        target: [traderDailyPnl.date, traderDailyPnl.userId],
+        set: {
+          realizedPnl: sql`${traderDailyPnl.realizedPnl} + ${realizedPnl}`,
+          tradesCount: sql`${traderDailyPnl.tradesCount} + 1`,
+        },
+      });
+  } catch (err) {
+    log.error(
+      { userId, date, err: err instanceof Error ? err.message : "unknown" },
+      "Failed to add a filled manual flatten to the daily P&L total"
+    );
+  }
+}
+
 /**
  * Phase 11 — trade-status reconciliation.
  *
@@ -4607,19 +4630,25 @@ export async function reconcilePendingTrades(client: BrokerClient, userId: strin
         newStatus = "FILLED";
         newFillPrice = brokerOrder.filledPrice ?? row.fillPrice;
         newFillTime = brokerOrder.filledAt ? new Date(brokerOrder.filledAt) : new Date();
-        // P&L correction via delta math (no schema change). Only for SELLs with placeholder pnl.
+        // P&L correction via delta math (no schema change). Only for exits
+        // with placeholder pnl: engine SELLs, whose placeholder is the quote
+        // in fillPrice, and manual flatten rows (manual_close), which carry no
+        // fillPrice until they fill and keep the snapshot quote in
+        // placeholderFillPrice.
+        const isManualClose = row.action === "manual_close";
+        const placeholderPrice = isManualClose ? row.placeholderFillPrice : row.fillPrice;
         if (
-          row.action === "SELL" &&
+          (row.action === "SELL" || isManualClose) &&
           row.pnl !== null &&
           // Both prices must be positive finite numbers before money math
           // (audit #39): a broker price coerced to 0 from a malformed field
           // would otherwise produce delta = (0 - entry)·qty — a fabricated loss
           // written to the daily-P&L accumulator. Skipping the correction
           // leaves the quote-based placeholder pnl in place.
-          row.fillPrice !== null && row.fillPrice > 0 &&
+          placeholderPrice !== null && placeholderPrice > 0 &&
           newFillPrice !== null && newFillPrice > 0
         ) {
-          const delta = (newFillPrice - row.fillPrice) * row.quantity;
+          const delta = (newFillPrice - placeholderPrice) * row.quantity;
           newPnl = row.pnl + delta;
           // Correct the in-memory daily-loss accumulator by the same delta
           // (audit #24): the placeholder (quote-based) pnl was already added to
@@ -4629,8 +4658,9 @@ export async function reconcilePendingTrades(client: BrokerClient, userId: strin
           // streak is left as-is — a post-hoc sign flip can't be cleanly
           // unwound in a sequential streak, and the placeholder ≈ the fill
           // except on gap days. Applied only after the fenced UPDATE below
-          // takes the row.
-          dailyLossDelta = delta;
+          // takes the row. A manual flatten was never accrued at submit, so
+          // it has no placeholder in dailyLoss to correct.
+          if (!isManualClose) dailyLossDelta = delta;
         }
       } else if (bs === "canceled" || bs === "expired") {
         newStatus = bs === "canceled" ? "CANCELED" : "EXPIRED";
@@ -4675,6 +4705,14 @@ export async function reconcilePendingTrades(client: BrokerClient, userId: strin
         if (dailyLossDelta !== 0) {
           const engine = g.__tradingEngines?.get(userId);
           if (engine) accrueRealizedPnl(engine, dailyLossDelta);
+        }
+
+        // A manual flatten's realized P&L reaches the daily total here, at
+        // the fill, keyed by the ET date it filled (the route no longer
+        // writes the snapshot estimate at submit). Engine exits are counted
+        // by the scan that placed them, so only manual_close rows take this.
+        if (newStatus === "FILLED" && row.action === "manual_close" && newPnl !== null && newFillTime) {
+          await recordManualCloseDailyPnl(userId, getETDateStringShared(newFillTime), newPnl);
         }
 
         // Journal v2 — phase 1: when a trade reconciles to FILLED,

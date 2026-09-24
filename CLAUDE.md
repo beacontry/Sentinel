@@ -237,7 +237,7 @@ The block prevents position-map drift: the engine's in-memory map lags the broke
 
 **Account-gated too.** Every order names the connection the ticket showed (`expectedConnectionId`, required, plus `expectedEnvironment`); the route answers 409 `CONNECTION_CHANGED` before the broker is contacted when the active connection is a different one, so a switch to LIVE in the sidebar, another tab or another device can never send an order the ticket showed as paper. The ticket re-reads the active connection before it decides on the live confirm, and reloads and resets on the switcher's `broker-changed` window event.
 
-Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.source = "manual_ui"`) as engine fills, the same journal auto-stub, and merge into the same Tax Center (`/api/tax/report` reads `trader_trades.action IN ('BUY', 'SELL', 'manual_close')`).
+Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.source = "manual_ui"`) as engine fills, the same journal auto-stub, and merge into the same Tax Center (`/api/tax/report` reads `trader_trades.action IN ('BUY', 'SELL', 'manual_close')`). Flatten (`/api/trader/command`) records its `manual_close` rows `PENDING` with the broker order id; `reconcilePendingTrades` sets the real fill and P&L and adds it to the daily total on fill, and an after-hours flatten is placed and reported as queued for the next open (see `docs/ENGINE_RULESET.md` § Reconcile windowing).
 
 ## Adaptive engine mode (8th mode, regime-driven)
 

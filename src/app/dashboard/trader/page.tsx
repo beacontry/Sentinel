@@ -164,7 +164,10 @@ function timeAgo(iso: string): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-async function sendCommand(command: string, payload: Record<string, unknown> = {}): Promise<{ status?: string; error?: string }> {
+async function sendCommand(
+  command: string,
+  payload: Record<string, unknown> = {},
+): Promise<{ status?: string; error?: string; queuedForOpen?: boolean; message?: string }> {
   try {
     const res = await fetch("/api/trader/command", {
       method: "POST",
@@ -849,7 +852,9 @@ export default function TraderPage() {
                       if (result.error) throw new Error(result.error);
                       toast({
                         type: "success",
-                        message: `${count} sell order${count === 1 ? "" : "s"} submitted — watching fills.`,
+                        message: result.queuedForOpen && result.message
+                          ? result.message
+                          : `${count} sell order${count === 1 ? "" : "s"} submitted — watching fills.`,
                       });
                       try {
                         const res = await fetch("/api/trader/dashboard");
@@ -1201,7 +1206,7 @@ export default function TraderPage() {
                               const result = await sendCommand("flatten", { symbol: p.symbol });
                               setCmdLoading(null);
                               if (result.error) throw new Error(result.error);
-                              toast({ type: "success", message: `Sell order for ${p.symbol} submitted.` });
+                              toast({ type: "success", message: result.queuedForOpen && result.message ? result.message : `Sell order for ${p.symbol} submitted.` });
                               try {
                                 const res = await fetch("/api/trader/dashboard");
                                 if (res.ok) setData(await res.json());
@@ -1643,7 +1648,7 @@ export default function TraderPage() {
               const result = await sendCommand("flatten", { symbol: sym });
               setCmdLoading(null);
               if (result.error) throw new Error(result.error);
-              toast({ type: "success", message: `Sell order for ${sym} submitted.` });
+              toast({ type: "success", message: result.queuedForOpen && result.message ? result.message : `Sell order for ${sym} submitted.` });
               try {
                 const res = await fetch("/api/trader/dashboard");
                 if (res.ok) setData(await res.json());
