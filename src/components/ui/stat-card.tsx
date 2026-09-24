@@ -28,7 +28,7 @@ export function StatCard({ label, value, subtext, tone = "neutral", icon: Icon, 
     <div className={`rounded-xl border border-border bg-bg-secondary p-4 shadow-card ${className}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">{label}</p>
+          <p className="eyebrow text-text-muted">{label}</p>
           <p className={`mt-1.5 text-2xl font-semibold font-mono ${toneColor}`}>{value}</p>
           {subtext && (
             <p className={`mt-1 text-sm ${tone === "neutral" ? "text-text-secondary" : toneColor}`}>

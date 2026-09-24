@@ -36,7 +36,7 @@ export function PageIntro({
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div>
           {eyebrow && (
-            <div className="mb-2 text-xs uppercase tracking-[0.2em] text-text-muted">
+            <div className="eyebrow mb-2 text-text-muted">
               {eyebrow}
             </div>
           )}
@@ -57,7 +57,7 @@ export function PageIntro({
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {stats.map((stat) => (
             <div key={stat.label} className="rounded-xl border border-border bg-bg-secondary p-3">
-              <div className="text-xs uppercase tracking-[0.16em] text-text-muted">{stat.label}</div>
+              <div className="eyebrow text-text-muted">{stat.label}</div>
               <div className={`mt-1 text-lg font-semibold font-mono ${toneClasses[stat.tone ?? "neutral"]}`}>
                 {stat.value}
               </div>

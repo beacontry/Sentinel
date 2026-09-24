@@ -165,6 +165,14 @@ describe("style-ratchet: counts", () => {
     expect(c["accent fill with a literal label"]).toBe(3);
   });
 
+  it("counts a hand-rolled eyebrow: uppercase with an arbitrary tracking", () => {
+    const c = count([
+      `"text-xs uppercase tracking-[0.2em]" "tracking-[0.1em] font-mono sm:uppercase"`,
+      `"eyebrow" "uppercase tracking-wide" "tracking-[0.2em]"`,
+    ]);
+    expect(c["uppercase + tracking-[arbitrary]"]).toBe(2);
+  });
+
   it("walks .ts class maps as well as .tsx, and skips declaration files", () => {
     const root = join(__dirname, "..", "..");
     const files = (walkRaw(join(root, "src")) as string[]).map((f) => f.replace(/\\/g, "/"));

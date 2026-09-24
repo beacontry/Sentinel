@@ -55,6 +55,10 @@ export const PATTERNS = {
   "text-3xl and up (off scale)": { re: /(?<![\w-])(?:[a-z0-9-]+:)*text-(?:3xl|4xl|5xl|6xl|7xl|8xl|9xl)(?![\w-])/g, zero: true },
   "rounded-xs/sm/2xl/3xl/4xl (off scale)": { re: /(?<![\w-])(?:[a-z0-9-]+:)*rounded(?:-[trblse]{1,2})?-(?:xs|sm|2xl|3xl|4xl)(?![\w-])/g, zero: true },
   "stock shadow-sm/md/lg/xl/2xl (off scale)": { re: /(?<![\w-])(?:[a-z0-9-]+:)*shadow-(?:2xs|xs|sm|md|lg|xl|2xl)(?![\w/-])/g, zero: true },
+  // A hand-rolled kicker: uppercase plus an arbitrary tracking in one class
+  // string. The eyebrow utility in globals.css is the one version; these
+  // had drifted to 0.08em, 0.16em and 0.2em for the same role.
+  "uppercase + tracking-[arbitrary]": { custom: "handRolledEyebrow" },
   // A solid accent fill labelled with a fixed colour instead of on-accent.
   // The accent's lightness differs per theme (dark on light themes, light
   // on dark ones), so black, white or a page background passes in some
@@ -69,6 +73,15 @@ const CUSTOM = {
     let n = 0;
     for (const m of src.matchAll(/(["'`])((?:(?!\1)[\s\S])*?\boutline-none\b(?:(?!\1)[\s\S])*?)\1/g)) {
       if (!/focus-visible:(?:outline|ring)/.test(m[2]) && !/focus-within:(?:outline|ring)/.test(m[2])) n++;
+    }
+    return n;
+  },
+  /** tracking-[…] in a class string that also sets uppercase. */
+  handRolledEyebrow(src) {
+    let n = 0;
+    for (const m of src.matchAll(/(["'`])((?:(?!\1)[\s\S])*?)\1/g)) {
+      if (!/(?<![\w-])(?:[a-z0-9-]+:)*uppercase(?![\w-])/.test(m[2])) continue;
+      n += m[2].match(/(?<![\w-])(?:[a-z0-9-]+:)*tracking-\[[^\]]+\]/g)?.length ?? 0;
     }
     return n;
   },

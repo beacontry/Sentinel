@@ -14,5 +14,6 @@
   "bg-white/ or bg-black/": 8,
   "state colour alpha tint": 108,
   "border-l-2/4 stripe": 0,
-  "inline fontSize 8-11": 6
+  "inline fontSize 8-11": 6,
+  "uppercase + tracking-[arbitrary]": 101
 }
