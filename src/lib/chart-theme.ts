@@ -7,9 +7,9 @@
 //
 // Theme changes during a chart's lifetime aren't reactive — the
 // chart reads CSS tokens once on mount. If you want live
-// re-theming, key the chart's parent <div> by `useTheme().theme` so
-// React unmounts/remounts on switch. For the dashboard's current
-// flow (mount on page load, theme changes are rare) this is fine.
+// re-theming, key the chart by `useTheme().theme` and, when it draws
+// up/down colours, by `useDisplayPrefs().colorBlindMode` too, so React
+// unmounts/remounts on a switch (PriceChart does this).
 
 interface ChartThemeTokens {
   /** Chart canvas background. */
@@ -26,6 +26,18 @@ interface ChartThemeTokens {
   seriesPrimary: string;
   /** Neutral price-line/baseline color. */
   baselineColor: string;
+  /** Up candles. Follows colour-blind mode (--color-bullish). */
+  bullish: string;
+  /** Down candles. Follows colour-blind mode (--color-bearish). */
+  bearish: string;
+  /** Up volume bars: translucent bullish. */
+  bullishMuted: string;
+  /** Down volume bars: translucent bearish. */
+  bearishMuted: string;
+  /** Earnings event marker. */
+  eventEarnings: string;
+  /** Other event markers (dividends). */
+  eventOther: string;
 }
 
 const DEFAULT_LIGHT: ChartThemeTokens = {
@@ -36,6 +48,12 @@ const DEFAULT_LIGHT: ChartThemeTokens = {
   crosshairLabel: "#1e293b",
   seriesPrimary: "#10b981",
   baselineColor: "#94a3b8",
+  bullish: "#059669",
+  bearish: "#dc2626",
+  bullishMuted: "rgba(5, 150, 105, 0.10)",
+  bearishMuted: "rgba(220, 38, 38, 0.10)",
+  eventEarnings: "#d97706",
+  eventOther: "#10b981",
 };
 
 /**
@@ -66,5 +84,11 @@ export function getChartTheme(): ChartThemeTokens {
     crosshairLabel: readToken("--color-bg-elevated", DEFAULT_LIGHT.crosshairLabel),
     seriesPrimary: readToken("--color-accent", DEFAULT_LIGHT.seriesPrimary),
     baselineColor: readToken("--color-text-muted", DEFAULT_LIGHT.baselineColor),
+    bullish: readToken("--color-bullish", DEFAULT_LIGHT.bullish),
+    bearish: readToken("--color-bearish", DEFAULT_LIGHT.bearish),
+    bullishMuted: readToken("--color-bullish-muted", DEFAULT_LIGHT.bullishMuted),
+    bearishMuted: readToken("--color-bearish-muted", DEFAULT_LIGHT.bearishMuted),
+    eventEarnings: readToken("--color-warning", DEFAULT_LIGHT.eventEarnings),
+    eventOther: readToken("--color-accent", DEFAULT_LIGHT.eventOther),
   };
 }

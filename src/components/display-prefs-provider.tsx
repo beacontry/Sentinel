@@ -19,6 +19,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useState,
   useCallback,
   type ReactNode,
@@ -159,8 +160,10 @@ export function DisplayPrefsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Color-blind mode toggles a body-level class. CSS in globals.css remaps
-  // the bullish/bearish accent colors when the class is present.
-  useEffect(() => {
+  // the bullish/bearish accent colors when the class is present. A layout
+  // effect, so the class is on <html> before any child's passive effect
+  // runs: PriceChart remounts on this flag and reads the tokens in one.
+  useLayoutEffect(() => {
     if (typeof document === "undefined") return;
     if (prefs.colorBlindMode) {
       document.documentElement.classList.add("colorblind");

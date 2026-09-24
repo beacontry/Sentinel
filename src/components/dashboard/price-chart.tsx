@@ -17,6 +17,8 @@ import {
   CrosshairMode,
 } from "lightweight-charts";
 import { getChartTheme } from "@/lib/chart-theme";
+import { useTheme } from "@/components/theme-provider";
+import { useDisplayPrefs } from "@/components/display-prefs-provider";
 
 export interface ChartEvent {
   date: string;
@@ -93,7 +95,18 @@ function makeChartOptions(container: HTMLElement, height: number) {
   };
 }
 
-export function PriceChart({ analysis, height = 400, events }: PriceChartProps) {
+/**
+ * The chart reads its colours from the CSS tokens once, when it is
+ * created, so it is remounted when the theme or colour-blind mode
+ * changes. Indicator toggles reset on such a switch.
+ */
+export function PriceChart(props: PriceChartProps) {
+  const { theme } = useTheme();
+  const { colorBlindMode } = useDisplayPrefs();
+  return <PriceChartView key={`${theme}:${colorBlindMode}`} {...props} />;
+}
+
+function PriceChartView({ analysis, height = 400, events }: PriceChartProps) {
   // Resolve "fill" to a concrete number at the call site to keep
   // makeChartOptions() simple. Falls back to 400 if the parent has no
   // height yet (e.g. mounted inside a not-yet-laid-out flex container).
@@ -125,14 +138,16 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
     const times = analysis.bars.map((b) => toTime(b.date));
     timesRef.current = times;
 
-    // Candlestick series
+    // Candlestick series. Up/down colours come from --color-bullish and
+    // --color-bearish so colour-blind mode and the light themes apply.
+    const palette = getChartTheme();
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#3ddc97",
-      downColor: "#ff7b7b",
-      borderUpColor: "#3ddc97",
-      borderDownColor: "#ff7b7b",
-      wickUpColor: "#3ddc97",
-      wickDownColor: "#ff7b7b",
+      upColor: palette.bullish,
+      downColor: palette.bearish,
+      borderUpColor: palette.bullish,
+      borderDownColor: palette.bearish,
+      wickUpColor: palette.bullish,
+      wickDownColor: palette.bearish,
     });
     const candleData: CandlestickData[] = analysis.bars.map((b, i) => ({
       time: times[i],
@@ -149,7 +164,7 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
         .map((e) => ({
           time: toTime(e.date),
           position: "aboveBar" as const,
-          color: e.type === "earnings" ? "#f59e0b" : "#22c55e",
+          color: e.type === "earnings" ? palette.eventEarnings : palette.eventOther,
           shape: "circle" as const,
           text: e.type === "earnings" ? "E" : "D",
         }))
@@ -168,7 +183,7 @@ export function PriceChart({ analysis, height = 400, events }: PriceChartProps) 
     const volumeData: HistogramData[] = analysis.bars.map((b, i) => ({
       time: times[i],
       value: b.volume,
-      color: b.close >= b.open ? "rgba(61,220,151,0.22)" : "rgba(255,123,123,0.22)",
+      color: b.close >= b.open ? palette.bullishMuted : palette.bearishMuted,
     }));
     volumeSeries.setData(volumeData);
 

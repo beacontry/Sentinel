@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 
 /**
  * Five-theme system. Each value here is also the CSS class applied to <html>
@@ -95,8 +95,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setMounted(true);
   }, []);
 
-  // Sync class to <html>, update PWA theme-color, and persist
-  useEffect(() => {
+  // Sync class to <html>, update PWA theme-color, and persist. A layout
+  // effect, so the class is in place before any child's passive effect
+  // reads the CSS tokens (PriceChart remounts on a theme change).
+  useLayoutEffect(() => {
     if (!mounted) return;
     const root = document.documentElement;
 
