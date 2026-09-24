@@ -6,6 +6,8 @@ Stages 1 to 3 landed on `design/foundation-2026-09-24`, stacked on `fix/lessons-
 
 **Final gate, run on `06a5dcf`:** `npx tsc --noEmit` clean; `npm run lint` 0 errors and 86 warnings, none new (each changed file was compared against its base version, and the one apparent new warning in `use-ticket-context.ts` moved there from the old ticket page); `npx vitest run` 129 files and 2,383 tests passing; a clean `rm -rf .next` build passing. Under full parallel load on a busy machine the suite threw 5s timeouts in unrelated base tests (upsert-routes, client-fetch-routes, engine-safeguards and others), all of which pass alone and with `--maxWorkers=4`. The one timeout this branch caused, the style-ratchet baseline test, now has a 30s budget (`06a5dcf`).
 
+**Polish pass, later on 2026-09-24.** Colour-blind mode is now one fixed state palette per light/dark family, independent of theme, tested against every theme under typical, deuteranopia and protanopia vision. The light family reaches deltaE 0.08 to 0.099 on 24 pairs (`KNOWN_GAPS`), because 0.10 is unreachable without changing the text ladder. Also fixed since the list below: contact, privacy, risk, terms and 404 carry the site nav and footer; the phone pricing table no longer scrolls sideways; the landing headline is 72px on desktop and the phone chart keeps a legend; the trader Post-mortem link, the desktop side-column gap, the dashboard blank cell, the Tax Report phone figures, the sign-up 2px scroll and the calendar 320px overflow. The icon-only sm Button hit box is 44px wide, and PageIntro figures fit whole instead of splitting or overflowing.
+
 ### What landed, by stage
 
 **Stage 1, tokens, codemod and ratchet.**
