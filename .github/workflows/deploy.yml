@@ -39,6 +39,13 @@ jobs:
       - name: Doc staleness check
         run: npm run docs:check
 
+      # Blocking: counts of off-token class patterns (sub-12px text,
+      # arbitrary radii and shadows, transition-all, text-white …) may only
+      # go down, and sizes removed from the theme must stay at zero. See
+      # scripts/style-ratchet.mjs and its committed baseline.
+      - name: Style ratchet
+        run: npm run lint:style
+
       - name: Test
         run: npm test
 

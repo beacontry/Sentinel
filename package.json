@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "docs:check": "node scripts/check-doc-staleness.mjs",
+    "lint:style": "node scripts/style-ratchet.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
@@ -69,6 +70,9 @@
   "lint-staged": {
     "*.{ts,tsx}": [
       "eslint --fix"
+    ],
+    "src/**/*.tsx": [
+      "node scripts/style-ratchet.mjs"
     ]
   },
   "overrides": {

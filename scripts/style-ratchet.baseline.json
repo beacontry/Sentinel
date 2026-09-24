@@ -1,0 +1,20 @@
+{
+  "text-[8-11px]": 370,
+  "text-[arbitrary size]": 542,
+  "rounded-[arbitrary]": 56,
+  "shadow-[arbitrary]": 15,
+  "text-white": 42,
+  "transition-all": 95,
+  "focus(-visible):outline-none": 24,
+  "outline-none without focus-visible ring": 39,
+  "raw <button": 152,
+  "backdrop-blur": 9,
+  "-[#hex]": 4,
+  "rgb()/rgba() in tsx": 5,
+  "bg-white/ or bg-black/": 8,
+  "border-l-2/4 stripe": 0,
+  "inline fontSize 8-11": 8,
+  "text-3xl and up (off scale)": 18,
+  "rounded-xs/sm/2xl/3xl/4xl (off scale)": 23,
+  "stock shadow-sm/md/lg/xl/2xl (off scale)": 43
+}
