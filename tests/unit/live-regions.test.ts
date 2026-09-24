@@ -17,7 +17,9 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
-import { ToastProvider } from "@/components/ui/toast";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { MAX_TOASTS, ToastProvider } from "@/components/ui/toast";
 import LoginPage from "@/app/login/page";
 
 describe("ToastProvider", () => {
@@ -39,5 +41,28 @@ describe("LoginPage", () => {
   it("does not mark the fields invalid when there is no error", () => {
     expect(html).not.toContain("aria-invalid");
     expect(html).not.toContain("aria-describedby");
+  });
+});
+
+describe("Toast stack", () => {
+  const src = readFileSync(join(__dirname, "..", "..", "src/components/ui/toast.tsx"), "utf8");
+
+  it("caps the stack at three", () => {
+    expect(MAX_TOASTS).toBe(3);
+  });
+
+  it("gives each kind its own icon, so a failure never looks like a success", () => {
+    expect(src).toMatch(/success:\s*CheckCircle2/);
+    expect(src).toMatch(/error:\s*XCircle/);
+    expect(src).toMatch(/warning:\s*AlertTriangle/);
+  });
+
+  it("has a 44px, labelled dismiss button", () => {
+    expect(src).toContain('aria-label="Dismiss notification"');
+    expect(src).toMatch(/className="flex h-11 w-11/);
+  });
+
+  it("clears a toast's timer when it is dismissed", () => {
+    expect(src).toMatch(/const dismiss = useCallback\(\s*\(id: number\) => \{\s*clearTimer\(id\);/);
   });
 });
