@@ -48,6 +48,29 @@ const SUB_NAV_KEY_FOR_HREF: Record<string, keyof typeof SUB_NAV | undefined> = {
   "/dashboard/admin": "admin",
 };
 
+/**
+ * One nav item look, keyed off aria-current rather than a parallel active
+ * class, so what is drawn is what a screen reader is told. A section
+ * trigger (a button, which cannot be the current page) adds
+ * NAV_ITEM_SECTION_ACTIVE when its section holds the current page.
+ */
+const NAV_ITEM =
+  "flex min-h-9 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap text-text-secondary transition-colors " +
+  "hover:bg-bg-hover hover:text-text-primary " +
+  "aria-[current=page]:bg-bg-hover aria-[current=page]:font-medium aria-[current=page]:text-text-primary";
+
+const NAV_ITEM_SECTION_ACTIVE = "bg-bg-hover font-medium text-text-primary";
+
+const MENU_ITEM =
+  "flex min-h-9 items-center px-3 text-sm text-text-secondary transition-colors " +
+  "hover:bg-bg-hover hover:text-text-primary " +
+  "aria-[current=page]:bg-bg-hover aria-[current=page]:font-medium aria-[current=page]:text-text-primary";
+
+/** Drawer rows are touch targets: 44px. */
+const DRAWER_ITEM =
+  "flex min-h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-sm text-text-secondary " +
+  "aria-[current=page]:bg-bg-hover aria-[current=page]:font-medium aria-[current=page]:text-text-primary";
+
 function getSubTabs(item: NavItem, role: string | null | undefined): SubNavTab[] {
   const key = SUB_NAV_KEY_FOR_HREF[item.href];
   if (!key) return [];
@@ -142,11 +165,18 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      {/* First focusable element: jumps past the nav to the page. */}
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
+
       {/* Mobile hamburger */}
       <button
+        type="button"
         onClick={() => setMobileOpen(true)}
-        className="fixed top-3 left-3 z-50 lg:hidden flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-bg-secondary text-text-secondary shadow-card"
+        className="fixed top-[calc(env(safe-area-inset-top)+12px)] left-3 z-50 lg:hidden flex h-11 w-11 items-center justify-center rounded-lg border border-border-control bg-bg-secondary text-text-secondary shadow-card"
         aria-label="Open menu"
+        aria-expanded={mobileOpen}
       >
         <Menu className="h-5 w-5" />
       </button>
@@ -186,13 +216,10 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors ${
-                        active
-                          ? "text-text-primary bg-bg-hover font-medium"
-                          : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
-                      }`}
+                      aria-current={active ? "page" : undefined}
+                      className={NAV_ITEM}
                     >
-                      <item.icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      <item.icon className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
                       {item.label}
                     </Link>
                   );
@@ -213,13 +240,9 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                       onClick={() => setOpenSectionHref(isOpen ? null : item.href)}
                       aria-haspopup="menu"
                       aria-expanded={isOpen}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors ${
-                        active
-                          ? "text-text-primary bg-bg-hover font-medium"
-                          : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
-                      }`}
+                      className={`${NAV_ITEM} ${active ? NAV_ITEM_SECTION_ACTIVE : ""}`}
                     >
-                      <item.icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      <item.icon className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
                       {item.label}
                       <ChevronDown
                         className={`h-3 w-3 opacity-60 transition-transform ${isOpen ? "rotate-180" : ""}`}
@@ -237,11 +260,8 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                         <Link
                           href={item.href}
                           role="menuitem"
-                          className={`block px-3 py-1.5 text-sm transition-colors ${
-                            pathname === item.href
-                              ? "text-text-primary bg-bg-hover font-medium"
-                              : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
-                          }`}
+                          aria-current={pathname === item.href ? "page" : undefined}
+                          className={MENU_ITEM}
                         >
                           {item.label} Overview
                         </Link>
@@ -253,11 +273,8 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                               key={tab.href}
                               href={tab.href}
                               role="menuitem"
-                              className={`block px-3 py-1.5 text-sm transition-colors ${
-                                tabActive
-                                  ? "text-text-primary bg-bg-hover font-medium"
-                                  : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
-                              }`}
+                              aria-current={tabActive ? "page" : undefined}
+                              className={MENU_ITEM}
                             >
                               {tab.label}
                             </Link>
@@ -340,10 +357,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Main content */}
-        <main
-          className="flex-1 min-w-0 overflow-y-auto"
-          style={{ backgroundColor: "var(--color-bg-primary)" }}
-        >
+        <main id="main" tabIndex={-1} className="flex-1 min-w-0 overflow-y-auto bg-bg-primary outline-hidden">
           {children}
         </main>
       </div>
@@ -403,13 +417,10 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                     <Link
                       href={item.href}
                       onClick={() => setMobileOpen(false)}
-                      className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm ${
-                        active
-                          ? "text-text-primary bg-bg-hover font-medium"
-                          : "text-text-secondary"
-                      }`}
+                      aria-current={active ? "page" : undefined}
+                      className={DRAWER_ITEM}
                     >
-                      <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                      <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
                       <span>{item.label}</span>
                     </Link>
                     {subTabs.length > 0 && (
@@ -421,11 +432,8 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                               key={tab.href}
                               href={tab.href}
                               onClick={() => setMobileOpen(false)}
-                              className={`rounded-md px-2.5 py-1 text-xs ${
-                                tabActive
-                                  ? "text-text-primary bg-bg-hover font-medium"
-                                  : "text-text-muted"
-                              }`}
+                              aria-current={tabActive ? "page" : undefined}
+                              className={DRAWER_ITEM}
                             >
                               {tab.label}
                             </Link>
@@ -450,17 +458,17 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                   toggleChat();
                   setMobileOpen(false);
                 }}
-                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-text-secondary"
+                className={DRAWER_ITEM}
               >
-                <Sparkles className="h-4 w-4" />
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
                 AI Assistant
               </button>
               <button
                 type="button"
                 onClick={handleLogout}
-                className="mt-0.5 flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-text-secondary"
+                className={`mt-0.5 ${DRAWER_ITEM}`}
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-4 w-4" aria-hidden="true" />
                 Sign out
               </button>
             </div>

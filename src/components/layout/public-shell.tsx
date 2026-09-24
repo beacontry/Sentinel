@@ -45,6 +45,9 @@ export function PublicShell({ children, active }: PublicShellProps) {
 
   return (
     <div className="min-h-screen bg-ld-deep font-[family-name:var(--font-display)] text-ld-text">
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
       {/* Navbar — mirrors src/app/page.tsx structure but with public-route nav links */}
       <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-[background-color,border-color,color,box-shadow] duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-pop" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
         <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
@@ -64,6 +67,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
                 <li key={link.href}>
                   <Link
                     href={link.href}
+                    aria-current={isActive ? "page" : undefined}
                     className={`text-base font-medium transition-colors duration-200 hover:text-ld-text ${
                       isActive ? "text-ld-text" : "text-ld-text-secondary"
                     }`}
@@ -84,8 +88,14 @@ export function PublicShell({ children, active }: PublicShellProps) {
 
           <div className="flex items-center gap-2 md:hidden">
             <ThemePicker variant="icon" />
-            <button onClick={() => setMenuOpen(!menuOpen)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-ld-border text-ld-text" aria-label="Menu">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <button
+              type="button"
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="flex h-11 w-11 items-center justify-center rounded-lg border border-border-control text-ld-text"
+              aria-label="Menu"
+              aria-expanded={menuOpen}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                 {menuOpen ? <path d="M18 6L6 18M6 6l12 12" /> : <path d="M3 12h18M3 6h18M3 18h18" />}
               </svg>
             </button>
@@ -113,7 +123,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
       <div className="h-[78px]" aria-hidden="true" />
 
       {/* Page content */}
-      <main className="mx-auto max-w-[1180px] px-4 py-8 lg:px-7 lg:py-12">
+      <main id="main" tabIndex={-1} className="mx-auto max-w-[1180px] px-4 py-8 outline-hidden lg:px-7 lg:py-12">
         {children}
       </main>
 
