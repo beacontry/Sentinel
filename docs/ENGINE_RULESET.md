@@ -1001,7 +1001,7 @@ When `reconcilePendingTrades` transitions a row from PENDING to FILLED, it now a
    - **`runExitCheck`** (1-min protective poll, intentionally bypasses halt) — throttled to `RECONCILE_THROTTLE_MS = 5 min` via `engine.lastReconcileAt`. Closes the halt-window gap: even with the engine halted, stale PENDING rows reconcile within ~5 min of the broker filling them.
    - **`startEngine`** — fire-and-forget sweep right after `engine.running = true`. Catches up any rows stranded by a halt window before the next scan boundary.
 
-Idempotent: a row already FILLED / CANCELED / EXPIRED / REJECTED is excluded by the `status = "PENDING"` filter on the next call.
+Idempotent: a row already FILLED / CANCELED / EXPIRED / REJECTED is excluded by the `status = "PENDING"` filter on the next call. The call sites can overlap, and two passes can read the same PENDING row before either writes it, so the write is fenced: the UPDATE matches only the caller's row while it is still `PENDING` (or legacy `PARTIAL_FILLED`) and returns it, and the fill delta to `engine.dailyLoss` and the journal stub are applied only when a row came back. A per-user in-flight claim, taken before the first await and released in `finally`, makes an overlapping call return at once. The scan call sites stamp `engine.lastReconcileAt` too, so `runExitCheck`'s throttle counts them.
 
 **One-off cleanup for rows stranded before this change shipped:** `scripts/reconcile-stuck-trades.ts` (dry-run by default; `--apply` to write). Uses per-id `getOrder` for every match, so it works regardless of how old the row is.
 

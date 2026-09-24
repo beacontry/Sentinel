@@ -4505,8 +4505,26 @@ async function reconcileBrokerSideExit(
  *
  * Idempotent — re-running on the same row just no-ops (status already FILLED etc).
  * Never throws — per-row failures log and continue.
+ *
+ * Concurrency: the scans, runExitCheck's throttled call and startEngine can
+ * all run this for one user at once, and each pass reads the same PENDING
+ * rows before its broker round trip. Two guards keep a fill's delta from
+ * being applied to engine.dailyLoss twice:
+ *   - a per-user in-flight claim, taken synchronously before the first
+ *     await, so an overlapping call returns at once;
+ *   - the UPDATE is fenced on owner and a still-open status, and the delta
+ *     and the journal stub are applied only when it returned the row. The
+ *     fence is the control; the claim saves the broker round trip.
+ * Exported for tests.
  */
-async function reconcilePendingTrades(client: BrokerClient, userId: string): Promise<void> {
+const reconcileInFlight = new Set<string>();
+
+export async function reconcilePendingTrades(client: BrokerClient, userId: string): Promise<void> {
+  if (reconcileInFlight.has(userId)) {
+    log.debug({ userId }, "reconcilePendingTrades already running for this user, skipping");
+    return;
+  }
+  reconcileInFlight.add(userId);
   try {
     // Find PENDING rows from the last 7d that have a broker_order_id.
     //
@@ -4581,6 +4599,9 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
       let newFillPrice: number | null = null;
       let newFillTime: Date | null = null;
       let newPnl: number | null = row.pnl;
+      /** Correction to engine.dailyLoss, applied only if the fenced UPDATE
+       *  below takes the row. */
+      let dailyLossDelta = 0;
 
       if (bs === "filled") {
         newStatus = "FILLED";
@@ -4607,11 +4628,9 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
           // never the full pnl, to avoid double-counting. The consecutive-loss
           // streak is left as-is — a post-hoc sign flip can't be cleanly
           // unwound in a sequential streak, and the placeholder ≈ the fill
-          // except on gap days.
-          if (delta !== 0) {
-            const engine = g.__tradingEngines?.get(userId);
-            if (engine) accrueRealizedPnl(engine, delta);
-          }
+          // except on gap days. Applied only after the fenced UPDATE below
+          // takes the row.
+          dailyLossDelta = delta;
         }
       } else if (bs === "canceled" || bs === "expired") {
         newStatus = bs === "canceled" ? "CANCELED" : "EXPIRED";
@@ -4628,7 +4647,10 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
       }
 
       try {
-        await db
+        // Fenced on owner and a still-open status: a concurrent reconcile
+        // that already moved this row matches nothing here, so its fill delta
+        // is not applied a second time.
+        const moved = await db
           .update(traderTrades)
           .set({
             status: newStatus,
@@ -4636,8 +4658,24 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
             ...(newFillTime ? { fillTime: newFillTime } : {}),
             pnl: newPnl,
           })
-          .where(eq(traderTrades.id, row.id));
+          .where(
+            and(
+              eq(traderTrades.id, row.id),
+              eq(traderTrades.userId, userId),
+              inArray(traderTrades.status, ["PENDING", "PARTIAL_FILLED"])
+            )
+          )
+          .returning({ id: traderTrades.id });
+        if (moved.length === 0) {
+          log.debug({ orderId: row.brokerOrderId }, "Reconcile: row already moved by another pass, skipping");
+          continue;
+        }
         updated++;
+
+        if (dailyLossDelta !== 0) {
+          const engine = g.__tradingEngines?.get(userId);
+          if (engine) accrueRealizedPnl(engine, dailyLossDelta);
+        }
 
         // Journal v2 — phase 1: when a trade reconciles to FILLED,
         // auto-create a journal stub pre-filled with the trade
@@ -4668,6 +4706,8 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
     }
   } catch (err) {
     log.error({ userId, err: err instanceof Error ? err.message : "unknown" }, "reconcilePendingTrades failed");
+  } finally {
+    reconcileInFlight.delete(userId);
   }
 }
 
@@ -4819,6 +4859,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
   }
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
   await resolveUnconfirmedBuys(client, engine);
+  engine.lastReconcileAt = Date.now();
   await reconcilePendingTrades(client, engine.userId!);
   engine.positionCount = positionMap.size;
 
@@ -5148,6 +5189,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
   phase("getPositions");
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
   await resolveUnconfirmedBuys(client, engine);
+  engine.lastReconcileAt = Date.now();
   await reconcilePendingTrades(client, engine.userId!);
   phase("syncAndReconcile");
   engine.positionCount = positionMap.size;
@@ -5975,6 +6017,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
   // Sync position map with broker — handles manual sells/buys on Alpaca
   await syncPositionMapFromBroker(brokerPositions, positionMap, engine.userId!, client);
   await resolveUnconfirmedBuys(client, engine);
+  engine.lastReconcileAt = Date.now();
   await reconcilePendingTrades(client, engine.userId!);
   engine.positionCount = positionMap.size;
 
