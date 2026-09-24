@@ -72,12 +72,41 @@ export async function requireAuth(): Promise<JWTPayload> {
 }
 
 /**
+ * Thrown by getCurrentRole when the role lookup itself failed (connection
+ * error, connect timeout, statement timeout). Distinct from "no such user",
+ * which is null and still a 403: a database outage is not a revoked role, and
+ * answering 403 for it told admins their access was gone with nothing in the
+ * logs pointing at the database. Access is still denied either way.
+ */
+export class RoleLookupUnavailableError extends Error {
+  constructor() {
+    super("Role lookup unavailable");
+    this.name = "RoleLookupUnavailableError";
+  }
+}
+
+export const ROLE_LOOKUP_RETRY_AFTER_S = 5;
+
+/** The 503 a role gate answers when the role lookup failed. Fails closed. */
+export function roleLookupUnavailableResponse(): Response {
+  return Response.json(
+    {
+      error: "Service temporarily unavailable. Try again shortly.",
+      code: "SERVICE_UNAVAILABLE",
+      retryable: true,
+    },
+    { status: 503, headers: { "Retry-After": String(ROLE_LOOKUP_RETRY_AFTER_S) } }
+  );
+}
+
+/**
  * Read the user's CURRENT role from the DB — not the (up-to-7-day) JWT claim.
  * Role gates must use this so a demoted admin, a deleted user, or a stolen/
  * stale token can't retain privileges until token expiry (stateless JWTs have
  * no revocation). Dynamic import keeps auth.ts edge-safe (db only loads when a
  * role gate actually runs, i.e. on node-runtime route handlers). Fails closed:
- * any DB error / missing user → null → access denied.
+ * a missing user → null → 403, and a failed lookup is logged and thrown as
+ * RoleLookupUnavailableError → 503. Neither grants access.
  */
 async function getCurrentRole(userId: string): Promise<UserRole | null> {
   try {
@@ -90,11 +119,37 @@ async function getCurrentRole(userId: string): Promise<UserRole | null> {
       .where(eq(users.id, userId))
       .limit(1);
     return (row?.role as UserRole | undefined) ?? null;
-  } catch {
-    return null;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    try {
+      const { logger } = await import("./logger");
+      logger.error({ err: message, userId }, "Role lookup failed; denying access with 503");
+    } catch {
+      console.error(`[auth] Role lookup failed for ${userId}: ${message}`);
+    }
+    throw new RoleLookupUnavailableError();
   }
 }
 
+/**
+ * Role check shared by the route gates. Returns the live role, or a Response
+ * (403 for a missing or insufficient role, 503 when the lookup failed).
+ */
+async function checkRole(userId: string, roles: UserRole[]): Promise<UserRole | Response> {
+  let currentRole: UserRole | null;
+  try {
+    currentRole = await getCurrentRole(userId);
+  } catch (err) {
+    if (err instanceof RoleLookupUnavailableError) return roleLookupUnavailableResponse();
+    throw err;
+  }
+  if (!currentRole || !roles.includes(currentRole)) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  return currentRole;
+}
+
+/** Throws "Forbidden", or RoleLookupUnavailableError when the lookup failed. */
 export async function requireRole(roles: UserRole[]): Promise<JWTPayload> {
   const session = await requireAuth();
   const currentRole = await getCurrentRole(session.userId);
@@ -143,7 +198,8 @@ export function clearSessionCookie(): {
 
 /**
  * Combined CSRF + auth + optional role check for mutating endpoints.
- * Returns JWTPayload on success, or a Response (403/401) on failure.
+ * Returns JWTPayload on success, or a Response (403/401, or 503 when the
+ * role lookup failed) on failure.
  *
  * Usage:
  *   const auth = await requireAuthWithCsrf(request);
@@ -164,10 +220,8 @@ export async function requireAuthWithCsrf(
 
   if (roles) {
     // Re-check the role against the DB, not the token (see getCurrentRole).
-    const currentRole = await getCurrentRole(session.userId);
-    if (!currentRole || !roles.includes(currentRole)) {
-      return Response.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const currentRole = await checkRole(session.userId, roles);
+    if (currentRole instanceof Response) return currentRole;
     session.role = currentRole; // reflect the live role downstream
   }
 
@@ -177,7 +231,7 @@ export async function requireAuthWithCsrf(
 /**
  * GET-route equivalent of requireAuthWithCsrf: auth + optional DB role
  * re-check, no CSRF (GETs don't need it). Returns JWTPayload on success
- * or a Response (401/403) on failure.
+ * or a Response (401/403, or 503 when the role lookup failed) on failure.
  *
  * P2 audit (2026-06-09) — created to close the "admin GET trusts stale
  * JWT role claim" gap. A demoted/deleted admin previously kept read
@@ -199,10 +253,8 @@ export async function requireAuthForRead(
   }
 
   if (roles) {
-    const currentRole = await getCurrentRole(session.userId);
-    if (!currentRole || !roles.includes(currentRole)) {
-      return Response.json({ error: "Forbidden" }, { status: 403 });
-    }
+    const currentRole = await checkRole(session.userId, roles);
+    if (currentRole instanceof Response) return currentRole;
     session.role = currentRole;
   }
 
