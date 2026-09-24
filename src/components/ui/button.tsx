@@ -53,11 +53,15 @@ export const BUTTON_SIZES: Record<ButtonSize, string> = {
   // 36px visual; the pseudo-element pads the hit area past 44px. It is
   // placed from the padding box, so on a bordered variant (secondary,
   // destructive) a 4px inset reached only 42px; 6px gives 46 bordered and
-  // 48 borderless. It needs a positioning context, which buttonClasses adds as `relative`
+  // 48 borderless. It grows vertically only: sm buttons sit in gap-0.5 and
+  // gap-1 rows, and a sideways overhang lets the later button's pseudo
+  // paint over its neighbour's visible edge and take that click (Edit
+  // opening Delete). The 44px rule is height; the width is the button's.
+  // It needs a positioning context, which buttonClasses adds as `relative`
   // only when the caller has not positioned the button itself: `relative`
   // is emitted after `absolute` in the built CSS, so adding both would
   // silently pull an absolutely placed button back into flow.
-  sm: "min-h-9 px-3 text-sm before:absolute before:-inset-1.5 before:content-['']",
+  sm: "min-h-9 px-3 text-sm before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-['']",
   lg: "min-h-11 px-4 text-sm",
 };
 
