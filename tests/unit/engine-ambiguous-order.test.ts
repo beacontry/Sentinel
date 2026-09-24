@@ -16,19 +16,28 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   inserts: [] as Array<Record<string, unknown>>,
+  /** Each db.update(...).set(...) payload. */
+  updates: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/lib/db", async () => {
   const schema = await vi.importActual<typeof import("@/lib/db/schema")>("@/lib/db/schema");
   void schema;
   function chain(): unknown {
+    // An insert ... returning answers with the new row's id (row-<n>).
+    let returning = false;
     const proxy: unknown = new Proxy(
       {},
       {
         get(_t, prop) {
-          if (prop === "then") return (resolve: (v: unknown) => void) => resolve([]);
+          if (prop === "then") {
+            return (resolve: (v: unknown) => void) =>
+              resolve(returning ? [{ id: `row-${state.inserts.length}` }] : []);
+          }
           return (...args: unknown[]) => {
             if (prop === "values") state.inserts.push(args[0] as Record<string, unknown>);
+            if (prop === "set") state.updates.push(args[0] as Record<string, unknown>);
+            if (prop === "returning") returning = true;
             return proxy;
           };
         },
@@ -55,6 +64,7 @@ vi.mock("@/lib/market-hours", async (importOriginal) => {
 import {
   placeEngineOrder,
   recordFailedEngineBuy,
+  resolveUnconfirmedBuys,
   getEngineStatus,
   type EngineState,
 } from "@/lib/trading-engine";
@@ -114,6 +124,7 @@ const BUY = { symbol: "NVDA", side: "buy" as const, qty: "10", type: "limit" as 
 
 beforeEach(() => {
   state.inserts = [];
+  state.updates = [];
 });
 
 describe("placeEngineOrder: ambiguous outcome", () => {
@@ -324,5 +335,85 @@ describe("recordFailedEngineBuy", () => {
     expect(engine.dailyNotional).toBe(before.notional);
     expect(engine.errors.at(-1)).toMatch(/Buy order failed for AMD/);
     expect(state.inserts.find((r) => r.symbol === "AMD")).toMatchObject({ status: "FAILED" });
+  });
+});
+
+describe("resolveUnconfirmedBuys", () => {
+  async function unconfirmedBuy(engine: EngineState, cid: string): Promise<void> {
+    const err = timeoutError();
+    err.clientOrderId = cid;
+    await recordFailedEngineBuy(engine, {
+      symbol: "NVDA", signal: "BUY", qty: 10, buyNotional: 1001, err, source: "engine_scan",
+    });
+  }
+
+  it("turns the FAILED row of an order the broker has into PENDING with its broker order id", async () => {
+    const engine = runningEngine();
+    await unconfirmedBuy(engine, "cid-live");
+    expect(engine.unconfirmedBuyOrders.get("cid-live")?.tradeId).toBe("row-1");
+
+    const { client, calls } = fakeClient({
+      place: async () => brokerOrder("unused"),
+      lookup: async () => ({ ...brokerOrder("ord-late"), status: "filled", filledQty: 10 }),
+    });
+    await resolveUnconfirmedBuys(client, engine);
+
+    expect(calls.lookups).toEqual(["cid-live"]);
+    expect(state.updates).toEqual([
+      expect.objectContaining({ status: "PENDING", brokerOrderId: "ord-late" }),
+    ]);
+    expect(engine.unconfirmedBuyOrders.size).toBe(0);
+  });
+
+  it("leaves the FAILED row alone for an order found rejected, and stops looking", async () => {
+    const engine = runningEngine();
+    await unconfirmedBuy(engine, "cid-dead");
+    const { client } = fakeClient({
+      place: async () => brokerOrder("unused"),
+      lookup: async () => ({ ...brokerOrder("ord-dead"), status: "rejected" }),
+    });
+
+    await resolveUnconfirmedBuys(client, engine);
+
+    expect(state.updates).toHaveLength(0);
+    expect(engine.unconfirmedBuyOrders.size).toBe(0);
+  });
+
+  it("keeps looking while not found inside the window, and gives up after it", async () => {
+    const engine = runningEngine();
+    await unconfirmedBuy(engine, "cid-missing");
+    const { client, calls } = fakeClient({ place: async () => brokerOrder("unused"), lookup: async () => null });
+
+    await resolveUnconfirmedBuys(client, engine);
+    expect(engine.unconfirmedBuyOrders.has("cid-missing")).toBe(true);
+
+    engine.unconfirmedBuyOrders.get("cid-missing")!.recordedAt = Date.now() - 31 * 60 * 1000;
+    await resolveUnconfirmedBuys(client, engine);
+
+    expect(calls.lookups).toEqual(["cid-missing", "cid-missing"]);
+    expect(engine.unconfirmedBuyOrders.size).toBe(0);
+    expect(state.updates).toHaveLength(0);
+  });
+
+  it("looks up at most five per scan and rotates the rest to the next scan", async () => {
+    const engine = runningEngine();
+    for (let i = 1; i <= 7; i++) await unconfirmedBuy(engine, `cid-${i}`);
+    const { client, calls } = fakeClient({ place: async () => brokerOrder("unused"), lookup: async () => null });
+
+    await resolveUnconfirmedBuys(client, engine);
+    expect(calls.lookups).toEqual(["cid-1", "cid-2", "cid-3", "cid-4", "cid-5"]);
+    await resolveUnconfirmedBuys(client, engine);
+    expect(calls.lookups.slice(5, 7)).toEqual(["cid-6", "cid-7"]);
+    expect(engine.unconfirmedBuyOrders.size).toBe(7);
+  });
+
+  it("does not track a definite refusal", async () => {
+    const engine = runningEngine();
+    const refusal = new BrokerError("Alpaca order 403: insufficient buying power", 400, "Insufficient buying power for this order");
+    refusal.clientOrderId = "cid-refused";
+    await recordFailedEngineBuy(engine, {
+      symbol: "AMD", signal: "BUY", qty: 5, buyNotional: 500, err: refusal, source: "engine_scan",
+    });
+    expect(engine.unconfirmedBuyOrders.size).toBe(0);
   });
 });

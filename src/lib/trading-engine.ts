@@ -47,7 +47,7 @@ import {
   users,
   engineAlerts,
 } from "./db/schema";
-import { eq, and, desc, gt, inArray, lt, isNotNull, sql } from "drizzle-orm";
+import { eq, and, desc, gt, inArray, lt, isNotNull, isNull, sql } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
 import { DRAIN_BUDGET_MS } from "./shutdown-config";
 import { isShuttingDown, SHUTTING_DOWN_CODE, SHUTTING_DOWN_MESSAGE } from "./shutdown-state";
@@ -285,6 +285,16 @@ export interface EngineState {
    * broker (in syncPositionMapFromBroker).
    */
   unprotectedSymbols: Set<string>;
+  /**
+   * Engine BUYs whose submit outcome stayed unknown, keyed by the
+   * client_order_id they were sent with. Their trade row was written FAILED
+   * because nothing confirmed them. resolveUnconfirmedBuys looks each one up
+   * again at the next scans: an order the broker has turns the row PENDING
+   * with its broker order id, so reconcilePendingTrades carries it to FILLED
+   * and trade history matches the position. In memory only and bounded; a
+   * restart loses it, which leaves the row FAILED as before.
+   */
+  unconfirmedBuyOrders: Map<string, { symbol: string; tradeId: string | null; recordedAt: number }>;
   /** User's effective tier at engine start. Captured once so mid-session
    *  tier changes don't reshape the running pipeline (we'd lose AI score
    *  history mid-trade if it flipped). Read by `buildHybridOpts()` to
@@ -345,6 +355,7 @@ function createDefaultEngine(): EngineState {
     exitRejectionCount: new Map(),
     exitSuppressedUntil: new Map(),
     unprotectedSymbols: new Set(),
+    unconfirmedBuyOrders: new Map(),
     environment: null,
     boot: null,
     dailyNotional: 0,
@@ -1905,7 +1916,7 @@ export async function recordFailedEngineBuy(
       }
     }
   }
-  await logTrade(
+  const tradeId = await logTrade(
     symbol,
     signal,
     "BUY",
@@ -1920,7 +1931,99 @@ export async function recordFailedEngineBuy(
     null,
     engine.userId
   );
+  if (unconfirmed && clientOrderId) {
+    // Bounded: drop the oldest rather than grow without limit.
+    if (engine.unconfirmedBuyOrders.size >= UNCONFIRMED_BUY_MAX_TRACKED) {
+      const oldest = engine.unconfirmedBuyOrders.keys().next().value;
+      if (oldest !== undefined) engine.unconfirmedBuyOrders.delete(oldest);
+    }
+    engine.unconfirmedBuyOrders.set(clientOrderId, { symbol, tradeId, recordedAt: Date.now() });
+  }
   return { unconfirmed };
+}
+
+/** How many unconfirmed BUYs one engine keeps looking up. */
+const UNCONFIRMED_BUY_MAX_TRACKED = 50;
+/** How many of them one scan looks up (each lookup is bounded at 3 s). */
+const UNCONFIRMED_BUY_LOOKUPS_PER_SCAN = 5;
+/**
+ * How long an unconfirmed BUY is looked up for. A POST that reached the
+ * broker is visible to the lookup within seconds, so one still not found
+ * after this never landed (or the broker cannot be asked), and its FAILED
+ * row stands.
+ */
+const UNCONFIRMED_BUY_LOOKUP_WINDOW_MS = 30 * 60 * 1000;
+
+/**
+ * Look up again every BUY recordFailedEngineBuy left unconfirmed. One the
+ * broker has, working or filled, turns its FAILED row into PENDING with the
+ * broker order id, so the reconcilePendingTrades call that follows carries it
+ * to FILLED like any placed order. One found rejected, canceled or expired
+ * with nothing filled, or still not found after
+ * UNCONFIRMED_BUY_LOOKUP_WINDOW_MS, keeps its FAILED row and is dropped. A
+ * lookup that finds nothing inside the window is tried again next scan.
+ * Called before reconcilePendingTrades in each scan. Never throws. Exported
+ * for tests.
+ */
+export async function resolveUnconfirmedBuys(client: BrokerClient, engine: EngineState): Promise<void> {
+  if (engine.unconfirmedBuyOrders.size === 0) return;
+  // Each lookup can take ORDER_LOOKUP_TIMEOUT_MS, so a scan does only the
+  // oldest few; the rest wait for the next scan.
+  const batch = [...engine.unconfirmedBuyOrders].slice(0, UNCONFIRMED_BUY_LOOKUPS_PER_SCAN);
+  for (const [clientOrderId, entry] of batch) {
+    try {
+      const found = await lookupOrderByClientId(client, clientOrderId);
+      if (!found) {
+        if (Date.now() - entry.recordedAt > UNCONFIRMED_BUY_LOOKUP_WINDOW_MS) {
+          engine.unconfirmedBuyOrders.delete(clientOrderId);
+          log.warn(
+            { symbol: entry.symbol, clientOrderId, tradeId: entry.tradeId },
+            "Unconfirmed BUY never found at the broker; its FAILED row stands"
+          );
+        } else {
+          // Back of the queue, so newer entries get their turn next scan.
+          engine.unconfirmedBuyOrders.delete(clientOrderId);
+          engine.unconfirmedBuyOrders.set(clientOrderId, entry);
+        }
+        continue;
+      }
+      engine.unconfirmedBuyOrders.delete(clientOrderId);
+      if (isNotWorkingOrder(found)) {
+        log.info(
+          { symbol: entry.symbol, clientOrderId, orderId: found.id, status: found.status },
+          "Unconfirmed BUY found not working at the broker; its FAILED row stands"
+        );
+        continue;
+      }
+      log.warn(
+        { symbol: entry.symbol, clientOrderId, orderId: found.id, status: found.status, tradeId: entry.tradeId },
+        "Unconfirmed BUY found at the broker; its trade row is now PENDING"
+      );
+      if (!entry.tradeId || !engine.userId) continue;
+      // Fenced on the owner and on FAILED with no broker id, so it can only
+      // turn this engine's own unconfirmed row.
+      await db
+        .update(traderTrades)
+        .set({
+          status: "PENDING",
+          brokerOrderId: found.id,
+          notes: `Order confirmed at the broker after an unknown submit (client_order_id ${clientOrderId})`,
+        })
+        .where(
+          and(
+            eq(traderTrades.id, entry.tradeId),
+            eq(traderTrades.userId, engine.userId),
+            eq(traderTrades.status, "FAILED"),
+            isNull(traderTrades.brokerOrderId)
+          )
+        );
+    } catch (err) {
+      log.warn(
+        { symbol: entry.symbol, clientOrderId, err: err instanceof Error ? err.message : "unknown" },
+        "Could not resolve an unconfirmed BUY; will retry next scan"
+      );
+    }
+  }
 }
 
 // ─── Phase 5: MTM / Wash-Sale helpers ─────────────────────────────────────────
@@ -3712,10 +3815,10 @@ async function logTrade(
   brokerOrderId: string | null = null,
   signalId: string | null = null,
   userId?: string | null
-): Promise<void> {
+): Promise<string | null> {
   const engine = userId ? getEngine(userId) : getEngine();
   try {
-    await db.insert(traderTrades).values({
+    const [row] = await db.insert(traderTrades).values({
       userId: engine.userId,
       brokerOrderId,
       signalId,
@@ -3733,12 +3836,14 @@ async function logTrade(
       pnl,
       notes,
       traderTimestamp: new Date(),
-    });
+    }).returning({ id: traderTrades.id });
+    return row?.id ?? null;
   } catch (err) {
     log.error(
       { err: err instanceof Error ? err.message : "unknown", symbol },
       "Failed to log trade"
     );
+    return null;
   }
 }
 
@@ -4674,6 +4779,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
     return;
   }
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
+  await resolveUnconfirmedBuys(client, engine);
   await reconcilePendingTrades(client, engine.userId!);
   engine.positionCount = positionMap.size;
 
@@ -5012,6 +5118,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
   }
   phase("getPositions");
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
+  await resolveUnconfirmedBuys(client, engine);
   await reconcilePendingTrades(client, engine.userId!);
   phase("syncAndReconcile");
   engine.positionCount = positionMap.size;
@@ -5847,6 +5954,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
 
   // Sync position map with broker — handles manual sells/buys on Alpaca
   await syncPositionMapFromBroker(brokerPositions, positionMap, engine.userId!, client);
+  await resolveUnconfirmedBuys(client, engine);
   await reconcilePendingTrades(client, engine.userId!);
   engine.positionCount = positionMap.size;
 
