@@ -80,14 +80,14 @@ export default function PublicLearnPage() {
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link
             href="/glossary"
-            className="inline-flex items-center gap-2 rounded-[10px] border border-ld-border px-4 py-2 text-base font-medium text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06] transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg border border-ld-border px-4 py-2 text-base font-medium text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06] transition-colors"
           >
             <BookOpen className="h-4 w-4" />
             Glossary (95 terms)
           </Link>
           <Link
             href="/tools"
-            className="inline-flex items-center gap-2 rounded-[10px] border border-ld-border px-4 py-2 text-base font-medium text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06] transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg border border-ld-border px-4 py-2 text-base font-medium text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06] transition-colors"
           >
             <Calculator className="h-4 w-4" />
             Calculators (8 tools)
@@ -132,7 +132,7 @@ export default function PublicLearnPage() {
             <Link
               key={guide.slug}
               href={`/learn/guides/${guide.slug}`}
-              className="group block rounded-2xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_22px_60px_rgba(0,0,0,0.32)]"
+              className="group block rounded-xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_22px_60px_rgba(0,0,0,0.32)]"
             >
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 <span className="font-mono text-xs uppercase tracking-wider text-ld-accent">
@@ -165,7 +165,7 @@ export default function PublicLearnPage() {
       )}
 
       {/* Sign-up CTA */}
-      <section className="mt-16 rounded-2xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
+      <section className="mt-16 rounded-xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
         <h2 className="text-xl font-bold mb-2">Want to track your progress?</h2>
         <p className="text-ld-text-secondary mb-5 max-w-[520px] mx-auto">
           Sign up free to save guides as bookmarks, take quizzes, and use spaced
@@ -173,7 +173,7 @@ export default function PublicLearnPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

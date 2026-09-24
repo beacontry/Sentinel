@@ -137,7 +137,7 @@ export default function PublicGlossaryPage() {
       </div>
 
       {/* Sign-up CTA */}
-      <section className="mt-16 rounded-2xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
+      <section className="mt-16 rounded-xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
         <h2 className="text-xl font-bold mb-2">Want deeper context for each term?</h2>
         <p className="text-ld-text-secondary mb-5 max-w-[520px] mx-auto">
           Sign up free for the full education hub — {GLOSSARY_TERMS.length} terms with
@@ -145,7 +145,7 @@ export default function PublicGlossaryPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

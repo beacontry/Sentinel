@@ -266,7 +266,7 @@ export function FireNumberCalculator() {
           <span>Now (age {currentAge})</span>
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1">
-              <span className="h-1.5 w-3 bg-accent rounded-sm" /> Balance
+              <span className="h-1.5 w-3 bg-accent rounded" /> Balance
             </span>
             <span className="flex items-center gap-1">
               <span className="h-px w-3 bg-warning" /> Target

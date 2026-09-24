@@ -77,7 +77,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
 
           <div className="hidden items-center gap-3 md:flex">
             <ThemePicker variant="icon" />
-            <Link href="/register" className="rounded-[10px] bg-ld-accent px-5 py-3 text-base font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
+            <Link href="/register" className="rounded-lg bg-ld-accent px-5 py-3 text-base font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)]">
               Get Started
             </Link>
           </div>
@@ -102,7 +102,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
                 </li>
               ))}
             </ul>
-            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-[10px] bg-ld-accent py-3 text-center text-base font-semibold text-white">
+            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-lg bg-ld-accent py-3 text-center text-base font-semibold text-white">
               Get Started
             </Link>
           </div>

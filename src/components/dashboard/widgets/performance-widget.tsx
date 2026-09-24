@@ -83,13 +83,13 @@ export function PerformanceWidget() {
       </div>
 
       <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-        <div className="rounded-[10px] bg-bg-elevated px-2 py-1.5 text-center">
+        <div className="rounded-lg bg-bg-elevated px-2 py-1.5 text-center">
           <p className="text-xs uppercase tracking-[0.16em] text-text-muted">Total</p>
           <p className="font-mono text-sm font-medium text-text-primary">
             {stats.totalSignals}
           </p>
         </div>
-        <div className="rounded-[10px] bg-bg-elevated px-2 py-1.5 text-center">
+        <div className="rounded-lg bg-bg-elevated px-2 py-1.5 text-center">
           <p className="text-xs uppercase tracking-[0.16em] text-text-muted">Correct</p>
           <p className="font-mono text-sm font-medium text-bullish">
             {stats.correctSignals}
@@ -98,7 +98,7 @@ export function PerformanceWidget() {
       </div>
 
       {stats.avgReturn !== 0 && (
-        <div className="mt-1.5 rounded-[10px] bg-bg-elevated px-2 py-1.5 text-center">
+        <div className="mt-1.5 rounded-lg bg-bg-elevated px-2 py-1.5 text-center">
           <p className="text-xs uppercase tracking-[0.16em] text-text-muted">Avg Return</p>
           <p
             className={`font-mono text-sm font-medium ${

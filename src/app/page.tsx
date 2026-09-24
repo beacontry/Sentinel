@@ -228,9 +228,9 @@ export default function LandingPage() {
             <ThemePicker variant="icon" />
             {/* PWA install — renders nothing unless Chrome fires beforeinstallprompt */}
             <PWAInstallButton
-              className="inline-flex items-center gap-2 rounded-[10px] border border-ld-accent/40 bg-ld-accent/8 px-4 py-3 text-base font-medium text-ld-accent transition-all duration-200 hover:bg-ld-accent/14"
+              className="inline-flex items-center gap-2 rounded-lg border border-ld-accent/40 bg-ld-accent/8 px-4 py-3 text-base font-medium text-ld-accent transition-all duration-200 hover:bg-ld-accent/14"
             />
-            <Link href="/register" className="rounded-[10px] bg-ld-accent px-5 py-3 text-base font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
+            <Link href="/register" className="rounded-lg bg-ld-accent px-5 py-3 text-base font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
               Get Started
             </Link>
           </div>
@@ -254,7 +254,7 @@ export default function LandingPage() {
                 </li>
               ))}
             </ul>
-            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-[10px] bg-ld-accent py-3 text-center text-base font-semibold text-ld-on-accent">
+            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-lg bg-ld-accent py-3 text-center text-base font-semibold text-ld-on-accent">
               Get Started
             </Link>
             {/* PWA install in the mobile menu — hidden unless the browser
@@ -262,7 +262,7 @@ export default function LandingPage() {
                 users will actually use (the ⋮-menu "Install app" item
                 doesn't always show). */}
             <PWAInstallButton
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-[10px] border border-ld-accent/40 bg-ld-accent/8 py-3 text-center text-base font-medium text-ld-accent"
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-ld-accent/40 bg-ld-accent/8 py-3 text-center text-base font-medium text-ld-accent"
             />
           </div>
         )}
@@ -292,10 +292,10 @@ export default function LandingPage() {
             </p>
 
             <div className="mt-8 flex flex-wrap justify-center gap-4 lg:justify-start">
-              <Link href="/register" className="rounded-[10px] bg-ld-accent px-6 py-3.5 font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
+              <Link href="/register" className="rounded-lg bg-ld-accent px-6 py-3.5 font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
                 Get Started Free
               </Link>
-              <Link href="/login" className="rounded-[10px] border border-ld-border bg-white/[0.01] px-6 py-3.5 font-semibold text-ld-text transition-all duration-200 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
+              <Link href="/login" className="rounded-lg border border-ld-border bg-white/[0.01] px-6 py-3.5 font-semibold text-ld-text transition-all duration-200 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
                 Sign In
               </Link>
             </div>
@@ -748,7 +748,7 @@ export default function LandingPage() {
 
               <Link
                 href={tier.name === "Self-Hosted" ? "https://github.com/beacontry/Sentinel" : "/register"}
-                className={`mt-8 inline-flex items-center justify-center gap-2 rounded-[10px] px-5 py-3 text-base font-semibold transition-all duration-200 ${
+                className={`mt-8 inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-base font-semibold transition-all duration-200 ${
                   tier.highlight
                     ? "bg-ld-accent text-ld-on-accent hover:bg-ld-accent-dim hover:shadow-lg"
                     : "border border-ld-border text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06]"
@@ -832,10 +832,10 @@ export default function LandingPage() {
 
           {/* Existing buttons — go register or log in */}
           <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <Link href="/register" className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-8 py-4 text-base font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
+            <Link href="/register" className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-8 py-4 text-base font-semibold text-ld-on-accent transition-all duration-200 hover:bg-ld-accent-dim hover:shadow-lg">
               Start Trading <ArrowRight className="h-4 w-4" />
             </Link>
-            <Link href="/login" className="rounded-[10px] border border-ld-border px-8 py-4 text-base font-semibold text-ld-text transition-all duration-200 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
+            <Link href="/login" className="rounded-lg border border-ld-border px-8 py-4 text-base font-semibold text-ld-text transition-all duration-200 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
               Sign In
             </Link>
           </div>

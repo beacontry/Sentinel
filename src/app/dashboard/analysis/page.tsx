@@ -526,7 +526,7 @@ function AnalysisCockpit() {
                 </Button>
                 <button
                   onClick={() => { setShowAddInput(false); setNewSymbol(""); }}
-                  className="rounded-[14px] p-2 text-text-muted hover:bg-bg-elevated hover:text-text-primary"
+                  className="rounded-xl p-2 text-text-muted hover:bg-bg-elevated hover:text-text-primary"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -776,7 +776,7 @@ function AnalysisCockpit() {
                           if (selectedSymbol) analyzeSymbol(selectedSymbol);
                         }}
                         disabled={isSelectedLoading}
-                        className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-[16px]
+                        className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-xl
                           border border-border px-3 py-1.5 text-xs text-text-muted transition-colors
                           hover:border-accent/30 hover:text-accent disabled:opacity-30"
                       >
@@ -785,7 +785,7 @@ function AnalysisCockpit() {
                       </button>
                       <Link
                         href={`/dashboard/trade/${encodeURIComponent(selectedSymbol)}`}
-                        className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-[16px]
+                        className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-xl
                           border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent transition-colors
                           hover:bg-accent/20"
                       >

@@ -94,7 +94,7 @@ export function MarketOverviewWidget() {
             {gainers.map((g) => (
               <div
                 key={g.symbol}
-                className="flex items-center justify-between rounded-[8px] px-2 py-1
+                className="flex items-center justify-between rounded-lg px-2 py-1
                   bg-bullish/5 hover:bg-bullish/10 transition-colors"
               >
                 <SymbolLink symbol={g.symbol} className="text-xs font-medium">
@@ -124,7 +124,7 @@ export function MarketOverviewWidget() {
             {losers.map((l) => (
               <div
                 key={l.symbol}
-                className="flex items-center justify-between rounded-[8px] px-2 py-1
+                className="flex items-center justify-between rounded-lg px-2 py-1
                   bg-bearish/5 hover:bg-bearish/10 transition-colors"
               >
                 <SymbolLink symbol={l.symbol} className="text-xs font-medium">

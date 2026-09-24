@@ -136,7 +136,7 @@ export function CompoundInterestCalculator() {
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-sm bg-text-muted/40" />
+            <span className="h-2 w-2 rounded bg-text-muted/40" />
             <span className="text-text-muted">
               Contributions{" "}
               <span className="font-mono text-text-primary">
@@ -146,7 +146,7 @@ export function CompoundInterestCalculator() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-sm bg-accent" />
+            <span className="h-2 w-2 rounded bg-accent" />
             <span className="text-text-muted">
               Interest{" "}
               <span className="font-mono text-text-primary">
@@ -167,7 +167,7 @@ export function CompoundInterestCalculator() {
           {result.series.map((v, i) => (
             <div
               key={i}
-              className="flex-1 bg-accent/60 hover:bg-accent transition-colors rounded-sm min-w-[2px]"
+              className="flex-1 bg-accent/60 hover:bg-accent transition-colors rounded min-w-[2px]"
               style={{ height: `${(v / seriesMax) * 100}%` }}
               title={`Year ${i + 1}: ${fmt(v)}`}
             />

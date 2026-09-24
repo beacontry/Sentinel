@@ -157,7 +157,7 @@ export function InsiderSentimentChart({ symbol }: InsiderSentimentChartProps) {
                   className="flex-1 flex flex-col items-center justify-end h-full"
                 >
                   <div
-                    className={`w-full rounded-sm transition-all duration-300 ${
+                    className={`w-full rounded transition-all duration-300 ${
                       isPositive ? "bg-bullish/60" : "bg-bearish/60"
                     }`}
                     style={{ height: `${height}px` }}

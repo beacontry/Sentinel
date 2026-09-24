@@ -91,7 +91,7 @@ export function IntelligenceIndicatorsTab({ analysis }: IntelligenceIndicatorsTa
             Signal
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block w-2 h-2 bg-bullish/40 rounded-sm" />
+            <span className="inline-block w-2 h-2 bg-bullish/40 rounded" />
             Histogram
           </span>
         </div>

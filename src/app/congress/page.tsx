@@ -214,7 +214,7 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
 
       {/* Trades table */}
       {trades.length === 0 ? (
-        <div className="text-center py-12 rounded-2xl border border-ld-border bg-ld-card">
+        <div className="text-center py-12 rounded-xl border border-ld-border bg-ld-card">
           <Landmark className="h-10 w-10 text-ld-text-muted mx-auto mb-3" />
           <p className="text-ld-text-secondary">
             {symbol
@@ -231,7 +231,7 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
           )}
         </div>
       ) : (
-        <div className="rounded-2xl border border-ld-border bg-ld-card overflow-hidden">
+        <div className="rounded-xl border border-ld-border bg-ld-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -323,7 +323,7 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
       )}
 
       {/* Sign-up CTA */}
-      <section className="mt-12 rounded-2xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
+      <section className="mt-12 rounded-xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
         <h2 className="text-xl font-bold mb-2">
           Track Congressional trades on your watchlist
         </h2>
@@ -334,7 +334,7 @@ export default async function PublicCongressPage({ searchParams }: PageProps) {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
         >
           Sign up free
         </Link>

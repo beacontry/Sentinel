@@ -66,7 +66,7 @@ export function WatchlistWidget() {
       {symbols.slice(0, 6).map((sym) => (
         <div
           key={sym}
-          className="flex items-center justify-between rounded-[10px] px-2.5 py-1.5
+          className="flex items-center justify-between rounded-lg px-2.5 py-1.5
             bg-bg-elevated hover:bg-bg-hover transition-colors"
         >
           <SymbolLink symbol={sym} className="text-sm font-medium">

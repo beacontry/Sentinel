@@ -1,7 +1,7 @@
 {
   "text-[8-11px]": 0,
   "text-[arbitrary size]": 18,
-  "rounded-[arbitrary]": 56,
+  "rounded-[arbitrary]": 0,
   "shadow-[arbitrary]": 15,
   "text-white": 42,
   "transition-all": 95,
@@ -14,6 +14,5 @@
   "bg-white/ or bg-black/": 8,
   "border-l-2/4 stripe": 0,
   "inline fontSize 8-11": 6,
-  "rounded-xs/sm/2xl/3xl/4xl (off scale)": 23,
   "stock shadow-sm/md/lg/xl/2xl (off scale)": 43
 }

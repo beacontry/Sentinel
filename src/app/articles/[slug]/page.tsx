@@ -249,7 +249,7 @@ export default async function PublicArticlePage({
       </article>
 
       {/* Sign-up CTA */}
-      <section className="mt-12 max-w-3xl mx-auto rounded-2xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
+      <section className="mt-12 max-w-3xl mx-auto rounded-xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
         <h2 className="text-xl font-bold mb-2">Track these stocks live</h2>
         <p className="text-ld-text-secondary mb-5 max-w-[520px] mx-auto">
           Sign up free to add the symbols in this article to your watchlist, see live
@@ -257,7 +257,7 @@ export default async function PublicArticlePage({
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
         >
           Sign up free
         </Link>

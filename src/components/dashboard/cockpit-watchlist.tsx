@@ -116,7 +116,7 @@ export function CockpitWatchlist({
               return (
                 <div
                   key={sym}
-                  className={`group flex min-h-[46px] items-center justify-between rounded-[18px] border px-3 py-2 transition-colors
+                  className={`group flex min-h-[46px] items-center justify-between rounded-xl border px-3 py-2 transition-colors
                     ${isSelected ? "border-accent/30 bg-accent/10" : "border-transparent hover:border-border hover:bg-bg-elevated"} cursor-pointer`}
                   onClick={() => onSelectSymbol(sym)}
                 >
@@ -142,7 +142,7 @@ export function CockpitWatchlist({
                       e.stopPropagation();
                       onRemoveSymbol(sym);
                     }}
-                    className="flex min-h-[28px] min-w-[28px] items-center justify-center rounded-[12px] p-1 text-text-muted opacity-0 transition-all group-hover:opacity-100 hover:bg-bearish/10 hover:text-bearish"
+                    className="flex min-h-[28px] min-w-[28px] items-center justify-center rounded-xl p-1 text-text-muted opacity-0 transition-all group-hover:opacity-100 hover:bg-bearish/10 hover:text-bearish"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -168,7 +168,7 @@ export function CockpitWatchlist({
                 <button
                   key={item.symbol}
                   onClick={() => onSelectSymbol(item.symbol)}
-                  className="flex min-h-[34px] w-full items-center justify-between rounded-[14px] px-2.5 py-1 text-xs transition-colors hover:bg-bg-elevated"
+                  className="flex min-h-[34px] w-full items-center justify-between rounded-xl px-2.5 py-1 text-xs transition-colors hover:bg-bg-elevated"
                 >
                   <span className="font-mono text-text-secondary">
                     {item.symbol}

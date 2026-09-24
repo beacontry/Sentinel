@@ -19,6 +19,10 @@
  * comments and JSX text are left alone. --dry (the default) prints per-file
  * counts and the sites left for a person to decide; --write applies.
  *
+ * The scanner does not parse regex literals, so a quote or backtick inside
+ * one (/[*_`]/) can desync it for the rest of that file. After a run, the
+ * ratchet's counts show anything left behind; fix those by hand.
+ *
  * Every rule here is mechanical. Anything that needs judgement is listed
  * under "review by hand" and not rewritten:
  *   - text-[clamp(...)] marketing headings

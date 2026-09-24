@@ -140,7 +140,7 @@ export default async function PublicCalculatorPage({
       </div>
 
       {/* Sign-up CTA */}
-      <section className="mt-12 rounded-2xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center max-w-3xl">
+      <section className="mt-12 rounded-xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center max-w-3xl">
         <h2 className="text-xl font-bold mb-2">More tools when you sign up</h2>
         <p className="text-ld-text-secondary mb-5 max-w-[520px] mx-auto">
           Beacontry users get backtest, risk simulator, portfolio aggregator, and
@@ -148,7 +148,7 @@ export default async function PublicCalculatorPage({
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
         >
           Sign up free
         </Link>

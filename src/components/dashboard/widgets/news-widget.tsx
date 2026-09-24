@@ -86,7 +86,7 @@ export function NewsWidget() {
             href={article.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="group block rounded-[10px] bg-bg-elevated px-2.5 py-2 hover:bg-bg-hover
+            className="group block rounded-lg bg-bg-elevated px-2.5 py-2 hover:bg-bg-hover
               transition-colors"
           >
             <div className="flex items-start justify-between gap-2">

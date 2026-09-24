@@ -123,7 +123,7 @@ export default async function PublicArticlesPage() {
       </section>
 
       {items.length === 0 ? (
-        <div className="text-center py-16 rounded-2xl border border-ld-border bg-ld-card">
+        <div className="text-center py-16 rounded-xl border border-ld-border bg-ld-card">
           <Newspaper className="h-10 w-10 text-ld-text-muted mx-auto mb-3" />
           <p className="text-ld-text-secondary">
             No articles published yet — check back after the next US market close.
@@ -135,7 +135,7 @@ export default async function PublicArticlesPage() {
           {featured && (
             <Link
               href={`/articles/${featured.slug}`}
-              className="group block mb-8 rounded-2xl border border-ld-border bg-ld-card p-8 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_22px_60px_rgba(0,0,0,0.32)]"
+              className="group block mb-8 rounded-xl border border-ld-border bg-ld-card p-8 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_22px_60px_rgba(0,0,0,0.32)]"
             >
               <div className="flex items-center gap-3 mb-4 text-xs">
                 <span className="rounded-full bg-ld-accent/14 px-2.5 py-0.5 font-mono uppercase tracking-wider text-ld-accent">
@@ -172,7 +172,7 @@ export default async function PublicArticlesPage() {
                 <Link
                   key={item.slug}
                   href={`/articles/${item.slug}`}
-                  className="group flex flex-col rounded-2xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_18px_44px_rgba(0,0,0,0.28)]"
+                  className="group flex flex-col rounded-xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_18px_44px_rgba(0,0,0,0.28)]"
                 >
                   <div className="flex items-center gap-2 mb-3 text-xs">
                     {item.category && (
@@ -204,7 +204,7 @@ export default async function PublicArticlesPage() {
       )}
 
       {/* Sign-up CTA */}
-      <section className="mt-16 rounded-2xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
+      <section className="mt-16 rounded-xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
         <h2 className="text-xl font-bold mb-2">Get the digest by email</h2>
         <p className="text-ld-text-secondary mb-5 max-w-[520px] mx-auto">
           Free Beacontry accounts can opt into the daily market digest by email — same
@@ -212,7 +212,7 @@ export default async function PublicArticlesPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

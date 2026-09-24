@@ -100,7 +100,7 @@ export function RecentSignalsWidget() {
         {signals.map((sig, i) => (
           <div
             key={`${sig.symbol}-${i}`}
-            className="flex items-center justify-between rounded-[10px] px-2.5 py-1.5
+            className="flex items-center justify-between rounded-lg px-2.5 py-1.5
               bg-bg-elevated hover:bg-bg-hover transition-colors"
           >
             <div className="flex items-center gap-2">

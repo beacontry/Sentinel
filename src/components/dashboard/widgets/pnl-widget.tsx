@@ -109,7 +109,7 @@ export function PnlWidget() {
       </div>
 
       <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-        <div className="rounded-[10px] bg-bg-elevated px-2 py-1.5 text-center">
+        <div className="rounded-lg bg-bg-elevated px-2 py-1.5 text-center">
           <p className="text-xs uppercase tracking-[0.16em] text-text-muted">Realized</p>
           <p
             className={`font-mono text-sm font-medium ${
@@ -120,7 +120,7 @@ export function PnlWidget() {
           </p>
           <p className="text-xs uppercase tracking-[0.12em] text-text-muted/70 mt-0.5">lifetime</p>
         </div>
-        <div className="rounded-[10px] bg-bg-elevated px-2 py-1.5 text-center">
+        <div className="rounded-lg bg-bg-elevated px-2 py-1.5 text-center">
           <p className="text-xs uppercase tracking-[0.16em] text-text-muted">Unrealized</p>
           <p
             className={`font-mono text-sm font-medium ${

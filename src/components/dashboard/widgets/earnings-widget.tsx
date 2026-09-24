@@ -103,7 +103,7 @@ export function EarningsWidget() {
         {earnings.map((e, i) => (
           <div
             key={`${e.symbol}-${i}`}
-            className="flex items-center justify-between rounded-[10px] px-2.5 py-1.5
+            className="flex items-center justify-between rounded-lg px-2.5 py-1.5
               bg-bg-elevated hover:bg-bg-hover transition-colors"
           >
             <span className="font-mono text-sm font-medium text-text-primary">

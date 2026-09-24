@@ -154,7 +154,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
                         onDayClick(day);
                       }
                     }}
-                    className={`w-[14px] h-[14px] my-[1px] rounded-[3px] transition-all duration-150
+                    className={`w-[14px] h-[14px] my-[1px] rounded transition-all duration-150
                       ${day ? getColor(day.pnl, maxAbs) : EMPTY_COLOR}
                       ${isToday ? "ring-1 ring-accent/50" : ""}
                       hover:ring-1 hover:ring-text-muted/50 ${clickable ? "cursor-pointer" : "cursor-default"}
@@ -178,11 +178,11 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
       <div className="flex items-center gap-2 mt-3 ml-8">
         <span className="text-xs text-text-muted">Loss</span>
         {LOSS_COLORS.slice().reverse().map((color, i) => (
-          <div key={`l${i}`} className={`w-[10px] h-[10px] rounded-[2px] ${color}`} />
+          <div key={`l${i}`} className={`w-[10px] h-[10px] rounded ${color}`} />
         ))}
-        <div className={`w-[10px] h-[10px] rounded-[2px] ${EMPTY_COLOR}`} />
+        <div className={`w-[10px] h-[10px] rounded ${EMPTY_COLOR}`} />
         {PROFIT_COLORS.map((color, i) => (
-          <div key={`p${i}`} className={`w-[10px] h-[10px] rounded-[2px] ${color}`} />
+          <div key={`p${i}`} className={`w-[10px] h-[10px] rounded ${color}`} />
         ))}
         <span className="text-xs text-text-muted">Profit</span>
       </div>
