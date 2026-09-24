@@ -806,7 +806,7 @@ export default function TraderPage() {
 
       {/* Engine controls — each user has their own independent engine */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <select
             value={engineMode}
             onChange={(e) => {
@@ -814,7 +814,7 @@ export default function TraderPage() {
               setEngineMode(e.target.value);
             }}
             aria-label="Engine mode"
-            className="min-h-[44px] rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm text-text-primary"
+            className="min-h-[44px] min-w-0 flex-1 truncate rounded-lg border border-border-control bg-bg-surface px-3 py-2 text-base text-text-primary sm:flex-none sm:text-sm"
           >
             {modeOptions.map(m => (
               <option key={m.value} value={m.value}>{m.label}</option>
