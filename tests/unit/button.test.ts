@@ -39,7 +39,7 @@ describe("Button sizes", () => {
     const classes = buttonClassList(render({ size: "sm" }));
     expect(classes).toContain("min-h-9");
     expect(classes).toContain("relative");
-    expect(classes).toContain("before:-inset-1");
+    expect(classes).toContain("before:-inset-1.5");
   });
 
   // `.relative` is emitted after `.absolute` in the built CSS, so a sm
