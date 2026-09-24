@@ -112,3 +112,28 @@ export function toHex(value: string): string {
       .join("")
   );
 }
+
+/** Linear sRGB to OKLab [L, a, b]. */
+function linearToOklab(c: LinearRgba): [number, number, number] {
+  const l = Math.cbrt(0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b);
+  const m = Math.cbrt(0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b);
+  const s = Math.cbrt(0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+/**
+ * Colour difference as deltaE OK: straight-line distance in OKLab of the
+ * two opaque colours as rendered (after gamut clipping). Around 0.02 is a
+ * just-noticeable difference side by side; 0.10 reads as a different
+ * colour at a glance, which is the floor for two meanings.
+ */
+export function deltaEOK(x: string, y: string): number {
+  const [a, b] = [parseColor(x), parseColor(y)];
+  if (a.a < 1 || b.a < 1) throw new Error(`deltaEOK needs opaque colours: ${x}, ${y}`);
+  const [p, q] = [linearToOklab(a), linearToOklab(b)];
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}

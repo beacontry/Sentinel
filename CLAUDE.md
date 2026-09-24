@@ -106,7 +106,7 @@ All tokens live in `src/app/globals.css`, in OKLCH: the `@theme` block is the li
 | light-blue | cool light ladder | blue, white label |
 | gray | the dark ladder with no tint | emerald |
 
-**Colour-blind mode** is a second `<html>` class, `colorblind`, that swaps only the state colours to blue (gain) / orange (loss). **`tests/unit/theme-contrast.test.ts` measures every meaningful pair in all 5 themes × colour-blind mode** — change a value, run it.
+**Colour-blind mode** is a second `<html>` class, `colorblind`, that swaps only the state colours to blue (gain) / vermillion orange (loss) / yellow (warning), so loss and warning stay apart. **`tests/unit/theme-contrast.test.ts` measures every meaningful pair in all 5 themes × colour-blind mode** — change a value, run it.
 
 **ThemeProvider** (`src/components/theme-provider.tsx`): persists to `localStorage("sentinel-theme")`, sets `<html>` class, updates PWA `theme-color` (hex copies of each theme's `--color-bg-primary`, pinned by `tests/unit/theme-meta.test.ts`). `useTheme()` → `{ theme, setTheme, toggleTheme }`. `isDarkTheme(theme)` (true for `dark`/`gray`) exported for TradingView embed.
 

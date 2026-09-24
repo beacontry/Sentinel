@@ -333,26 +333,39 @@
      become blue/orange (after Bang Wong's deuteranopia-safe pair), moved
      in lightness until each passes 4.5:1: the published #E69F00 orange is
      2.1:1 on white. Light themes first, then the two dark ones. */
+  /* Warning moves to yellow in this mode. The theme's amber warning sat
+     beside the orange loss (1.07:1, a deltaE of about 0.02), so a rejected
+     order and a partial fill differed only by their words, for exactly
+     the readers this mode is for. Loss leans vermillion (hue 45-60) and
+     warning yellow (hue 100); the test holds them 0.10 deltaE OK apart. */
   html.colorblind {
     --color-bullish: oklch(48% 0.13 245);
-    --color-bearish: oklch(52% 0.14 55);
+    --color-bearish: oklch(52% 0.15 45);
+    --color-warning: oklch(50% 0.11 100);
     --color-bullish-fg: oklch(38% 0.10 245);
     --color-bullish-fill: oklch(95% 0.025 245);
     --color-bullish-line: oklch(62% 0.11 245);
-    --color-bearish-fg: oklch(42% 0.11 55);
-    --color-bearish-fill: oklch(95% 0.035 70);
-    --color-bearish-line: oklch(64% 0.12 60);
+    --color-bearish-fg: oklch(43% 0.13 42);
+    --color-bearish-fill: oklch(95% 0.030 50);
+    --color-bearish-line: oklch(64% 0.13 48);
+    --color-warning-fg: oklch(38% 0.085 102);
+    --color-warning-fill: oklch(95% 0.060 100);
+    --color-warning-line: oklch(66% 0.12 100);
   }
   html.colorblind.dark,
   html.colorblind.gray {
     --color-bullish: oklch(70% 0.13 240);
-    --color-bearish: oklch(76% 0.15 70);
+    --color-bearish: oklch(74% 0.15 58);
+    --color-warning: oklch(86% 0.15 100);
     --color-bullish-fg: oklch(84% 0.08 240);
     --color-bullish-fill: oklch(27% 0.050 240);
     --color-bullish-line: oklch(72% 0.11 240);
-    --color-bearish-fg: oklch(86% 0.10 70);
-    --color-bearish-fill: oklch(28% 0.045 70);
-    --color-bearish-line: oklch(76% 0.12 70);
+    --color-bearish-fg: oklch(82% 0.11 52);
+    --color-bearish-fill: oklch(28% 0.045 58);
+    --color-bearish-line: oklch(74% 0.12 58);
+    --color-warning-fg: oklch(90% 0.11 100);
+    --color-warning-fill: oklch(28% 0.045 100);
+    --color-warning-line: oklch(82% 0.13 100);
   }
   /* The -muted mixes are declared once per theme and resolve on <html>,
      so each picks up the swapped colour without being repeated here. */

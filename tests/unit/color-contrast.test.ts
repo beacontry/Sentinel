@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { contrastRatio, parseColor, toHex } from "@/lib/color-contrast";
+import { contrastRatio, deltaEOK, parseColor, toHex } from "@/lib/color-contrast";
 
 describe("parseColor", () => {
   it("reads 6- and 3-digit hex", () => {
@@ -62,5 +62,21 @@ describe("contrastRatio", () => {
 
   it("refuses a translucent background", () => {
     expect(() => contrastRatio("#000000", "rgb(255 255 255 / 0.5)")).toThrow();
+  });
+});
+
+describe("deltaEOK", () => {
+  it("is 0 for identical colours and 1 from black to white", () => {
+    expect(deltaEOK("#b63325", "#b63325")).toBeCloseTo(0, 6);
+    expect(deltaEOK("#000000", "#ffffff")).toBeCloseTo(1, 3);
+  });
+
+  it("agrees across hex and oklch spellings of the same colour", () => {
+    expect(deltaEOK("oklch(52% 0.17 30)", "oklch(52% 0.19 27)")).toBeLessThan(0.03);
+    expect(deltaEOK("#f97066", "#b91c1c")).toBeCloseTo(0.204, 2);
+  });
+
+  it("refuses a translucent colour", () => {
+    expect(() => deltaEOK("rgb(0 0 0 / 0.5)", "#ffffff")).toThrow();
   });
 });

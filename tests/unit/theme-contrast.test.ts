@@ -15,12 +15,16 @@
  * - A form control's edge must clear 3:1 (WCAG 1.4.11) on every surface.
  * - Gain and loss text must clear 4.5:1 on a card, and each chip's
  *   foreground must clear 4.5:1 on its own fill.
+ * - Two colours that mean different things must look different: in
+ *   colour-blind mode, a loss against a warning. Measured as deltaE OK,
+ *   floor 0.10. Contrast ratio cannot catch this: two reds of equal
+ *   lightness are 1.0:1 whatever their hue.
  */
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { contrastRatio, parseColor, toHex } from "@/lib/color-contrast";
+import { contrastRatio, deltaEOK, parseColor, toHex } from "@/lib/color-contrast";
 
 const CSS = readFileSync(join(__dirname, "..", "..", "src", "app", "globals.css"), "utf8");
 
@@ -49,10 +53,19 @@ const THEMES: Record<string, Record<string, string>> = {
 };
 const DARK = new Set(["dark", "gray"]);
 
+/** A theme with colour-blind mode on: the shared block, then any theme-specific one. */
+const withColorblind = (name: string): Record<string, string> => ({
+  ...THEMES[name],
+  ...(DARK.has(name) ? colorblindDark : colorblindLight),
+});
+
 const MODES: [string, Record<string, string>][] = Object.entries(THEMES).flatMap(([name, vars]) => [
   [name, vars] as [string, Record<string, string>],
-  [`${name} + colour-blind`, { ...vars, ...(DARK.has(name) ? colorblindDark : colorblindLight) }],
+  [`${name} + colour-blind`, withColorblind(name)],
 ]);
+
+/** deltaE OK below which two meanings read as one colour. */
+const DISTINCT = 0.1;
 
 /** A token's value with var() references followed. */
 function resolve(vars: Record<string, string>, name: string, depth = 0): string {
@@ -137,13 +150,26 @@ describe.each(MODES)("%s", (_mode, vars) => {
 
 describe("colour-blind pair", () => {
   it.each(Object.keys(THEMES))("%s: gain is blue and loss is orange", (theme) => {
-    const cb = { ...THEMES[theme], ...(DARK.has(theme) ? colorblindDark : colorblindLight) };
+    const cb = withColorblind(theme);
     const hue = (name: string) => Number(/oklch\([^)]*\s([\d.]+)\)$/.exec(resolve(cb, name))?.[1]);
     // Nothing in the green band (about 110-200) or the red one (under 40),
     // where a deuteranope loses the distinction.
     expect(hue("--color-bullish")).toBeGreaterThan(200);
     expect(hue("--color-bearish")).toBeGreaterThanOrEqual(40);
     expect(hue("--color-bearish")).toBeLessThan(110);
+  });
+
+  // Loss and warning are both warm, and this mode has taken red away, so
+  // they are the pair most likely to collapse into one orange. A rejected
+  // order (bearish) and a partial fill (warning) must differ by more than
+  // their words.
+  it.each(
+    Object.keys(THEMES).flatMap((theme) => ["", "-fg", "-line"].map((suffix) => [theme, suffix])),
+  )("%s: bearish%s is distinct from the matching warning token", (theme, suffix) => {
+    const cb = withColorblind(theme);
+    expect(
+      deltaEOK(resolve(cb, `--color-bearish${suffix}`), resolve(cb, `--color-warning${suffix}`)),
+    ).toBeGreaterThanOrEqual(DISTINCT);
   });
 });
 
