@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatSignedPercent } from "@/lib/format-pnl";
+import { SignedPercent } from "@/components/ui/signed-value";
 import { useToast } from "@/components/ui/toast";
 import { useConfirmAction } from "@/components/ui/confirm-action-modal";
 import { PageIntro } from "@/components/layout/page-intro";
@@ -524,9 +524,8 @@ export default function WatchlistsPage() {
                           ) : q ? (
                             <div className="mt-1">
                               <div className="font-mono text-sm tabular-nums">${q.price.toFixed(2)}</div>
-                              <div className={`font-mono text-xs tabular-nums ${q.change >= 0 ? "text-bullish" : "text-bearish"}`}>
-                                <span aria-hidden="true">{q.change >= 0 ? "▲ " : "▼ "}</span>
-                                {formatSignedPercent(q.change)}
+                              <div className="text-xs">
+                                <SignedPercent value={q.change} />
                               </div>
                             </div>
                           ) : (

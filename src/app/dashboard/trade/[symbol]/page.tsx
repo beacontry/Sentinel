@@ -30,7 +30,7 @@ import { Inset } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
 import { StatusChip } from "@/components/ui/status-chip";
 import { Toggle } from "@/components/ui/toggle";
-import { formatSignedPercent } from "@/lib/format-pnl";
+import { SignedPercent } from "@/components/ui/signed-value";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useConfirmAction } from "@/components/ui/confirm-action-modal";
@@ -471,9 +471,8 @@ export default function TradePage({
               ${quote.price.toFixed(2)}
             </div>
             {quote.changePct !== undefined && (
-              <div className={`text-xs font-mono tabular-nums ${quote.changePct >= 0 ? "text-bullish" : "text-bearish"}`}>
-                <span aria-hidden="true">{quote.changePct >= 0 ? "▲ " : "▼ "}</span>
-                {formatSignedPercent(quote.changePct)}
+              <div className="text-xs">
+                <SignedPercent value={quote.changePct} />
                 <span className="sr-only"> today</span>
               </div>
             )}

@@ -1,4 +1,11 @@
-import { formatPnl, pnlDirection, type PnlDirection, type PnlFormat } from "@/lib/format-pnl";
+import {
+  formatPnl,
+  formatSignedPercent,
+  percentDirection,
+  pnlDirection,
+  type PnlDirection,
+  type PnlFormat,
+} from "@/lib/format-pnl";
 
 /**
  * A gain or loss, printed so it reads without colour:
@@ -64,6 +71,31 @@ export function SignedValue({ value, basis, format = "dollar", glyph = true, cla
         </span>
       )}
       <span>{formatPnl(value, basis, format)}</span>
+      {direction !== "flat" && <span className="sr-only">{direction}</span>}
+    </span>
+  );
+}
+
+/**
+ * A percent that is itself the change (a quote's day change), with no
+ * dollar figure to take it of. Same reading as SignedValue: the glyph and
+ * colour follow the percent as printed at two decimals, so an unchanged
+ * quote is "– 0.00%" in secondary text rather than a green "▲ 0.00%", and
+ * an unknown is "n/a" with no glyph.
+ */
+export function SignedPercent({ value, glyph = true, className = "" }: { value: number | null | undefined; glyph?: boolean; className?: string }) {
+  const direction = percentDirection(value);
+  if (direction === undefined) {
+    return <span className={`font-mono tabular-nums text-text-muted ${className}`}>n/a</span>;
+  }
+  return (
+    <span className={`inline-flex items-baseline gap-1 font-mono tabular-nums ${TONE[direction]} ${className}`}>
+      {glyph && (
+        <span aria-hidden="true" className="leading-none">
+          {GLYPH[direction]}
+        </span>
+      )}
+      <span>{formatSignedPercent(value as number)}</span>
       {direction !== "flat" && <span className="sr-only">{direction}</span>}
     </span>
   );
