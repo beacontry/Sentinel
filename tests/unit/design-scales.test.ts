@@ -64,10 +64,22 @@ describe("type scale", () => {
 });
 
 describe("radius and elevation", () => {
-  it("defines three radii", () => {
+  it("defines three radii, plus bare rounded for tiny marks", () => {
     const r = decls("--radius-");
     delete r["--radius-*"];
     expect(r).toEqual({ "--radius-md": "6px", "--radius-lg": "8px", "--radius-xl": "12px" });
+    // The namespace reset also removes the bare --radius behind `rounded`
+    // (180+ uses), so it is declared again.
+    expect(theme).toMatch(/--radius:\s*4px;/);
+  });
+
+  it("resets each namespace before defining it, so stock steps stop existing", () => {
+    for (const ns of ["text", "radius", "shadow"]) {
+      const reset = theme.indexOf(`--${ns}-*: initial;`);
+      expect(reset, ns).toBeGreaterThan(-1);
+      const first = theme.search(new RegExp(`--${ns}(?:-[a-z0-9]+)?:\\s`));
+      expect(reset, ns).toBeLessThan(first);
+    }
   });
 
   it("defines three elevations, each routed through a per-theme variable", () => {
