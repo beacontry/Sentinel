@@ -1,37 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ArrowRight, Search, Cpu, Zap, TrendingUp, Target, BarChart3, LineChart, Bell, Brain, Check, Lock, GitBranch, Server } from "lucide-react";
-import { ThemePicker } from "@/components/theme-picker";
-import { BeacontryMark } from "@/components/brand/beacontry-mark";
-import { PWAInstallButton } from "@/components/pwa-install-button";
+import { ArrowRight, Search, Cpu, Zap, TrendingUp, Target, BarChart3, LineChart, Bell, Brain, Lock, GitBranch, Server } from "lucide-react";
+import { ButtonLink } from "@/components/ui/button-link";
+import { EquityMockup } from "@/components/marketing/equity-mockup";
+import { LandingNav } from "@/components/marketing/landing-nav";
+import { PricingTeaser } from "@/components/marketing/pricing-teaser";
 
 export default function LandingPage() {
-  const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 16);
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  const navLinks = [
-    { label: "Features", href: "#features" },
-    { label: "How It Works", href: "#process" },
-    // Standalone /pricing page is the canonical pricing surface (full
-    // feature-comparison matrix + FAQ). The #pricing teaser further
-    // down this landing stays as a quick glance for scroll readers.
-    { label: "Pricing", href: "/pricing" },
-    { label: "Why Beacontry", href: "#trust" },
-    // Anchors the no-account browse card at the bottom of the final
-    // CTA section. Lets curious visitors jump straight to it instead
-    // of scrolling through the whole landing.
-    { label: "Explore Freely", href: "#explore" },
-  ];
-
   // Public-browse links shown on the landing's final CTA section.
   // Replaces the legacy "join the waitlist" card — public free signup
   // is open, so a waitlist asking "we'll let you know when public
@@ -206,103 +182,42 @@ export default function LandingPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      {/* ── Navbar — exact Dark Moon structure ── */}
-      <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-[background-color,border-color,color,box-shadow] duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-pop" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
-        <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
-          <Link href="/" className="flex items-center gap-3 text-lg font-bold tracking-tight">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-ld-on-accent">
-              <BeacontryMark variant="full" className="h-8 w-8" aria-label="Beacontry" />
-            </div>
-            Beacontry
-          </Link>
-
-          <ul className="hidden items-center gap-6 md:flex">
-            {navLinks.map((link) => (
-              <li key={link.href}>
-                <a href={link.href} className="text-base font-medium text-ld-text-secondary transition-colors duration-200 hover:text-ld-text">{link.label}</a>
-              </li>
-            ))}
-          </ul>
-
-          <div className="hidden items-center gap-3 md:flex">
-            <ThemePicker variant="icon" />
-            {/* PWA install — renders nothing unless Chrome fires beforeinstallprompt */}
-            <PWAInstallButton
-              className="inline-flex items-center gap-2 rounded-lg border border-ld-accent/40 bg-ld-accent/8 px-4 py-3 text-base font-medium text-ld-accent transition-colors duration-200 hover:bg-ld-accent/14"
-            />
-            <Link href="/register" className="rounded-lg bg-ld-accent px-5 py-3 text-base font-semibold text-ld-on-accent transition-[background-color,border-color,color,box-shadow] duration-200 hover:bg-ld-accent-dim hover:shadow-pop">
-              Get Started
-            </Link>
-          </div>
-
-          <div className="flex items-center gap-2 md:hidden">
-            <ThemePicker variant="icon" />
-            <button onClick={() => setMenuOpen(!menuOpen)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-ld-border text-ld-text" aria-label="Menu">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                {menuOpen ? <path d="M18 6L6 18M6 6l12 12" /> : <path d="M3 12h18M3 6h18M3 18h18" />}
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {menuOpen && (
-          <div className="border-t border-ld-border bg-ld-deep/96 px-5 pb-5 pt-3 backdrop-blur-[18px] md:hidden">
-            <ul className="flex flex-col gap-1">
-              {navLinks.map((link) => (
-                <li key={link.href}>
-                  <a href={link.href} onClick={() => setMenuOpen(false)} className="block rounded-lg px-3 py-3 text-base font-medium text-ld-text-secondary transition-colors hover:bg-ld-accent/8 hover:text-ld-text">{link.label}</a>
-                </li>
-              ))}
-            </ul>
-            <Link href="/register" onClick={() => setMenuOpen(false)} className="mt-3 block rounded-lg bg-ld-accent py-3 text-center text-base font-semibold text-ld-on-accent">
-              Get Started
-            </Link>
-            {/* PWA install in the mobile menu — hidden unless the browser
-                fires beforeinstallprompt. This is the path Chrome Android
-                users will actually use (the ⋮-menu "Install app" item
-                doesn't always show). */}
-            <PWAInstallButton
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-ld-accent/40 bg-ld-accent/8 py-3 text-center text-base font-medium text-ld-accent"
-            />
-          </div>
-        )}
-      </nav>
+      <LandingNav />
 
       {/* ── Hero — exact Dark Moon structure ── */}
       <section className="relative flex min-h-screen items-center overflow-hidden pt-36 pb-20 lg:pt-36">
         <div className="landing-grid-bg pointer-events-none absolute inset-0" />
-        <div className="pointer-events-none absolute bottom-[8%] left-1/2 h-[840px] w-[840px] -translate-x-1/2 rounded-full bg-ld-accent/[0.16] blur-[200px]" />
 
-        <div className="relative z-10 mx-auto grid w-full max-w-[1280px] gap-12 px-4 lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:gap-12 lg:px-7">
+        <div className="relative z-10 mx-auto grid w-full max-w-[1280px] grid-cols-[minmax(0,1fr)] gap-12 px-[var(--gutter)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:items-center">
           <div className="animate-fade-in-up text-center lg:text-left">
-            <div className="mx-auto mb-5 inline-flex items-center justify-center gap-2 rounded-full border border-ld-accent/22 bg-ld-accent/10 px-4 py-1.5 lg:mx-0">
-              <span className="animate-pulse-dot h-2 w-2 rounded-full bg-ld-accent" />
-              <span className="font-mono text-xs uppercase tracking-wider text-ld-accent">Trading Intelligence · Automated or Manual</span>
+            <div className="mx-auto mb-5 inline-flex max-w-full items-center justify-center gap-2 rounded-full border border-ld-border bg-ld-card px-4 py-1.5 lg:mx-0">
+              <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-ld-accent motion-safe:animate-pulse-dot" />
+              <span className="eyebrow text-balance text-ld-accent">Trading intelligence · Automated or manual</span>
             </div>
 
-            <h1 className="mx-auto max-w-[52rem] text-[clamp(2.4rem,6vw,4.8rem)] font-extrabold leading-[1.04] tracking-tighter lg:mx-0">
+            <h1 className="mx-auto max-w-[52rem] text-display font-extrabold tracking-[-0.04em] text-balance lg:mx-0">
               Scan. Signal. Execute.{" "}
               <span className="text-ld-accent">Automatically.</span>
             </h1>
 
-            <p className="mx-auto mt-5 max-w-[720px] text-[clamp(1rem,2vw,1.16rem)] leading-relaxed text-ld-text-secondary lg:mx-0">
+            <p className="mx-auto mt-5 max-w-[720px] text-base leading-relaxed text-ld-text-secondary lg:mx-0 lg:text-lg">
               Beacontry monitors the market, generates confidence-scored trading signals,
               and routes them either through the automated engine or to a manual order
               ticket — your choice, your broker, every decision inspectable.
             </p>
 
             <div className="mt-8 flex flex-wrap justify-center gap-4 lg:justify-start">
-              <Link href="/register" className="rounded-lg bg-ld-accent px-6 py-3.5 font-semibold text-ld-on-accent transition-[background-color,border-color,color,box-shadow] duration-200 hover:bg-ld-accent-dim hover:shadow-pop">
+              <ButtonLink href="/register" className="px-6 text-base">
                 Get Started Free
-              </Link>
-              <Link href="/login" className="rounded-lg border border-ld-border bg-white/[0.01] px-6 py-3.5 font-semibold text-ld-text transition-colors duration-200 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
+              </ButtonLink>
+              <ButtonLink href="/login" variant="secondary" className="px-6 text-base">
                 Sign In
-              </Link>
+              </ButtonLink>
             </div>
 
             <div className="mt-8 flex flex-wrap justify-center gap-3 lg:justify-start">
               {heroPoints.map((point) => (
-                <span key={point} className="inline-flex items-center gap-2 rounded-full border border-ld-border bg-white/[0.01] px-3 py-2 text-base text-ld-text-muted transition-colors duration-200 hover:border-ld-accent/32 hover:bg-ld-accent/8">
+                <span key={point} className="inline-flex items-center gap-2 rounded-full border border-ld-border px-3 py-2 text-base text-ld-text-muted">
                   {point}
                 </span>
               ))}
@@ -310,7 +225,7 @@ export default function LandingPage() {
           </div>
 
           {/* Hero Card — checklist */}
-          <aside className="animate-fade-in-up stagger-1 top-accent-line rounded-xl border border-ld-border bg-ld-card p-8 shadow-pop transition-[background-color,border-color,color,box-shadow] duration-300 hover:border-ld-accent/28 hover:shadow-pop">
+          <aside className="animate-fade-in-up stagger-1 top-accent-line min-w-0 rounded-xl border border-ld-border bg-ld-card p-6 shadow-pop sm:p-8">
             <h3 className="text-lg font-bold">What Beacontry does</h3>
             <p className="mt-3 text-base text-ld-text-secondary">
               A trading workspace — automated engine for hands-off operation, manual
@@ -341,11 +256,11 @@ export default function LandingPage() {
 
       {/* ── Stats ── */}
       <section className="border-y border-ld-border bg-ld-panel">
-        <div className="mx-auto grid max-w-[1280px] grid-cols-2 divide-x divide-ld-border px-4 lg:grid-cols-4 lg:px-0">
+        <div className="mx-auto grid max-w-[1280px] grid-cols-2 divide-x divide-ld-border px-[var(--gutter)] lg:grid-cols-4">
           {stats.map((stat, i) => (
-            <div key={stat.label} className={`animate-fade-in-up stagger-${i + 1} px-5 py-9 text-center transition-colors hover:bg-white/[0.02]`}>
-              <div className="font-mono text-[clamp(1.3rem,3vw,2.1rem)] font-bold text-ld-accent">{stat.value}</div>
-              <div className="mt-1 text-xs uppercase tracking-[0.12em] text-ld-text-muted">{stat.label}</div>
+            <div key={stat.label} className={`animate-fade-in-up stagger-${i + 1} min-w-0 px-3 py-9 text-center sm:px-5`}>
+              <div className="font-mono text-xl font-bold text-ld-accent lg:text-2xl">{stat.value}</div>
+              <div className="eyebrow mt-1 text-ld-text-muted">{stat.label}</div>
             </div>
           ))}
         </div>
@@ -354,8 +269,8 @@ export default function LandingPage() {
       {/* ── Features — Dark Moon Services layout ── */}
       <section id="features" className="bg-ld-panel py-28 lg:py-28">
         <div className="animate-fade-in-up mx-auto mb-16 max-w-[760px] px-4 text-center">
-          <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-ld-accent">{"// core capabilities"}</p>
-          <h2 className="text-[clamp(1.9rem,4vw,2.9rem)] font-bold leading-tight tracking-tight">
+          <p className="mb-3 eyebrow font-mono text-ld-accent">{"// core capabilities"}</p>
+          <h2 className="text-2xl font-bold leading-tight tracking-[-0.03em] text-balance">
             A trading engine built around real market conditions
           </h2>
           <p className="mx-auto mt-4 max-w-[820px] text-lg leading-relaxed text-ld-text-secondary">
@@ -364,11 +279,11 @@ export default function LandingPage() {
           </p>
         </div>
 
-        <div className="mx-auto grid max-w-[1280px] gap-7 px-4 sm:grid-cols-2 lg:grid-cols-3 lg:px-7">
+        <div className="mx-auto grid max-w-[1280px] gap-7 px-[var(--gutter)] sm:grid-cols-2 lg:grid-cols-3">
           {features.map((f, i) => {
             const Icon = f.icon;
             return (
-              <article key={f.title} className={`card-accent-line animate-fade-in-up stagger-${(i % 3) + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-[background-color,border-color,color,box-shadow] duration-250 hover:border-ld-border-accent hover:bg-ld-card-hover hover:shadow-pop`}>
+              <article key={f.title} className={`card-accent-line animate-fade-in-up stagger-${(i % 3) + 1} rounded-xl border border-ld-border bg-ld-card p-8`}>
                 <div className="mb-4 grid h-[50px] w-[50px] place-items-center rounded-xl bg-ld-accent/[0.16] text-ld-accent">
                   <Icon className="h-6 w-6" />
                 </div>
@@ -388,8 +303,8 @@ export default function LandingPage() {
       {/* ── Process — Dark Moon's Process layout with terminal ── */}
       <section id="process" className="bg-ld-panel py-28 lg:py-28">
         <div className="animate-fade-in-up mx-auto mb-16 max-w-[760px] px-4 text-center">
-          <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-ld-accent">{"// how it works"}</p>
-          <h2 className="text-[clamp(1.9rem,4vw,2.9rem)] font-bold leading-tight tracking-tight">
+          <p className="mb-3 eyebrow font-mono text-ld-accent">{"// how it works"}</p>
+          <h2 className="text-2xl font-bold leading-tight tracking-[-0.03em] text-balance">
             From market scan to protected position in seconds
           </h2>
           <p className="mx-auto mt-4 max-w-[820px] text-lg leading-relaxed text-ld-text-secondary">
@@ -398,10 +313,10 @@ export default function LandingPage() {
           </p>
         </div>
 
-        <div className="mx-auto grid max-w-[1280px] gap-12 px-4 lg:grid-cols-[1.2fr_0.8fr] lg:items-start lg:px-7">
+        <div className="mx-auto grid max-w-[1280px] gap-12 px-[var(--gutter)] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-start">
           <div className="grid gap-8 sm:grid-cols-2">
             {pipeline.map((step, i) => (
-              <article key={step.num} className={`animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-[background-color,border-color,color,box-shadow] duration-250 hover:border-ld-accent/22 hover:shadow-pop`}>
+              <article key={step.num} className={`animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8`}>
                 <div className="mb-4 grid h-[52px] w-[52px] place-items-center rounded-full border border-ld-border bg-white/[0.02] font-mono font-bold text-ld-accent">
                   {step.num}
                 </div>
@@ -411,183 +326,16 @@ export default function LandingPage() {
             ))}
           </div>
 
-          {/* Equity-curve mockup — replaces the older terminal mock.
-              Shows what the engine actually produces (a trending equity
-              curve with annotated trade events) instead of describing
-              it textually. Inline SVG so no chart-lib dependency. */}
-          <div className="animate-fade-in-up stagger-1 overflow-hidden rounded-xl border border-ld-border bg-[#0c0c14] shadow-pop">
-            {/* Window chrome — kept consistent with the previous terminal look */}
-            <div className="flex items-center justify-between gap-2 border-b border-ld-border bg-ld-card px-4 py-3">
-              <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
-                <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
-                <span className="h-3 w-3 rounded-full bg-[#28c840]" />
-                <span className="ml-2 font-mono text-xs text-ld-text-muted">beacontry · 30-day equity</span>
-              </div>
-              <span className="font-mono text-xs text-ld-text-muted hidden sm:inline">demo</span>
-            </div>
-
-            {/* Stats strip — anchors the visual with real-looking numbers */}
-            <div className="grid grid-cols-3 border-b border-ld-border bg-ld-card/40 px-4 py-3 text-center">
-              <div>
-                <div className="font-mono text-xs uppercase tracking-wider text-ld-text-muted">P/L</div>
-                <div className="font-mono text-base font-bold text-ld-green">+18.4%</div>
-              </div>
-              <div className="border-x border-ld-border">
-                <div className="font-mono text-xs uppercase tracking-wider text-ld-text-muted">Win rate</div>
-                <div className="font-mono text-base font-bold text-ld-text">64%</div>
-              </div>
-              <div>
-                <div className="font-mono text-xs uppercase tracking-wider text-ld-text-muted">Trades</div>
-                <div className="font-mono text-base font-bold text-ld-text">23</div>
-              </div>
-            </div>
-
-            {/* SVG chart — viewBox 600×360, scales to container width.
-                Equity curve drawn with a smooth cubic-bezier path that
-                trends up with realistic intra-period drawdowns. Four
-                annotation markers along the curve callout key trade
-                events (BUY signal, profit taken, stop hit, trail tighten). */}
-            <div className="p-4 pt-2">
-              <svg viewBox="0 0 600 360" className="w-full h-auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="30-day equity curve with annotated trade events">
-                <defs>
-                  {/* Gradient under the curve */}
-                  <linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="oklch(72% 0.17 165)" stopOpacity="0.32" />
-                    <stop offset="100%" stopColor="oklch(72% 0.17 165)" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-
-                {/* Grid lines (faint horizontal) */}
-                {[80, 140, 200, 260, 320].map((y) => (
-                  <line key={y} x1="40" x2="580" y1={y} y2={y}
-                    stroke="oklch(28% 0.015 165)" strokeWidth="0.5" strokeDasharray="3 3" />
-                ))}
-
-                {/* Y-axis labels (right side) */}
-                <g className="font-mono" style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace" }}>
-                  <text x="585" y="84"  fill="oklch(48% 0.01 165)">+20%</text>
-                  <text x="585" y="144" fill="oklch(48% 0.01 165)">+15%</text>
-                  <text x="585" y="204" fill="oklch(48% 0.01 165)">+10%</text>
-                  <text x="585" y="264" fill="oklch(48% 0.01 165)">+5%</text>
-                  <text x="585" y="324" fill="oklch(48% 0.01 165)">0%</text>
-                </g>
-
-                {/* X-axis labels (week markers) */}
-                <g className="font-mono" style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace" }}>
-                  <text x="60"  y="345" fill="oklch(48% 0.01 165)" textAnchor="middle">W1</text>
-                  <text x="180" y="345" fill="oklch(48% 0.01 165)" textAnchor="middle">W2</text>
-                  <text x="300" y="345" fill="oklch(48% 0.01 165)" textAnchor="middle">W3</text>
-                  <text x="420" y="345" fill="oklch(48% 0.01 165)" textAnchor="middle">W4</text>
-                  <text x="540" y="345" fill="oklch(48% 0.01 165)" textAnchor="middle">Today</text>
-                </g>
-
-                {/* Filled area under curve */}
-                <path
-                  d="M 40 320
-                     C 70 318, 100 314, 130 305
-                     C 160 296, 180 308, 200 295
-                     L 230 285
-                     C 260 282, 285 268, 310 255
-                     L 340 270
-                     C 370 258, 395 240, 420 222
-                     C 450 208, 480 195, 510 175
-                     L 540 162
-                     L 580 145
-                     L 580 320
-                     L 40 320 Z"
-                  fill="url(#equityFill)"
-                />
-
-                {/* Equity curve line — accent color, slight glow effect */}
-                <path
-                  d="M 40 320
-                     C 70 318, 100 314, 130 305
-                     C 160 296, 180 308, 200 295
-                     L 230 285
-                     C 260 282, 285 268, 310 255
-                     L 340 270
-                     C 370 258, 395 240, 420 222
-                     C 450 208, 480 195, 510 175
-                     L 540 162
-                     L 580 145"
-                  fill="none"
-                  stroke="oklch(72% 0.17 165)"
-                  strokeWidth="2.5"
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-
-                {/* Annotation markers — small dots + callout labels */}
-                {/* Marker 1: BUY signal at W1.5 */}
-                <g>
-                  <circle cx="130" cy="305" r="4" fill="oklch(72% 0.17 165)" stroke="#0c0c14" strokeWidth="2" />
-                  <line x1="130" y1="305" x2="130" y2="80" stroke="oklch(60% 0.12 165)" strokeWidth="0.5" strokeDasharray="2 3" />
-                  <rect x="80" y="60" width="100" height="22" rx="4" fill="oklch(18% 0.014 165)" stroke="oklch(72% 0.17 165 / 0.4)" />
-                  <text x="130" y="75" fill="oklch(72% 0.17 165)" textAnchor="middle"
-                    style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                    BUY · INTC
-                  </text>
-                </g>
-
-                {/* Marker 2: Stop hit (drawdown point) at W2 */}
-                <g>
-                  <circle cx="200" cy="295" r="4" fill="oklch(68% 0.2 25)" stroke="#0c0c14" strokeWidth="2" />
-                  <line x1="200" y1="295" x2="200" y2="120" stroke="oklch(68% 0.2 25)" strokeWidth="0.5" strokeDasharray="2 3" opacity="0.5" />
-                  <rect x="160" y="100" width="80" height="22" rx="4" fill="oklch(18% 0.014 165)" stroke="oklch(68% 0.2 25 / 0.4)" />
-                  <text x="200" y="115" fill="oklch(68% 0.2 25)" textAnchor="middle"
-                    style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                    Stop -1.8%
-                  </text>
-                </g>
-
-                {/* Marker 3: Profit taken at W3 */}
-                <g>
-                  <circle cx="310" cy="255" r="4" fill="oklch(75% 0.18 150)" stroke="#0c0c14" strokeWidth="2" />
-                  <line x1="310" y1="255" x2="310" y2="170" stroke="oklch(75% 0.18 150)" strokeWidth="0.5" strokeDasharray="2 3" opacity="0.5" />
-                  <rect x="260" y="150" width="100" height="22" rx="4" fill="oklch(18% 0.014 165)" stroke="oklch(75% 0.18 150 / 0.4)" />
-                  <text x="310" y="165" fill="oklch(75% 0.18 150)" textAnchor="middle"
-                    style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                    AAPL +5.2%
-                  </text>
-                </g>
-
-                {/* Marker 4: Trail tighten at W4 */}
-                <g>
-                  <circle cx="420" cy="222" r="4" fill="oklch(78% 0.16 80)" stroke="#0c0c14" strokeWidth="2" />
-                  <line x1="420" y1="222" x2="420" y2="60" stroke="oklch(78% 0.16 80)" strokeWidth="0.5" strokeDasharray="2 3" opacity="0.5" />
-                  <rect x="370" y="40" width="100" height="22" rx="4" fill="oklch(18% 0.014 165)" stroke="oklch(78% 0.16 80 / 0.4)" />
-                  <text x="420" y="55" fill="oklch(78% 0.16 80)" textAnchor="middle"
-                    style={{ fontSize: "10px", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                    Trail ↑
-                  </text>
-                </g>
-
-                {/* Marker 5: Today (latest point) — slightly larger, pulses via class */}
-                <g>
-                  <circle cx="580" cy="145" r="6" fill="oklch(72% 0.17 165 / 0.2)" />
-                  <circle cx="580" cy="145" r="4" fill="oklch(72% 0.17 165)" stroke="#0c0c14" strokeWidth="2">
-                    <animate attributeName="r" values="4;5;4" dur="2s" repeatCount="indefinite" />
-                  </circle>
-                </g>
-              </svg>
-            </div>
-
-            {/* Caption */}
-            <div className="border-t border-ld-border px-4 py-3 text-center">
-              <p className="font-mono text-xs leading-relaxed text-ld-text-muted">
-                Illustrative — every signal logged, every stop synced to broker, every trade journaled.
-              </p>
-            </div>
-          </div>
+          {/* Equity-curve illustration (sample data, labelled as such). */}
+          <EquityMockup />
         </div>
       </section>
 
       {/* ── Platform extras ── */}
       <section id="platform" className="py-28 lg:py-28">
         <div className="animate-fade-in-up mx-auto mb-16 max-w-[760px] px-4 text-center">
-          <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-ld-accent">{"// full platform"}</p>
-          <h2 className="text-[clamp(1.9rem,4vw,2.9rem)] font-bold leading-tight tracking-tight">
+          <p className="mb-3 eyebrow font-mono text-ld-accent">{"// full platform"}</p>
+          <h2 className="text-2xl font-bold leading-tight tracking-[-0.03em] text-balance">
             Beyond the engine
           </h2>
           <p className="mx-auto mt-4 max-w-[820px] text-lg leading-relaxed text-ld-text-secondary">
@@ -596,11 +344,11 @@ export default function LandingPage() {
           </p>
         </div>
 
-        <div className="mx-auto grid max-w-[1280px] gap-7 px-4 sm:grid-cols-3 lg:px-7">
+        <div className="mx-auto grid max-w-[1280px] gap-7 px-[var(--gutter)] sm:grid-cols-3">
           {platform.map((p, i) => {
             const Icon = p.icon;
             return (
-              <article key={p.title} className={`card-accent-line animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-[background-color,border-color,color,box-shadow] duration-250 hover:border-ld-border-accent hover:bg-ld-card-hover hover:shadow-pop`}>
+              <article key={p.title} className={`card-accent-line animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8`}>
                 <div className="mb-4 grid h-[50px] w-[50px] place-items-center rounded-xl bg-ld-accent/[0.16] text-ld-accent">
                   <Icon className="h-6 w-6" />
                 </div>
@@ -612,164 +360,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Pricing ── */}
-      <section id="pricing" className="bg-ld-panel py-28 lg:py-28">
-        <div className="animate-fade-in-up mx-auto mb-16 max-w-[760px] px-4 text-center">
-          <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-ld-accent">{"// pricing"}</p>
-          <h2 className="text-[clamp(1.9rem,4vw,2.9rem)] font-bold leading-tight tracking-tight">
-            Simple pricing. Real power.
-          </h2>
-          <p className="mx-auto mt-4 max-w-[820px] text-lg leading-relaxed text-ld-text-secondary">
-            Bring your own broker. Annual saves ~17%. Cancel anytime.
-          </p>
-        </div>
-
-        <div className="mx-auto grid max-w-[1280px] items-stretch gap-5 px-4 sm:grid-cols-2 lg:grid-cols-4 lg:px-7">
-          {/* Four-tier structure (2026-05-14):
-                Free            — research + education (no engine, no AI)
-                Trader $20      — full platform without AI (most popular)
-                Premium $40     — Trader + AI + future premium data
-                Self-Hosted     — source-available (FSL-1.1), BYO infra.
-                                  Renamed from "Open Source" 2026-05-14 —
-                                  FSL is technically "source-available"
-                                  until each commit auto-converts to
-                                  Apache 2.0 at 2 years. */}
-          {[
-            {
-              name: "Free",
-              tag: "Hosted",
-              price: "$0",
-              cadence: "",
-              annual: "Public data + education",
-              desc: "Browse, learn, research. No trading.",
-              features: [
-                "All 14 guides + 95 glossary terms",
-                "8 financial calculators",
-                "Congressional trades + Reddit",
-                "SEC filings + earnings calendar",
-                "1 watchlist, 10 symbols",
-                "Read-only community access",
-                "No engine, no AI",
-              ],
-              cta: "Sign up free",
-              highlight: false,
-            },
-            {
-              name: "Trader",
-              tag: "Most popular",
-              price: "$20",
-              cadence: "/ month",
-              annual: "$200/yr — saves 2 months",
-              desc: "Full platform without AI features.",
-              features: [
-                "Full engine (paper + live trading)",
-                "All 8 modes + GA optimizer + adaptive",
-                "Multi-broker (up to 3)",
-                "Finnhub data (news, sentiment, options)",
-                "Audit log + tax center + journal",
-                "Unlimited watchlists + alerts",
-                "Full community access",
-              ],
-              cta: "Start with Trader",
-              highlight: true,
-            },
-            {
-              name: "Premium",
-              tag: "AI + future data",
-              price: "$40",
-              cadence: "/ month",
-              annual: "$400/yr — saves 2 months",
-              desc: "Trader + AI + premium data (coming).",
-              features: [
-                "Everything in Trader, plus:",
-                "AI chat assistant (Groq Llama 3.3)",
-                "AI signal scoring + journal review",
-                "Daily AI market digest",
-                "L2 / order book (roadmap)",
-                "Real-time SIP feed (roadmap)",
-                "Dark pool data (roadmap)",
-              ],
-              cta: "Step up to Premium",
-              highlight: false,
-            },
-            {
-              name: "Self-Hosted",
-              tag: "Source-available",
-              price: "Free",
-              cadence: "",
-              annual: "Your data, your hardware",
-              desc: "BYO Postgres + broker + API keys.",
-              features: [
-                "Source code on GitHub (FSL-1.1)",
-                "Same engine, your control",
-                "BYO Finnhub + Groq + broker",
-                "No telemetry, no SaaS lock-in",
-                "Privacy-first deployments",
-                "Auto-converts to Apache 2.0 after 2 years",
-              ],
-              cta: "View on GitHub",
-              highlight: false,
-            },
-          ].map((tier, i) => (
-            <article
-              key={tier.name}
-              className={`animate-fade-in-up stagger-${i + 1} relative flex flex-col rounded-xl border bg-ld-card p-8 transition-[background-color,border-color,color,box-shadow] duration-250 hover:shadow-pop ${
-                tier.highlight
-                  ? "border-ld-accent/40 ring-1 ring-ld-accent/20"
-                  : "border-ld-border hover:border-ld-border-accent"
-              }`}
-            >
-              {tier.highlight && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-ld-accent px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider text-ld-on-accent">
-                  {tier.tag}
-                </div>
-              )}
-              {!tier.highlight && (
-                <p className="font-mono text-xs uppercase tracking-[0.14em] text-ld-text-muted">{tier.tag}</p>
-              )}
-
-              <h3 className="mt-3 text-xl font-bold">{tier.name}</h3>
-              <p className="mt-2 text-base text-ld-text-secondary">{tier.desc}</p>
-
-              <div className="mt-5 flex items-baseline gap-1">
-                <span className="text-2xl font-extrabold leading-none">{tier.price}</span>
-                {tier.cadence && <span className="text-ld-text-muted">{tier.cadence}</span>}
-              </div>
-              <p className="mt-1 text-xs text-ld-text-muted">{tier.annual}</p>
-
-              <ul className="mt-6 flex-1 space-y-2.5 text-base">
-                {tier.features.map((feat) => (
-                  <li key={feat} className="flex items-start gap-2 text-ld-text-secondary">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-ld-accent" />
-                    <span>{feat}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <Link
-                href={tier.name === "Self-Hosted" ? "https://github.com/beacontry/Sentinel" : "/register"}
-                className={`mt-8 inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-base font-semibold transition-[background-color,border-color,color,box-shadow] duration-200 ${
-                  tier.highlight
-                    ? "bg-ld-accent text-ld-on-accent hover:bg-ld-accent-dim hover:shadow-pop"
-                    : "border border-ld-border text-ld-text hover:border-ld-accent hover:bg-ld-accent/[0.06]"
-                }`}
-              >
-                {tier.cta} {tier.name !== "Self-Hosted" && <ArrowRight className="h-4 w-4" />}
-              </Link>
-            </article>
-          ))}
-        </div>
-
-        <p className="mx-auto mt-10 max-w-[680px] px-4 text-center text-sm text-ld-text-muted">
-          Need team / firm / white-label? <a href="mailto:hello@beacontry.com" className="text-ld-accent hover:underline">Get in touch</a> for Team and Enterprise pricing.
-        </p>
-      </section>
+      <PricingTeaser />
 
       {/* ── Trust / "Why Beacontry" ── */}
       <section id="trust" className="py-28 lg:py-28">
         <div className="animate-fade-in-up mx-auto mb-16 max-w-[760px] px-4 text-center">
-          <p className="mb-3 font-mono text-xs uppercase tracking-[0.16em] text-ld-accent">{"// what makes us different"}</p>
-          <h2 className="text-[clamp(1.9rem,4vw,2.9rem)] font-bold leading-tight tracking-tight">
+          <p className="mb-3 eyebrow font-mono text-ld-accent">{"// what makes us different"}</p>
+          <h2 className="text-2xl font-bold leading-tight tracking-[-0.03em] text-balance">
             Trust isn&apos;t a feature.
             <br />
             It&apos;s a property of how Beacontry is built.
@@ -779,7 +376,7 @@ export default function LandingPage() {
           </p>
         </div>
 
-        <div className="mx-auto grid max-w-[1180px] gap-6 px-4 sm:grid-cols-2 lg:px-7">
+        <div className="mx-auto grid max-w-[1180px] gap-6 px-[var(--gutter)] sm:grid-cols-2">
           {[
             {
               icon: GitBranch,
@@ -806,7 +403,7 @@ export default function LandingPage() {
             return (
               <article
                 key={trust.title}
-                className={`animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8 transition-[background-color,border-color,color,box-shadow] duration-250 hover:border-ld-accent/22 hover:shadow-pop`}
+                className={`animate-fade-in-up stagger-${i + 1} rounded-xl border border-ld-border bg-ld-card p-8`}
               >
                 <div className="mb-4 grid h-[50px] w-[50px] place-items-center rounded-xl bg-ld-accent/[0.16] text-ld-accent">
                   <Icon className="h-6 w-6" />
@@ -822,7 +419,7 @@ export default function LandingPage() {
       {/* ── Final CTA with waitlist ── */}
       <section className="bg-ld-panel py-28 lg:py-28">
         <div className="animate-fade-in-up mx-auto max-w-[660px] px-4 text-center">
-          <h2 className="text-[clamp(1.9rem,4vw,2.9rem)] font-bold leading-tight tracking-tight">
+          <h2 className="text-2xl font-bold leading-tight tracking-[-0.03em] text-balance">
             Your trading desk. Fully automated.
           </h2>
           <p className="mx-auto mt-4 max-w-[520px] text-lg leading-relaxed text-ld-text-secondary">
@@ -832,12 +429,12 @@ export default function LandingPage() {
 
           {/* Existing buttons — go register or log in */}
           <div className="mt-8 flex flex-wrap justify-center gap-4">
-            <Link href="/register" className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-8 py-4 text-base font-semibold text-ld-on-accent transition-[background-color,border-color,color,box-shadow] duration-200 hover:bg-ld-accent-dim hover:shadow-pop">
-              Start Trading <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link href="/login" className="rounded-lg border border-ld-border px-8 py-4 text-base font-semibold text-ld-text transition-colors duration-200 hover:border-ld-accent hover:bg-ld-accent/[0.06]">
+            <ButtonLink href="/register" className="px-8 text-base">
+              Start Trading <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </ButtonLink>
+            <ButtonLink href="/login" variant="secondary" className="px-8 text-base">
               Sign In
-            </Link>
+            </ButtonLink>
           </div>
 
           {/* Explore-freely grid — replaces the legacy waitlist card.
@@ -847,7 +444,7 @@ export default function LandingPage() {
               proofs; source code is the transparency signal.
               `id="explore"` is the anchor target for the nav link. */}
           <div id="explore" className="mx-auto mt-12 max-w-[760px] rounded-xl border border-ld-border bg-ld-card p-6 lg:p-7 scroll-mt-24">
-            <p className="font-mono text-xs uppercase tracking-[0.14em] text-ld-text-muted text-center">
+            <p className="eyebrow font-mono text-ld-text-muted text-center">
               Or explore freely — no account needed
             </p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -888,7 +485,7 @@ export default function LandingPage() {
 
       {/* ── Footer ── */}
       <footer className="border-t border-ld-border bg-ld-deep">
-        <div className="mx-auto flex max-w-[1280px] flex-col items-center gap-3 px-4 py-6 text-center lg:px-7">
+        <div className="mx-auto flex max-w-[1280px] flex-col items-center gap-3 px-[var(--gutter)] py-6 text-center">
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm text-ld-text-muted">
             <Link href="/pricing" className="hover:text-ld-text">Pricing</Link>
             <Link href="/learn" className="hover:text-ld-text">Learn</Link>

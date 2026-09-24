@@ -426,6 +426,13 @@
    unwrapped silently breaks `text-text-secondary` on Link tags, etc.
    (See memory: feedback_tailwind_v4_layers.md.) */
 @layer base {
+  /* One horizontal gutter for every contained band on the public pages
+     (nav, hero, sections, footer): px-[var(--gutter)] on the inner
+     wrapper, so the bands' first content edges line up at every width. */
+  :root {
+    --gutter: clamp(16px, 4vw, 56px);
+  }
+
   html {
     background-color: var(--color-bg-primary);
   }

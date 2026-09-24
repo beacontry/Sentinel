@@ -50,7 +50,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
       </a>
       {/* Navbar — mirrors src/app/page.tsx structure but with public-route nav links */}
       <nav className={`fixed inset-x-0 top-0 z-50 border-b transition-[background-color,border-color,color,box-shadow] duration-200 ${scrolled ? "border-ld-accent/18 bg-ld-deep/94 shadow-pop" : "border-ld-border bg-ld-deep/86"} backdrop-blur-[18px]`}>
-        <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-5 lg:px-7">
+        <div className="mx-auto flex min-h-[78px] max-w-[1280px] items-center justify-between gap-4 px-[var(--gutter)]">
           <Link href="/" className="flex items-center gap-3 text-lg font-bold tracking-tight">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ld-accent text-ld-on-accent">
               <BeacontryMark variant="full" className="h-8 w-8" aria-label="Beacontry" />
@@ -123,13 +123,13 @@ export function PublicShell({ children, active }: PublicShellProps) {
       <div className="h-[78px]" aria-hidden="true" />
 
       {/* Page content */}
-      <main id="main" tabIndex={-1} className="mx-auto max-w-[1180px] px-4 py-8 outline-hidden lg:px-7 lg:py-12">
+      <main id="main" tabIndex={-1} className="mx-auto max-w-[1180px] px-[var(--gutter)] py-8 outline-hidden lg:py-12">
         {children}
       </main>
 
       {/* Footer */}
       <footer className="mt-16 border-t border-ld-border bg-ld-deep">
-        <div className="mx-auto flex max-w-[1280px] flex-col items-center gap-3 px-4 py-6 text-center text-sm text-ld-text-muted lg:px-7">
+        <div className="mx-auto flex max-w-[1280px] flex-col items-center gap-3 px-[var(--gutter)] py-6 text-center text-sm text-ld-text-muted">
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
             <Link href="/" className="hover:text-ld-text">Home</Link>
             <Link href="/pricing" className="hover:text-ld-text">Pricing</Link>

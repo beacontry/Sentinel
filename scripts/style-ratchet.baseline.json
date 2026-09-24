@@ -1,6 +1,6 @@
 {
   "text-[8-11px]": 0,
-  "text-[arbitrary size]": 18,
+  "text-[arbitrary size]": 9,
   "rounded-[arbitrary]": 0,
   "shadow-[arbitrary]": 0,
   "text-white": 6,
@@ -10,11 +10,11 @@
   "raw <button": 91,
   "raw <input": 9,
   "backdrop-blur": 9,
-  "-[#hex]": 4,
+  "-[#hex]": 0,
   "rgb()/rgba() literal": 6,
-  "bg-white/ or bg-black/": 8,
+  "bg-white/ or bg-black/": 5,
   "state colour alpha tint": 94,
   "border-l-2/4 stripe": 0,
-  "inline fontSize 8-11": 6,
+  "inline fontSize 8-11": 0,
   "uppercase + tracking-[arbitrary]": 92
 }

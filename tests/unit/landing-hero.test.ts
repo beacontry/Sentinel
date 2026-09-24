@@ -34,11 +34,17 @@ describe("accent CTAs", () => {
     // carry a label colour (decorative dots have none).
     const labelled = [...html.matchAll(/class="([^"]*)"/g)]
       .map((m) => m[1].split(/\s+/))
-      .filter((cls) => cls.includes("bg-ld-accent") && cls.some((c) => /^text-(white|ld-)/.test(c)));
+      .filter(
+        (cls) =>
+          (cls.includes("bg-ld-accent") || cls.includes("bg-accent")) &&
+          cls.some((c) => /^text-(white|ld-|on-accent)/.test(c)),
+      );
+    // The CTAs are ButtonLinks now (bg-accent + text-on-accent), which the
+    // landing's ld-accent aliases resolve to the same colours.
     expect(labelled.length).toBeGreaterThanOrEqual(5);
     for (const cls of labelled) {
       expect(cls).not.toContain("text-white");
-      expect(cls).toContain("text-ld-on-accent");
+      expect(cls.includes("text-ld-on-accent") || cls.includes("text-on-accent")).toBe(true);
     }
   });
 });
