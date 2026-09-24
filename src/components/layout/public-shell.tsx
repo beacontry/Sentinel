@@ -77,7 +77,7 @@ export function PublicShell({ children, active }: PublicShellProps) {
 
           <div className="hidden items-center gap-3 md:flex">
             <ThemePicker variant="icon" />
-            <Link href="/register" className="rounded-lg bg-ld-accent px-5 py-3 text-base font-semibold text-ld-on-accent transition-[background-color,border-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop">
+            <Link href="/register" className="rounded-lg bg-ld-accent px-5 py-3 text-base font-semibold text-ld-on-accent transition-[background-color,border-color,color,translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop">
               Get Started
             </Link>
           </div>

@@ -94,7 +94,7 @@ export function ThemePicker({
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-label="Choose theme"
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-ld-border text-ld-text-secondary transition-[background-color,border-color,color,transform] duration-200 hover:-translate-y-0.5"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-ld-border text-ld-text-secondary transition-[background-color,border-color,color,translate] duration-200 hover:-translate-y-0.5"
         >
           <Palette className="h-4 w-4" />
         </button>
