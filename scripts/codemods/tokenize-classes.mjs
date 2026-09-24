@@ -108,13 +108,28 @@ const FAMILIES = {
 const TRANSFORM = /(?:^|[\s:])-?(?:translate-|scale-|rotate-|skew-)/;
 const OPACITY = /(?:^|[\s:])opacity-/;
 const SHADOW = /(?:^|[\s:])shadow(?:-|\s|$)/;
-const STATEFUL = /(?:^|\s)(?:[a-z0-9-]+:)*(?:hover|focus|focus-visible|focus-within|active|group-hover|peer-hover|aria-[a-z]+|data-[a-z-]+|open|disabled|enabled|group-focus|peer-checked|checked):/;
+const STATEFUL = /(?<![\w-])(?:[a-z0-9-]+:)*(?:hover|focus|focus-visible|focus-within|active|group-hover|peer-hover|aria-[a-z]+|data-[a-z-]+|open|disabled|enabled|group-focus|peer-checked|checked):/;
+// A bar fill whose length comes from style={{ width | height }}: the
+// transition exists to animate that length, so keep it, named.
+const BAR_ACROSS = /(?<![\w:-])(?:h-full|inset-y-0)(?![\w-])/;
+const BAR_UP = /(?<![\w:-])w-full(?![\w-])/;
 
 function rewriteTransition(str, review) {
   if (!/(?<![\w-])transition-all(?![\w-])/.test(str)) return [str, 0];
-  if (!STATEFUL.test(str) && !/\$\{/.test(str)) {
-    review.push("transition-all with no state variant: " + str.trim().slice(0, 90));
-    return [str, 0];
+  if (!STATEFUL.test(str)) {
+    const bar = BAR_ACROSS.test(str) ? "width" : BAR_UP.test(str) ? "height" : null;
+    if (bar) {
+      let n = 0;
+      const out = str.replace(/(?<![\w-])transition-all(?![\w-])/g, () => {
+        n++;
+        return `transition-[${bar},background-color]`;
+      });
+      return [out, n];
+    }
+    if (!/\$\{/.test(str)) {
+      review.push("transition-all with no state variant: " + str.trim().slice(0, 90));
+      return [str, 0];
+    }
   }
   const props = ["background-color", "border-color", "color"];
   if (TRANSFORM.test(str)) props.push("transform");

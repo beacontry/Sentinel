@@ -62,6 +62,13 @@ describe("tokenize-classes: families", () => {
     );
   });
 
+  it("transition: keeps a bar fill's length animation, named", () => {
+    expect(run("`h-full rounded-full transition-all ${ok ? \"bg-bullish\" : \"bg-bearish\"}`", "transition").out).toBe(
+      "`h-full rounded-full transition-[width,background-color] ${ok ? \"bg-bullish\" : \"bg-bearish\"}`",
+    );
+    expect(run(`"w-full rounded transition-all"`, "transition").out).toBe(`"w-full rounded transition-[height,background-color]"`);
+  });
+
   it("transition: leaves a stateless transition-all for review (likely a width animation)", () => {
     const r = run(`"h-2 rounded-full bg-accent transition-all duration-500"`, "transition");
     expect(r.out).toBe(`"h-2 rounded-full bg-accent transition-all duration-500"`);
