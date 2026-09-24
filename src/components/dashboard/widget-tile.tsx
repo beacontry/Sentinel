@@ -36,6 +36,8 @@ interface SortableWidgetProps {
   onMoveUp: () => void;
   onMoveDown: () => void;
   onCycleSize: () => void;
+  /** Extra span classes that fill a row's blank cells (widget-grid-fill.ts). */
+  fillClass?: string;
   children: ReactNode;
 }
 
@@ -50,6 +52,7 @@ export function SortableWidget({
   onMoveUp,
   onMoveDown,
   onCycleSize,
+  fillClass = "",
   children,
 }: SortableWidgetProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -76,7 +79,7 @@ export function SortableWidget({
           : "";
 
   return (
-    <div ref={setNodeRef} style={style} className={`min-w-0 ${colSpan}`}>
+    <div ref={setNodeRef} style={style} className={`min-w-0 ${colSpan} ${fillClass}`}>
       <WidgetWrapper
         title={def.name}
         description={def.description}

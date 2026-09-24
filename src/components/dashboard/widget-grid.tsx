@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { SortableWidget } from "./widget-tile";
+import { fillClasses } from "@/lib/widget-grid-fill";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button, Spinner } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -316,6 +317,15 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
   // dnd-kit needs string IDs at the SortableContext level
   const sortableIds = entries.map((e) => e.id);
 
+  // Outside layout mode, a tile beside a blank cell widens into it, so no
+  // row ends in an empty slot (the default layout is 11 cells on a 3-wide
+  // grid). In layout mode every tile shows its chosen size.
+  const shown = entries.filter((e) => getWidgetDefinition(e.id));
+  const fills = editMode
+    ? []
+    : fillClasses(shown.map((e) => e.size ?? getWidgetDefinition(e.id)!.defaultSize));
+  const fillFor = new Map(shown.map((e, i) => [e.id, fills[i] ?? ""]));
+
   return (
     <div className="space-y-5">
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -338,6 +348,7 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
                   onMoveUp={() => handleMoveUp(index)}
                   onMoveDown={() => handleMoveDown(index)}
                   onCycleSize={() => handleCycleSize(index)}
+                  fillClass={fillFor.get(entry.id)}
                 >
                   {renderWidget(def)}
                 </SortableWidget>
