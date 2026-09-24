@@ -14,7 +14,7 @@ vi.mock("next/navigation", () => ({
 
 import { PositionsTable } from "@/components/trader/positions-table";
 import { OpenOrdersTable } from "@/components/trader/open-orders-table";
-import { AccountReadout, PnlReadout } from "@/components/trader/account-readout";
+import { DeskReadout } from "@/components/trader/account-readout";
 import { RecentTrades } from "@/components/trader/recent-activity";
 import { ToastProvider } from "@/components/ui/toast";
 import type { TraderOpenOrder, TraderPosition, TraderTrade } from "@/components/trader/types";
@@ -86,24 +86,49 @@ describe("OpenOrdersTable", () => {
   });
 });
 
-describe("Account and P&L readouts", () => {
-  it("is one bordered strip of tiles, not a card per figure", () => {
+describe("DeskReadout", () => {
+  const account = { equity: 10000, cash: -500, buyingPower: 8000, portfolioValue: 10500, longMarketValue: 10500 };
+  const lifetime = { realizedPnl: 100, realizedPnlToday: 0, unrealizedPnl: 0, totalPnl: 100 };
+
+  it("is one bordered readout, not a card per figure", () => {
     const html = renderToStaticMarkup(
-      createElement(AccountReadout, { account: { equity: 10000, cash: -500, buyingPower: 8000, portfolioValue: 10500, longMarketValue: 10500 } }),
+      createElement(DeskReadout, { account, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "dollar" }),
     );
     expect(html.match(/border-border/g)).toHaveLength(1);
     expect(html).toContain("on margin");
   });
 
+  it("leads with total equity at display size", () => {
+    const html = renderToStaticMarkup(
+      createElement(DeskReadout, { account, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "dollar" }),
+    );
+    expect(html).toMatch(/Total equity<\/dt><dd class="[^"]*text-2xl[^"]*">\$10,000.00</);
+  });
+
+  it("keeps tile figures on one line and sizes them to the tile", () => {
+    const html = renderToStaticMarkup(
+      createElement(DeskReadout, { account, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "dollar" }),
+    );
+    expect(html).toContain("whitespace-nowrap");
+    expect(html).toContain("@min-[11.5rem]:text-xl");
+  });
+
   it("shows percents only against a real basis", () => {
     const withBasis = renderToStaticMarkup(
-      createElement(PnlReadout, { todayPnl: null, lifetimePnl: { realizedPnl: 100, realizedPnlToday: 0, unrealizedPnl: 0, totalPnl: 100 }, basis: 1000, pnlFormat: "both" }),
+      createElement(DeskReadout, { account: { ...account, equity: 1000 }, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "both" }),
     );
     expect(withBasis).toContain("+$100.00 (+10.00%)");
     const noBasis = renderToStaticMarkup(
-      createElement(PnlReadout, { todayPnl: null, lifetimePnl: { realizedPnl: 100, realizedPnlToday: 0, unrealizedPnl: 0, totalPnl: 100 }, basis: undefined, pnlFormat: "both" }),
+      createElement(DeskReadout, { account: null, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "both" }),
     );
     expect(noBasis).not.toContain("%");
+  });
+
+  it("says the balances are unavailable rather than hiding them", () => {
+    const html = renderToStaticMarkup(
+      createElement(DeskReadout, { account: null, todayPnl: null, lifetimePnl: lifetime, pnlFormat: "dollar" }),
+    );
+    expect(html).toContain("Balances unavailable");
   });
 });
 
