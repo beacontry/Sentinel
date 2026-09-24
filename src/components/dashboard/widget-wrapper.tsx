@@ -62,7 +62,7 @@ export function WidgetWrapper({
             </h2>
             {description && <p className="mt-0.5 line-clamp-2 text-xs text-text-muted">{description}</p>}
           </div>
-          <div className="-mr-2 -mt-1 flex shrink-0 items-center gap-1">
+          <div className="-mr-2 -mt-1 flex shrink-0 items-center gap-2">
             {editMode ? headerAction : link && (
               <ButtonLink href={link.href} variant="ghost" size="sm">
                 {link.label}

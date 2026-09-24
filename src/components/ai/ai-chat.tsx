@@ -167,7 +167,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {messages.length > 0 && (
               <Button variant="ghost" size="sm" onClick={clearChat} className="w-9 px-0" title="Clear chat" aria-label="Clear chat">
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />

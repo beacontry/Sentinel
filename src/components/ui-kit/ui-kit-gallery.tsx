@@ -79,9 +79,11 @@ export function UiKitGallery() {
           <ButtonLink href="/dashboard" variant="secondary">Link as button</ButtonLink>
         </div>
         {/* The tight rows the app uses for row actions: the hit-area check
-            asserts neither button's pseudo reaches over its neighbour. */}
+            asserts neither button's pseudo reaches over its neighbour.
+            Icon-only sm buttons pad 4px a side to reach 44px wide, so
+            their rows keep gap-2; text sm buttons pad nothing sideways. */}
         <div className="mt-3 flex flex-wrap items-center gap-6">
-          <div data-kit="tight-row" className="flex items-center gap-0.5">
+          <div data-kit="tight-row" className="flex items-center gap-2">
             <Button size="sm" variant="ghost" aria-label="Make default"><Star className="h-4 w-4" /></Button>
             <Button size="sm" variant="ghost" aria-label="Delete watchlist"><Trash2 className="h-4 w-4" /></Button>
           </div>

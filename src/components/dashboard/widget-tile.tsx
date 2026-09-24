@@ -86,7 +86,7 @@ export function SortableWidget({
         onRemove={onRemove}
         headerAction={
           editMode ? (
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="sm"

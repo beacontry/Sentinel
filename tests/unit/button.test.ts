@@ -2,7 +2,8 @@
  * The Button primitive (redesign plan, Stage 2).
  *
  * - Every size has a 44px touch target: md is min-h-11, sm draws 36px and
- *   pads its hit area with a pseudo-element.
+ *   pads its hit area with a pseudo-element to 44 by 44, sideways only
+ *   as far as a narrow (icon-only) button lacks.
  * - No transition-all, and hover only on an enabled button.
  * - A busy button is disabled, says aria-busy and keeps its label.
  * - A disabled button can print why, joined with aria-describedby.
@@ -35,19 +36,29 @@ describe("Button sizes", () => {
     expect(BUTTON_SIZES.lg).toBe(BUTTON_SIZES.md);
   });
 
-  it("pads the 36px sm button's hit area out to 44px", () => {
+  it("pads the 36px sm button's hit area out to 44px tall", () => {
     const classes = buttonClassList(render({ size: "sm" }));
     expect(classes).toContain("min-h-9");
     expect(classes).toContain("relative");
     expect(classes).toContain("before:-inset-y-1.5");
   });
 
-  // A sideways overhang paints over the previous button in a gap-0.5 or
-  // gap-1 row and takes the click on its edge (Edit opening Delete).
-  it("pads the sm hit area vertically only, never onto a neighbour", () => {
+  // An icon-only sm button is 36-40px wide. The hit area takes the
+  // button's width but never less than 44px, centred on it.
+  it("widens the sm hit area to 44px, centred, for a narrow button", () => {
+    const classes = buttonClassList(render({ size: "sm", className: "w-9 px-0", "aria-label": "Remove" }, ""));
+    for (const c of ["before:left-1/2", "before:-translate-x-1/2", "before:w-full", "before:min-w-11"]) {
+      expect(classes).toContain(c);
+    }
+  });
+
+  // A fixed sideways overhang paints over the previous button in a tight
+  // row and takes the click on its edge (Edit opening Delete). The width
+  // grows only by what a button lacks of 44px, so a text button gets none.
+  it("never gives the sm hit area a fixed sideways overhang", () => {
     const classes = buttonClassList(render({ size: "sm" }));
-    expect(classes).toContain("before:inset-x-0");
-    expect(classes.some((c) => /^before:-inset(-x)?-/.test(c) && !c.startsWith("before:-inset-y-"))).toBe(false);
+    expect(classes.some((c) => /^before:-?inset(-x)?-/.test(c) && !c.startsWith("before:-inset-y-"))).toBe(false);
+    expect(classes.some((c) => /^before:-?(left|right)-(?!1\/2$)/.test(c))).toBe(false);
   });
 
   // `.relative` is emitted after `.absolute` in the built CSS, so a sm

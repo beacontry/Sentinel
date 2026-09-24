@@ -165,7 +165,7 @@ export function ListsPanel({
                       {l.itemCount} symbol{l.itemCount === 1 ? "" : "s"}
                     </span>
                   </button>
-                  <span className="relative z-10 flex shrink-0 items-center">
+                  <span className="relative z-10 flex shrink-0 items-center gap-2">
                     {!l.isDefault && (
                       <Button variant="ghost" size="sm" onClick={() => onMakeDefault(l.id)} className="w-9 px-0" title="Make default" aria-label={`Make ${l.name} the default`}>
                         <Star className="h-4 w-4" aria-hidden="true" />
