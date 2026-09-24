@@ -13,6 +13,7 @@
 import { useEffect, useState, useCallback, useRef, use } from "react";
 import Link from "next/link";
 import { SmartBackButton } from "@/components/ui/smart-back-button";
+import { orderIntentFor, orderIntentAfterResponse, type OrderIntent } from "@/lib/order-intent";
 import {
   AlertCircle,
   DollarSign,
@@ -154,7 +155,7 @@ export default function TradePage({
   // Idempotency key for the order intent on the ticket. Minted on the first
   // submit, reused on every resubmit of the same order so the broker refuses
   // a duplicate, and replaced only after a success or when the order changes.
-  const orderIntentRef = useRef<{ key: string; clientOrderId: string } | null>(null);
+  const orderIntentRef = useRef<OrderIntent | null>(null);
 
   // ─── Derived state ──────────────────────────────────────────────
   const isLive = connection?.environment === "live";
@@ -252,6 +253,9 @@ export default function TradePage({
 
   async function placeOrder() {
     setSubmitting(true);
+    // Set once the request is handed to fetch: before that nothing can have
+    // reached the broker, and the error must say so.
+    let sent = false;
     try {
       const body: Record<string, string | undefined> = {
         symbol,
@@ -269,18 +273,17 @@ export default function TradePage({
         if (stopLossPrice) body.stopLossPrice = stopLossPrice;
       }
 
-      const intentKey = JSON.stringify(body);
-      if (orderIntentRef.current?.key !== intentKey) {
-        orderIntentRef.current = { key: intentKey, clientOrderId: crypto.randomUUID() };
-      }
+      orderIntentRef.current = orderIntentFor(orderIntentRef.current, body);
       body.clientOrderId = orderIntentRef.current.clientOrderId;
 
+      sent = true;
       const res = await fetch("/api/broker/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await res.json();
+      orderIntentRef.current = orderIntentAfterResponse(orderIntentRef.current, { ok: res.ok, code: data.code });
       if (data.code === "ORDER_STATUS_UNKNOWN") {
         // The order may be live. Keep the same clientOrderId so a resubmit
         // of this ticket is refused by the broker instead of doubling it.
@@ -303,7 +306,6 @@ export default function TradePage({
           ? `${side.toUpperCase()} ${symbol} was already submitted; no second order placed. Status: ${data.order?.status ?? "accepted"}.`
           : `${side.toUpperCase()} ${symbol} submitted — status: ${data.order?.status ?? "accepted"}.`,
       });
-      orderIntentRef.current = null;
       // Reset qty/notional but keep order type + side selection
       setQty("");
       setNotional("");
@@ -311,7 +313,9 @@ export default function TradePage({
       const msg = err instanceof Error ? err.message : "network error";
       toast.toast({
         type: "error",
-        message: `No answer from the server (${msg}). The order may have gone through: check open orders before placing it again.`,
+        message: sent
+          ? `No answer from the server (${msg}). The order may have gone through: check open orders before placing it again.`
+          : `Order not sent (${msg}). Nothing reached the broker.`,
       });
     } finally {
       setSubmitting(false);
