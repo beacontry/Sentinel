@@ -52,11 +52,13 @@ function Marker({
   return (
     <g>
       <circle cx={x} cy={y} r="4" className={`${FILL[tone]} stroke-ld-deep`} strokeWidth="2" />
-      <line x1={x} y1={y} x2={x} y2={top + 20} className={STROKE[tone]} strokeWidth="0.5" strokeDasharray="2 3" opacity="0.6" />
-      <rect x={x - width / 2} y={top} width={width} height="24" rx="4" className={`fill-ld-card ${STROKE[tone]}`} strokeOpacity="0.5" />
-      <text x={x} y={top + 16} textAnchor="middle" className={`${FILL[tone]} font-mono`} style={CALLOUT}>
-        {label}
-      </text>
+      <g className="hidden sm:inline">
+        <line x1={x} y1={y} x2={x} y2={top + 20} className={STROKE[tone]} strokeWidth="0.5" strokeDasharray="2 3" opacity="0.6" />
+        <rect x={x - width / 2} y={top} width={width} height="24" rx="4" className={`fill-ld-card ${STROKE[tone]}`} strokeOpacity="0.5" />
+        <text x={x} y={top + 16} textAnchor="middle" className={`${FILL[tone]} font-mono`} style={CALLOUT}>
+          {label}
+        </text>
+      </g>
     </g>
   );
 }
@@ -106,15 +108,20 @@ export function EquityMockup() {
             <line key={y} x1="40" x2="580" y1={y} y2={y} className="stroke-ld-border" strokeWidth="0.5" strokeDasharray="3 3" />
           ))}
 
-          <g className="fill-ld-text-muted font-mono" style={LABEL}>
-            <text x="585" y="84">+20%</text>
-            <text x="585" y="144">+15%</text>
-            <text x="585" y="204">+10%</text>
-            <text x="585" y="264">+5%</text>
-            <text x="585" y="324">0%</text>
+          {/* The axis labels sat at x=585 in a 600-wide box and were cut to
+              "+2", "+1". They now end at the plot's left edge. Below sm the
+              chart is ~330px wide, so 12 units would render under 6px: the
+              labels and callouts hide there, and the curve, the markers and
+              the figures above carry the story. */}
+          <g className="hidden fill-ld-text-muted font-mono sm:inline" style={LABEL} textAnchor="end">
+            <text x="34" y="84">+20%</text>
+            <text x="34" y="144">+15%</text>
+            <text x="34" y="204">+10%</text>
+            <text x="34" y="264">+5%</text>
+            <text x="34" y="324">0%</text>
           </g>
 
-          <g className="fill-ld-text-muted font-mono" style={LABEL} textAnchor="middle">
+          <g className="hidden fill-ld-text-muted font-mono sm:inline" style={LABEL} textAnchor="middle">
             <text x="60" y="348">W1</text>
             <text x="180" y="348">W2</text>
             <text x="300" y="348">W3</text>

@@ -1,163 +1,168 @@
+import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
 import { ButtonLink } from "@/components/ui/button-link";
+import { SITE_NAV_OFFSET } from "@/components/marketing/site-nav";
+import { BAND, SectionHeading } from "@/components/marketing/section-heading";
+
+// Four-tier structure (2026-05-14):
+//   Free         research and education (no engine, no AI)
+//   Trader $20   full platform without AI (most popular)
+//   Premium $40  Trader plus AI and future premium data
+//   Self-Hosted  source-available (FSL-1.1), bring your own infra.
+//                FSL is "source-available" until each commit converts
+//                to Apache 2.0 at two years.
+// /pricing is the canonical surface; keep these in step with it.
+const TIERS = [
+  {
+    name: "Free",
+    tag: "Hosted",
+    price: "$0",
+    cadence: "",
+    annual: "Public data and education",
+    desc: "Browse, learn, research. No trading.",
+    features: [
+      "All 14 guides and 95 glossary terms",
+      "8 financial calculators",
+      "Congressional trades and Reddit",
+      "SEC filings and earnings calendar",
+      "1 watchlist, 10 symbols",
+      "Read-only community access",
+      "No engine, no AI",
+    ],
+    cta: "Sign up free",
+    href: "/register",
+    highlight: false,
+  },
+  {
+    name: "Trader",
+    tag: "Most popular",
+    price: "$20",
+    cadence: "/ month",
+    annual: "$200/yr, saves 2 months",
+    desc: "The full platform without AI features.",
+    features: [
+      "Full engine (paper and live trading)",
+      "All 8 modes, GA optimizer, adaptive",
+      "Multi-broker (up to 3)",
+      "Finnhub data (news, sentiment, options)",
+      "Audit log, tax center, journal",
+      "Unlimited watchlists and alerts",
+      "Full community access",
+    ],
+    cta: "Start with Trader",
+    href: "/register",
+    highlight: true,
+  },
+  {
+    name: "Premium",
+    tag: "AI and future data",
+    price: "$40",
+    cadence: "/ month",
+    annual: "$400/yr, saves 2 months",
+    desc: "Trader plus AI and premium data (coming).",
+    features: [
+      "Everything in Trader, plus:",
+      "AI chat assistant (Groq Llama 3.3)",
+      "AI signal scoring and journal review",
+      "Daily AI market digest",
+      "L2 / order book (roadmap)",
+      "Real-time SIP feed (roadmap)",
+      "Dark pool data (roadmap)",
+    ],
+    cta: "Step up to Premium",
+    href: "/register",
+    highlight: false,
+  },
+  {
+    name: "Self-Hosted",
+    tag: "Source-available",
+    price: "Free",
+    cadence: "",
+    annual: "Your data, your hardware",
+    desc: "Bring your own Postgres, broker and API keys.",
+    features: [
+      "Source code on GitHub (FSL-1.1)",
+      "Same engine, your control",
+      "Your own Finnhub, Groq and broker keys",
+      "No telemetry, no SaaS lock-in",
+      "Privacy-first deployments",
+      "Converts to Apache 2.0 after 2 years",
+    ],
+    cta: "View on GitHub",
+    href: "https://github.com/beacontry/Sentinel",
+    highlight: false,
+  },
+];
 
 /**
- * The landing page's pricing teaser. /pricing is the canonical pricing
- * surface; this is the quick glance for readers who scroll. Split out of
- * src/app/page.tsx.
+ * The landing page's pricing glance. The four tiers sit in one ruled
+ * grid rather than four floating cards with a badge hanging off one: the
+ * recommended tier is marked by its raised fill, the primary button and
+ * the words "Most popular", not by a glow.
  */
 export function PricingTeaser() {
   return (
-    <>
-        {/* ── Pricing ── */}
-        <section id="pricing" className="bg-ld-panel py-28 lg:py-28">
-          <div className="animate-fade-in-up mx-auto mb-16 max-w-[760px] px-4 text-center">
-            <p className="mb-3 eyebrow font-mono text-ld-accent">{"// pricing"}</p>
-            <h2 className="text-2xl font-bold leading-tight tracking-[-0.03em] text-balance">
-              Simple pricing. Real power.
-            </h2>
-            <p className="mx-auto mt-4 max-w-[820px] text-lg leading-relaxed text-ld-text-secondary">
-              Bring your own broker. Annual saves ~17%. Cancel anytime.
-            </p>
-          </div>
+    <section id="pricing" aria-labelledby="pricing-title" className={`border-y border-border bg-bg-secondary ${SITE_NAV_OFFSET}`}>
+      <div className={BAND}>
+        <SectionHeading
+          id="pricing-title"
+          title="Simple pricing"
+          lede="Bring your own broker. Annual billing saves about 17%. Cancel anytime."
+          action={
+            <Link href="/pricing" className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-accent hover:underline">
+              Compare every feature <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          }
+        />
 
-          <div className="mx-auto grid max-w-[1280px] items-stretch gap-5 px-[var(--gutter)] sm:grid-cols-2 lg:grid-cols-4">
-            {/* Four-tier structure (2026-05-14):
-                  Free            — research + education (no engine, no AI)
-                  Trader $20      — full platform without AI (most popular)
-                  Premium $40     — Trader + AI + future premium data
-                  Self-Hosted     — source-available (FSL-1.1), BYO infra.
-                                    Renamed from "Open Source" 2026-05-14 —
-                                    FSL is technically "source-available"
-                                    until each commit auto-converts to
-                                    Apache 2.0 at 2 years. */}
-            {[
-              {
-                name: "Free",
-                tag: "Hosted",
-                price: "$0",
-                cadence: "",
-                annual: "Public data + education",
-                desc: "Browse, learn, research. No trading.",
-                features: [
-                  "All 14 guides + 95 glossary terms",
-                  "8 financial calculators",
-                  "Congressional trades + Reddit",
-                  "SEC filings + earnings calendar",
-                  "1 watchlist, 10 symbols",
-                  "Read-only community access",
-                  "No engine, no AI",
-                ],
-                cta: "Sign up free",
-                highlight: false,
-              },
-              {
-                name: "Trader",
-                tag: "Most popular",
-                price: "$20",
-                cadence: "/ month",
-                annual: "$200/yr — saves 2 months",
-                desc: "Full platform without AI features.",
-                features: [
-                  "Full engine (paper + live trading)",
-                  "All 8 modes + GA optimizer + adaptive",
-                  "Multi-broker (up to 3)",
-                  "Finnhub data (news, sentiment, options)",
-                  "Audit log + tax center + journal",
-                  "Unlimited watchlists + alerts",
-                  "Full community access",
-                ],
-                cta: "Start with Trader",
-                highlight: true,
-              },
-              {
-                name: "Premium",
-                tag: "AI + future data",
-                price: "$40",
-                cadence: "/ month",
-                annual: "$400/yr — saves 2 months",
-                desc: "Trader + AI + premium data (coming).",
-                features: [
-                  "Everything in Trader, plus:",
-                  "AI chat assistant (Groq Llama 3.3)",
-                  "AI signal scoring + journal review",
-                  "Daily AI market digest",
-                  "L2 / order book (roadmap)",
-                  "Real-time SIP feed (roadmap)",
-                  "Dark pool data (roadmap)",
-                ],
-                cta: "Step up to Premium",
-                highlight: false,
-              },
-              {
-                name: "Self-Hosted",
-                tag: "Source-available",
-                price: "Free",
-                cadence: "",
-                annual: "Your data, your hardware",
-                desc: "BYO Postgres + broker + API keys.",
-                features: [
-                  "Source code on GitHub (FSL-1.1)",
-                  "Same engine, your control",
-                  "BYO Finnhub + Groq + broker",
-                  "No telemetry, no SaaS lock-in",
-                  "Privacy-first deployments",
-                  "Auto-converts to Apache 2.0 after 2 years",
-                ],
-                cta: "View on GitHub",
-                highlight: false,
-              },
-            ].map((tier, i) => (
-              <article
-                key={tier.name}
-                className={`animate-fade-in-up stagger-${i + 1} relative flex flex-col rounded-xl border bg-ld-card p-8 ${
-                  tier.highlight
-                    ? "border-ld-accent/40 ring-1 ring-ld-accent/20"
-                    : "border-ld-border"
-                }`}
-              >
-                {tier.highlight && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-ld-accent px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider text-ld-on-accent">
-                    {tier.tag}
-                  </div>
-                )}
-                {!tier.highlight && (
-                  <p className="eyebrow font-mono text-ld-text-muted">{tier.tag}</p>
-                )}
-
-                <h3 className="mt-3 text-xl font-bold">{tier.name}</h3>
-                <p className="mt-2 text-base text-ld-text-secondary">{tier.desc}</p>
-
-                <div className="mt-5 flex items-baseline gap-1">
-                  <span className="text-2xl font-extrabold leading-none">{tier.price}</span>
-                  {tier.cadence && <span className="text-ld-text-muted">{tier.cadence}</span>}
-                </div>
-                <p className="mt-1 text-xs text-ld-text-muted">{tier.annual}</p>
-
-                <ul className="mt-6 flex-1 space-y-2.5 text-base">
-                  {tier.features.map((feat) => (
-                    <li key={feat} className="flex items-start gap-2 text-ld-text-secondary">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-ld-accent" />
-                      <span>{feat}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <ButtonLink
-                  href={tier.name === "Self-Hosted" ? "https://github.com/beacontry/Sentinel" : "/register"}
-                  variant={tier.highlight ? "primary" : "secondary"}
-                  className="mt-8 text-base"
+        <ul className="mt-12 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+          {TIERS.map((tier) => (
+            <li key={tier.name} className={`flex flex-col p-6 lg:p-7 ${tier.highlight ? "bg-bg-surface" : "bg-bg-primary"}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-lg font-semibold text-text-primary">{tier.name}</h3>
+                <span
+                  className={
+                    tier.highlight
+                      ? "rounded-full bg-accent px-2.5 py-0.5 text-xs font-semibold text-on-accent"
+                      : "text-xs text-text-muted"
+                  }
                 >
-                  {tier.cta} {tier.name !== "Self-Hosted" && <ArrowRight className="h-4 w-4" aria-hidden="true" />}
-                </ButtonLink>
-              </article>
-            ))}
-          </div>
+                  {tier.tag}
+                </span>
+              </div>
+              {/* Two lines reserved, so the four prices share a baseline. */}
+              <p className="mt-1 min-h-[2lh] text-sm text-text-secondary">{tier.desc}</p>
 
-          <p className="mx-auto mt-10 max-w-[680px] px-4 text-center text-sm text-ld-text-muted">
-            Need team / firm / white-label? <a href="mailto:hello@beacontry.com" className="text-ld-accent hover:underline">Get in touch</a> for Team and Enterprise pricing.
-          </p>
-        </section>
-    </>
+              <p className="mt-5 flex items-baseline gap-1">
+                <span className="text-2xl font-bold tabular-nums leading-none tracking-[-0.03em] text-text-primary">{tier.price}</span>
+                {tier.cadence && <span className="text-sm text-text-muted">{tier.cadence}</span>}
+              </p>
+              <p className="mt-1.5 text-xs text-text-muted">{tier.annual}</p>
+
+              <ul className="mt-6 flex-1 space-y-2 text-sm">
+                {tier.features.map((feat) => (
+                  <li key={feat} className="flex items-start gap-2 text-text-secondary">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
+                    <span>{feat}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <ButtonLink href={tier.href} variant={tier.highlight ? "primary" : "secondary"} className="mt-8 w-full">
+                {tier.cta}
+              </ButtonLink>
+            </li>
+          ))}
+        </ul>
+
+        <p className="mt-6 text-sm text-text-muted">
+          Need team, firm or white-label?{" "}
+          <a href="mailto:hello@beacontry.com" className="font-medium text-accent hover:underline">
+            Get in touch
+          </a>{" "}
+          for Team and Enterprise pricing.
+        </p>
+      </div>
+    </section>
   );
 }
