@@ -57,6 +57,11 @@ describe("top-nav-shell.tsx", () => {
     expect(src).toContain("top-[calc(env(safe-area-inset-top)+12px)]");
   });
 
+  it("starts the phone scroller below the fixed hamburger, so page titles are not covered", () => {
+    // 12px offset + 44px button = 56px, under the same safe-area inset.
+    expect(src).toMatch(/<main [^>]*pt-\[calc\(env\(safe-area-inset-top\)\+56px\)\] lg:pt-0/);
+  });
+
   it("paints <main> from a class, not an inline style", () => {
     expect(src).not.toContain('backgroundColor: "var(--color-bg-primary)"');
   });

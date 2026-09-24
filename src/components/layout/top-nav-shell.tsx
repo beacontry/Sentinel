@@ -358,7 +358,10 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Main content */}
-        <main id="main" tabIndex={-1} className="flex-1 min-w-0 overflow-y-auto bg-bg-primary outline-hidden">
+        {/* Below lg the hamburger is fixed over the top-left corner (12px down,
+            44px tall), so the scroller starts under it; otherwise every page
+            title slides beneath the button. */}
+        <main id="main" tabIndex={-1} className="flex-1 min-w-0 overflow-y-auto bg-bg-primary outline-hidden pt-[calc(env(safe-area-inset-top)+56px)] lg:pt-0">
           {children}
         </main>
       </div>
