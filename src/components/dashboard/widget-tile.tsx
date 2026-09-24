@@ -64,22 +64,23 @@ export function SortableWidget({
     zIndex: isDragging ? 10 : "auto",
   };
 
-  // Map effective size → grid column span. Mirrors widget-wrapper's table.
+  // Effective size to grid span. The grid is 1 column on phones, 2 from
+  // md, 3 from xl and 4 from 2xl (widget-grid.tsx).
   const colSpan =
     size === "full"
       ? "col-span-full"
       : size === "lg"
-        ? "col-span-1 md:col-span-2 2xl:col-span-3"
+        ? "md:col-span-2 xl:col-span-3"
         : size === "md"
-          ? "col-span-1 md:col-span-2 2xl:col-span-2"
-          : "col-span-1";
+          ? "md:col-span-2"
+          : "";
 
   return (
-    <div ref={setNodeRef} style={style} className={colSpan}>
+    <div ref={setNodeRef} style={style} className={`min-w-0 ${colSpan}`}>
       <WidgetWrapper
         title={def.name}
         description={def.description}
-        size={size}
+        link={def.link}
         editMode={editMode}
         index={index}
         onRemove={onRemove}

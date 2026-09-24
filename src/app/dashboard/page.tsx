@@ -20,20 +20,21 @@ export default function DashboardPage() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   return (
-    <div className="p-4 lg:p-6 space-y-6">
+    <div className="space-y-5 p-4 lg:space-y-6 lg:p-6">
       {/* Free-tier first-impression card — auto-hides for paid users and
           for free users who've dismissed it once. */}
       <FreeTierWelcome />
 
-      {/* Header — S6 style: bold title, subtitle, actions on right */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-8">
+      {/* Title and one line on the left, the layout controls on the right;
+          stacked on phones, where the two labelled buttons shrink to icons. */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Live market context, execution tools, and the modules you use.
+          <h1 className="text-2xl font-semibold tracking-tight text-text-primary">Dashboard</h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            Your markets, trades and research in one place. Arrange the modules to suit you.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <LayoutSwitcher
             currentEntries={activeEntries}
             onChanged={() => setRefreshKey((k) => k + 1)}
@@ -64,9 +65,9 @@ export default function DashboardPage() {
         <div role="status" className="flex items-center gap-3 rounded-lg border border-accent bg-bg-secondary px-4 py-3 animate-fade-in">
           <Pencil className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
           <p className="text-sm text-text-secondary">
-            <span className="font-medium text-text-primary">Layout mode</span>{" "}
-            &mdash; drag to reorder, click the resize icon to cycle sizes, or
-            use the layout menu to save this view.
+            <span className="font-medium text-text-primary">Layout mode.</span>{" "}
+            Drag a module or use its arrows to move it, the resize button to
+            change its width, and the layout menu to save this arrangement.
           </p>
         </div>
       )}
