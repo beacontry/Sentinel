@@ -7,11 +7,13 @@
 import { describe, it, expect } from "vitest";
 import {
   applyEngineResponse,
+  connectionStat,
   diffRiskProfile,
   emptyRiskForm,
   engineControls,
   hasLoaded,
   initialLoadState,
+  isStale,
   lastKnownMode,
   loadFailed,
   loadStarted,
@@ -19,6 +21,7 @@ import {
   mtmToggleBody,
   parseStatusMode,
   profileToRiskForm,
+  refreshFailureMessage,
   riskFormToEngineParams,
   syncedPickerMode,
 } from "@/lib/trader-view";
@@ -217,5 +220,33 @@ describe("MTM checkbox PUT body (#36)", () => {
       hasTraderTaxStatus: false,
       mtmElectionYear: null,
     });
+  });
+});
+
+describe("stale dashboard data (#33)", () => {
+  const INTERVAL = 10_000;
+  const ok = loadSucceeded(initialLoadState(), 100_000);
+
+  it("keeps reading Online through one failed poll", () => {
+    const failed = loadFailed(ok, "Dashboard: HTTP 500");
+    expect(isStale(failed, 110_000, INTERVAL)).toBe(false);
+    expect(connectionStat(true, failed, 110_000, INTERVAL)).toEqual({ value: "Online", tone: "bullish" });
+  });
+
+  it("reads Stale once the last good refresh is older than two intervals", () => {
+    const failed = loadFailed(ok, "Dashboard: HTTP 500");
+    expect(isStale(failed, 120_001, INTERVAL)).toBe(true);
+    expect(connectionStat(true, failed, 120_001, INTERVAL).value).toBe("Stale");
+  });
+
+  it("is never stale while refreshes succeed, however old the clock", () => {
+    expect(isStale(ok, 10_000_000, INTERVAL)).toBe(false);
+    expect(connectionStat(false, ok, 10_000_000, INTERVAL)).toEqual({ value: "Offline", tone: "bearish" });
+  });
+
+  it("names the source and status of a failed refresh", () => {
+    expect(refreshFailureMessage("Dashboard", 500)).toBe("Dashboard: HTTP 500");
+    expect(refreshFailureMessage("Dashboard", 429)).toBe("Dashboard: rate limited (429)");
+    expect(refreshFailureMessage("Engine status", null)).toBe("Engine status: network error");
   });
 });

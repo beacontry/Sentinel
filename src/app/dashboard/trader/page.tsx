@@ -20,7 +20,6 @@ import { PageIntro } from "@/components/layout/page-intro";
 import { TraderTierRequired } from "@/components/tiers/trader-tier-required";
 import { PostMortemButton } from "@/components/trader/post-mortem-button";
 import {
-  Bot,
   TrendingUp,
   TrendingDown,
   DollarSign,
@@ -38,6 +37,7 @@ import { PRESET_LABELS } from "@/lib/strategy-presets";
 import { TraderTaxCallouts } from "@/components/trader/tax-callouts";
 import {
   applyEngineResponse,
+  connectionStat,
   diffRiskProfile,
   emptyRiskForm,
   engineControls,
@@ -49,6 +49,7 @@ import {
   loadSucceeded,
   mtmToggleBody,
   profileToRiskForm,
+  refreshFailureMessage,
   riskFormToEngineParams,
   syncedPickerMode,
   type LoadState,
@@ -256,6 +257,12 @@ export default function TraderPage() {
   const [data, setData] = useState<TraderData | null>(null);
   const [engine, setEngine] = useState<EngineStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  // Dashboard + engine refresh state. A failed refresh keeps the last data
+  // on screen but marks it; a failed first load is an error, not the
+  // connect-a-broker empty state.
+  const [dashLoad, setDashLoad] = useState<LoadState>(initialLoadState);
+  // The dashboard answered 402: the plan does not include the trader desk.
+  const [tierRequired, setTierRequired] = useState(false);
   const [cmdLoading, setCmdLoading] = useState<string | null>(null);
   const [engineMode, setEngineMode] = useState<string>("optimized");
   // The picker follows the running engine's mode until the user picks one,
@@ -351,12 +358,26 @@ export default function TraderPage() {
         fetch("/api/trader/dashboard"),
         fetch("/api/trader/engine"),
       ]);
-      if (dashRes.status === "fulfilled" && dashRes.value.ok) setData(await dashRes.value.json());
+      let failure: string | null = null;
+      if (dashRes.status === "fulfilled" && dashRes.value.ok) {
+        setData(await dashRes.value.json());
+        setTierRequired(false);
+      } else {
+        const code = dashRes.status === "fulfilled" ? dashRes.value.status : null;
+        if (code === 402) setTierRequired(true);
+        failure = refreshFailureMessage("Dashboard", code);
+      }
       if (engRes.status === "fulfilled" && engRes.value.ok) {
         setEngine(applyEngineResponse<EngineStatus>(await engRes.value.json()));
+      } else {
+        failure ??= refreshFailureMessage(
+          "Engine status",
+          engRes.status === "fulfilled" ? engRes.value.status : null,
+        );
       }
+      setDashLoad((s) => (failure ? loadFailed(s, failure) : loadSucceeded(s, Date.now())));
     } catch {
-      // Silent
+      setDashLoad((s) => loadFailed(s, refreshFailureMessage("Dashboard", null)));
     } finally {
       setLoading(false);
     }
@@ -467,34 +488,51 @@ export default function TraderPage() {
   }
 
   if (!data) {
+    // Only a failed load leaves data null: the dashboard route always
+    // answers a payload, including for a user with no broker yet.
     return (
       <div className="p-4 lg:p-6 space-y-6">
         <PageIntro
           eyebrow="Execution Desk"
           title="Live Trader"
-          description="The execution shell is ready. Connect the trading agent to turn this screen into a live risk and order monitor."
-          stats={[
-            { label: "Connection", value: "Offline", tone: "bearish" },
-            { label: "Mode", value: "Awaiting Agent", tone: "neutral" },
-          ]}
+          description="Monitor the automated trader as a risk system first and an execution engine second."
+          stats={[{ label: "Connection", value: "Unknown", tone: "neutral" }]}
         />
-        <div className="rounded-xl border border-border bg-bg-surface p-12 text-center">
-          <Bot className="w-12 h-12 text-text-muted mx-auto mb-4" />
-          <h3 className="font-display text-lg font-semibold mb-2">
-            No trader data yet
-          </h3>
-          <p className="text-sm text-text-secondary max-w-sm mx-auto">
-            Connect a broker under Settings &rarr; Broker Connections, then start the
-            engine here. Live positions, P&amp;L, and trade history appear once the
-            first scan runs.
-          </p>
-        </div>
+        {tierRequired ? (
+          <>
+            <TraderTierRequired />
+            <div role="alert" className="rounded-xl border border-border bg-bg-surface p-8 text-center">
+              <h3 className="font-display text-lg font-semibold mb-2">Trader plan required</h3>
+              <p className="text-sm text-text-secondary max-w-sm mx-auto">
+                The trader desk needs an active Trader plan. If you already have one, the plan check
+                may have failed; try again in a moment.
+              </p>
+              <Button variant="secondary" size="sm" className="mt-4" onClick={() => load()}>
+                <RefreshCw className="w-4 h-4" /> Retry
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div role="alert" className="rounded-xl border border-bearish/40 bg-bearish/5 p-8 text-center">
+            <AlertTriangle className="w-10 h-10 text-bearish mx-auto mb-3" />
+            <h3 className="font-display text-lg font-semibold mb-2">Could not load trader data</h3>
+            <p className="text-sm text-text-secondary max-w-sm mx-auto">
+              Your positions and engine state could not be read, so nothing is shown rather than
+              something wrong. {dashLoad.error ? `(${dashLoad.error})` : ""}
+            </p>
+            <Button variant="secondary" size="sm" className="mt-4" onClick={() => load()}>
+              <RefreshCw className="w-4 h-4" /> Retry
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
 
   const { status, todayPnl, lifetimePnl, positions, openOrders = [], trades, signals, pnlHistory, analytics } = data;
   const controls = engineControls(engine, engineMode);
+  const nowMs = Date.now();
+  const connection = connectionStat(status.connected, dashLoad, nowMs, POLLING_INTERVALS.traderDashboard);
   const resumeMode = lastKnownMode(status.mode, engine?.mode, engineMode);
   // A legacy mode the picker no longer lists (conservative, moderate,
   // aggressive) still has to show as the selected value when it is running.
@@ -515,7 +553,7 @@ export default function TraderPage() {
         title="Live Trader"
         description="Monitor the automated trader as a risk system first and an execution engine second."
         stats={[
-          { label: "Connection", value: status.connected ? "Online" : "Offline", tone: status.connected ? "bullish" : "bearish" },
+          { label: "Connection", value: connection.value, tone: connection.tone },
           // Mode dropped 2026-07-15 — it already lives in the picker and the
           // Running badge directly below. Today P&L is what a returning
           // trader actually glances for.
@@ -528,6 +566,26 @@ export default function TraderPage() {
           { label: "Signals", value: signals.length },
         ]}
       />
+      {/* A refresh failed: the figures below are the last good payload. */}
+      {dashLoad.status === "error" && (
+        <div
+          role="status"
+          className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-2 text-sm text-text-secondary flex flex-wrap items-center gap-x-3 gap-y-1"
+        >
+          <span>
+            <span className="font-semibold text-warning">
+              {dashLoad.lastSuccessAt
+                ? `Last updated ${timeAgo(new Date(dashLoad.lastSuccessAt).toISOString())}, refresh failing.`
+                : "Refresh failing."}
+            </span>{" "}
+            Figures below may be out of date. ({dashLoad.error})
+          </span>
+          <button type="button" onClick={() => load()} className="text-accent hover:underline">
+            Retry now
+          </button>
+        </div>
+      )}
+
       {/* Engine offline but open positions exist — surfaces the silent
           autostart-failed state (e.g., after a container rebuild where
           autoStartIfNeeded burned all 3 retries on a broker hiccup).
