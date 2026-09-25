@@ -83,7 +83,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
       <head>
-        <meta name="theme-color" content="#0d1511" />
+        <meta name="theme-color" content="#07120d" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
         {/* Blocking on purpose: applies the theme class BEFORE first paint
             (dark by default, stored choice wins) — see /public/theme-init.js.

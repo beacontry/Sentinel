@@ -101,7 +101,7 @@ export function AppSettingsCard() {
         <ToggleLeft className="h-4 w-4 text-text-muted" />
         <h2 className="text-sm font-semibold text-text-primary">App Settings</h2>
       </div>
-      <p className="text-[12px] text-text-muted leading-relaxed mb-4">
+      <p className="text-xs text-text-muted leading-relaxed mb-4">
         Operational feature flags. Non-secret, so values are visible. Each
         toggle writes an audit row tagged{" "}
         <code className="font-mono">system_config.updated</code> with{" "}
@@ -128,7 +128,7 @@ export function AppSettingsCard() {
                     <span className="text-sm font-semibold text-text-primary">
                       {meta?.label ?? s.key}
                     </span>
-                    <code className="font-mono text-[11px] text-text-muted">
+                    <code className="font-mono text-xs text-text-muted">
                       {s.key}
                     </code>
                     {s.isDefault && (
@@ -136,11 +136,11 @@ export function AppSettingsCard() {
                     )}
                   </div>
                   {meta?.description && (
-                    <p className="text-[12px] text-text-secondary mt-1 leading-relaxed">
+                    <p className="text-xs text-text-secondary mt-1 leading-relaxed">
                       {meta.description}
                     </p>
                   )}
-                  <p className="text-[11px] text-text-muted mt-1.5">
+                  <p className="text-xs text-text-muted mt-1.5">
                     <strong className="text-text-secondary">When ON:</strong>{" "}
                     {meta?.truthyMeans ?? "value is treated as true"}
                   </p>

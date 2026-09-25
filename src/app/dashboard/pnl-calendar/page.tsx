@@ -10,6 +10,7 @@ import { SymbolLink } from "@/components/ui/symbol-link";
 import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
 import { PnlCalendarGrid } from "@/components/dashboard/pnl-calendar-grid";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SignedValue } from "@/components/ui/signed-value";
 import {
   CalendarDays,
   TrendingUp,
@@ -136,8 +137,7 @@ export default function PnlCalendarPage() {
         stats={[
           {
             label: "Total P&L",
-            value: summary ? `${summary.totalPnl >= 0 ? "+" : ""}$${summary.totalPnl.toFixed(2)}` : "--",
-            tone: summary ? (summary.totalPnl >= 0 ? "bullish" : "bearish") : "neutral",
+            value: summary ? <SignedValue value={summary.totalPnl} /> : "--",
           },
           { label: "Profit Days", value: summary ? String(summary.profitDays) : "--", tone: "bullish" },
           { label: "Loss Days", value: summary ? String(summary.lossDays) : "--", tone: "bearish" },
@@ -204,7 +204,7 @@ export default function PnlCalendarPage() {
                     <p className="text-xl font-mono font-bold text-bullish">
                       +${summary.bestDay.pnl.toFixed(2)}
                     </p>
-                    <p className="text-[10px] text-text-muted mt-0.5">
+                    <p className="text-xs text-text-muted mt-0.5">
                       {formatDate(summary.bestDay.date)}
                     </p>
                   </>
@@ -222,7 +222,7 @@ export default function PnlCalendarPage() {
                     <p className="text-xl font-mono font-bold text-bearish">
                       ${summary.worstDay.pnl.toFixed(2)}
                     </p>
-                    <p className="text-[10px] text-text-muted mt-0.5">
+                    <p className="text-xs text-text-muted mt-0.5">
                       {formatDate(summary.worstDay.date)}
                     </p>
                   </>
@@ -241,7 +241,7 @@ export default function PnlCalendarPage() {
                 if (d.tradesCount > 0) setOpenDay(d);
               }}
             />
-            <p className="mt-3 text-[11px] text-text-muted text-center">
+            <p className="mt-3 text-xs text-text-muted text-center">
               Click any day with activity to see that day&apos;s trades.
             </p>
           </Card>
@@ -264,7 +264,7 @@ export default function PnlCalendarPage() {
           <div className="px-5 pb-2 space-y-4">
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-lg bg-bg-elevated px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wider text-text-muted">P&L</div>
+                <div className="text-xs uppercase tracking-wider text-text-muted">P&L</div>
                 <div
                   className={`font-mono text-base font-semibold ${
                     openDay.pnl >= 0 ? "text-bullish" : "text-bearish"
@@ -274,11 +274,11 @@ export default function PnlCalendarPage() {
                 </div>
               </div>
               <div className="rounded-lg bg-bg-elevated px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wider text-text-muted">Trades</div>
+                <div className="text-xs uppercase tracking-wider text-text-muted">Trades</div>
                 <div className="font-mono text-base text-text-primary">{openDay.tradesCount}</div>
               </div>
               <div className="rounded-lg bg-bg-elevated px-3 py-2">
-                <div className="text-[10px] uppercase tracking-wider text-text-muted">Avg / Trade</div>
+                <div className="text-xs uppercase tracking-wider text-text-muted">Avg / Trade</div>
                 <div
                   className={`font-mono text-base ${
                     openDay.pnl >= 0 ? "text-bullish" : "text-bearish"

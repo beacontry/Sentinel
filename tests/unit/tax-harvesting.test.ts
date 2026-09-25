@@ -6,8 +6,40 @@
  * overstating the savings for long-term losers.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { suggestHarvesting, type TaxPosition } from "@/lib/tax-engine";
+
+// Route-level mocks for the WP07 tests at the bottom of this file. The
+// suggestHarvesting tests above do not touch any of these modules.
+const routeState = vi.hoisted(() => ({
+  positions: [] as Array<Record<string, unknown>>,
+  quotes: {} as Record<string, "throw" | null | { price: number; volume: number }>,
+}));
+
+vi.mock("@/lib/auth", () => ({ getSession: async () => ({ userId: "user-1" }) }));
+vi.mock("@/lib/tiers-server", () => ({ checkTier: async () => null }));
+vi.mock("@/lib/trading-engine", () => ({ getBrokerPositionCache: () => null }));
+vi.mock("@/lib/market-data", () => ({
+  getMarketDataProvider: () => ({
+    fetchQuote: async (symbol: string) => {
+      const q = routeState.quotes[symbol];
+      if (q === "throw") throw new Error("timeout");
+      return q ?? null;
+    },
+  }),
+}));
+vi.mock("@/lib/db", async () => {
+  const schema = await vi.importActual<typeof import("@/lib/db/schema")>("@/lib/db/schema");
+  const db = {
+    select: () => ({
+      from: (table: unknown) => ({
+        where: async () =>
+          table === schema.portfolios ? [{ id: "pf-1" }] : routeState.positions,
+      }),
+    }),
+  };
+  return { db };
+});
 
 function loser(overrides: Partial<TaxPosition>): TaxPosition {
   return {
@@ -59,5 +91,61 @@ describe("suggestHarvesting holding-period rate selection (audit #9)", () => {
       50000
     );
     expect(out.map((s) => s.symbol)).toEqual(["BIG", "SML"]);
+  });
+});
+
+describe("harvesting route quote validity (WP07, finding #13)", () => {
+  const lot = (symbol: string) => ({
+    symbol,
+    quantity: 100,
+    entryPrice: 100,
+    entryDate: ONE_MONTH_AGO,
+  });
+
+  beforeEach(() => {
+    routeState.positions = [];
+    routeState.quotes = {};
+  });
+
+  async function callRoute() {
+    const { GET } = await import("@/app/api/tax/harvesting/route");
+    const res = await GET();
+    expect(res.status).toBe(200);
+    return (await res.json()) as {
+      suggestions: Array<{ symbol: string }>;
+      unpricedSymbols: string[];
+    };
+  }
+
+  it("marks a null-quote position unpriced instead of valuing it at cost", async () => {
+    routeState.positions = [lot("DOWN"), lot("NOQ")];
+    routeState.quotes = { DOWN: { price: 70, volume: 1 }, NOQ: null };
+    const body = await callRoute();
+    expect(body.unpricedSymbols).toEqual(["NOQ"]);
+    expect(body.suggestions.map((s) => s.symbol)).toEqual(["DOWN"]);
+  });
+
+  it("marks a throwing quote unpriced", async () => {
+    routeState.positions = [lot("ERR")];
+    routeState.quotes = { ERR: "throw" };
+    const body = await callRoute();
+    expect(body.unpricedSymbols).toEqual(["ERR"]);
+    expect(body.suggestions).toEqual([]);
+  });
+
+  it("does not suggest harvesting a fabricated 100% loss from a $0 quote", async () => {
+    routeState.positions = [lot("ZERO")];
+    routeState.quotes = { ZERO: { price: 0, volume: 0 } };
+    const body = await callRoute();
+    expect(body.unpricedSymbols).toEqual(["ZERO"]);
+    expect(body.suggestions).toEqual([]);
+  });
+
+  it("returns an empty unpricedSymbols list when every position is priced", async () => {
+    routeState.positions = [lot("DOWN")];
+    routeState.quotes = { DOWN: { price: 70, volume: 1 } };
+    const body = await callRoute();
+    expect(body.unpricedSymbols).toEqual([]);
+    expect(body.suggestions.map((s) => s.symbol)).toEqual(["DOWN"]);
   });
 });

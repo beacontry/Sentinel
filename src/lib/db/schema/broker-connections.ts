@@ -7,6 +7,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { users } from "./users";
 
 export const brokerConnections = pgTable("broker_connections", {
@@ -24,4 +25,7 @@ export const brokerConnections = pgTable("broker_connections", {
 }, (t) => [
   index("broker_connections_user_id_idx").on(t.userId),
   uniqueIndex("broker_connections_user_broker_env_idx").on(t.userId, t.broker, t.environment),
+  // Migration 0049: at most one active connection per user. Every caller
+  // resolves it through resolveActiveConnection (src/lib/broker-connection.ts).
+  uniqueIndex("broker_connections_one_active_per_user_idx").on(t.userId).where(sql`${t.isActive}`),
 ]);

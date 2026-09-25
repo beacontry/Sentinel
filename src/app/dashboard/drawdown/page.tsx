@@ -184,14 +184,14 @@ export default function DrawdownPage() {
             return (
               <div
                 key={i}
-                className={`flex-1 min-w-[2px] rounded-t transition-all ${isAbove ? "bg-bullish/60" : "bg-bearish/60"}`}
+                className={`flex-1 min-w-[2px] rounded-t transition-colors ${isAbove ? "bg-bullish/60" : "bg-bearish/60"}`}
                 style={{ height: `${Math.max(height, 1)}%` }}
                 title={`${e.date}: $${e.value.toLocaleString()}`}
               />
             );
           })}
         </div>
-        <div className="flex justify-between mt-2 text-[10px] text-text-muted font-mono">
+        <div className="flex justify-between mt-2 text-xs text-text-muted font-mono">
           <span>{equity[0]?.date}</span>
           <span>{equity[equity.length - 1]?.date}</span>
         </div>
@@ -219,7 +219,7 @@ export default function DrawdownPage() {
             );
           })}
         </div>
-        <div className="flex justify-between mt-2 text-[10px] text-text-muted font-mono">
+        <div className="flex justify-between mt-2 text-xs text-text-muted font-mono">
           <span>0%</span>
           <span>-{maxDDDepth.toFixed(1)}%</span>
         </div>

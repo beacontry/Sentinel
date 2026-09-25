@@ -32,6 +32,10 @@ services:
       dockerfile: Dockerfile
     container_name: sentinel-app
     restart: always
+    # Above FORCE_EXIT_MS (src/lib/shutdown-config.ts), so the SIGTERM drain
+    # that places safety stops finishes before the runtime sends SIGKILL.
+    # CONTAINER_STOP_GRACE_S there; tests/unit/shutdown-config.test.ts checks it.
+    stop_grace_period: 30s
     ports:
       - "0.0.0.0:3000:3000"
     env_file:
@@ -42,6 +46,7 @@ services:
       HOSTNAME: "0.0.0.0"
       PORT: "3000"
       NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_MANUAL_SIG_HANDLE: "true"
     depends_on:
       postgres:
         condition: service_healthy

@@ -105,7 +105,7 @@ export default function MessagesPage() {
                         {t.otherUserName}
                       </h3>
                       {t.unreadCount > 0 && (
-                        <Badge variant="bullish" className="text-[10px]">
+                        <Badge variant="bullish" className="text-xs">
                           {t.unreadCount} new
                         </Badge>
                       )}

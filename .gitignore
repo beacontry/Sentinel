@@ -60,3 +60,6 @@ books/__pycache__/
 
 # paid book manuscripts live in the private ixiondt/manuscripts repo, never here
 books/
+
+# Redesign verification captures (scripts/capture-redesign.mjs)
+shots/

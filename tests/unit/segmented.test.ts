@@ -1,0 +1,90 @@
+/**
+ * Segmented control (redesign plan, Stage 2): one "on" treatment, styled
+ * from aria-pressed, for Buy/Sell, order type and engine mode.
+ */
+
+import { describe, it, expect } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Segmented } from "@/components/ui/segmented";
+
+const noop = () => {};
+const side = [
+  { value: "buy", label: "Buy", icon: "▲", tone: "bullish" as const },
+  { value: "sell", label: "Sell", icon: "▼", tone: "bearish" as const },
+];
+
+describe("Segmented", () => {
+  const html = renderToStaticMarkup(createElement(Segmented, { options: side, value: "buy", onChange: noop, label: "Order side" }));
+
+  it("is a named group of toggle buttons", () => {
+    expect(html).toMatch(/^<div role="group" aria-label="Order side"/);
+    expect(html.match(/<button type="button"/g)).toHaveLength(2);
+  });
+
+  it("marks exactly the chosen option pressed", () => {
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html.match(/aria-pressed="false"/g)).toHaveLength(1);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>.*?Buy<\/button>/);
+  });
+
+  it("styles the chosen state from aria-pressed, not a parallel class", () => {
+    expect(html).toContain("aria-pressed:bg-bullish-fill");
+    expect(html).toContain("aria-pressed:bg-bearish-fill");
+    expect(html).not.toMatch(/\bactive\b/);
+  });
+
+  it("prints the word and a hidden glyph for each side", () => {
+    expect(html).toMatch(/<span aria-hidden="true"[^>]*>▲<\/span>Buy/);
+    expect(html).toMatch(/<span aria-hidden="true"[^>]*>▼<\/span>Sell/);
+  });
+
+  it("pads each button's hit area past 44px", () => {
+    expect(html).toContain("min-h-10");
+    expect(html).toContain("before:-inset-y-1");
+  });
+
+  // A neutral choice (Shares/Dollars) has no tone to lean on: its edge
+  // is the indicator, on the control border that clears 3:1.
+  it("edges a neutral chosen option with the control border", () => {
+    const units = renderToStaticMarkup(
+      createElement(Segmented, {
+        options: [
+          { value: "shares", label: "Shares" },
+          { value: "dollars", label: "Dollars" },
+        ],
+        value: "shares",
+        onChange: noop,
+        label: "Size in",
+      }),
+    );
+    expect(units).toContain("aria-pressed:border-border-control");
+    expect(units).not.toMatch(/aria-pressed:border-border(?!-)/);
+  });
+
+  it("is disabled and busy until its value has loaded", () => {
+    const busy = renderToStaticMarkup(
+      createElement(Segmented, { options: side, value: null, onChange: noop, label: "Order side", busy: true }),
+    );
+    expect(busy).toContain('aria-busy="true"');
+    expect(busy.match(/disabled=""/g)).toHaveLength(2);
+    expect(busy).not.toContain('aria-pressed="true"');
+  });
+
+  it("is one row by default", () => {
+    expect(html).toMatch(/^<div[^>]*class="inline-flex gap-1 /);
+  });
+
+  // Four engine modes do not fit one row at 360px. Two rows sit 8px
+  // apart so the 4px hit-area pads above and below meet, not overlap.
+  it("can lay out two to a row on phones and one row from sm", () => {
+    const modes = renderToStaticMarkup(
+      createElement(Segmented, { options: side, value: "buy", onChange: noop, label: "Engine mode", twoUpOnPhone: true }),
+    );
+    expect(modes).toMatch(/^<div[^>]*class="grid grid-cols-2 gap-x-1 gap-y-2 sm:inline-flex /);
+    const filled = renderToStaticMarkup(
+      createElement(Segmented, { options: side, value: "buy", onChange: noop, label: "Engine mode", twoUpOnPhone: true, fullWidth: true }),
+    );
+    expect(filled).toMatch(/^<div[^>]*class="grid grid-cols-2 gap-x-1 gap-y-2 sm:flex /);
+  });
+});

@@ -168,7 +168,7 @@ export function CollegeFundingCompareCalculator() {
               </div>
               <div className="relative h-2 rounded-full bg-bg-elevated overflow-hidden">
                 <div
-                  className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${
+                  className={`absolute inset-y-0 left-0 rounded-full transition-[width,background-color] duration-500 ${
                     isWin ? "bg-accent" : "bg-text-muted/40"
                   }`}
                   style={{ width: `${pct}%` }}

@@ -320,6 +320,15 @@ export const placeBrokerOrderSchema = z
     orderClass: z.enum(["simple", "bracket"]).optional(),
     takeProfitPrice: z.string().optional(),
     stopLossPrice: z.string().optional(),
+    // Idempotency key minted once per order intent by the ticket and reused
+    // on a resubmit, so the broker refuses a second order for the same intent.
+    clientOrderId: z.string().uuid("clientOrderId must be a UUID").optional(),
+    // The broker connection the ticket was showing when the user submitted.
+    // The route refuses with 409 CONNECTION_CHANGED when it is no longer the
+    // active one, so a switch made elsewhere (another tab, the sidebar) can
+    // never send an order to an account the ticket did not show.
+    expectedConnectionId: z.string().uuid("expectedConnectionId must be a UUID"),
+    expectedEnvironment: z.enum(["paper", "live"]).optional(),
   })
   .refine((v) => Boolean(v.qty) !== Boolean(v.notional), {
     message: "Provide either qty (shares) or notional (dollars), not both",

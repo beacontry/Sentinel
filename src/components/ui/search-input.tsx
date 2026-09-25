@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, type InputHTMLAttributes } from "react";
 import { Search, X } from "lucide-react";
+import { FIELD_BASE, fieldStateClasses } from "./input";
 
 interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> {
   value?: string;
@@ -46,25 +47,27 @@ export function SearchInput({
   };
 
   return (
+    // The icon and the clear button are pinned to the 44px field row, not
+    // centred on the wrapper: in a grid row the wrapper stretches to the
+    // tallest cell, and a top-1/2 icon then floats below the field.
     <div className={`relative ${className}`}>
-      <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-text-muted" />
+      <span aria-hidden="true" className="pointer-events-none absolute left-3 top-0 z-10 flex h-11 items-center text-text-muted">
+        <Search className="h-4 w-4" />
+      </span>
       <input
         type="text"
         value={internalValue}
         onChange={(e) => handleChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full min-h-[44px] rounded-lg border border-border bg-bg-elevated pl-10 pr-10 py-2.5
-          text-sm text-text-primary placeholder:text-text-muted
-          transition-colors duration-150
-          focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30"
+        className={`${FIELD_BASE} min-h-11 pl-10 pr-11 py-2.5 ${fieldStateClasses(false)}`}
         {...props}
       />
       {internalValue && (
         <button
           type="button"
           onClick={clear}
-          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-text-muted
-            hover:text-text-secondary transition-colors cursor-pointer"
+          className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-lg text-text-muted
+            hover:text-text-primary transition-colors cursor-pointer"
           aria-label="Clear search"
         >
           <X className="h-3.5 w-3.5" />

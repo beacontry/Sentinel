@@ -1,8 +1,10 @@
 "use client";
 
+import { useId } from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { ChevronDown, Check } from "lucide-react";
 import { HelpTip } from "./help-tip";
+import { describedBy, FIELD_BASE, FieldError, fieldStateClasses } from "./input";
 
 interface SelectOption {
   value: string;
@@ -26,6 +28,11 @@ interface SelectProps {
    * layout). See Input component for the same pattern.
    */
   help?: string;
+  /**
+   * The accessible name when there is no visible label, such as a year
+   * picker in a page header. Ignored when `label` is set.
+   */
+  "aria-label"?: string;
 }
 
 export function Select({
@@ -40,8 +47,11 @@ export function Select({
   id,
   name,
   help,
+  "aria-label": ariaLabel,
 }: SelectProps) {
-  const selectId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
+  const autoId = useId();
+  const selectId = id ?? (label ? label.toLowerCase().replace(/\s+/g, "-") : autoId);
+  const errorId = `${selectId}-error`;
 
   return (
     <div className={`space-y-1.5 ${className}`}>
@@ -59,15 +69,15 @@ export function Select({
       <SelectPrimitive.Root value={value} onValueChange={onChange} disabled={disabled} name={name}>
         <SelectPrimitive.Trigger
           id={selectId}
-          className={`inline-flex min-h-[44px] w-full items-center justify-between rounded-lg border bg-bg-elevated px-3 py-2.5
-            text-sm text-text-primary transition-colors duration-150 cursor-pointer
-            focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30
-            disabled:pointer-events-none disabled:opacity-50
-            ${error ? "border-bearish focus:border-bearish focus:ring-bearish/30" : "border-border"}`}
+          aria-label={label ? undefined : ariaLabel}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy(error && errorId)}
+          className={`${FIELD_BASE} inline-flex min-h-11 items-center justify-between gap-2 px-3 py-2.5 text-left cursor-pointer
+            ${fieldStateClasses(Boolean(error))}`}
         >
           <SelectPrimitive.Value placeholder={placeholder} />
           <SelectPrimitive.Icon>
-            <ChevronDown className="h-4 w-4 text-text-muted" />
+            <ChevronDown className="h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
           </SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
         <SelectPrimitive.Portal>
@@ -75,7 +85,7 @@ export function Select({
             position="popper"
             sideOffset={4}
             className="z-[100] w-[var(--radix-select-trigger-width)] max-h-60 overflow-y-auto
-              rounded-lg border border-border bg-bg-surface p-1 shadow-xl animate-scale-in"
+              rounded-lg border border-border bg-bg-surface p-1 shadow-pop animate-scale-in"
           >
             <SelectPrimitive.Viewport>
               {options.map((opt) =>
@@ -104,7 +114,7 @@ export function Select({
           </SelectPrimitive.Content>
         </SelectPrimitive.Portal>
       </SelectPrimitive.Root>
-      {error && <p className="text-xs text-bearish">{error}</p>}
+      {error && <FieldError id={errorId}>{error}</FieldError>}
     </div>
   );
 }

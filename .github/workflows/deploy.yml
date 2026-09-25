@@ -39,6 +39,13 @@ jobs:
       - name: Doc staleness check
         run: npm run docs:check
 
+      # Blocking: counts of off-token class patterns (sub-12px text,
+      # arbitrary radii and shadows, transition-all, text-white …) may only
+      # go down, and sizes removed from the theme must stay at zero. See
+      # scripts/style-ratchet.mjs and its committed baseline.
+      - name: Style ratchet
+        run: npm run lint:style
+
       - name: Test
         run: npm test
 
@@ -140,7 +147,10 @@ jobs:
             sudo -u sn-deploy -i podman logout ghcr.io || true
 
             echo "Replacing container..."
-            sudo -u sn-deploy -i podman stop sentinel-app 2>/dev/null || true
+            # -t 30: the SIGTERM drain places safety stops on the broker and may
+            # take up to FORCE_EXIT_MS (src/lib/shutdown-config.ts); the default
+            # 10s grace would SIGKILL it mid-drain.
+            sudo -u sn-deploy -i podman stop -t 30 sentinel-app 2>/dev/null || true
             sudo -u sn-deploy -i podman rm sentinel-app 2>/dev/null || true
             sudo -u sn-deploy -i bash -c 'mkdir -p /opt/apps/sentinel/cache'
             sudo -u sn-deploy -i podman run -d --name sentinel-app --network=host --env-file /opt/apps/sentinel/.env -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache -v /opt/apps/sentinel/cache:/data/cache:Z --restart always -m 2g "$IMAGE_LC"

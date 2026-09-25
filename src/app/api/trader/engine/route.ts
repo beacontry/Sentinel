@@ -5,11 +5,15 @@ import {
   stopEngine,
   haltEngine,
   getEngineStatus,
+  HALT_BROKER_UNRESOLVED,
+  HALT_LIQUIDATION_FAILED,
+  HALT_MARKET_CLOSED,
 } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { z } from "zod";
 import { checkTier } from "@/lib/tiers-server";
+import { isShuttingDown, shuttingDownResponseInit, SHUTTING_DOWN_CODE } from "@/lib/shutdown-state";
 
 const log = createRouteLogger("trader-engine-api");
 
@@ -58,6 +62,14 @@ export async function POST(request: NextRequest) {
 
   const { action, mode } = parsed.data;
 
+  // Stop and halt stay available: they only add or keep protection. A start
+  // or switch during the shutdown drain would cancel every order in
+  // placeDisasterStops with the exit about to land.
+  if ((action === "start" || action === "switch") && isShuttingDown()) {
+    const { body: refusal, init } = shuttingDownResponseInit();
+    return NextResponse.json(refusal, init);
+  }
+
   try {
     switch (action) {
       case "switch": {
@@ -77,6 +89,10 @@ export async function POST(request: NextRequest) {
             metadata: { ok: false, from: previousMode, to: mode, error: result.error },
             request,
           });
+          if (result.code === SHUTTING_DOWN_CODE) {
+            const { body: refusal, init } = shuttingDownResponseInit();
+            return NextResponse.json(refusal, init);
+          }
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         const newStatus = getEngineStatus(auth.userId);
@@ -105,6 +121,10 @@ export async function POST(request: NextRequest) {
             metadata: { ok: false, mode, error: result.error },
             request,
           });
+          if (result.code === SHUTTING_DOWN_CODE) {
+            const { body: refusal, init } = shuttingDownResponseInit();
+            return NextResponse.json(refusal, init);
+          }
           return NextResponse.json({ error: result.error }, { status: 400 });
         }
         const newStatus = getEngineStatus(auth.userId);
@@ -143,20 +163,60 @@ export async function POST(request: NextRequest) {
       case "halt": {
         log.warn({ userId: auth.userId }, "Engine emergency halt requested");
         const result = await haltEngine(auth.userId);
-        if (!result.ok) {
-          return NextResponse.json({ error: result.error }, { status: 400 });
-        }
+        // Audit every halt, including one that could not liquidate: the
+        // engine is halted either way, and a failed flatten is the row an
+        // investigation most needs.
         await writeAudit({
           actor: { userId: auth.userId, email: auth.email, role: auth.role },
           action: AuditAction.ENGINE_HALTED,
           resourceType: "engine",
           resourceId: auth.userId,
-          metadata: { reason: "user_requested_flatten_all" },
+          metadata: {
+            reason: "user_requested_flatten_all",
+            ok: result.ok,
+            code: result.code ?? null,
+            environment: result.environment ?? null,
+            closedSymbols: result.closedSymbols ?? [],
+            failedSymbols: result.failedSymbols ?? [],
+            unprotectedSymbols: result.unprotectedSymbols ?? [],
+          },
           request,
         });
+        if (!result.ok) {
+          return NextResponse.json(
+            {
+              error: result.error,
+              code: result.code ?? null,
+              environment: result.environment ?? null,
+              closedSymbols: result.closedSymbols ?? [],
+              failedSymbols: result.failedSymbols ?? [],
+              unprotectedSymbols: result.unprotectedSymbols ?? [],
+            },
+            {
+              status:
+                result.code === HALT_BROKER_UNRESOLVED
+                  ? 503
+                  : result.code === HALT_LIQUIDATION_FAILED || result.code === HALT_MARKET_CLOSED
+                    ? 409
+                    : 400,
+            }
+          );
+        }
+        // Only claim liquidation that was actually submitted, and name the
+        // account it was submitted on: the protective resolver prefers an
+        // active paper connection, so a paper flatten must not read as live.
+        const account = result.environment ? `${result.environment} account` : "account";
+        const closed = result.closedSymbols ?? [];
         return NextResponse.json({
           data: {
-            message: "Trading engine halted — all positions closed",
+            // "Submitted", not "closed": a market sell is accepted before it fills.
+            message:
+              closed.length > 0
+                ? `Trading engine halted. Liquidation orders submitted on your ${account} for: ${closed.join(", ")}.`
+                : `Trading engine halted. No open positions on your ${account}.`,
+            haltEnvironment: result.environment ?? null,
+            closedSymbols: closed,
+            failedSymbols: [],
             ...getEngineStatus(auth.userId),
           },
         });

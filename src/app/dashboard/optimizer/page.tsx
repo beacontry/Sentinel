@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { usePolling } from "@/hooks/usePolling";
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { POLLING_INTERVALS } from "@/lib/config";
+import { selectionAfterFailedLoad } from "@/lib/run-selection";
 import {
   Play,
   Loader2,
@@ -22,10 +24,32 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/ui/stat-card";
+import { MINUS, UNAVAILABLE, percentDirection, type PnlDirection } from "@/lib/format-pnl";
+
+/**
+ * A return tile: signed to one decimal, its direction taken from the
+ * figure as printed. A missing return is unknown (n/a, no direction),
+ * and one that rounds to 0.0% is flat, never a loss.
+ */
+function returnStat(pct: number | null | undefined): {
+  value: string;
+  direction: PnlDirection | undefined;
+  tone: "positive" | "negative" | "neutral";
+} {
+  const direction = percentDirection(pct, 1);
+  if (direction === undefined || pct == null) return { value: UNAVAILABLE, direction, tone: "neutral" };
+  const sign = direction === "gain" ? "+" : direction === "loss" ? MINUS : "";
+  return {
+    value: `${sign}${direction === "flat" ? "0.0" : Math.abs(pct).toFixed(1)}%`,
+    direction,
+    tone: direction === "gain" ? "positive" : direction === "loss" ? "negative" : "neutral",
+  };
+}
 import { EmptyState } from "@/components/ui/empty-state";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 import { useToast } from "@/components/ui/toast";
 
+import { Input } from "@/components/ui/input";
 // ── Types ───────────────────────────────────────────────────────────
 
 interface OptimizationRun {
@@ -115,16 +139,57 @@ export default function OptimizerPage() {
     }
   }, []);
 
+  // The run the user asked for last. Set synchronously by selectRun and
+  // handleStart, never by the poll, so a slower response for an earlier
+  // click (or a poll tick for the previous selection) cannot switch the
+  // selection away from the run the user clicked.
+  const latestRequestedIdRef = useRef<string | null>(null);
+  const runDetailRequest = useLatestRequest();
+  // True while the current detail request is in flight. The poll skips a
+  // tick then rather than aborting it, or a detail slower than the poll
+  // interval would never land.
+  const detailInFlightRef = useRef(false);
+
+  // The run whose detail is on screen. Kept beside selectedRun so a failed
+  // load can hand the selection back to it.
+  const shownRunIdRef = useRef<string | null>(null);
+
   const fetchRunDetail = useCallback(async (id: string) => {
+    if (latestRequestedIdRef.current !== id) return;
+    const ticket = runDetailRequest.begin();
+    detailInFlightRef.current = true;
+    let loaded = false;
     try {
-      const res = await fetch(`/api/optimize/${id}`);
-      if (!res.ok) return;
-      const data: RunDetail = await res.json();
-      setSelectedRun(data);
+      const res = await fetch(`/api/optimize/${id}`, { signal: ticket.signal });
+      if (res.ok) {
+        const data: RunDetail = await res.json();
+        if (!ticket.isCurrent() || latestRequestedIdRef.current !== id) return;
+        if (data.run?.id === id) {
+          shownRunIdRef.current = id;
+          setSelectedRun(data);
+          loaded = true;
+        }
+      }
     } catch {
-      // Silently fail
+      // Handled below; a superseded request's abort is not current.
+    } finally {
+      if (ticket.isCurrent()) {
+        detailInFlightRef.current = false;
+        // A failed load of a newly clicked run leaves the previous run on
+        // screen. Say so, and point the selection back at that run, or the
+        // poll (which only refreshes the run last asked for) would freeze
+        // it. A failed poll refresh of the run on screen stays silent and
+        // retries on the next tick.
+        const undo = loaded
+          ? null
+          : selectionAfterFailedLoad(id, latestRequestedIdRef.current, shownRunIdRef.current);
+        if (undo) {
+          latestRequestedIdRef.current = undo.revertTo;
+          toast({ type: "error", message: "Couldn't load that optimization run. Try again." });
+        }
+      }
     }
-  }, []);
+  }, [runDetailRequest, toast]);
 
   // Initial load
   useEffect(() => {
@@ -138,7 +203,15 @@ export default function OptimizerPage() {
 
   usePolling(() => {
     fetchRuns();
-    if (selectedRun && ["pending", "fetching_data", "optimizing"].includes(selectedRun.run.status)) {
+    // Refresh the selection only once it is the run last asked for and no
+    // detail request is outstanding; while a click on another run is still
+    // loading, the poll leaves it alone.
+    if (
+      selectedRun &&
+      selectedRun.run.id === latestRequestedIdRef.current &&
+      !detailInFlightRef.current &&
+      ["pending", "fetching_data", "optimizing"].includes(selectedRun.run.status)
+    ) {
       fetchRunDetail(selectedRun.run.id);
     }
   }, POLLING_INTERVALS.optimizerActiveRuns, { enabled: hasActiveRuns });
@@ -166,6 +239,8 @@ export default function OptimizerPage() {
 
   async function handleStart() {
     setStarting(true);
+    // A run clicked while the POST is in flight is the later choice and wins.
+    const requestedBeforeStart = latestRequestedIdRef.current;
     try {
       const res = await fetch("/api/optimize", {
         method: "POST",
@@ -184,6 +259,9 @@ export default function OptimizerPage() {
       }
       const data = await res.json();
       setShowConfig(false);
+      if (latestRequestedIdRef.current === requestedBeforeStart) {
+        latestRequestedIdRef.current = data.runId;
+      }
       await fetchRuns();
       fetchRunDetail(data.runId);
     } finally {
@@ -192,6 +270,7 @@ export default function OptimizerPage() {
   }
 
   function selectRun(run: OptimizationRun) {
+    latestRequestedIdRef.current = run.id;
     fetchRunDetail(run.id);
     setComparison(null); // clear stale comparison when switching runs
   }
@@ -300,49 +379,52 @@ export default function OptimizerPage() {
             <h3 className="text-sm font-semibold">Optimization Configuration</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted block mb-1">
-                  Population Size
-                </label>
-                <input
+                <Input
+                  label="Population size"
+                  id="opt-population"
                   type="number"
+                  inputMode="numeric"
                   min={10}
                   max={100}
                   value={popSize}
                   onChange={(e) => setPopSize(Number(e.target.value))}
-                  className="w-full bg-bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono min-h-[44px]"
+                  aria-describedby="opt-population-hint"
+                  className="font-mono"
                 />
-                <p className="text-[11px] text-text-muted mt-1">Strategies per generation</p>
+                <p id="opt-population-hint" className="text-xs text-text-muted mt-1">Strategies per generation</p>
               </div>
               <div>
-                <label className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted block mb-1">
-                  Generations
-                </label>
-                <input
+                <Input
+                  label="Generations"
+                  id="opt-generations"
                   type="number"
+                  inputMode="numeric"
                   min={5}
                   max={100}
                   value={gens}
                   onChange={(e) => setGens(Number(e.target.value))}
-                  className="w-full bg-bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono min-h-[44px]"
+                  aria-describedby="opt-generations-hint"
+                  className="font-mono"
                 />
-                <p className="text-[11px] text-text-muted mt-1">Evolution iterations</p>
+                <p id="opt-generations-hint" className="text-xs text-text-muted mt-1">Evolution iterations</p>
               </div>
               <div>
-                <label className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted block mb-1">
-                  Train / Test Split
-                </label>
-                <input
+                <Input
+                  label="Train / test split (% train)"
+                  id="opt-train-split"
                   type="number"
+                  inputMode="numeric"
                   min={40}
                   max={80}
                   value={trainPct}
                   onChange={(e) => setTrainPct(Number(e.target.value))}
-                  className="w-full bg-bg-surface border border-border rounded-lg px-3 py-2 text-sm font-mono min-h-[44px]"
+                  aria-describedby="opt-train-split-hint"
+                  className="font-mono"
                 />
-                <p className="text-[11px] text-text-muted mt-1">{trainPct}% train / {100 - trainPct}% test</p>
+                <p id="opt-train-split-hint" className="text-xs text-text-muted mt-1">{trainPct}% train / {100 - trainPct}% test</p>
               </div>
               <div>
-                <label className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted block mb-1">
+                <label className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted block mb-1">
                   Universe
                 </label>
                 <select
@@ -354,7 +436,7 @@ export default function OptimizerPage() {
                   <option value="top150">Top 150 (~10 min) — biased</option>
                   <option value="top50">Top 50 (~3 min) — biased</option>
                 </select>
-                <p className="text-[11px] text-text-muted mt-1">
+                <p className="text-xs text-text-muted mt-1">
                   {universe === "sp500"
                     ? "Point-in-time membership — only trades stocks that were in the index on each date (reduced survivorship bias)."
                     : "Today's top-by-cap list applied to past data → survivorship-biased (you're trading today's winners). Quick research only; use S&P 500 for credible results."}
@@ -443,7 +525,7 @@ export default function OptimizerPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-text-primary">Top Runs</h2>
             {completedRuns.length > 5 && (
-              <span className="text-[11px] text-text-muted">
+              <span className="text-xs text-text-muted">
                 {totalCompleted} total
               </span>
             )}
@@ -477,38 +559,38 @@ export default function OptimizerPage() {
                             <Trophy className="h-3.5 w-3.5 text-accent shrink-0" />
                           )}
                           {rank && !isWinner && (
-                            <span className="text-[11px] font-mono font-medium text-text-muted w-4 text-center">
+                            <span className="text-xs font-mono font-medium text-text-muted w-4 text-center">
                               #{rank}
                             </span>
                           )}
                           <StatusBadge status={run.status} />
                           {run.isActive && (
-                            <span className="text-[10px] font-semibold uppercase tracking-wider text-accent bg-accent/10 px-1.5 py-0.5 rounded-full">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-accent bg-accent/10 px-1.5 py-0.5 rounded-full">
                               Active
                             </span>
                           )}
                         </div>
-                        <span className="text-[11px] text-text-muted">
+                        <span className="text-xs text-text-muted">
                           {new Date(run.createdAt).toLocaleDateString()}
                         </span>
                       </div>
                       {run.bestTrainReturn !== null && (
                         <div className="flex items-center gap-3 mt-2">
                           <div>
-                            <span className="text-[11px] text-text-muted">Train</span>
+                            <span className="text-xs text-text-muted">Train</span>
                             <p className={`text-sm font-mono ${run.bestTrainReturn >= 0 ? "text-bullish" : "text-bearish"}`}>
                               {run.bestTrainReturn.toFixed(1)}%
                             </p>
                           </div>
                           <div>
-                            <span className="text-[11px] text-text-muted">Test</span>
+                            <span className="text-xs text-text-muted">Test</span>
                             <p className={`text-sm font-mono font-semibold ${(run.bestTestReturn ?? 0) >= 0 ? "text-bullish" : "text-bearish"}`}>
                               {run.bestTestReturn?.toFixed(1) ?? "—"}%
                             </p>
                           </div>
                           {run.universe && (
                             <div className="ml-auto">
-                              <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                              <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
                                 {run.universe}
                               </span>
                             </div>
@@ -608,20 +690,20 @@ function ActiveRunCard({
         <div className="space-y-2">
           {isFetching ? (
             <>
-              <div className="flex justify-between text-[11px] text-text-muted">
+              <div className="flex justify-between text-xs text-text-muted">
                 <span>Downloading 5Y daily bars</span>
                 <span className="font-mono">{run.symbolsFetched} / {run.totalSymbols}</span>
               </div>
               <div className="h-2 bg-bg-surface rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-accent rounded-full transition-all duration-300"
+                  className="h-full bg-accent rounded-full transition-[width,background-color] duration-300"
                   style={{ width: `${fetchPct}%` }}
                 />
               </div>
             </>
           ) : (
             <>
-              <div className="flex justify-between text-[11px] text-text-muted">
+              <div className="flex justify-between text-xs text-text-muted">
                 <span>Generation {run.currentGeneration} / {run.generations}</span>
                 {run.bestFitness !== undefined && run.bestFitness > 0 && (
                   <span className="font-mono text-bullish">
@@ -631,7 +713,7 @@ function ActiveRunCard({
               </div>
               <div className="h-2 bg-bg-surface rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-accent rounded-full transition-all duration-300"
+                  className="h-full bg-accent rounded-full transition-[width,background-color] duration-300"
                   style={{ width: `${genPct}%` }}
                 />
               </div>
@@ -678,38 +760,30 @@ function RunDetailView({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard
               label="Optimized Return"
-              value={`${run.bestTrainReturn?.toFixed(1) ?? "—"}%`}
+              {...returnStat(run.bestTrainReturn)}
               subtext="Portfolio return (train)"
-              tone={run.bestTrainReturn && run.bestTrainReturn > 0 ? "positive" : "negative"}
               icon={TrendingUp}
             />
             <StatCard
               label="Test Return"
-              value={`${run.bestTestReturn?.toFixed(1) ?? "—"}%`}
+              {...returnStat(run.bestTestReturn)}
               subtext="Out-of-sample validation"
-              tone={run.bestTestReturn && run.bestTestReturn > 0 ? "positive" : "negative"}
               icon={Target}
             />
             <StatCard
               label="Baseline Return"
-              value={`${run.baselineTrainReturn?.toFixed(1) ?? "—"}%`}
+              {...returnStat(run.baselineTrainReturn)}
               subtext="Moderate preset (train)"
-              tone={run.baselineTrainReturn && run.baselineTrainReturn > 0 ? "positive" : "negative"}
               icon={BarChart3}
             />
             <StatCard
               label="Improvement"
-              value={
+              {...returnStat(
                 run.bestTrainReturn != null && run.baselineTrainReturn != null
-                  ? `${(run.bestTrainReturn - run.baselineTrainReturn).toFixed(1)}%`
-                  : "—"
-              }
+                  ? run.bestTrainReturn - run.baselineTrainReturn
+                  : null,
+              )}
               subtext="Over baseline (train)"
-              tone={
-                run.bestTrainReturn != null && run.baselineTrainReturn != null && run.bestTrainReturn > run.baselineTrainReturn
-                  ? "positive"
-                  : "negative"
-              }
               icon={Zap}
             />
           </div>
@@ -743,7 +817,7 @@ function RunDetailView({
           </div>
 
           {/* Survivorship + realism caveat */}
-          <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-[12px] leading-relaxed text-text-secondary">
+          <div className="rounded-lg border border-warning-line bg-warning-fill p-3 text-xs leading-relaxed text-text-secondary">
             <span className="font-semibold text-warning">Read these as relative scores, not live expectations.</span>{" "}
             {run.universe === "sp500"
               ? "S&P 500 runs use point-in-time membership (only trades stocks that were in the index on each date), but fully-delisted companies have no free price data — so survivorship bias is reduced, not eliminated."
@@ -946,7 +1020,7 @@ function RunDetailView({
 function ParamDisplay({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+      <span className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
         {label}
       </span>
       <p className="text-lg font-mono font-semibold text-text-primary">{value}</p>
@@ -1033,7 +1107,7 @@ function ConvergenceChart({ generations }: { generations: Generation[] }) {
           Generation
         </text>
       </svg>
-      <div className="flex items-center justify-center gap-4 mt-2 text-[11px] text-text-muted">
+      <div className="flex items-center justify-center gap-4 mt-2 text-xs text-text-muted">
         <span className="flex items-center gap-1">
           <span className="w-3 h-[2px] bg-accent inline-block rounded" /> Best
         </span>

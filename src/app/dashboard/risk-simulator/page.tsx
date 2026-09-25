@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SignedValue } from "@/components/ui/signed-value";
 import { ShieldAlert, Zap } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -154,7 +155,7 @@ export default function RiskSimulatorPage() {
         stats={[
           { label: "Portfolio Value", value: `$${portfolioValue.toLocaleString()}`, tone: "brand" },
           { label: "Positions", value: String(positions.length) },
-          { label: "Worst Case", value: `$${worstScenario.toLocaleString()}`, tone: "bearish" },
+          { label: "Worst Case", value: <SignedValue value={worstScenario} /> },
           { label: "Scenarios", value: String(SCENARIOS.length + 1) },
         ]}
       />
@@ -165,19 +166,19 @@ export default function RiskSimulatorPage() {
           <Card
             key={sc.name}
             hover
-            className={`cursor-pointer transition-all text-center ${selectedScenario?.name === sc.name ? "border-accent/50 bg-accent/5" : ""}`}
+            className={`cursor-pointer transition-colors text-center ${selectedScenario?.name === sc.name ? "border-accent/50 bg-accent/5" : ""}`}
             onClick={() => setSelectedScenario(sc)}
           >
             <div className={`text-lg font-mono font-semibold ${sc.marketChange >= 0 ? "text-bullish" : "text-bearish"}`}>
               {sc.marketChange >= 0 ? "+" : ""}{sc.marketChange}%
             </div>
             <div className="text-xs font-medium text-text-primary mt-1">{sc.name}</div>
-            <div className="text-[10px] text-text-muted mt-0.5">{sc.description}</div>
+            <div className="text-xs text-text-muted mt-0.5">{sc.description}</div>
           </Card>
         ))}
         <Card
           hover
-          className={`cursor-pointer transition-all text-center ${selectedScenario?.name === "Custom" ? "border-accent/50 bg-accent/5" : ""}`}
+          className={`cursor-pointer transition-colors text-center ${selectedScenario?.name === "Custom" ? "border-accent/50 bg-accent/5" : ""}`}
           onClick={() => setSelectedScenario({ name: "Custom", marketChange: customChange, description: "Custom scenario" })}
         >
           <div className="flex items-center justify-center gap-1">
@@ -202,7 +203,7 @@ export default function RiskSimulatorPage() {
 
       {/* Results */}
       {simulated && selectedScenario && (
-        <Card className={`border ${simulated.totalImpact >= 0 ? "border-bullish/20 bg-bullish/5" : "border-bearish/20 bg-bearish/5"}`}>
+        <Card className={`border ${simulated.totalImpact >= 0 ? "border-bullish-line bg-bullish-fill" : "border-bearish-line bg-bearish-fill"}`}>
           <div className="flex items-center gap-3 mb-4">
             <Zap className={`w-5 h-5 ${simulated.totalImpact >= 0 ? "text-bullish" : "text-bearish"}`} />
             <div>

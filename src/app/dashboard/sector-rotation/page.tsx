@@ -25,9 +25,9 @@ interface RotationData {
 }
 
 const phaseConfig = {
-  leading:   { label: "Leading",   color: "text-bullish",  bg: "bg-bullish/10 border-bullish/20", desc: "Strong performance, gaining momentum" },
-  weakening: { label: "Weakening", color: "text-warning",  bg: "bg-warning/10 border-warning/20",  desc: "Positive but losing steam" },
-  lagging:   { label: "Lagging",   color: "text-bearish",  bg: "bg-bearish/10 border-bearish/20",  desc: "Weak performance, still declining" },
+  leading:   { label: "Leading",   color: "text-bullish",  bg: "bg-bullish-fill border-bullish-line", desc: "Strong performance, gaining momentum" },
+  weakening: { label: "Weakening", color: "text-warning",  bg: "bg-warning-fill border-warning-line",  desc: "Positive but losing steam" },
+  lagging:   { label: "Lagging",   color: "text-bearish",  bg: "bg-bearish-fill border-bearish-line",  desc: "Weak performance, still declining" },
   improving: { label: "Improving", color: "text-accent",   bg: "bg-accent/10 border-accent/20",    desc: "Negative but momentum turning up" },
 };
 

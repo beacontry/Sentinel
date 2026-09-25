@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { withTimeout, isStatementTimeout } from "@/lib/db";
-import { traderStatus, traderTrades, traderDailyPnl, traderSignals, brokerConnections } from "@/lib/db/schema";
+import { traderStatus, traderTrades, traderDailyPnl, traderSignals } from "@/lib/db/schema";
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { createBrokerClient } from "@/lib/brokers";
+import { resolveActiveConnection } from "@/lib/broker-connection";
 import { decrypt } from "@/lib/crypto";
-import { getBrokerPositionCache, getTrackedPositionData, getUnprotectedSymbols } from "@/lib/trading-engine";
+import { getBrokerPositionCache, getTrackedPositionData, getUnprotectedSymbols, reconcileManualClosesIfEngineStopped } from "@/lib/trading-engine";
 import { createRouteLogger } from "@/lib/logger";
 import { rateLimit } from "@/lib/rate-limiter";
 import { checkTier } from "@/lib/tiers-server";
@@ -34,12 +35,8 @@ export async function GET() {
     // Status and broker connection — wrap all initial DB reads in a timeout
     const { status, conn } = await withTimeout(3000, async (tx) => {
       const [s] = await tx.select().from(traderStatus).where(eq(traderStatus.userId, session.userId)).limit(1);
-      const [c] = await tx
-        .select()
-        .from(brokerConnections)
-        .where(and(eq(brokerConnections.userId, session.userId), eq(brokerConnections.isActive, true)))
-        .limit(1);
-      return { status: s ?? null, conn: c ?? null };
+      const c = await resolveActiveConnection(session.userId, tx);
+      return { status: s ?? null, conn: c };
     });
 
     const traderServiceAlive = status
@@ -66,6 +63,10 @@ export async function GET() {
       brokerEnv = conn.environment;
       try {
         const client = createBrokerClient(conn.broker, decrypt(conn.apiKey), decrypt(conn.apiSecret), conn.environment);
+        // With the engine stopped nothing else settles a manual flatten's
+        // PENDING row. Throttled, fire-and-forget, and a no-op while the
+        // engine runs.
+        reconcileManualClosesIfEngineStopped(client, session.userId);
         const [acct, pos, orders] = await Promise.allSettled([client.getAccount(), client.getPositions(), client.getOrders(50)]);
         if (acct.status === "fulfilled") {
           const a = acct.value;
@@ -322,6 +323,12 @@ export async function GET() {
           : brokerConnected
             ? brokerEnv
             : "unknown",
+        // The engine's last persisted mode (env:mode), whatever the
+        // heartbeat's age. `mode` above falls back to the broker
+        // environment once the heartbeat is 5 minutes old, which is exactly
+        // when a resume needs the mode the engine was running in. Same
+        // source autoStartIfNeeded resumes from.
+        lastMode: status?.mode ?? null,
         lastHeartbeat: status?.lastHeartbeat?.toISOString() ?? (brokerConnected ? new Date().toISOString() : null),
         watchlist: status?.watchlist ?? [],
         broker: brokerConnected ? brokerName : undefined,

@@ -6,7 +6,7 @@
 ## Tech Stack
 - Next.js 15.3 + React 19 + TypeScript
 - Tailwind CSS 4 (uses `@theme` block in globals.css, NOT tailwind.config.ts)
-- Drizzle ORM + PostgreSQL (49 migrations as of `0048_optimizer_auto_promotion.sql`) — **verify each migration actually applied on prod post-deploy** (query `information_schema.columns`, don't assume; 0046/0047 sat unapplied Jun 27→Jul 14 and silently disabled all risk limits — see `docs/changelog.md` 2026-07-14)
+- Drizzle ORM + PostgreSQL (55 migrations as of `0054_forum_category_unique_name.sql`) — **verify each migration actually applied on prod post-deploy** (query `information_schema.columns`, don't assume; 0046/0047 sat unapplied Jun 27→Jul 14 and silently disabled all risk limits — see `docs/changelog.md` 2026-07-14)
 - Groq (`llama-3.3-70b-versatile`) for all AI flows — Anthropic SDK was removed 2026-05-12 (see § AI Providers below)
 - Lucide React icons
 - Lightweight Charts (TradingView) for charting
@@ -77,7 +77,7 @@ All components share `analyzeBars()` (`src/lib/indicators/analyzer.ts`):
 ### Screener (Shared)
 The screener scans market data, shared across users (not per-user). It pushes actionable signals (BUY/STRONG_BUY, confidence ≥ 0.6) to the engine via `pushExternalSignal()` — in-memory, expire after 30 min. Optimization runs are admin-only; results (strategy params) are shared globally.
 
-**Auto-optimizer cron (2026-07-23):** `GET /api/cron/auto-optimize` (`x-cron-secret` vs `CRON_SECRET`) runs the GA on a schedule and auto-promotes the winner with **no human in the loop**. It's a stateful, idempotent state machine — each tick does ONE unit of work (a full GA run is minutes on a worker thread, never run inline): (1) run in-flight → wait; (2) completed-but-undecided run → evaluate; (3) interval elapsed → kick off a new run via `startOptimization`; (4) else idle. **Promotion is margin-gated** (`decidePromotion`, pure/tested): the completed run and the current global-active preset are scored on ONE shared out-of-sample holdout (`portfolioBacktest(data, params, "test", eligibleOn)`), and the candidate replaces the incumbent (flip `optimization_runs.isActive`, picked up within the engine's 5-min param cache) only if its OOS excess return beats the incumbent by `OPTIMIZER_PROMOTE_MARGIN` pp. Every decision (start/promote/reject) writes a hash-chained `OPTIMIZER_AUTO_*` audit row. The `auto_promotion_decided_at` marker (migration `0048`) guarantees one decision per completed run (no re-scoring/re-fetching each tick). Env: `OPTIMIZER_CRON_USER_ID` (required — service identity owning the runs), `OPTIMIZER_CRON_UNIVERSE` (top50/top150/sp500, default top50), `OPTIMIZER_CRON_INTERVAL_HOURS` (default 168), `OPTIMIZER_PROMOTE_MARGIN` (default 2), `OPTIMIZER_CRON_{POPULATION,GENERATIONS,TRAIN_PCT}` (30/25/60). **Not yet wired into prod cron — add the crontab entry + set `OPTIMIZER_CRON_USER_ID`.**
+**Auto-optimizer cron (2026-07-23):** `GET /api/cron/auto-optimize` (`x-cron-secret` vs `CRON_SECRET`) runs the GA on a schedule and auto-promotes the winner with **no human in the loop**. It's a stateful, idempotent state machine — each tick does ONE unit of work (a full GA run is minutes on a worker thread, never run inline): (1) run in-flight → wait; (2) completed-but-undecided run → evaluate; (3) interval elapsed → kick off a new run via `startOptimization`; (4) else idle. **Promotion is margin-gated** (`decidePromotion`, pure/tested): the completed run and the current global-active preset are scored on ONE shared out-of-sample holdout (`portfolioBacktest(data, params, "test", eligibleOn)`), and the candidate replaces the incumbent (flip `optimization_runs.isActive`, picked up within the engine's 5-min param cache) only if its OOS excess return beats the incumbent by `OPTIMIZER_PROMOTE_MARGIN` pp. Every decision (start/promote/reject) writes a hash-chained `OPTIMIZER_AUTO_*` audit row. The `auto_promotion_decided_at` marker (migration `0048`) guarantees one decision per completed run (no re-scoring/re-fetching each tick). A holdout fetch below 80% coverage or 60 test dates **defers** instead (nothing written, next tick retries). The flip is fenced: one transaction re-reads the active row `FOR UPDATE` and aborts with `incumbent_changed` (run left undecided) if a save-preset moved it during scoring. **At most one active run globally** (partial unique index, migration `0050`); save-preset flips in one transaction too. Env: `OPTIMIZER_CRON_USER_ID` (required — service identity owning the runs), `OPTIMIZER_CRON_UNIVERSE` (top50/top150/sp500, default top50), `OPTIMIZER_CRON_INTERVAL_HOURS` (default 168), `OPTIMIZER_PROMOTE_MARGIN` (default 2), `OPTIMIZER_CRON_{POPULATION,GENERATIONS,TRAIN_PCT}` (30/25/60). **Not yet wired into prod cron — add the crontab entry + set `OPTIMIZER_CRON_USER_ID`.**
 
 **Concurrency:** `scanAllSymbols`/`scanAllSymbolsIntraday` store the in-flight promise on `cache.scanInFlight`, so concurrent callers await the running scan instead of getting an empty cache. The route surfaces `cache.scanning`; `scannedAt` is `null` until the first scan completes.
 
@@ -91,68 +91,75 @@ The screener scans market data, shared across users (not per-user). It pushes ac
 The separate `/dashboard/tax` page (Form 8949) reads engine trades only; Tax Center is the unified view.
 
 ### Broker Connections
-Each user has their own broker connection (`brokerConnections` table, scoped by `userId`). The engine resolves the active connection for the authenticated user via `resolveBrokerClient(userId)`.
+Each user has their own broker connections (`brokerConnections` table, scoped by `userId`), **at most one active** (partial unique index, migration `0049`). Every caller resolves it through `resolveActiveConnection(userId)` (`src/lib/broker-connection.ts`): the engine resolvers (`resolveBrokerClient` / `resolveBrokerClientForProtection`), manual orders, flatten, the account and dashboard reads. A user's first connection is created active and later ones inactive; the active one changes only through `POST /api/broker/connections/[id]/activate` (sidebar switcher or Settings), which refuses while the engine runs. PATCH refuses `isActive`, and an environment change on the active connection (409 `CONNECTION_ACTIVE`).
 
 ## Design System
 
 ### Theme: 5 themes (dark default; light, coral, light-blue, gray)
-All tokens defined in `src/app/globals.css` `@theme` block. **Dark is the default for first-time visitors** (2026-07-15 — matches the low-light trading-terminal identity); `light` is the class-less base theme in CSS terms, applied only when explicitly chosen. `/public/theme-init.js` runs blocking in `<head>` and stamps the stored (or default `dark`) class **before first paint** — no theme flash; `<html>` carries `suppressHydrationWarning` for this. Each non-light theme = a single class on `<html>`: `dark`, `coral`, `light-blue`, `gray`. Only one applies at a time; the theme provider strips others before adding the new one.
+All tokens live in `src/app/globals.css`, in OKLCH: the `@theme` block is the light theme (and what Tailwind generates utilities from), and each other theme is one `html.<name>` block redefining the same names, with its own `color-scheme`. **Dark is the default for first-time visitors** (2026-07-15 — matches the low-light trading-terminal identity); `light` is the class-less base theme in CSS terms, applied only when explicitly chosen. `/public/theme-init.js` runs blocking in `<head>` and stamps the stored (or default `dark`) class **before first paint** — no theme flash; `<html>` carries `suppressHydrationWarning` for this. Each non-light theme = a single class on `<html>`: `dark`, `coral`, `light-blue`, `gray`. Only one applies at a time; the theme provider strips others before adding the new one.
 
 | Theme | Surface character | Accent |
 |-------|-------------------|--------|
-| light | white on neutral gray, classic | emerald |
-| dark | emerald-tinted near-black | emerald |
-| coral | warm peach surfaces (light variant) | coral (#f97066) |
-| light-blue | cool sky tints (light variant) | blue-500 |
-| gray | true neutral grays (dark variant, no green tint) | emerald |
+| light | near-white on green-grey (hue 163) | emerald, dark fill + white label |
+| dark | emerald-tinted lightness ladder | emerald, light fill + dark label |
+| coral | warm light ladder | orange-coral, white label; loss is its own darker crimson, held apart from the accent by the contrast test |
+| light-blue | cool light ladder | blue, white label |
+| gray | the dark ladder with no tint | emerald |
 
-Trading semantics (`bullish`, `bearish`, `warning`) stay universal red/green across all themes so P&L is recognizable.
+**Colour-blind mode** is a second `<html>` class, `colorblind`, that replaces the state colours (gain, loss, warning and their `-fg`/`-fill`/`-line`) and the accent with **one fixed set per luminance family**, whatever the theme (`html.colorblind` for light/coral/light-blue, `html.colorblind.dark, .gray` for the dark two): blue gain, vermillion-to-amber loss, yellow warning, neutral-blue accent (every theme's own accent collided with the set under simulated deuteranopia or protanopia). Never tune a per-theme colour-blind variant. **`tests/unit/theme-contrast.test.ts` measures every meaningful pair in all 5 themes × colour-blind mode** — change a value, run it.
 
-**ThemeProvider** (`src/components/theme-provider.tsx`): persists to `localStorage("sentinel-theme")`, sets `<html>` class, updates PWA `theme-color`. `useTheme()` → `{ theme, setTheme, toggleTheme }`. `isDarkTheme(theme)` (true for `dark`/`gray`) exported for TradingView embed.
+**ThemeProvider** (`src/components/theme-provider.tsx`): persists to `localStorage("sentinel-theme")`, sets `<html>` class, updates PWA `theme-color` (hex copies of each theme's `--color-bg-primary`, pinned by `tests/unit/theme-meta.test.ts`). `useTheme()` → `{ theme, setTheme, toggleTheme }`. `isDarkTheme(theme)` (true for `dark`/`gray`) exported for TradingView embed.
 
 **Theme picker** (`src/components/theme-picker.tsx`): `variant="icon"` (palette button, downward popover; dashboard top bar + landing navbar) and `variant="sidebar"` (full-width button, upward popover; mobile drawer of `TopNavShell` — name predates layout swap, means "stacked-menu button" not literal sidebar).
 
-**Landing page** uses separate `ld-*` tokens (`bg-ld-deep`, `text-ld-accent`, …) that also switch via `html.dark` overrides.
+**Landing page** `ld-*` tokens (`bg-ld-deep`, `text-ld-accent`, …) are aliases of the app tokens with the same role, not a second palette.
 
-**Backgrounds** (dark, higher elevation = lighter): `bg-bg-primary` (10%L) → `secondary` (13%) → `surface` (16%) → `elevated` (20%) → `hover` (24%). **Text:** `text-text-primary` (96%) / `secondary` (68%) / `muted` (50%). **Borders:** `border-border` (28%) / `border-border-hover` (36%). **Accent:** `text-accent`/`bg-accent` (emerald), `bg-accent-hover`.
+**Roles:** backgrounds `bg-bg-primary` → `secondary` (cards, inputs) → `surface` → `elevated` (menus) → `hover`. Text `text-text-primary` / `secondary` / `muted`, all ≥4.5:1 on every surface. Edges: `border-border` is the faint container edge; **controls use `border-border-control` (≥3:1)**. Accent fills take **`text-on-accent`, never `text-white`**. Focus ring: `--color-focus`.
 
-**Trading semantics:** `text-bullish` / `text-bearish` / `text-warning` (badges use the `/10` tint). `font-mono` for ALL financial numbers.
+**Trading semantics:** `text-bullish` / `text-bearish` / `text-warning` for figures. Chips, badges and banners use the triplets through **`STATUS_TONE_CLASSES` in `src/lib/status-tone.ts`** (`border-X-line bg-X-fill text-X-fg`); trade/order statuses map through `tradeStatusTone()`. Never build state colour from alpha (`bg-bearish/10`) — the style ratchet counts it. State is never colour alone: print the word or a ▲/▼. `font-mono` for ALL financial numbers.
+
+**Charts** read tokens through `src/lib/chart-theme.ts`, which resolves OKLCH/`color-mix()` to `rgba()` for the canvas; key a chart on `${theme}:${colorBlindMode}` to re-theme it.
 
 ### Typography
-- Display/Body: Geist Sans (`geist` npm package) | Monospace: Geist Mono / JetBrains Mono (`font-mono`)
+- Display/Body: Geist Sans (`geist` npm package) | Monospace: Geist Mono (`font-mono`)
+- **Seven sizes, 12px floor:** `text-xs` 12 · `sm` 14 · `base` 16 · `lg` 20 · `xl` 24 · `2xl` 32 · `display` (marketing clamp). Tailwind's own steps are reset: `text-3xl` and up compile to nothing. No `text-[Npx]`.
 - Page title: `text-2xl font-semibold tracking-tight`
 - Card title: `text-sm font-semibold text-text-primary`
-- Stat label: `text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted`
-- Body: `text-sm` (0.875rem) with `leading-relaxed` for paragraphs
-- Stat values: always `font-mono` for tabular alignment
+- Stat label / kicker: the `eyebrow` utility (12px, 600, 0.08em, uppercase in CSS)
+- Body: `text-sm` with `leading-relaxed` for paragraphs; inputs `text-base sm:text-sm` (no iOS zoom)
+- A label that does not fit at 12px on a phone is hidden below `sm`, never shrunk
 
-### Border Radius
-Cards: `rounded-xl` | Buttons: `rounded-lg` | Inputs: `rounded-lg` | Badges: `rounded-full` | Modals: `rounded-xl` | Dropdowns: `rounded-lg`
+### Border Radius and Elevation
+`rounded` (4px, tiny marks) | `rounded-md` (6px) | `rounded-lg` (8px: buttons, inputs, dropdowns) | `rounded-xl` (12px: cards, modals) | `rounded-full` (badges). `rounded-sm`, `rounded-2xl` and larger do not exist. Shadows: `shadow-card`, `shadow-pop`, `shadow-modal`, set per theme (none on dark cards).
+
+**Guards:** `npm run lint:style` (`scripts/style-ratchet.mjs`, in CI and lint-staged) holds off-token class patterns to a baseline that only goes down and off-scale sizes at zero. `scripts/codemods/tokenize-classes.mjs <family>` moves ad-hoc classes onto the tokens. Full role reference: `.claude/skills/sentinel-redesign/references/design-tokens.md`; the staged redesign plan: `docs/design/redesign-plan.md`.
 
 **Design anti-patterns (NEVER do these — Impeccable bans):**
-- No `rounded-[22px]`, `rounded-[24px]`, `rounded-3xl` — use standard Tailwind radii only
+- No arbitrary or oversized radii (`rounded-[22px]`, `rounded-3xl`) — use the scale
 - No gradient backgrounds on UI surfaces (`bg-[linear-gradient(...)]`)
 - No side-stripe borders (`border-left: 3px solid` accent bars on cards/nav)
 - No gradient text (`background-clip: text` with gradients)
 - No heavy box-shadows or glassmorphism on every surface
+- No `transition-all`: name the properties (`transition-colors`, `transition-[…,transform]`)
 
 ### Animations
-`animate-fade-in` (0.2s) | `animate-scale-in` (0.15s) | `animate-slide-up` (0.25s) | shimmer (skeleton loading)
-All use `cubic-bezier(0.16, 1, 0.3, 1)` (expo ease-out) — no bounce/elastic easing
+`animate-fade-in` (0.2s) | `animate-scale-in` (0.2s) | `animate-slide-up` (0.25s) | `animate-fade-in-up` (0.5s, marketing) | shimmer (skeleton loading)
+All use `cubic-bezier(0.16, 1, 0.3, 1)` (expo ease-out) — no bounce/elastic easing. The classes sit in `@layer components`, so a utility (`motion-reduce:animate-none`) overrides them.
 
 ## Component Library (`src/components/ui/`)
 
-Always use existing components — never recreate them:
-- **Button** — variants primary/secondary/ghost/destructive/outline, sizes sm/md/lg, `loading` prop
-- **Card / CardHeader / CardTitle** — `rounded-xl`, optional `hover`, selected `border-accent/50`
-- **Badge** (default/bullish/bearish/warning/neutral, pill) + **SignalBadge** (STRONG_BUY…STRONG_SELL → Badge variants)
-- **StatCard** — label/value/subtext, tone coloring, bare icon
-- **Input** (label/error/icon, `rounded-lg min-h-[44px]`), **Select, Textarea, Checkbox, Toggle**
-- **Modal** suite — focus trap, Escape close; **Tabs / TabPanel** — underline, active `text-accent`
-- **ConfirmActionModal / useConfirmAction** — the ONLY way to confirm destructive or money-moving actions (native `confirm()`/`alert()` are banned in dashboard code as of 2026-07-15). Supports summary rows (font-mono), typed-keyword gate for book-wide liquidations, inline error + busy state. `const { requestConfirm, dialog } = useConfirmAction()` → render `{dialog}` once per page
-- **Pagination** (ellipsis), **Skeleton** (shimmer), **EmptyState** (icon/title/desc/CTA)
-- **Toast** (`useToast()`, solid bg), **Dropdown** + **Tooltip** (solid `bg-bg-elevated`, `rounded-lg`)
-- **Avatar, SearchInput, CommandPalette, DataTable**
+Always use existing components — never recreate them. Full reference: `.claude/skills/sentinel-redesign/references/component-patterns.md`; every primitive in every state renders at `/dashboard/admin/ui-kit` (admin only).
+- **Button** — variants primary/secondary/ghost/destructive/danger (`outline` = secondary, deprecated), sizes md (44px) / sm (36px on a 44px hit area; `lg` = md, deprecated), `loading` (aria-busy), `disabledReason`. `danger` is the solid fill for the one irreversible confirm only. **ButtonLink** puts the same classes on `next/link` — never a Button inside a Link
+- **Card / CardHeader / CardTitle (`as`)** and **Inset** — a group inside a card is an Inset (`bg-bg-surface`, no border), never a second card
+- **SignedValue** — every gain/loss: ▲/▼, U+2212 minus, hidden "gain"/"loss", from `formatPnl` (`src/lib/format-pnl.ts`, the only formatter)
+- **StatusChip / OrderStatusChip** — from `STATUS_TONE_CLASSES`; icon required for bullish/bearish; order statuses through `orderStatusMeta()` (`src/lib/order-status.ts`). **Badge** shares the chip shape; **SignalBadge** prints ▲/▼
+- **StatCard** — eyebrow label, `text-xl` mono value, toned values print a glyph
+- **Input / Select / Textarea / SearchInput** share `FIELD_BASE` (card fill, 3:1 edge, 16px on phones, 44px, `aria-invalid` + `aria-describedby` on error); **Toggle**; **Segmented** (2-5 exclusive options, `aria-pressed`, per-option tone)
+- **Modal** suite; **Tabs / TabPanel** — panels mount on first show, then hide rather than unmount
+- **ConfirmActionModal / useConfirmAction** — the ONLY way to confirm destructive or money-moving actions (native `confirm()`/`alert()` are banned in dashboard code as of 2026-07-15). Tones danger/primary/irreversible, summary rows, typed-keyword gate, inline error + busy state. `const { requestConfirm, dialog } = useConfirmAction()` → render `{dialog}` once per page
+- **EmptyState** (`kind` empty / filtered / not-connected) vs **ErrorState** (role=alert, retry, trace reference) — a failed load is never an EmptyState
+- **Skeleton** (token sheen, aria-hidden) inside **LoadingRegion**; **LiveRegion** for mounted status/alert text
+- **Toast** (`useToast()`, icon per kind, 44px dismiss, `traceId`, max 3), **Pagination**, **Dropdown** + **Tooltip**, **Avatar, CommandPalette, DataTable**
 
 ## Registration & Invites
 
@@ -197,7 +204,7 @@ Risk settings live on the **Trader page** only (not Settings). Stored in `user_r
 
 ## Live Trading
 
-Live trading is gated behind `ALLOW_LIVE_TRADING=1`. Without it, the engine refuses to start on any `environment="live"` broker connection and emits `engine.live_blocked`. Paper unaffected.
+Live trading is gated behind `ALLOW_LIVE_TRADING=1`. Without it, the engine refuses to start on any `environment="live"` broker connection and emits `engine.live_blocked`. Paper unaffected. The gate (and the per-user `live_trading_enabled` flag) guards **opening only**: halt, safety/disaster stops, stop sync and the exit check use `resolveBrokerClientForProtection`, which skips both gates, so revoking live can never disable the kill switch. Never route a BUY path through it. Scan-path take-profit and time exits still use the opening resolver (those paths also buy), so after a revocation only the exit check and the broker-side stops keep managing open positions.
 
 **Safeguards on every live engine** (independent of risk profile):
 - Account-switch detection — halt on `account_number` change OR equity drops > 50% from boot snapshot
@@ -230,12 +237,14 @@ Gate ordering inside `canPlaceBuyOrder()`: earnings blackout → **split blackou
 Manual orders go through `/dashboard/trade` (index: symbol search + recently-viewed + watchlist quick-trade + open-orders) → `/dashboard/trade/[symbol]` (the ticket). Tier-gated at `trader`. Engine-gated at THREE layers:
 
 1. **API** — `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` via `peekEngineStatus(userId).running` (hard block).
-2. **Ticket UI** — `validate()` blocks submit with "Stop the engine before placing manual orders."
+2. **Ticket UI** — `validateTicket()` (`src/lib/order-ticket.ts`) blocks submit with "Stop the engine before placing manual orders."
 3. **Index UI** — warning banner when the engine runs, linking to `/dashboard/trader` to stop it.
 
 The block prevents position-map drift: the engine's in-memory map lags the broker by up to one scan interval, risking a protective stop sized for the wrong quantity.
 
-Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.source = "manual_ui"`) as engine fills, the same journal auto-stub, and merge into the same Tax Center (`/api/tax/report` reads `trader_trades.action IN ('BUY', 'SELL', 'manual_close')`).
+**Account-gated too.** Every order names the connection the ticket showed (`expectedConnectionId`, required, plus `expectedEnvironment`); the route answers 409 `CONNECTION_CHANGED` before the broker is contacted when the active connection is a different one, so a switch to LIVE in the sidebar, another tab or another device can never send an order the ticket showed as paper. The ticket re-reads the active connection before it decides on the live confirm, and reloads and resets on the switcher's `broker-changed` window event.
+
+Manual fills get the same audit row (`AuditAction.ORDER_PLACED`, `metadata.source = "manual_ui"`) as engine fills, the same journal auto-stub, and merge into the same Tax Center (`/api/tax/report` reads `trader_trades.action IN ('BUY', 'SELL', 'manual_close')`). Flatten (`/api/trader/command`) records its `manual_close` rows `PENDING` with the broker order id; `reconcilePendingTrades` sets the real fill and P&L and adds it to the daily total on fill, and an after-hours flatten is placed and reported as queued for the next open (see `docs/ENGINE_RULESET.md` § Reconcile windowing).
 
 ## Adaptive engine mode (8th mode, regime-driven)
 
@@ -352,10 +361,10 @@ Wrap in `div.overflow-x-auto` → `table.w-full text-sm`; header row `border-b b
 65 pages at `src/app/dashboard/*/page.tsx`. Public (no auth) pages: `/terms`, `/risk`, `/privacy`, `/contact`, `/pricing`, `/learn`, `/tools`, `/glossary`, `/congress`, `/articles`, `/w/[token]` (shared watchlist). See § Sub-Navigation Groups below for how they're organized in the top-bar dropdowns.
 
 ### API Routes
-Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed` — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
+Browse `src/app/api/` for the full surface. Notable contracts: `/api/webhooks/stripe` (signature-verified, idempotent via `stripe_events_processed`: claimed before the handler, deduped only once `completed_at` is set, an uncompleted claim re-claimed after 5 min (migration `0051`) — source of tier grants), `/api/trader/command` (engine control plane: start/stop/halt/switch/flatten-all), `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` if the engine is active for that user and 409 `CONNECTION_CHANGED` if `expectedConnectionId` is not the active connection, `/api/admin/system-config` rotates encrypted API keys (see § AI Providers), `/api/public/watchlist/[token]` is unauthenticated read backing `/w/[token]`.
 
 ## Migrations
-Browse `drizzle/*.sql` for the full list (49 migrations as of `0048_optimizer_auto_promotion.sql`). All idempotent (`IF NOT EXISTS`). **Post-deploy, verify each new migration actually applied** (`information_schema.columns`) — the deploy pipeline does NOT run migrations.
+Browse `drizzle/*.sql` for the full list (55 migrations as of `0054_forum_category_unique_name.sql`). All idempotent (`IF NOT EXISTS`). **Post-deploy, verify each new migration actually applied** (`information_schema.columns`) — the deploy pipeline does NOT run migrations.
 
 > **Drizzle journal note:** `drizzle/meta/_journal.json` is reconciled through `0015`; migrations 0016–0045 + the duplicate-numbered `0001_broker_connections.sql` / `0008_social_shared_trade.sql` are applied manually on prod as `postgres` (prod's `__drizzle_migrations` table wasn't built via `drizzle-kit migrate`, so the journal is intentionally not regenerated). Fresh-DB rebuild: `for f in drizzle/*.sql; do sudo -u postgres psql sentinel_db -f "$f"; done`.
 

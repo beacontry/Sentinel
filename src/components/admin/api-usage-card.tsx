@@ -74,7 +74,7 @@ export function ApiUsageCard() {
           External API Usage
         </h2>
       </div>
-      <p className="text-[12px] text-text-muted leading-relaxed mb-4">
+      <p className="text-xs text-text-muted leading-relaxed mb-4">
         Server-wide aggregate (no per-user attribution yet). Recorded
         fire-and-forget by{" "}
         <code className="font-mono">groqChat()</code> and the Finnhub client.
@@ -167,7 +167,7 @@ function SummaryBlock({
 }) {
   return (
     <div className="rounded-lg border border-border bg-bg-elevated p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-2">
+      <div className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-2">
         {title}
       </div>
       {rows.length === 0 ? (

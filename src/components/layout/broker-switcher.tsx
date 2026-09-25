@@ -7,7 +7,7 @@
 // account and would silently drift if we let the next scan resolve a
 // different broker.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Briefcase,
@@ -19,6 +19,7 @@ import {
 import Link from "next/link";
 import { useToast } from "@/components/ui/toast";
 import { usePolling } from "@/hooks/usePolling";
+import { dispatchBrokerChanged } from "@/lib/broker-events";
 
 interface BrokerConnection {
   id: string;
@@ -60,6 +61,9 @@ export function BrokerSwitcher() {
   const [engineRunning, setEngineRunning] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Active connection id from the last successful read. undefined until the
+  // first read, so the initial load does not count as a change.
+  const lastActiveIdRef = useRef<string | null | undefined>(undefined);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -70,7 +74,16 @@ export function BrokerSwitcher() {
       ]);
       if (connRes.ok) {
         const data = await connRes.json();
-        setConnections(data.connections ?? []);
+        const list: BrokerConnection[] = data.connections ?? [];
+        setConnections(list);
+        // Tell open pages (the order ticket) when the active account changed,
+        // whether this switcher did it or another tab or device did.
+        const nowActive = list.find((c) => c.isActive) ?? null;
+        const nowId = nowActive?.id ?? null;
+        if (lastActiveIdRef.current !== undefined && lastActiveIdRef.current !== nowId) {
+          dispatchBrokerChanged({ connectionId: nowId, environment: nowActive?.environment ?? null });
+        }
+        lastActiveIdRef.current = nowId;
       }
       if (engineRes.ok) {
         const data = await engineRes.json();
@@ -129,6 +142,10 @@ export function BrokerSwitcher() {
         return;
       }
       toast.toast({ type: "success", message: `Active broker: ${describe(c)}` });
+      // Signal the switch now, not only when the refetch below sees it: the
+      // refetch can fail, and an open ticket must not keep the old account.
+      dispatchBrokerChanged({ connectionId: c.id, environment: c.environment });
+      lastActiveIdRef.current = c.id;
       await fetchAll();
     } catch {
       toast.toast({ type: "error", message: "Could not switch broker." });
@@ -143,7 +160,7 @@ export function BrokerSwitcher() {
     return (
       <div className="mx-2 mb-2 flex items-center gap-2 rounded-lg border border-border/50 bg-bg-secondary/40 px-2.5 py-1.5">
         <Briefcase className="h-3.5 w-3.5 text-text-muted" />
-        <span className="text-[11px] text-text-muted">Loading…</span>
+        <span className="text-xs text-text-muted">Loading…</span>
       </div>
     );
   }
@@ -152,8 +169,8 @@ export function BrokerSwitcher() {
     return (
       <Link
         href="/dashboard/settings"
-        className="mx-2 mb-2 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-1.5
-          text-[11px] text-warning hover:bg-warning/15 transition-colors"
+        className="mx-2 mb-2 flex items-center gap-2 rounded-lg border border-warning-line bg-warning-fill px-2.5 py-1.5
+          text-xs text-warning hover:bg-warning/15 transition-colors"
       >
         <AlertCircle className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">Connect a broker…</span>
@@ -169,11 +186,11 @@ export function BrokerSwitcher() {
       >
         <Briefcase className="h-3.5 w-3.5 text-text-muted shrink-0" />
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-medium text-text-primary truncate">
+          <div className="text-xs font-medium text-text-primary truncate">
             {brokerLabel[active.broker] ?? active.broker}
           </div>
           <div
-            className={`text-[9px] uppercase tracking-wider ${
+            className={`text-xs uppercase tracking-wider ${
               active.environment === "live" ? "text-bearish" : "text-text-muted"
             }`}
           >
@@ -195,11 +212,11 @@ export function BrokerSwitcher() {
         >
           <Briefcase className="h-3.5 w-3.5 text-text-muted shrink-0" />
           <div className="min-w-0 flex-1">
-            <div className="text-[11px] font-medium text-text-primary truncate">
+            <div className="text-xs font-medium text-text-primary truncate">
               {active ? brokerLabel[active.broker] ?? active.broker : "No active"}
             </div>
             <div
-              className={`text-[9px] uppercase tracking-wider ${
+              className={`text-xs uppercase tracking-wider ${
                 active?.environment === "live" ? "text-bearish" : "text-text-muted"
               }`}
             >
@@ -213,17 +230,17 @@ export function BrokerSwitcher() {
         <DropdownMenu.Content
           align="start"
           sideOffset={4}
-          className="z-50 min-w-[260px] max-w-[320px] rounded-lg border border-border bg-bg-elevated p-1 animate-scale-in shadow-lg"
+          className="z-50 min-w-[260px] max-w-[320px] rounded-lg border border-border bg-bg-elevated p-1 animate-scale-in shadow-pop"
         >
           {engineRunning && (
-            <div className="rounded-md bg-warning/10 px-3 py-2 mb-1 text-[11px] text-warning border border-warning/30">
+            <div className="rounded-md bg-warning/10 px-3 py-2 mb-1 text-xs text-warning border border-warning/30">
               <div className="flex items-start gap-1.5">
                 <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
                 <span>Stop the engine to switch accounts.</span>
               </div>
             </div>
           )}
-          <div className="px-3 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+          <div className="px-3 pt-1 pb-1 text-xs font-semibold uppercase tracking-[0.1em] text-text-muted">
             Broker accounts
           </div>
           {connections.map((c) => {
@@ -256,7 +273,7 @@ export function BrokerSwitcher() {
                       {c.label && c.label !== "Default" ? ` · ${c.label}` : ""}
                     </span>
                     <span
-                      className={`block text-[9px] uppercase tracking-wider ${
+                      className={`block text-xs uppercase tracking-wider ${
                         isLive ? "text-bearish font-semibold" : "text-text-muted"
                       }`}
                     >

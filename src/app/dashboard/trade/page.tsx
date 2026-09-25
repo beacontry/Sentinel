@@ -139,7 +139,7 @@ export default function TradeIndexPage() {
       {/* Engine-running gate — shown prominently so users don't click
           into a per-symbol page and find the submit disabled there. */}
       {engineBlocked && (
-        <Card className="border-warning/40 bg-warning/10 p-4">
+        <Card className="border-warning-line bg-warning-fill p-4">
           <div className="flex items-start gap-3">
             <AlertCircle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
             <div className="flex-1 space-y-1">

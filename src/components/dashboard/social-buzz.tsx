@@ -100,7 +100,7 @@ export function SocialBuzz({ symbol }: SocialBuzzProps) {
       <div className="flex-1 rounded-lg bg-bg-elevated px-2.5 py-2 text-center">
         <div className="flex items-center justify-center gap-1 mb-0.5">
           <MessageCircle className="w-3 h-3 text-text-muted" />
-          <span className="text-[10px] text-text-muted uppercase tracking-wider">
+          <span className="text-xs text-text-muted uppercase tracking-wider">
             Mentions
           </span>
         </div>
@@ -111,7 +111,7 @@ export function SocialBuzz({ symbol }: SocialBuzzProps) {
 
       {/* Sentiment score */}
       <div className={`flex-1 rounded-lg px-2.5 py-2 text-center ${sentimentBg}`}>
-        <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-0.5">
+        <span className="text-xs text-text-muted uppercase tracking-wider block mb-0.5">
           Sentiment
         </span>
         <span className={`font-mono text-sm font-bold ${sentimentColor}`}>
@@ -121,7 +121,7 @@ export function SocialBuzz({ symbol }: SocialBuzzProps) {
 
       {/* Trend */}
       <div className="flex-1 rounded-lg bg-bg-elevated px-2.5 py-2 text-center">
-        <span className="text-[10px] text-text-muted uppercase tracking-wider block mb-0.5">
+        <span className="text-xs text-text-muted uppercase tracking-wider block mb-0.5">
           Trend
         </span>
         <div className="flex items-center justify-center gap-1">

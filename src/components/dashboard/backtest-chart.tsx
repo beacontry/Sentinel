@@ -10,7 +10,7 @@ import {
   ColorType,
   CrosshairMode,
 } from "lightweight-charts";
-import { getChartTheme } from "@/lib/chart-theme";
+import { getChartTheme, CHART_FONT_SIZE } from "@/lib/chart-theme";
 
 interface BacktestChartProps {
   equityCurve: { date: string; value: number }[];
@@ -46,7 +46,7 @@ export function BacktestChart({ equityCurve, height = 300 }: BacktestChartProps)
           background: { type: ColorType.Solid, color: theme.background },
           textColor: theme.textColor,
           fontFamily: "system-ui, sans-serif",
-          fontSize: 11,
+          fontSize: CHART_FONT_SIZE,
         },
         grid: {
           vertLines: { color: theme.gridColor },
@@ -72,7 +72,7 @@ export function BacktestChart({ equityCurve, height = 300 }: BacktestChartProps)
       const isProfit = lastValue >= 10000;
 
       const series = chart.addSeries(LineSeries, {
-        color: isProfit ? "#059669" : "#dc2626",
+        color: isProfit ? theme.bullish : theme.bearish,
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: true,

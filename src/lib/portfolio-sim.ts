@@ -49,6 +49,10 @@ export async function executeTrade(
   shares: number,
   price: number
 ) {
+  // Refuse before touching the balance: a $0 (or NaN) price would record a
+  // BUY that costs nothing, or a SELL that credits nothing.
+  if (!(price > 0) || !Number.isFinite(price)) throw new Error("Invalid price");
+
   // Single transaction with atomic, guarded SQL deltas (audit #12). The old
   // read-modify-write off a stale snapshot let two concurrent trades (double-
   // click / two tabs / a BUY racing a SELL) both pass the cash/share check and
@@ -143,7 +147,7 @@ export async function getPortfolioValue(portfolioId: string): Promise<number> {
 
   for (const pos of positions) {
     const quote = await provider.fetchQuote(pos.symbol);
-    if (quote) {
+    if (quote && quote.price > 0) {
       totalValue += quote.price * pos.quantity;
     } else {
       totalValue += pos.entryPrice * pos.quantity;

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import type { AnalysisResult } from "@/types";
 import { StatCard } from "@/components/ui/stat-card";
+import { SignedValue } from "@/components/ui/signed-value";
 import { Badge } from "@/components/ui/badge";
 
 interface WhatIfSliderProps {
@@ -51,7 +52,11 @@ export function WhatIfSlider({
   }, [simPrice, entryPrice, accountSize, positionPct, direction, analysis.confidence, stopLoss, takeProfit]);
 
   return (
-    <div className="rounded-xl border border-border bg-bg-elevated p-4 space-y-4">
+    // No card chrome: the simulation sits in a section of the signal
+    // details pane (bg-secondary), and its tiles are Insets on that. A
+    // bordered bg-elevated panel here put cards inside a card, with the
+    // tiles darker than the panel around them on dark themes.
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold text-text-primary">
@@ -79,7 +84,7 @@ export function WhatIfSlider({
         step={0.01}
         value={simPrice}
         onChange={(e) => setSimPrice(Number(e.target.value))}
-        className="w-full accent-emerald-500"
+        className="w-full accent-accent"
       />
 
       {/* SL / TP row */}
@@ -93,23 +98,26 @@ export function WhatIfSlider({
           fall back to 2x2 on narrow widths so the cells stay legible. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <StatCard
+          surface="inset"
           label="Projected P/L"
-          value={`${computed.pnl >= 0 ? "+" : ""}$${computed.pnl.toFixed(0)}`}
+          value={<SignedValue value={computed.pnl} />}
           subtext={`${computed.movePct.toFixed(2)}% move`}
-          tone={computed.pnl >= 0 ? "positive" : "negative"}
         />
         <StatCard
+          surface="inset"
           label="Win Prob"
           value={`${computed.winProbability}%`}
           subtext="estimate"
           tone="positive"
         />
         <StatCard
+          surface="inset"
           label="Risk"
           value={computed.riskExposure}
           subtext="simulated"
         />
         <StatCard
+          surface="inset"
           label="Capital"
           value={`$${computed.allocatedCapital.toLocaleString()}`}
           subtext={`${positionPct}%`}
@@ -120,10 +128,10 @@ export function WhatIfSlider({
       {(computed.hitStop || computed.hitTP) && (
         <div className="text-xs">
           {computed.hitStop && (
-            <span className="px-2.5 py-1 rounded-full bg-bearish/10 text-bearish font-medium border border-bearish/20">Stop Loss Hit</span>
+            <span className="px-2.5 py-1 rounded-full bg-bearish-fill text-bearish-fg font-medium border border-bearish/20">Stop Loss Hit</span>
           )}
           {computed.hitTP && (
-            <span className="px-2.5 py-1 rounded-full bg-bullish/10 text-bullish font-medium border border-bullish/20">Take Profit Hit</span>
+            <span className="px-2.5 py-1 rounded-full bg-bullish-fill text-bullish-fg font-medium border border-bullish/20">Take Profit Hit</span>
           )}
         </div>
       )}

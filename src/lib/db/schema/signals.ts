@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   jsonb,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const signals = pgTable("signals", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -21,10 +22,16 @@ export const signals = pgTable("signals", {
   plainEnglish: text("plain_english").notNull(),
   indicators: jsonb("indicators").notNull(),
   timeframe: text("timeframe"),
+  // Last analyzed bar, set by GET /api/analyze/[symbol] so a repeat view of
+  // the same bar inserts nothing (migration 0052). NULL for other writers.
+  barTime: timestamp("bar_time", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("signals_symbol_idx").on(t.symbol),
   index("signals_created_idx").on(t.createdAt),
+  uniqueIndex("signals_symbol_timeframe_bar_idx")
+    .on(t.symbol, t.timeframe, t.barTime)
+    .where(sql`bar_time IS NOT NULL`),
 ]);
 
 export const signalAccuracy = pgTable("signal_accuracy", {

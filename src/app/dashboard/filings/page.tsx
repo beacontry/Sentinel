@@ -145,7 +145,7 @@ export default function FilingsPage() {
       {/* Filters — only show after search */}
       {!loading && filings.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted mr-1">Form</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-text-muted mr-1">Form</div>
           {FORM_TYPES.map((form) => {
             const count = form === "All" ? filings.length : filings.filter((f) => f.form === form).length;
             if (form !== "All" && count === 0) return null;
@@ -166,7 +166,7 @@ export default function FilingsPage() {
 
           <div className="w-px h-5 bg-border mx-1" />
 
-          <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted mr-1">Sort</div>
+          <div className="text-xs uppercase tracking-[0.16em] text-text-muted mr-1">Sort</div>
           <button
             onClick={() => { setSortField("date"); setSortDir((d) => sortField === "date" ? (d === "desc" ? "asc" : "desc") : "desc"); }}
             className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
@@ -366,7 +366,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
           {!chatOpen ? (
             <button
               onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
-              className="group flex w-full items-center gap-3 rounded-xl border border-accent/20 bg-accent/10 p-4 text-left transition-all hover:border-accent/30 hover:bg-accent/10"
+              className="group flex w-full items-center gap-3 rounded-xl border border-accent/20 bg-accent/10 p-4 text-left transition-colors hover:border-accent/30 hover:bg-accent/10"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
                 <Sparkles className="h-5 w-5" />
@@ -389,7 +389,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-accent">Filing Analysis</div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-muted">
                     {filing.form} · {filing.filingDate}
                   </div>
                 </div>
@@ -438,7 +438,7 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
                     <button
                       key={q}
                       onClick={() => handleAskAI(q)}
-                      className="rounded-xl border border-accent/15 bg-bg-secondary p-4 text-left transition-all hover:border-accent/30 hover:bg-bg-elevated"
+                      className="rounded-xl border border-accent/15 bg-bg-secondary p-4 text-left transition-colors hover:border-accent/30 hover:bg-bg-elevated"
                     >
                       <div className="text-sm font-semibold text-text-primary">{label}</div>
                       <div className="mt-1 text-xs text-text-muted leading-relaxed">{q}</div>
@@ -459,17 +459,15 @@ function FilingCard({ filing, symbol }: { filing: Filing; symbol: string }) {
                     disabled={chatLoading}
                   />
                 </div>
-                <button
+                <Button
                   onClick={() => handleAskAI()}
-                  disabled={!chatInput.trim() || chatLoading}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent text-black transition-all hover:bg-accent-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                  disabled={!chatInput.trim()}
+                  loading={chatLoading}
+                  className="w-11 shrink-0 px-0"
+                  aria-label="Ask about this filing"
                 >
-                  {chatLoading ? (
-                    <div className="h-4 w-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </button>
+                  {!chatLoading && <Send className="h-4 w-4" aria-hidden="true" />}
+                </Button>
               </div>
             </div>
           )}

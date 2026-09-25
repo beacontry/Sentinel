@@ -5,6 +5,7 @@ import { Check, X, RotateCcw, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import type { QuizQuestion } from "@/lib/education/guides-data";
 
+import { Button } from "@/components/ui/button";
 const PASS_PCT = 0.8;
 
 export function GuideQuiz({
@@ -81,8 +82,8 @@ export function GuideQuiz({
           <div
             className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
               passed
-                ? "border-bullish/30 bg-bullish/10 text-bullish"
-                : "border-warning/30 bg-warning/10 text-warning"
+                ? "border-bullish-line bg-bullish-fill text-bullish-fg"
+                : "border-warning-line bg-warning-fill text-warning-fg"
             }`}
           >
             {passed ? (
@@ -123,9 +124,9 @@ export function GuideQuiz({
                       disabled={submitted}
                       className={`w-full text-left flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                         showCorrect
-                          ? "border-bullish/40 bg-bullish/10 text-text-primary"
+                          ? "border-bullish-line bg-bullish-fill text-text-primary"
                           : showWrong
-                          ? "border-bearish/40 bg-bearish/10 text-text-primary"
+                          ? "border-bearish-line bg-bearish-fill text-text-primary"
                           : selected
                           ? "border-accent/40 bg-accent/10 text-text-primary"
                           : "border-border bg-bg-secondary text-text-secondary hover:border-border-hover hover:text-text-primary"
@@ -160,8 +161,8 @@ export function GuideQuiz({
                 <div
                   className={`rounded-lg border p-3 text-xs leading-relaxed ${
                     isCorrect
-                      ? "border-bullish/20 bg-bullish/5 text-text-secondary"
-                      : "border-bearish/20 bg-bearish/5 text-text-secondary"
+                      ? "border-bullish-line bg-bullish-fill text-text-secondary"
+                      : "border-bearish-line bg-bearish-fill text-text-secondary"
                   }`}
                 >
                   <span className="font-semibold text-text-primary">
@@ -180,14 +181,9 @@ export function GuideQuiz({
       )}
 
       {!submitted ? (
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={!allAnswered || submitting}
-          className="inline-flex items-center justify-center rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
+        <Button type="button" onClick={handleSubmit} disabled={!allAnswered || submitting} aria-busy={submitting || undefined}>
           {submitting ? "Submitting…" : "Submit answers"}
-        </button>
+        </Button>
       ) : (
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <p className="text-xs text-text-muted">
@@ -195,14 +191,10 @@ export function GuideQuiz({
               ? "Score saved to your progress."
               : "Score saved. Review the explanations above and retry to improve."}
           </p>
-          <button
-            type="button"
-            onClick={handleRetry}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-bg-secondary px-3 py-1.5 text-xs font-medium text-text-secondary hover:border-border-hover hover:text-text-primary transition-colors"
-          >
+          <Button type="button" variant="secondary" size="sm" onClick={handleRetry}>
             <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
             Retry
-          </button>
+          </Button>
         </div>
       )}
     </Card>

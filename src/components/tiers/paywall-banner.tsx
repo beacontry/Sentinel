@@ -55,7 +55,7 @@ export function PaywallBanner({
         <div className="min-w-0">
           <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-accent/14 px-3 py-1">
             <Lock className="h-3.5 w-3.5 text-accent" />
-            <span className="font-mono text-[10px] uppercase tracking-wider text-accent">
+            <span className="font-mono text-xs uppercase tracking-wider text-accent">
               {tierLabel} plan required
             </span>
           </div>
@@ -71,12 +71,12 @@ export function PaywallBanner({
         <div className="flex flex-col gap-1.5 lg:items-end">
           <Link
             href="/dashboard/billing"
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent-hover transition-colors whitespace-nowrap"
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-on-accent hover:bg-accent-hover transition-colors whitespace-nowrap"
           >
             Upgrade to {tierLabel}
             <ArrowRight className="h-4 w-4" />
           </Link>
-          <span className="text-[0.72rem] text-text-muted lg:text-right">
+          <span className="text-xs text-text-muted lg:text-right">
             7-day free trial
           </span>
         </div>

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { X, Send, Square, Sparkles, Trash2 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -150,7 +151,7 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
       />
 
       {/* Panel */}
-      <div className="fixed right-0 top-0 bottom-0 z-50 flex w-full flex-col border-l border-border bg-bg-secondary shadow-2xl sm:w-[420px] animate-slide-in-right">
+      <div className="fixed right-0 top-0 bottom-0 z-50 flex w-full flex-col border-l border-border bg-bg-secondary shadow-modal sm:w-[420px] animate-slide-in-right">
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2.5">
@@ -161,27 +162,20 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
               <h2 className="text-sm font-semibold text-text-primary">
                 Beacontry AI
               </h2>
-              <p className="text-[10px] text-text-muted">
+              <p className="text-xs text-text-muted">
                 Trading research assistant
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {messages.length > 0 && (
-              <button
-                onClick={clearChat}
-                className="rounded-lg p-2 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-secondary"
-                title="Clear chat"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <Button variant="ghost" size="sm" onClick={clearChat} className="w-9 px-0" title="Clear chat" aria-label="Clear chat">
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
             )}
-            <button
-              onClick={onClose}
-              className="rounded-lg p-2 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <Button variant="ghost" size="sm" onClick={onClose} className="w-9 px-0" aria-label="Close AI chat">
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Button>
           </div>
         </div>
 
@@ -199,14 +193,14 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
                 </p>
               </div>
               <div className="space-y-2 pt-2">
-                <p className="px-1 text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                <p className="px-1 text-xs font-medium uppercase tracking-wider text-text-muted">
                   Suggested
                 </p>
                 {SUGGESTED_PROMPTS.map((prompt) => (
                   <button
                     key={prompt}
                     onClick={() => sendMessage(prompt)}
-                    className="w-full rounded-lg border border-border bg-bg-secondary px-3 py-2.5 text-left text-xs text-text-secondary transition-all hover:border-border hover:bg-bg-surface"
+                    className="w-full rounded-lg border border-border bg-bg-secondary px-3 py-2.5 text-left text-xs text-text-secondary transition-colors hover:border-border hover:bg-bg-surface"
                   >
                     {prompt}
                   </button>
@@ -283,25 +277,16 @@ export function AiChat({ isOpen, onClose }: AiChatProps) {
               disabled={isStreaming}
             />
             {isStreaming ? (
-              <button
-                onClick={handleStop}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-bearish/15 text-bearish transition-colors hover:bg-bearish/25"
-                title="Stop generating"
-              >
-                <Square className="h-3 w-3 fill-current" />
-              </button>
+              <Button variant="destructive" onClick={handleStop} className="w-11 shrink-0 px-0" title="Stop generating" aria-label="Stop generating">
+                <Square className="h-3 w-3 fill-current" aria-hidden="true" />
+              </Button>
             ) : (
-              <button
-                onClick={() => sendMessage(input)}
-                disabled={!input.trim()}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent transition-colors hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-30"
-                title="Send message"
-              >
-                <Send className="h-4 w-4" />
-              </button>
+              <Button onClick={() => sendMessage(input)} disabled={!input.trim()} className="w-11 shrink-0 px-0" title="Send message" aria-label="Send message">
+                <Send className="h-4 w-4" aria-hidden="true" />
+              </Button>
             )}
           </div>
-          <p className="mt-2 text-center text-[10px] text-text-muted">
+          <p className="mt-2 text-center text-xs text-text-muted">
             AI may produce inaccurate analysis. Always verify before trading.
           </p>
         </div>

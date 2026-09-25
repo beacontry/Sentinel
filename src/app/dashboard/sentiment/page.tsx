@@ -129,7 +129,7 @@ export default function SentimentPage() {
       />
 
       {unconfigured && (
-        <Card className="border border-warning/20 bg-warning/5">
+        <Card className="border border-warning-line bg-warning-fill">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-warning shrink-0" />
             <p className="text-sm text-text-secondary">
@@ -178,7 +178,7 @@ export default function SentimentPage() {
                 <div className="mb-4">
                   <div className="h-2 rounded-full bg-bg-elevated overflow-hidden relative">
                     <div
-                      className="absolute inset-y-0 left-0 rounded-full transition-all"
+                      className="absolute inset-y-0 left-0 rounded-full transition-[width,background-color]"
                       style={{
                         width: `${overallScore * 100}%`,
                         background: `linear-gradient(90deg, oklch(0.6 0.15 25), oklch(0.6 0.12 90), oklch(0.6 0.15 145))`,
@@ -189,7 +189,7 @@ export default function SentimentPage() {
                       style={{ left: `calc(${overallScore * 100}% - 5px)` }}
                     />
                   </div>
-                  <div className="flex justify-between mt-1 text-[10px] text-text-muted">
+                  <div className="flex justify-between mt-1 text-xs text-text-muted">
                     <span>Bearish</span>
                     <span>Bullish</span>
                   </div>
@@ -198,7 +198,7 @@ export default function SentimentPage() {
                 {/* News sentiment */}
                 {d.news && d.news.configured !== false && (
                   <div className="mb-3">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted mb-1">News</div>
+                    <div className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted mb-1">News</div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
                       <div className="text-text-secondary">Bullish</div>
                       <div className="font-mono text-bullish">{(d.news.bullishPercent * 100).toFixed(0)}%</div>
@@ -214,7 +214,7 @@ export default function SentimentPage() {
                 {d.social && d.social.configured !== false && (
                   <div>
                     <div className="flex items-center gap-1 mb-1">
-                      <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">Social</span>
+                      <span className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">Social</span>
                       <TrendIcon trend={d.social.trend} />
                     </div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">

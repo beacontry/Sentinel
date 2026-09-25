@@ -242,7 +242,7 @@ export function UserPerformanceCard() {
                           {row.user.email}
                         </div>
                         {row.user.name && (
-                          <div className="text-[11px] text-text-muted font-sans truncate max-w-[180px]">
+                          <div className="text-xs text-text-muted font-sans truncate max-w-[180px]">
                             {row.user.name}
                           </div>
                         )}
@@ -255,7 +255,7 @@ export function UserPerformanceCard() {
                       <div className="flex items-center gap-1.5">
                         {engineStatusBadge(row.engine)}
                         {row.engine && (
-                          <span className="text-[11px] text-text-muted font-sans">
+                          <span className="text-xs text-text-muted font-sans">
                             {row.engine.environment === "live" ? "live" : "paper"} · {row.engine.effectiveMode ?? row.engine.mode}
                           </span>
                         )}

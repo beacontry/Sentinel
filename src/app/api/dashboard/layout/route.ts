@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { getSession, requireAuthWithCsrf } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { dashboardLayouts } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { updateDashboardLayoutSchema } from "@/lib/validators";
 import { DEFAULT_LAYOUT, isValidWidgetId } from "@/lib/widget-registry";
 import { createRouteLogger } from "@/lib/logger";
+import { lockUserLayouts } from "@/lib/dashboard-layouts";
 
 const log = createRouteLogger("dashboard-layout");
 
@@ -26,6 +27,9 @@ export async function GET() {
             eq(dashboardLayouts.isDefault, true)
           )
         )
+        // One default per user since migration 0053; the order only matters
+        // where that migration has not been applied yet.
+        .orderBy(desc(dashboardLayouts.createdAt), desc(dashboardLayouts.id))
         .limit(1);
     });
 
@@ -113,31 +117,25 @@ export async function PUT(request: Request) {
   const uniqueWidgets = Array.from(seen.values());
 
   try {
-    // Check if a default layout exists
-    const [existing] = await db
-      .select({ id: dashboardLayouts.id })
-      .from(dashboardLayouts)
-      .where(
-        and(
-          eq(dashboardLayouts.userId, auth.userId),
-          eq(dashboardLayouts.isDefault, true)
-        )
-      )
-      .limit(1);
-
-    if (existing) {
-      await db
-        .update(dashboardLayouts)
-        .set({ layoutData: { widgets: uniqueWidgets } })
-        .where(eq(dashboardLayouts.id, existing.id));
-    } else {
-      await db.insert(dashboardLayouts).values({
-        userId: auth.userId,
-        name: "Default",
-        layoutData: { widgets: uniqueWidgets },
-        isDefault: true,
-      });
-    }
+    // One statement against the one-default-per-user index (migration 0053):
+    // create the default layout or overwrite it. The old select-then-insert
+    // let two concurrent autosaves both insert a default.
+    await db.transaction(async (tx) => {
+      await lockUserLayouts(tx, auth.userId);
+      await tx
+        .insert(dashboardLayouts)
+        .values({
+          userId: auth.userId,
+          name: "Default",
+          layoutData: { widgets: uniqueWidgets },
+          isDefault: true,
+        })
+        .onConflictDoUpdate({
+          target: dashboardLayouts.userId,
+          targetWhere: sql`${dashboardLayouts.isDefault}`,
+          set: { layoutData: { widgets: uniqueWidgets } },
+        });
+    });
 
     return NextResponse.json({ success: true, widgets: uniqueWidgets });
   } catch (err) {

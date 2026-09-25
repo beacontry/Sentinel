@@ -1,188 +1,120 @@
 # Sentinel Design Tokens
 
-All values are defined in `src/app/globals.css` inside the `@theme` block (Tailwind CSS 4). Use as Tailwind utility classes.
+Every value lives in `src/app/globals.css` (Tailwind CSS 4). The `@theme` block is the light theme and the source Tailwind generates utilities from; each other theme is one `html.<name>` block that redefines the same names. Colour values are OKLCH. This file lists **roles**, not values: read the numbers from `globals.css`, and measure any change with `tests/unit/theme-contrast.test.ts`.
 
-## Color System
+## Themes
 
-### Backgrounds (dark hierarchy, darkest to lightest)
-| Token | Hex | Tailwind Class | Usage |
-|-------|-----|----------------|-------|
-| `--color-bg-primary` | `#000000` | `bg-bg-primary` | Page background, body |
-| `--color-bg-secondary` | `#09090b` | `bg-bg-secondary` | Topbar, sidebar, surface alternative |
-| `--color-bg-surface` | `#09090b` | `bg-bg-surface` | Card backgrounds, form sections |
-| `--color-bg-elevated` | `#18181b` | `bg-bg-elevated` | Hover states, nested surfaces, skeleton base |
-| `--color-bg-hover` | `#27272a` | `bg-bg-hover` | Active hover states |
+| Theme | Class on `<html>` | Surfaces | Accent |
+|---|---|---|---|
+| light | none (the `@theme` block) | near-white on green-grey, hue 163 | emerald, dark fill with a white label |
+| dark (default) | `dark` | green-tinted ladder, hue 163 | emerald, light fill with a dark label |
+| coral | `coral` | warm light ladder, hue 40 | orange-coral (hue 40), white label; loss is coral's own darker crimson (hue 10) so the accent never reads as a loss |
+| light-blue | `light-blue` | cool light ladder, hue 250 | blue, white label |
+| gray | `gray` | the dark ladder with no tint | emerald |
+
+Colour-blind mode is a second class, `colorblind`, beside the theme class. It replaces the state colours (gain, loss, warning and their `-fg`, `-fill`, `-line`) and the accent with one fixed set per luminance family, not a variant per theme: `html.colorblind` covers light, coral and light-blue, `html.colorblind.dark, html.colorblind.gray` the dark two. Gain is blue, loss vermillion (light) or amber (dark), warning yellow, each `-fg` equal to its state colour, and the accent a neutral blue kept apart from the gain, because every theme's own accent collided with the set as a deuteranope or protanope sees it. The contrast test measures every theme in this mode under typical, deuteranope and protanope vision; the light set's few pairs under 0.10 deltaE OK are the in-gamut ceiling and are held as a ratchet.
+
+Each block sets its own `color-scheme`, so native controls, scrollbars and the select popup follow the theme. `meta theme-color`, `public/manifest.json` and `THEME_META.pwaColor` are hex copies of each theme's `--color-bg-primary`; `tests/unit/theme-meta.test.ts` keeps them in step.
+
+## Colour roles
+
+### Surfaces (a lightness ladder, about +3.5 L per step on dark)
+| Token | Class | Use |
+|---|---|---|
+| `--color-bg-primary` | `bg-bg-primary` | page |
+| `--color-bg-secondary` | `bg-bg-secondary` | cards, inputs |
+| `--color-bg-surface` | `bg-bg-surface` | inset areas, chart canvas |
+| `--color-bg-elevated` | `bg-bg-elevated` | menus, selects, popovers |
+| `--color-bg-hover` | `bg-bg-hover` | hover and selected rows |
+
+### Edges
+| Token | Class | Use |
+|---|---|---|
+| `--color-border` | `border-border` | decorative container edge, ~1.3:1 on purpose |
+| `--color-border-hover` | `border-border-hover` | hovered container |
+| `--color-border-control` | `border-border-control` | the edge of an input, select, toggle or checkbox: 3:1 or better on every surface (WCAG 1.4.11) |
+| `--color-hairline-inner` | `divide-[var(--color-hairline-inner)]` | dividers inside a container |
 
 ### Text
-| Token | Hex | Tailwind Class | Usage |
-|-------|-----|----------------|-------|
-| `--color-text-primary` | `#ffffff` | `text-text-primary` | Headings, primary content, values |
-| `--color-text-secondary` | `#a1a1aa` | `text-text-secondary` | Descriptions, secondary labels |
-| `--color-text-muted` | `#71717a` | `text-text-muted` | Placeholders, disabled text, table headers |
+`text-text-primary`, `text-text-secondary`, `text-text-muted`. All three clear 4.5:1 on every surface, including `bg-hover`, in every theme.
 
-### Borders
-| Token | Hex | Tailwind Class | Usage |
-|-------|-----|----------------|-------|
-| `--color-border` | `#27272a` | `border-border` | Card borders, table dividers, input borders |
-| `--color-border-hover` | `#3f3f46` | `border-border-hover` | Hover border state |
+### Accent
+| Token | Use |
+|---|---|
+| `--color-accent` / `--color-accent-hover` | the primary action fill, links, active state |
+| `--color-on-accent` | the label on an accent fill. **Never `text-white`**: on the dark themes the accent is light |
+| `--color-accent-muted` | a 12-15% tint for selected backgrounds |
+| `--color-focus` | the global focus ring (set to the accent) |
 
-### Accent (Emerald Green)
-| Token | Hex | Tailwind Class | Usage |
-|-------|-----|----------------|-------|
-| `--color-accent` | `#10b981` | `text-accent` / `bg-accent` | Primary actions, active tabs, logo, links |
-| `--color-accent-hover` | `#34d399` | `bg-accent-hover` | Button hover state |
-| `--color-accent-muted` | `rgba(16,185,129,0.1)` | `bg-accent-muted` | Subtle accent backgrounds |
+The landing `ld-*` names (`bg-ld-deep`, `text-ld-accent`, …) point at these app tokens; they are aliases, not a second palette.
 
-### Trading Semantics
-| Token | Hex | Tailwind Class | Usage |
-|-------|-----|----------------|-------|
-| `--color-bullish` | `#34d399` | `text-bullish` / `bg-bullish` | Positive P&L, buy signals, gains |
-| `--color-bullish-muted` | `rgba(52,211,153,0.1)` | `bg-bullish-muted` | Bullish badge background |
-| `--color-bearish` | `#f87171` | `text-bearish` / `bg-bearish` | Negative P&L, sell signals, losses |
-| `--color-bearish-muted` | `rgba(248,113,113,0.1)` | `bg-bearish-muted` | Bearish badge background |
-| `--color-warning` | `#fbbf24` | `text-warning` / `bg-warning` | Caution, pending, hold signals |
-| `--color-warning-muted` | `rgba(251,191,36,0.1)` | `bg-warning-muted` | Warning badge background |
-| `--color-neutral` | `#71717a` | `text-neutral` | Neutral/hold state |
+### Trading states
+| Need | Classes |
+|---|---|
+| a gain/loss figure on a card | `text-bullish` / `text-bearish` (`text-warning` for caution) |
+| a chip, badge or banner | `STATUS_TONE_CLASSES[tone]` from `src/lib/status-tone.ts`: `border-X-line bg-X-fill text-X-fg` |
+| an icon tile | `STATUS_TONE_FILL_CLASSES[tone]` |
+| a trade or order status | `tradeStatusTone(status)` → a tone for `<Badge variant>` |
+| the one irreversible confirm | `bg-bearish-solid text-on-bearish` |
 
-### Signal Strength Colors
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `--color-strong-buy` | `#059669` | Strong buy signal indicator |
-| `--color-buy` | `#10b981` | Buy signal indicator |
-| `--color-hold` | `#71717a` | Hold signal indicator |
-| `--color-sell` | `#f87171` | Sell signal indicator |
-| `--color-strong-sell` | `#ef4444` | Strong sell signal indicator |
+Do not build state colour from alpha (`bg-bearish/10`, `border-warning/30`): the style ratchet counts those and the count only goes down. Colour is never the only carrier; print the state in words or with a ▲/▼ glyph.
 
-### Opacity Patterns for Muted Backgrounds
-Use Tailwind opacity modifiers for tinted backgrounds:
-- `bg-accent/10` — subtle accent tint (edit mode banners, selected states)
-- `bg-accent/15` — medium accent tint
-- `bg-bullish/10` — bullish badge background
-- `bg-bearish/10` — bearish badge background
-- `bg-bearish/15` — destructive button background
-- `bg-warning/10` — warning badge background
-- `border-accent/20` — accent border (edit banners, active cards)
-- `border-bearish/20` — destructive border
-- `border-accent/50` — selected card border
+### Charts
+Charts are canvas, so `src/lib/chart-theme.ts` reads the tokens and passes each through `resolveColor()` (the browser paints it into a 1x1 canvas and reads back `rgba()`), because the chart library cannot parse `oklch()` or `color-mix()`. Indicator lines use the categorical `--color-series-1` … `6`. Key a chart on `${theme}:${colorBlindMode}` to re-theme it live. Axis text is `CHART_FONT_SIZE` (12px).
 
-## Typography
+## Type scale
 
-### Font Families
-| Token | Font | Tailwind Class | Usage |
-|-------|------|----------------|-------|
-| `--font-display` | Inter | `font-display` | Page titles (rarely used separately) |
-| `--font-body` | Inter | `font-body` | All body text (default) |
-| `--font-mono` | JetBrains Mono | `font-mono` | Prices, percentages, quantities, code |
+Seven steps, 12px floor. Tailwind's own steps are reset, so `text-3xl` and up compile to nothing.
 
-### Font Loading (Next.js)
-```tsx
-const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-body" });
-const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-mono" });
-```
+| Class | Size | Line height | Use |
+|---|---|---|---|
+| `text-xs` | 12px | 1.6 | metadata, badges, table headers |
+| `text-sm` | 14px | 1.6 | body in the app |
+| `text-base` | 16px | 1.5 | marketing body, inputs below `sm` (stops iOS zoom) |
+| `text-lg` | 20px | 1.3 | card and modal titles that lead |
+| `text-xl` | 24px | 1.3 | key figures |
+| `text-2xl` | 32px | 1.15 | page titles |
+| `text-display` | clamp(40-72px) | 1.05 | marketing headings only |
 
-### Type Scale
-| Element | Classes | Usage |
-|---------|---------|-------|
-| Page title (hero) | `text-4xl font-semibold tracking-tight` | Main dashboard "Command Center" |
-| Page title (standard) | `font-display text-2xl font-bold` | Most page headers |
-| Page subtitle | `text-sm text-text-secondary` | Below page titles |
-| Card title | `text-sm font-semibold text-text-primary` | CardTitle component |
-| Modal title | `text-lg font-semibold text-text-primary` | ModalTitle component |
-| Body text | `text-sm` (14px) | Default body copy |
-| Small text | `text-xs` (12px) | Badges, timestamps, metadata |
-| Stat label | `text-xs uppercase tracking-[0.18em] text-text-muted` | StatCard labels |
-| Stat value | `text-2xl font-semibold text-text-primary` | StatCard numbers |
-| Monospace data | `font-mono text-sm` | Table numbers, prices |
-| Large mono value | `font-mono text-lg font-bold` | Portfolio value, key metric |
+- Uppercase kicker labels use the `eyebrow` utility (12px, 600, 0.08em). Write sentence case in the source. A hand-rolled `uppercase tracking-[…]` is counted by the style ratchet and may only go down.
+- Fonts: Geist Sans for display and body, Geist Mono (`font-mono`) for every financial number, with `tabular-nums`.
+- A label that does not fit at 12px on a phone is hidden below a breakpoint (`hidden sm:inline`), never shrunk.
 
-### Letter Spacing
-- Body: `-0.01em` (set on body element)
-- Stat labels: `tracking-[0.18em]` (wide spacing for uppercase labels)
-- Page hero title: `tracking-tight`
+## Radius
+
+| Class | Size | Use |
+|---|---|---|
+| `rounded` | 4px | tiny marks: swatches, heatmap cells, tags |
+| `rounded-md` | 6px | nav items, segmented buttons |
+| `rounded-lg` | 8px | buttons, inputs, dropdowns |
+| `rounded-xl` | 12px | cards, modals, panels |
+| `rounded-full` | pill | badges, chips, avatars |
+
+`rounded-sm`, `rounded-2xl` and larger no longer exist.
+
+## Elevation
+
+`shadow-card`, `shadow-pop` (menus, popovers, hover lift) and `shadow-modal`. Each is set per theme through `--elevation-*`: the dark themes give cards no shadow, because the lightness ladder already shows depth.
+
+## Motion
+
+- Entrances: `animate-fade-in` (0.2s), `animate-scale-in` (0.2s), `animate-slide-up` (0.25s), `animate-fade-in-up` (0.5s, marketing), `stagger-1` … `8`. All use `cubic-bezier(0.16, 1, 0.3, 1)`.
+- Transitions name their properties: `transition-colors`, or `transition-[background-color,border-color,color,transform]` when a hover moves the element, or `transition-[width,background-color]` on a progress-bar fill. `transition-all` is at zero and stays there.
+- The reduced-motion block at the end of `globals.css` covers everything.
 
 ## Spacing
 
-### Base Scale (4px)
-Sentinel uses Tailwind's default 4px spacing scale. Common values:
-- `gap-1` (4px), `gap-1.5` (6px), `gap-2` (8px), `gap-2.5` (10px), `gap-3` (12px)
-- `gap-4` (16px), `gap-5` (20px), `gap-6` (24px)
-- `p-3` (12px), `p-4` (16px), `p-5` (20px), `p-6` (24px)
-- `py-16` (64px) — empty state vertical padding
-
-### Page-Level Spacing
-- Page container: `p-4 lg:p-6 space-y-6`
-- Form page max width: `max-w-3xl`
-- Section gap: `space-y-6`
-- Card internal gap: `space-y-4`
-
-### Component Spacing
-- Card padding: `p-5`
-- StatCard padding: `p-4`
-- Modal padding: `p-6`
-- Input internal: `px-4 py-3`
-- Button sm: `px-3 py-1.5`
-- Button md: `px-4 py-3`
-- Button lg: `px-6 py-3`
-- Badge: `px-2.5 py-1`
-
-## Border Radius
-
-| Element | Class | Pixels |
-|---------|-------|--------|
-| Cards | `rounded-3xl` | 24px |
-| StatCards | `rounded-2xl` | 16px |
-| Buttons (md/lg) | `rounded-2xl` | 16px |
-| Buttons (sm) | `rounded-xl` | 12px |
-| Inputs | `rounded-2xl` | 16px |
-| Modals | `rounded-xl` | 12px |
-| Badges | `rounded-full` | pill |
-| Tabs | `rounded-full` | pill |
-| Inner forms/sections | `rounded-lg` | 8px |
-| Logo icon | `rounded-2xl` | 16px |
-| Nav items | `rounded-lg` or `rounded-xl` | 8-12px |
-
-## Shadows
-
-| Pattern | Class | Usage |
-|---------|-------|-------|
-| Card subtle | `shadow-[0_0_0_1px_rgba(255,255,255,0.02)]` | Cards, stat cards |
-| Modal | `shadow-2xl shadow-black/40` | Modal dialog |
-| Toast | `shadow-lg shadow-black/30` | Toast notifications |
-
-## Animations
-
-| Name | Duration | Easing | Transform | Tailwind Class |
-|------|----------|--------|-----------|----------------|
-| fade-in | 0.2s | ease-out | translateY(4px) -> 0 | `animate-fade-in` |
-| scale-in | 0.15s | ease-out | scale(0.97) -> 1 | `animate-scale-in` |
-| slide-up | 0.25s | ease-out | translateY(8px) -> 0 | `animate-slide-up` |
-| shimmer | 1.5s | ease-in-out infinite | background-position | via inline style |
-| spin | standard | linear infinite | rotate | `animate-spin` |
-
-### Transition Patterns
-- Interactive elements: `transition-colors duration-150`
-- Buttons: `transition-all duration-150 ease-out`
-- Sidebar slide: `transition-transform duration-200`
+Tailwind's 4px scale. Page container `p-4 lg:p-6 space-y-6`; card padding `p-4 lg:p-5`; section gap `space-y-6`.
 
 ## Icons
 
-- Library: `lucide-react`
-- Standard size in text: `w-4 h-4`
-- Header icon size: `w-5 h-5`
-- Empty state icon: `w-10 h-10` to `w-12 h-12`
-- Icon color follows text color of context (e.g., `text-accent`, `text-text-muted`)
-- Trading icons: TrendingUp (bullish), TrendingDown (bearish), Target (accuracy)
-- Navigation: LayoutDashboard, TrendingUp, Search, Wallet, Bot, Sparkles
-- Brand: Shield (Sentinel logo icon)
+`lucide-react`. `w-4 h-4` inline, `w-5 h-5` in headers. An icon next to a state is `aria-hidden` and the state is also in text.
 
-## Scrollbar
+## Guards
 
-Custom scrollbar for dark theme:
-- Width: `5px`
-- Track: transparent
-- Thumb: `var(--color-border-hover)` (#3f3f46)
-- Thumb hover: `var(--color-text-muted)` (#71717a)
-
-## Selection
-
-Text selection uses accent-muted background: `background-color: var(--color-accent-muted)`
+| Check | What it holds |
+|---|---|
+| `tests/unit/theme-contrast.test.ts` | every meaningful pair, 5 themes × colour-blind mode |
+| `tests/unit/design-scales.test.ts` | seven sizes, three radii, three elevations, resets in place |
+| `npm run lint:style` (`scripts/style-ratchet.mjs`) | off-token class patterns may only go down; off-scale sizes stay at zero |
+| `scripts/codemods/tokenize-classes.mjs` | moves ad-hoc classes onto the tokens, one family at a time |

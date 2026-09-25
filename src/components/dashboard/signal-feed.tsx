@@ -57,7 +57,7 @@ export function SignalFeed({
       <div className="flex items-center justify-between border-b border-border px-4 py-4">
         <div className="flex items-center gap-2">
           <Radio className="w-4 h-4 text-accent" />
-          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
+          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-text-secondary">
             Signals
           </span>
         </div>
@@ -83,7 +83,7 @@ export function SignalFeed({
         ) : signals.length === 0 ? (
           <div className="px-4 py-8 text-center">
             <p className="text-xs text-text-muted">No signals yet</p>
-            <p className="text-[10px] text-text-muted mt-1">
+            <p className="text-xs text-text-muted mt-1">
               Add symbols to analyze
             </p>
           </div>
@@ -96,10 +96,10 @@ export function SignalFeed({
                 <button
                   key={item.symbol}
                   onClick={() => onSelectSignal(item.symbol)}
-                  className={`w-full min-h-[60px] rounded-xl border px-3 py-3 text-left transition-all duration-150
+                  className={`w-full min-h-[60px] rounded-xl border px-3 py-3 text-left transition-[background-color,border-color,color,box-shadow] duration-150
                     ${
                       isSelected
-                        ? "border-accent/30 bg-accent/5 shadow-sm"
+                        ? "border-accent/30 bg-accent/5 shadow-card"
                         : "border-transparent hover:border-border hover:bg-bg-elevated"
                     }`}
                 >
@@ -118,7 +118,7 @@ export function SignalFeed({
                       </span>
                       <Badge
                         variant={signalBadgeVariant[item.signal]}
-                        className="text-[10px] px-1.5 py-0.5"
+                        className="text-xs px-1.5 py-0.5"
                       >
                         {signalLabel[item.signal]}
                       </Badge>
@@ -129,7 +129,7 @@ export function SignalFeed({
                       </span>
                       {item.change !== undefined && (
                         <span
-                          className={`font-mono text-[10px] ${
+                          className={`font-mono text-xs ${
                             item.change >= 0 ? "text-bullish" : "text-bearish"
                           }`}
                         >

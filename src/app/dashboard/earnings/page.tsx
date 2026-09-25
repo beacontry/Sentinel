@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
+import { useUrlParam } from "@/hooks/use-url-param";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,12 +31,32 @@ function formatRevenue(v: number | null): string {
   return `$${v.toFixed(0)}`;
 }
 
-export default function EarningsPage() {
+const EARNINGS_TABS = ["calendar", "list"] as const;
+type EarningsTab = (typeof EARNINGS_TABS)[number];
+
+// Wrap in Suspense: useUrlParam reads useSearchParams, and Next.js 15
+// requires a Suspense boundary so the SSR shell can render while the
+// client hydrates.
+export default function EarningsPageWrapper() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="w-6 h-6 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <EarningsPage />
+    </Suspense>
+  );
+}
+
+function EarningsPage() {
   const [earnings, setEarnings] = useState<Earning[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [symbolInput, setSymbolInput] = useState("");
-  const [activeTab, setActiveTab] = useState("calendar");
+  const [activeTab, setActiveTab] = useUrlParam<EarningsTab>("tab", "calendar", EARNINGS_TABS);
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   // The actual watchlist contents we queried Finnhub against. Surfaced
   // to the UI so users can see "we are tracking X, Y, Z" — answers the
@@ -300,11 +321,11 @@ export default function EarningsPage() {
                   >
                     <span className="font-mono font-medium text-text-primary">{s}</span>
                     {next ? (
-                      <span className="font-mono text-[10px] text-accent">
+                      <span className="font-mono text-xs text-accent">
                         {next.date.slice(5)}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-text-muted italic">
+                      <span className="text-xs text-text-muted italic">
                         no date
                       </span>
                     )}
@@ -326,7 +347,7 @@ export default function EarningsPage() {
             {trackedSymbols.some(
               (s) => !earnings.some((e) => e.symbol === s && e.date >= today)
             ) && (
-              <p className="text-[11px] text-text-muted leading-relaxed">
+              <p className="text-xs text-text-muted leading-relaxed">
                 Symbols showing <span className="italic">no date</span> are tracked but
                 don&apos;t have an earnings date announced in the next 90 days.
                 They&apos;ll appear in the calendar automatically once a date is published.
@@ -342,7 +363,7 @@ export default function EarningsPage() {
           { id: "list", label: "List" },
         ]}
         activeTab={activeTab}
-        onChange={setActiveTab}
+        onChange={(id) => setActiveTab(id as EarningsTab)}
       />
 
       <TabPanel active={activeTab === "calendar"}>
@@ -361,7 +382,7 @@ export default function EarningsPage() {
 
           <div className="grid grid-cols-7 gap-px">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-              <div key={d} className="text-center text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted pb-2">{d}</div>
+              <div key={d} className="text-center text-xs font-medium uppercase tracking-[0.08em] text-text-muted pb-2">{d}</div>
             ))}
             {calendarDays.map((day, i) => {
               if (day === null) return <div key={`e-${i}`} />;
@@ -388,7 +409,7 @@ export default function EarningsPage() {
                         <div key={e.symbol} className="w-1.5 h-1.5 rounded-full bg-accent" title={e.symbol} />
                       ))}
                       {dayEarnings.length > 3 && (
-                        <span className="text-[9px] text-text-muted">+{dayEarnings.length - 3}</span>
+                        <span className="text-xs text-text-muted">+{dayEarnings.length - 3}</span>
                       )}
                     </div>
                   )}

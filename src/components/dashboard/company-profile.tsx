@@ -124,23 +124,23 @@ export function CompanyProfile({ symbol }: CompanyProfileProps) {
       {/* Tags */}
       <div className="flex flex-wrap gap-1.5">
         {profile.industry && (
-          <Badge variant="default" className="text-[10px]">
+          <Badge variant="default" className="text-xs">
             {profile.industry}
           </Badge>
         )}
         {profile.country && (
-          <Badge variant="neutral" className="text-[10px]">
+          <Badge variant="neutral" className="text-xs">
             <Globe className="w-3 h-3" />
             {profile.country}
           </Badge>
         )}
         {profile.marketCapitalization > 0 && (
-          <Badge variant="neutral" className="text-[10px] font-mono">
+          <Badge variant="neutral" className="text-xs font-mono">
             {formatMarketCap(profile.marketCapitalization)}
           </Badge>
         )}
         {profile.ipo && (
-          <Badge variant="neutral" className="text-[10px]">
+          <Badge variant="neutral" className="text-xs">
             <Calendar className="w-3 h-3" />
             IPO {profile.ipo}
           </Badge>

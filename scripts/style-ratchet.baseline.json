@@ -1,0 +1,20 @@
+{
+  "text-[8-11px]": 0,
+  "text-[arbitrary size]": 9,
+  "rounded-[arbitrary]": 0,
+  "shadow-[arbitrary]": 0,
+  "text-white": 2,
+  "transition-all": 0,
+  "focus(-visible):outline-none": 18,
+  "outline-none without focus-visible ring": 32,
+  "raw <button": 85,
+  "raw <input": 8,
+  "backdrop-blur": 3,
+  "-[#hex]": 0,
+  "rgb()/rgba() literal": 6,
+  "bg-white/ or bg-black/": 4,
+  "state colour alpha tint": 82,
+  "border-l-2/4 stripe": 0,
+  "inline fontSize 8-11": 0,
+  "uppercase + tracking-[arbitrary]": 55
+}

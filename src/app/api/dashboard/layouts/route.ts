@@ -7,6 +7,7 @@ import { createDashboardLayoutSchema } from "@/lib/validators";
 import { isValidWidgetId } from "@/lib/widget-registry";
 import { createRouteLogger } from "@/lib/logger";
 import { checkTier } from "@/lib/tiers-server";
+import { lockUserLayouts } from "@/lib/dashboard-layouts";
 
 const log = createRouteLogger("dashboard-layouts");
 
@@ -58,7 +59,8 @@ export async function GET() {
 // actively saving) atomically demotes the prior default to keep that invariant.
 //
 // Note: this is intentionally a single transaction with an advisory lock per
-// user so that two concurrent "Save as" submissions don't both create defaults.
+// user (lockUserLayouts) so that two concurrent "Save as" submissions don't
+// both create defaults or race past the cap.
 export async function POST(request: Request) {
   const auth = await requireAuthWithCsrf(request);
   if (auth instanceof Response) return auth;
@@ -102,6 +104,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await db.transaction(async (tx) => {
+      await lockUserLayouts(tx, auth.userId);
       // Cap at 10 layouts per user — keeps the switcher UI sane and prevents
       // accidental abuse. The check + insert in one tx so concurrent submits
       // can't race past the cap.

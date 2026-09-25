@@ -100,7 +100,7 @@ export function IntelligenceNewsTab({ symbol }: IntelligenceNewsTabProps) {
           target="_blank"
           rel="noopener noreferrer"
           className="block p-3 rounded-lg bg-bg-elevated hover:bg-bg-hover
-            border border-transparent hover:border-border-hover transition-all duration-200 group"
+            border border-transparent hover:border-border-hover transition-colors duration-200 group"
         >
           <div className="flex items-start justify-between gap-2">
             <h4 className="text-xs font-medium text-text-primary leading-snug line-clamp-2 group-hover:text-accent transition-colors">
@@ -109,15 +109,15 @@ export function IntelligenceNewsTab({ symbol }: IntelligenceNewsTabProps) {
             <ExternalLink className="w-3 h-3 text-text-muted shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           {article.summary && (
-            <p className="text-[10px] text-text-muted mt-1 line-clamp-1 leading-relaxed">
+            <p className="text-xs text-text-muted mt-1 line-clamp-1 leading-relaxed">
               {article.summary}
             </p>
           )}
           <div className="flex items-center gap-2 mt-1.5">
-            <Badge variant="neutral" className="text-[10px] px-1.5 py-0.5">
+            <Badge variant="neutral" className="text-xs px-1.5 py-0.5">
               {article.source}
             </Badge>
-            <span className="text-[10px] text-text-muted">
+            <span className="text-xs text-text-muted">
               {timeAgo(article.datetime)}
             </span>
           </div>

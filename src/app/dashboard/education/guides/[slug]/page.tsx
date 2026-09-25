@@ -88,7 +88,7 @@ export default async function GuidePage({
             <GuideProgressTracker slug={guide.slug} />
           </div>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-text-primary">
+        <h1 className="text-2xl sm:text-2xl font-semibold tracking-tight text-text-primary">
           {guide.title}
         </h1>
         <p className="text-base leading-relaxed text-text-secondary">

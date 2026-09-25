@@ -88,7 +88,7 @@ export function IntelligenceTranscriptsTab({ symbol }: { symbol: string }) {
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] text-text-muted">
+      <p className="text-xs text-text-muted">
         Recent earnings calls — listing only. Full transcripts available on Finnhub.
       </p>
       {transcripts.map((t) => (
@@ -105,7 +105,7 @@ export function IntelligenceTranscriptsTab({ symbol }: { symbol: string }) {
               <div className="text-sm font-medium text-text-primary">
                 Q{t.quarter} {t.year}
               </div>
-              <div className="text-[11px] text-text-muted">
+              <div className="text-xs text-text-muted">
                 {formatDate(t.time)}
                 {t.title && t.title !== `Q${t.quarter} ${t.year}` && ` · ${t.title}`}
               </div>

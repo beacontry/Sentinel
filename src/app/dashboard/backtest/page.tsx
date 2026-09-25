@@ -16,6 +16,7 @@ import { BacktestChart } from "@/components/dashboard/backtest-chart";
 import { STRATEGY_PRESETS, PRESET_LABELS, type PresetName } from "@/lib/strategy-presets";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
+import { Segmented } from "@/components/ui/segmented";
 const EXIT_REASON_LABELS: Record<string, { label: string; color: string }> = {
   stop_loss: { label: "Stop Loss", color: "text-bearish" },
   trailing_stop: { label: "Trail Stop", color: "text-warning" },
@@ -515,23 +516,16 @@ export default function BacktestPage() {
               placeholder="AAPL"
             />
             <div className="flex flex-col gap-1">
-              <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">Window</span>
-              <div className="inline-flex rounded-lg border border-border bg-bg-secondary p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setRangeMode("days")}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${rangeMode === "days" ? "bg-bg-elevated text-text-primary" : "text-text-muted hover:text-text-secondary"}`}
-                >
-                  Last N days
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRangeMode("range")}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${rangeMode === "range" ? "bg-bg-elevated text-text-primary" : "text-text-muted hover:text-text-secondary"}`}
-                >
-                  Date range
-                </button>
-              </div>
+              <span className="eyebrow text-text-muted" aria-hidden="true">Window</span>
+              <Segmented
+                label="Window"
+                value={rangeMode}
+                onChange={setRangeMode}
+                options={[
+                  { value: "days", label: "Last N days" },
+                  { value: "range", label: "Date range" },
+                ]}
+              />
             </div>
             {rangeMode === "days" ? (
               <Input
@@ -706,7 +700,7 @@ export default function BacktestPage() {
               icon={BarChart3}
             />
           </div>
-          <p className="text-[11px] text-text-muted -mt-1">
+          <p className="text-xs text-text-muted -mt-1">
             Sortino punishes only downside volatility. Calmar = annualized return ÷ max drawdown.
             MAR = total return ÷ max drawdown over the full window.
             All three &gt; 1.0 is good; &gt; 3.0 is excellent.
@@ -724,16 +718,17 @@ export default function BacktestPage() {
             <CardHeader className="p-0 pb-3">
               <div className="flex items-center justify-between gap-3">
                 <CardTitle>Equity Curve</CardTitle>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setChartFullscreen(!chartFullscreen)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-bg-secondary px-2.5 py-1 text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
                   title={chartFullscreen ? "Exit fullscreen (Esc)" : "Expand chart"}
                   aria-label={chartFullscreen ? "Exit fullscreen" : "Expand chart"}
                 >
-                  {chartFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                  {chartFullscreen ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
                   <span className="hidden sm:inline">{chartFullscreen ? "Exit" : "Expand"}</span>
-                </button>
+                </Button>
               </div>
             </CardHeader>
             <div className={chartFullscreen ? "flex-1 min-h-0" : ""}>

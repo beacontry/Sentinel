@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, X } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 interface MeTier {
   tier: string;
   authenticated: boolean;
@@ -64,7 +65,7 @@ export function BillingStatusBanner() {
   if (dismissed) return null;
 
   return (
-    <div className="border-b border-warning/30 bg-warning/10">
+    <div className="border-b border-warning-line bg-warning-fill">
       <div className="mx-auto max-w-7xl px-4 lg:px-6 py-2.5 flex items-start gap-3">
         <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
         <div className="flex-1 text-sm">
@@ -83,13 +84,9 @@ export function BillingStatusBanner() {
             Update payment method →
           </Link>
         </div>
-        <button
-          onClick={handleDismiss}
-          aria-label="Dismiss"
-          className="shrink-0 text-text-muted hover:text-text-secondary -m-1 p-1"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <Button variant="ghost" onClick={handleDismiss} aria-label="Dismiss" className="-my-2 w-11 shrink-0 px-0">
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
       </div>
     </div>
   );

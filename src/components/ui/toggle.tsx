@@ -15,8 +15,8 @@ export const Toggle = forwardRef<HTMLInputElement, ToggleProps>(
     return (
       <label
         htmlFor={toggleId}
-        className={`inline-flex items-center gap-3 select-none
-          ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
+        className={`inline-flex min-h-11 items-center gap-3 select-none
+          ${disabled ? "opacity-55 cursor-not-allowed" : "cursor-pointer"}
           ${className}`}
       >
         <div className="relative">
@@ -31,14 +31,14 @@ export const Toggle = forwardRef<HTMLInputElement, ToggleProps>(
             {...props}
           />
           <div
-            className="h-6 w-11 rounded-full border border-border bg-bg-hover transition-colors duration-150
-              peer-checked:border-accent/40 peer-checked:bg-accent/85
-              peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-bg-primary"
+            className="h-6 w-11 rounded-full border border-border-control bg-bg-hover transition-colors duration-150
+              peer-checked:border-accent peer-checked:bg-accent
+              peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus"
           />
           <div
             className="absolute left-[3px] top-[3px] h-[18px] w-[18px] rounded-full bg-text-primary
-              transition-transform duration-150 ease-out
-              peer-checked:translate-x-[18px]"
+              transition-[transform,background-color] duration-150 ease-out
+              peer-checked:translate-x-[18px] peer-checked:bg-on-accent"
           />
         </div>
         {label && (

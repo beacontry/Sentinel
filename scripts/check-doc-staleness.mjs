@@ -44,6 +44,8 @@ const BANNED = [
   [/cooldown.{0,20}3-day window|3-day window.{0,20}cooldown/, "losing-reentry window tuned 3d → 5d on 2026-06-10"],
   [/596 tests|43 suites|46 migrations/, "stale counts from pre-2026-07-14"],
   [/PDT \(Pattern Day Trader\)<\/div>\s*$/, "PDT concept must be marked retired in user docs"],
+  [/badges use the .?\/10.? tint|uses separate .?ld-\*.? tokens/, "state chips use the -fill/-fg/-line triplets and ld-* tokens alias the app palette since 2026-09-24"],
+  [/text-\[(?:[89]|1[01])px\]/, "12px type floor since 2026-09-24 — use text-xs or the eyebrow utility"],
 ];
 
 let failures = 0;

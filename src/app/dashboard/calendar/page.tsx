@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, CalendarDays, Globe, X } from "lucide-react";
 import type { EconomicEvent } from "@/types";
 
+import { Button } from "@/components/ui/button";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const categoryColors: Record<string, string> = {
@@ -19,9 +20,9 @@ const categoryColors: Record<string, string> = {
 
 const categoryBadge: Record<string, string> = {
   fomc: "border-accent/30 bg-accent/10 text-accent",
-  cpi: "border-warning/30 bg-warning/10 text-warning",
-  jobs: "border-bullish/30 bg-bullish/10 text-bullish",
-  gdp: "border-warning/30 bg-warning/10 text-warning",
+  cpi: "border-warning-line bg-warning-fill text-warning-fg",
+  jobs: "border-bullish-line bg-bullish-fill text-bullish-fg",
+  gdp: "border-warning-line bg-warning-fill text-warning-fg",
   earnings: "border-accent/30 bg-accent/10 text-accent",
   other: "border-border bg-bg-elevated text-text-muted",
 };
@@ -86,6 +87,7 @@ export default function CalendarPage() {
 
   const todayStr = fmt(new Date());
   const monthLabel = new Date(year, month).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const monthLabelShort = new Date(year, month).toLocaleDateString("en-US", { month: "short", year: "numeric" });
   const days = getMonthDays(year, month);
 
   function prevMonth() {
@@ -145,32 +147,38 @@ export default function CalendarPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px] lg:h-[calc(100vh-220px)]">
+      {/* minmax(0, 1fr), not the implicit auto track: an auto column grows
+          to its widest content's min-content and pushed both cards past the
+          page gutter at 320px. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:h-[calc(100vh-220px)]">
         {/* Calendar grid — fixed */}
         <Card className="p-0 overflow-hidden">
           {/* Month header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <div className="flex items-center gap-3">
-              <button onClick={prevMonth} className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <h2 className="text-lg font-semibold min-w-[180px] text-center">{monthLabel}</h2>
-              <button onClick={nextMonth} className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors">
-                <ChevronRight className="h-4 w-4" />
-              </button>
+          {/* Below sm the month is abbreviated and the padding tighter: at
+              320px the full label's 180px floor pushed Today 5px past the
+              card. */}
+          <div className="flex items-center justify-between gap-2 px-3 py-4 border-b border-border sm:px-5">
+            <div className="flex min-w-0 items-center gap-1 sm:gap-3">
+              <Button variant="ghost" onClick={prevMonth} className="w-11 px-0" aria-label="Previous month">
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </Button>
+              <h2 className="min-w-0 whitespace-nowrap text-center text-base font-semibold sm:min-w-[180px] sm:text-lg">
+                <span className="sm:hidden" aria-hidden="true">{monthLabelShort}</span>
+                <span className="sr-only sm:not-sr-only">{monthLabel}</span>
+              </h2>
+              <Button variant="ghost" onClick={nextMonth} className="w-11 px-0" aria-label="Next month">
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </Button>
             </div>
-            <button
-              onClick={goToday}
-              className="rounded-full border border-border px-3 py-1 text-xs font-medium text-text-secondary hover:border-border-hover hover:text-text-primary transition-colors"
-            >
+            <Button variant="secondary" size="sm" onClick={goToday}>
               Today
-            </button>
+            </Button>
           </div>
 
           {/* Weekday headers */}
           <div className="grid grid-cols-7 border-b border-border">
             {WEEKDAYS.map((d) => (
-              <div key={d} className="py-2 text-center text-[11px] uppercase tracking-[0.12em] text-text-muted">
+              <div key={d} className="py-2 text-center text-xs uppercase tracking-[0.12em] text-text-muted">
                 {d}
               </div>
             ))}
@@ -203,7 +211,7 @@ export default function CalendarPage() {
                     {/* Day number */}
                     <span className={`text-sm font-mono font-medium leading-none
                       ${isToday
-                        ? "flex h-7 w-7 items-center justify-center rounded-full bg-accent text-black"
+                        ? "flex h-7 w-7 items-center justify-center rounded-full bg-accent text-on-accent"
                         : isSelected
                           ? "text-accent"
                           : "text-text-primary"
@@ -225,12 +233,12 @@ export default function CalendarPage() {
                           return entries.map(([cat, count]) => (
                             <div key={cat} className="flex items-center gap-1">
                               <div className={`h-1 flex-1 rounded-full ${categoryColors[cat] ?? categoryColors.other}`} />
-                              {count > 1 && <span className="text-[8px] font-mono text-text-muted">{count}</span>}
+                              {count > 1 && <span className="text-xs font-mono text-text-muted">{count}</span>}
                             </div>
                           ));
                         })()}
                         {dayEvents.length > 3 && (
-                          <span className="text-[8px] font-mono text-text-muted">{dayEvents.length} events</span>
+                          <span className="hidden text-xs font-mono text-text-muted sm:inline">{dayEvents.length} events</span>
                         )}
                       </div>
                     )}
@@ -246,7 +254,7 @@ export default function CalendarPage() {
           )}
 
           {/* Legend */}
-          <div className="flex flex-wrap items-center gap-4 px-5 py-3 border-t border-border text-[10px] uppercase tracking-[0.12em] text-text-muted">
+          <div className="flex flex-wrap items-center gap-4 px-5 py-3 border-t border-border text-xs uppercase tracking-[0.12em] text-text-muted">
             {Object.entries(categoryLabels).map(([key, label]) => (
               <div key={key} className="flex items-center gap-1.5">
                 <div className={`h-2 w-4 rounded-full ${categoryColors[key]}`} />
@@ -266,7 +274,7 @@ export default function CalendarPage() {
             <>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-muted">
                     {selectedDate === todayStr ? "Today" : "Selected"}
                   </div>
                   <div className="text-lg font-semibold">
@@ -275,12 +283,9 @@ export default function CalendarPage() {
                     })}
                   </div>
                 </div>
-                <button
-                  onClick={() => setSelectedDate(null)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-bg-elevated hover:text-text-primary transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <Button variant="ghost" onClick={() => setSelectedDate(null)} className="w-11 px-0" aria-label="Close day details">
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </Button>
               </div>
 
               {selectedEvents.length === 0 ? (
@@ -297,7 +302,7 @@ export default function CalendarPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-medium">{event.event}</span>
-                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${categoryBadge[event.category] ?? categoryBadge.other}`}>
+                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${categoryBadge[event.category] ?? categoryBadge.other}`}>
                               {categoryLabels[event.category] ?? event.category}
                             </span>
                           </div>
@@ -313,19 +318,19 @@ export default function CalendarPage() {
                             <div className="mt-3 grid grid-cols-3 gap-2">
                               {event.actual != null && (
                                 <div className="rounded-lg bg-bg-elevated p-2">
-                                  <div className="text-[10px] text-text-muted">Actual</div>
+                                  <div className="text-xs text-text-muted">Actual</div>
                                   <div className="font-mono text-sm font-medium text-bullish">{event.actual}</div>
                                 </div>
                               )}
                               {event.forecast != null && (
                                 <div className="rounded-lg bg-bg-elevated p-2">
-                                  <div className="text-[10px] text-text-muted">Forecast</div>
+                                  <div className="text-xs text-text-muted">Forecast</div>
                                   <div className="font-mono text-sm font-medium">{event.forecast}</div>
                                 </div>
                               )}
                               {event.previous != null && (
                                 <div className="rounded-lg bg-bg-elevated p-2">
-                                  <div className="text-[10px] text-text-muted">Previous</div>
+                                  <div className="text-xs text-text-muted">Previous</div>
                                   <div className="font-mono text-sm font-medium text-text-secondary">{event.previous}</div>
                                 </div>
                               )}
@@ -349,7 +354,7 @@ export default function CalendarPage() {
               {/* Quick upcoming */}
               {events.filter((e) => e.date >= todayStr && e.importance === "high").length > 0 && (
                 <div className="mt-5 text-left">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted mb-2">Upcoming high impact</div>
+                  <div className="text-xs uppercase tracking-[0.16em] text-text-muted mb-2">Upcoming high impact</div>
                   <div className="space-y-1.5">
                     {events
                       .filter((e) => e.date >= todayStr && e.importance === "high")
@@ -364,7 +369,7 @@ export default function CalendarPage() {
                             <div className="h-1.5 w-1.5 rounded-full bg-bearish" />
                             <span className="text-xs text-text-primary truncate">{e.event}</span>
                           </div>
-                          <span className="text-[10px] font-mono text-text-muted shrink-0 ml-2">
+                          <span className="text-xs font-mono text-text-muted shrink-0 ml-2">
                             {new Date(e.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                           </span>
                         </button>

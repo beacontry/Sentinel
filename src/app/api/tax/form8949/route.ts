@@ -12,6 +12,7 @@ import {
 import { toCSV } from "@/lib/csv";
 import { createRouteLogger } from "@/lib/logger";
 import { checkTier } from "@/lib/tiers-server";
+import { parseOrdinaryIncome } from "@/lib/tax-inputs";
 
 const log = createRouteLogger("tax-form8949");
 
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
   const year = Number(searchParams.get("year")) || new Date().getFullYear();
   const format = searchParams.get("format"); // "csv" for export
   const filingStatusParam = searchParams.get("filingStatus") as FilingStatus | null;
-  const ordinaryIncome = Number(searchParams.get("ordinaryIncome")) || 50000;
+  const ordinaryIncome = parseOrdinaryIncome(searchParams.get("ordinaryIncome"));
 
   const filingStatus: FilingStatus =
     filingStatusParam && VALID_STATUSES.includes(filingStatusParam)

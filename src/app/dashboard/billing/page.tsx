@@ -383,7 +383,7 @@ function UpgradeCard({ tier, cadence, tagline, features, highlight }: UpgradeCar
 
   return (
     <div
-      className={`rounded-xl border p-5 transition-all ${
+      className={`rounded-xl border p-5 transition-colors ${
         highlight
           ? "border-accent/40 bg-accent/[0.04]"
           : "border-border bg-bg-surface"
@@ -395,8 +395,8 @@ function UpgradeCard({ tier, cadence, tagline, features, highlight }: UpgradeCar
           {price.label}
         </span>
       </div>
-      <p className="text-[0.85rem] text-text-secondary mb-4">{tagline}</p>
-      <ul className="space-y-1.5 text-[0.85rem] mb-5">
+      <p className="text-sm text-text-secondary mb-4">{tagline}</p>
+      <ul className="space-y-1.5 text-sm mb-5">
         {features.map((f) => (
           <li key={f} className="flex items-start gap-1.5 text-text-secondary">
             <Check className="h-3.5 w-3.5 text-accent shrink-0 mt-0.5" />
@@ -410,7 +410,7 @@ function UpgradeCard({ tier, cadence, tagline, features, highlight }: UpgradeCar
         label={`Start ${title}`}
         variant={highlight ? "primary" : "secondary"}
       />
-      <p className="mt-2 text-[0.72rem] text-text-muted text-center">
+      <p className="mt-2 text-xs text-text-muted text-center">
         7-day free trial · cancel anytime
       </p>
     </div>

@@ -136,6 +136,14 @@ export interface BrokerClient {
    * PENDING row's broker_order_id has aged out of the recent-orders batch.
    */
   getOrder?(orderId: string): Promise<BrokerOrder | null>;
+  /**
+   * Fetch a single order by the client_order_id it was submitted with.
+   * Returns null when the broker has no such order. Used after a placeOrder
+   * whose outcome is unknown (timeout, dropped connection, 5xx, unreadable
+   * body) to find out whether the order was accepted before reporting
+   * anything. Optional: a broker without it leaves such outcomes unknown.
+   */
+  getOrderByClientId?(clientOrderId: string): Promise<BrokerOrder | null>;
   placeOrder(params: PlaceOrderParams): Promise<BrokerOrder>;
   cancelOrder?(orderId: string): Promise<void>;
   cancelAllOrders?(): Promise<void>;
@@ -175,10 +183,120 @@ class BrokerError extends Error {
      *  than treating it as a connectivity failure (audit #14). */
     public retryable: boolean = false,
     /** Parsed Retry-After in ms when the broker supplied one, else null. */
-    public retryAfterMs: number | null = null
+    public retryAfterMs: number | null = null,
+    /**
+     * For an order submission: "unknown" when the request may have reached
+     * the broker but no usable answer came back (timeout, dropped connection,
+     * 5xx, unreadable body), so the order may be live; "duplicate" when the
+     * broker refused the client_order_id as already used, so an order with
+     * that id exists. Null for a definite answer.
+     */
+    public orderOutcome: "unknown" | "duplicate" | null = null
   ) {
     super(message);
     this.name = "BrokerError";
+  }
+
+  /** The client_order_id the failed submission carried, when known. */
+  clientOrderId: string | null = null;
+}
+
+/**
+ * True when a placeOrder failure does not prove the order was refused: the
+ * order may be live at the broker (outcome unknown) or already exists under
+ * the same client_order_id (duplicate). Callers must look the order up by its
+ * client_order_id before reporting a failure.
+ */
+export function isAmbiguousOrderError(err: unknown): err is BrokerError {
+  return err instanceof BrokerError && err.orderOutcome !== null;
+}
+
+/** Final statuses of an order that is not working at the broker. */
+const NOT_WORKING_STATUSES = new Set(["rejected", "canceled", "cancelled", "expired"]);
+
+/**
+ * True for an order the lookup found that never became a position and never
+ * will: rejected, canceled or expired with nothing filled. Such an order
+ * answers "did the broker accept it?" with no, so a caller must treat it as
+ * a refusal, not as placed. One that filled in part before it ended did
+ * trade, so it is not matched here. Compared lowercase (IBKR capitalises).
+ */
+export function isNotWorkingOrder(order: BrokerOrder): boolean {
+  return NOT_WORKING_STATUSES.has(order.status.toLowerCase()) && !(order.filledQty > 0);
+}
+
+/**
+ * Upper bound on the lookup after an ambiguous submit. The lookup is a second
+ * broker call on the order path, and every engine order goes through it,
+ * including the kill switch's flatten sells and the shutdown safety stops, so
+ * it must not add a second full FETCH_TIMEOUT_MS to them. A lookup that runs
+ * out is "unknown", like one that finds nothing.
+ */
+export const ORDER_LOOKUP_TIMEOUT_MS = 3_000;
+
+/**
+ * Look an order up by client_order_id after an ambiguous placeOrder failure.
+ * Returns the order, or null when it cannot be confirmed: the broker has no
+ * lookup, the lookup found nothing, the lookup itself failed, or it did not
+ * answer within `timeoutMs` (default ORDER_LOOKUP_TIMEOUT_MS) or before
+ * `signal` aborted. An already aborted signal skips the lookup. Null means
+ * "unknown", never "rejected": the original POST may still be in flight.
+ */
+export async function lookupOrderByClientId(
+  client: BrokerClient,
+  clientOrderId: string,
+  opts: { timeoutMs?: number; signal?: AbortSignal } = {}
+): Promise<BrokerOrder | null> {
+  if (!client.getOrderByClientId) return null;
+  const { timeoutMs = ORDER_LOOKUP_TIMEOUT_MS, signal } = opts;
+  if (signal?.aborted) {
+    log.warn({ clientOrderId }, "Order lookup by client_order_id skipped: past the caller's deadline; outcome stays unknown");
+    return null;
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const outOfTime = new Promise<"out_of_time">((resolve) => {
+    timer = setTimeout(() => resolve("out_of_time"), timeoutMs);
+    onAbort = () => resolve("out_of_time");
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    const result = await Promise.race([client.getOrderByClientId(clientOrderId), outOfTime]);
+    if (result === "out_of_time") {
+      log.warn(
+        { clientOrderId, timeoutMs, deadlinePassed: signal?.aborted ?? false },
+        "Order lookup by client_order_id ran out of time; outcome stays unknown"
+      );
+      return null;
+    }
+    return result;
+  } catch (err) {
+    log.warn(
+      { clientOrderId, err: err instanceof Error ? err.message : "unknown" },
+      "Order lookup by client_order_id failed; outcome stays unknown"
+    );
+    return null;
+  } finally {
+    clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+/**
+ * Thrown by cancelAllOrders when the broker accepted the request but reported
+ * that some orders could not be cancelled (Alpaca 207 Multi-Status with a
+ * non-2xx entry, or a 207 body that could not be read). `failedOrderIds` lists
+ * the orders the broker named; it is empty when the body was unreadable, which
+ * callers must treat as "unknown", never as "none failed".
+ */
+class CancelAllPartialError extends BrokerError {
+  constructor(public readonly failedOrderIds: string[], detail: string) {
+    super(
+      `Cancel all orders was partial: ${detail}`,
+      207,
+      "Some orders could not be cancelled"
+    );
+    this.name = "CancelAllPartialError";
   }
 }
 
@@ -221,14 +339,18 @@ async function brokerFetch(
   } catch (err) {
     if (err instanceof BrokerError) throw err; // already classified (e.g. 429)
     const message = err instanceof Error ? err.message : "Unknown error";
+    // Both cases can happen after the request was sent, so for an order
+    // submission the broker may have accepted it: outcome unknown.
     if (message.includes("abort")) {
-      throw new BrokerError("Connection timed out", 504, "Connection timed out", true);
+      throw new BrokerError("Connection timed out", 504, "Connection timed out", true, null, "unknown");
     }
     throw new BrokerError(
       `Fetch failed: ${message}`,
       502,
       "Failed to connect to broker",
-      true
+      true,
+      null,
+      "unknown"
     );
   } finally {
     clearTimeout(timeout);
@@ -475,6 +597,27 @@ export class AlpacaClient implements BrokerClient {
     return mapAlpacaOrder(data);
   }
 
+  async getOrderByClientId(clientOrderId: string): Promise<BrokerOrder | null> {
+    // GET /v2/orders:by_client_order_id. 404 means Alpaca has no order with
+    // this client_order_id (yet: a POST still in flight is not visible).
+    const res = await brokerFetch(
+      `${this.baseUrl}/v2/orders:by_client_order_id?client_order_id=${encodeURIComponent(clientOrderId)}`,
+      { headers: this.headers }
+    );
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      log.error({ broker: "alpaca", clientOrderId, status: res.status }, "Order fetch by client id failed");
+      throw new BrokerError(`Alpaca order by client id ${res.status}`, 502, "Failed to fetch order");
+    }
+    let data: Record<string, unknown>;
+    try {
+      data = await res.json();
+    } catch {
+      throw new BrokerError("Invalid JSON from Alpaca order", 502, "Invalid response from broker");
+    }
+    return mapAlpacaOrder(data);
+  }
+
   async placeOrder(params: PlaceOrderParams): Promise<BrokerOrder> {
     // Idempotency: every order gets a client_order_id. Caller-provided when
     // set (useful for deterministic retry-the-same-intent flows), else a
@@ -521,14 +664,20 @@ export class AlpacaClient implements BrokerClient {
       if (params.stopPrice) payload.stop_price = params.stopPrice;
     }
 
-    const res = await brokerFetch(`${this.baseUrl}/v2/orders`, {
-      method: "POST",
-      headers: {
-        ...this.headers,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+    let res: Response;
+    try {
+      res = await brokerFetch(`${this.baseUrl}/v2/orders`, {
+        method: "POST",
+        headers: {
+          ...this.headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      if (err instanceof BrokerError) err.clientOrderId = clientOrderId;
+      throw err;
+    }
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
@@ -545,33 +694,48 @@ export class AlpacaClient implements BrokerClient {
       // reason codes, and isn't a stable contract — audit #13). The full text
       // is already logged server-side above; map only known cases.
       let userError = "Failed to place order";
+      // A 5xx does not prove Alpaca refused the order: its gateway can fail
+      // after the order was accepted.
+      let orderOutcome: "unknown" | "duplicate" | null = res.status >= 500 ? "unknown" : null;
       const lc = errorText.toLowerCase();
       if (lc.includes("buying power") || lc.includes("insufficient")) {
         userError = "Insufficient buying power for this order";
       } else if (lc.includes("client_order_id must be unique")) {
         userError = "Duplicate order — this trade was already submitted";
+        orderOutcome = "duplicate";
       } else if (lc.includes("not tradable") || lc.includes("not_tradable") || lc.includes("not active") || lc.includes("not allowed")) {
         userError = "This symbol is not currently tradable";
       } else if (lc.includes("wash")) {
         userError = "Order blocked by the broker's wash-trade check";
       }
 
-      throw new BrokerError(
+      const placeErr = new BrokerError(
         `Alpaca order ${res.status}: ${errorText}`,
         400,
-        userError
+        userError,
+        false,
+        null,
+        orderOutcome
       );
+      placeErr.clientOrderId = clientOrderId;
+      throw placeErr;
     }
 
     let o: Record<string, unknown>;
     try {
       o = await res.json();
     } catch {
-      throw new BrokerError(
+      // Alpaca answered 2xx, so the order was accepted; only the body is lost.
+      const bodyErr = new BrokerError(
         "Invalid JSON from Alpaca order",
         502,
-        "Invalid response from broker"
+        "Invalid response from broker",
+        false,
+        null,
+        "unknown"
       );
+      bodyErr.clientOrderId = clientOrderId;
+      throw bodyErr;
     }
 
     return {
@@ -608,17 +772,40 @@ export class AlpacaClient implements BrokerClient {
       method: "DELETE",
       headers: this.headers,
     });
-    // DELETE /v2/orders returns 207 Multi-Status when SOME orders couldn't be
-    // canceled. The old code treated 207 as success (res.ok) and merely logged
-    // a hard failure (audit #43). Surface the partial, and THROW on a hard
-    // non-2xx so callers don't silently assume a clean flatten — every caller
-    // wraps this in try/catch and independently re-verifies positions.
+    // DELETE /v2/orders answers 207 Multi-Status with one entry per order,
+    // { id, status }, whether or not every cancel succeeded. The old code
+    // logged the 207 and returned, so a stop that failed to cancel was
+    // invisible to the caller (audit #43, finding #42). Read the per-order
+    // statuses and THROW CancelAllPartialError when any entry is not 2xx, or
+    // when the body cannot be read (unknown is not success). A hard non-2xx
+    // still throws BrokerError.
     if (res.status === 207) {
       const body = await res.text().catch(() => "");
-      log.warn(
-        { broker: "alpaca", status: 207, body: body.slice(0, 500) },
-        "Cancel-all returned 207 Multi-Status — some orders may not have canceled"
+      let entries: Array<{ id?: unknown; status?: unknown }> | null = null;
+      try {
+        const parsed: unknown = JSON.parse(body);
+        if (Array.isArray(parsed)) entries = parsed as Array<{ id?: unknown; status?: unknown }>;
+      } catch {
+        entries = null;
+      }
+      if (!entries) {
+        log.warn(
+          { broker: "alpaca", status: 207, body: body.slice(0, 500) },
+          "Cancel-all returned an unreadable 207 body; treating as partial"
+        );
+        throw new CancelAllPartialError([], "unreadable 207 response");
+      }
+      const failed = entries.filter(
+        (e) => !(typeof e.status === "number" && e.status >= 200 && e.status < 300)
       );
+      if (failed.length > 0) {
+        const failedOrderIds = failed.map((e) => String(e.id ?? "unknown"));
+        log.warn(
+          { broker: "alpaca", status: 207, failedOrderIds, total: entries.length },
+          "Cancel-all was partial: some orders could not be cancelled"
+        );
+        throw new CancelAllPartialError(failedOrderIds, `${failed.length} of ${entries.length} orders not cancelled`);
+      }
       return;
     }
     if (!res.ok) {
@@ -1419,4 +1606,4 @@ export function createBrokerClient(
   }
 }
 
-export { BrokerError };
+export { BrokerError, CancelAllPartialError };

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { SymbolLink } from "@/components/ui/symbol-link";
 import { BarChart3, Target, TrendingUp, TrendingDown, PieChart } from "lucide-react";
 import { PageIntro } from "@/components/layout/page-intro";
+import { formatSignedPercent, percentDirection } from "@/lib/format-pnl";
 import { usePolling } from "@/hooks/usePolling";
 import { POLLING_INTERVALS } from "@/lib/config";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
@@ -123,6 +124,8 @@ export default function PerformancePage() {
   }
 
   const o = data.overall;
+  // Tone and glyph from one direction, taken from the value as printed.
+  const avgReturnDir = percentDirection(o.avgReturn);
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -133,7 +136,7 @@ export default function PerformancePage() {
         stats={[
           { label: "Win Rate", value: `${Math.round(o.accuracy * 100)}%`, tone: o.accuracy >= 0.5 ? "bullish" : "bearish" },
           { label: "Total Signals", value: String(o.totalSignals) },
-          { label: "Avg Return", value: `${o.avgReturn >= 0 ? "+" : ""}${o.avgReturn.toFixed(2)}%`, tone: o.avgReturn >= 0 ? "bullish" : "bearish" },
+          { label: "Avg Return", value: formatSignedPercent(o.avgReturn), tone: avgReturnDir === "gain" ? "bullish" : avgReturnDir === "loss" ? "bearish" : "neutral", direction: avgReturnDir },
           { label: "Correct", value: `${o.correctSignals} / ${o.totalSignals}`, tone: "bullish" },
         ]}
       />
@@ -270,16 +273,16 @@ export default function PerformancePage() {
             {data.weekly.map((w) => (
               <div
                 key={w.week}
-                className="flex-1 flex flex-col items-center justify-end gap-1"
+                className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1"
               >
-                <span className="text-[9px] font-mono text-text-muted">
+                <span className="hidden text-xs font-mono text-text-muted sm:inline">
                   {Math.round(w.winRate * 100)}%
                 </span>
                 <div
                   className={`w-full rounded-t ${w.winRate >= 0.5 ? "bg-bullish/70" : "bg-bearish/70"}`}
                   style={{ height: `${Math.max(w.winRate * 100, 4)}%` }}
                 />
-                <span className="text-[8px] text-text-muted truncate w-full text-center">
+                <span className="hidden w-full truncate text-center text-xs text-text-muted sm:block">
                   {new Date(w.week).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                 </span>
               </div>
@@ -334,10 +337,10 @@ function AttributionCard({ data }: { data: AttributionData }) {
                 <div
                   className={`absolute inset-y-0 left-0 ${
                     isPositive ? "bg-bullish/30" : "bg-bearish/30"
-                  } transition-all`}
+                  } transition-[width,background-color]`}
                   style={{ width: `${widthPct}%` }}
                 />
-                <div className="absolute inset-0 flex items-center justify-end pr-2 text-[10px] text-text-muted font-mono">
+                <div className="absolute inset-0 flex items-center justify-end pr-2 text-xs text-text-muted font-mono">
                   {r.tradeCount} trade{r.tradeCount !== 1 ? "s" : ""} · {Math.round(winRate)}% win
                 </div>
               </div>
@@ -347,7 +350,7 @@ function AttributionCard({ data }: { data: AttributionData }) {
                 }`}
               >
                 {isPositive ? "+" : ""}${r.pnl.toFixed(2)}
-                <div className="text-[10px] text-text-muted">
+                <div className="text-xs text-text-muted">
                   {r.pctOfTotal >= 0 ? "+" : ""}
                   {r.pctOfTotal.toFixed(1)}%
                 </div>
@@ -358,7 +361,7 @@ function AttributionCard({ data }: { data: AttributionData }) {
               <Link
                 href={`/dashboard/journal?symbol=${encodeURIComponent(r.symbol)}`}
                 title={`Open journal entries for ${r.symbol}`}
-                className="text-[10px] text-text-muted hover:text-accent transition-colors px-1"
+                className="text-xs text-text-muted hover:text-accent transition-colors px-1"
               >
                 Journal
               </Link>
@@ -367,7 +370,7 @@ function AttributionCard({ data }: { data: AttributionData }) {
         })}
       </div>
       {data.rows.length > 10 && (
-        <p className="text-[11px] text-text-muted text-center mt-3">
+        <p className="text-xs text-text-muted text-center mt-3">
           +{data.rows.length - 10} more symbols not shown
         </p>
       )}

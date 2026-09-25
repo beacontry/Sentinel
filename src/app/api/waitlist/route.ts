@@ -20,6 +20,8 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { rateLimit } from "@/lib/rate-limiter";
+import { getRateLimitIp } from "@/lib/rate-limit-ip";
+import { extractIp } from "@/lib/audit";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("waitlist");
@@ -32,18 +34,14 @@ const signupSchema = z.object({
   website: z.string().max(1000).optional(),
 });
 
-function clientIp(request: NextRequest): string {
-  // Behind Cloudflare → trust CF-Connecting-IP. Behind Caddy → trust
-  // X-Forwarded-For. Local dev → fallback to "unknown".
-  return (
-    request.headers.get("cf-connecting-ip") ??
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown"
-  );
-}
-
 export async function POST(request: NextRequest) {
-  const ip = clientIp(request);
+  // The limiter keys only on the proxy-trusted header (getRateLimitIp). The
+  // old local helper fell back to the first x-forwarded-for hop, so a request
+  // that reached the origin without cf-connecting-ip got a fresh bucket for
+  // every XFF value it sent. The stored `ip` is abuse-triage context, not a
+  // gate, so it keeps the claimed address when the trusted one is absent.
+  const ip = getRateLimitIp(request);
+  const storedIp = ip !== "unknown" ? ip : (extractIp(request) ?? "unknown");
 
   // 5 signups per IP per minute is generous for legitimate users
   // (someone submitting twice because they thought it didn't work) and
@@ -74,7 +72,7 @@ export async function POST(request: NextRequest) {
   // Honeypot — bot caught. Return success so the bot doesn't probe for
   // the trap. Don't write anything to the DB.
   if (parsed.data.website && parsed.data.website.length > 0) {
-    log.warn({ ip, ua: request.headers.get("user-agent") }, "Honeypot tripped");
+    log.warn({ ip: storedIp, ua: request.headers.get("user-agent") }, "Honeypot tripped");
     return NextResponse.json({ success: true });
   }
 
@@ -90,7 +88,7 @@ export async function POST(request: NextRequest) {
     // clause. Re-signing-up just bumps `created_at` rather than erroring.
     await db.execute(sql`
       INSERT INTO waitlist (email, source, user_agent, ip)
-      VALUES (${email}, ${source}, ${userAgent}, ${ip})
+      VALUES (${email}, ${source}, ${userAgent}, ${storedIp})
       ON CONFLICT (LOWER(email)) DO UPDATE
         SET created_at = NOW()
     `);

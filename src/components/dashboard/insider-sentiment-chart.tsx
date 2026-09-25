@@ -126,7 +126,7 @@ export function InsiderSentimentChart({ symbol }: InsiderSentimentChartProps) {
         {sentiment.length > 0 && (
           <Badge
             variant={isNetBuying ? "bullish" : "bearish"}
-            className="text-[10px]"
+            className="text-xs"
           >
             {isNetBuying ? (
               <TrendingUp className="w-3 h-3" />
@@ -141,7 +141,7 @@ export function InsiderSentimentChart({ symbol }: InsiderSentimentChartProps) {
       {/* MSPR bar chart */}
       {sentiment.length > 0 ? (
         <div className="px-3 py-3 rounded-lg bg-bg-elevated">
-          <p className="text-[10px] text-text-muted uppercase tracking-wider mb-2">
+          <p className="text-xs text-text-muted uppercase tracking-wider mb-2">
             Monthly Share Purchase Ratio (MSPR)
           </p>
           <div className="flex items-end gap-1" style={{ height: "64px" }}>
@@ -157,7 +157,7 @@ export function InsiderSentimentChart({ symbol }: InsiderSentimentChartProps) {
                   className="flex-1 flex flex-col items-center justify-end h-full"
                 >
                   <div
-                    className={`w-full rounded-sm transition-all duration-300 ${
+                    className={`w-full rounded transition-[height,background-color] duration-300 ${
                       isPositive ? "bg-bullish/60" : "bg-bearish/60"
                     }`}
                     style={{ height: `${height}px` }}
@@ -172,7 +172,7 @@ export function InsiderSentimentChart({ symbol }: InsiderSentimentChartProps) {
             {sentiment.slice(-12).map((entry, idx) => (
               <div
                 key={idx}
-                className="flex-1 text-center text-[9px] text-text-muted font-mono"
+                className="flex-1 text-center text-xs text-text-muted font-mono"
               >
                 {MONTH_NAMES[entry.month - 1]}
               </div>
@@ -206,7 +206,7 @@ export function InsiderSentimentChart({ symbol }: InsiderSentimentChartProps) {
       {/* Recent transactions */}
       {transactions.length > 0 && (
         <div>
-          <p className="text-[10px] text-text-muted uppercase tracking-wider mb-2">
+          <p className="text-xs text-text-muted uppercase tracking-wider mb-2">
             Recent Transactions
           </p>
           <div className="space-y-1 max-h-[200px] overflow-y-auto">
@@ -231,7 +231,7 @@ export function InsiderSentimentChart({ symbol }: InsiderSentimentChartProps) {
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span
-                    className={`font-mono text-[10px] ${
+                    className={`font-mono text-xs ${
                       t.type === "buy"
                         ? "text-bullish"
                         : t.type === "sell"
@@ -242,7 +242,7 @@ export function InsiderSentimentChart({ symbol }: InsiderSentimentChartProps) {
                     {t.type === "buy" ? "+" : t.type === "sell" ? "-" : ""}
                     {t.shares.toLocaleString()}
                   </span>
-                  <span className="text-text-muted text-[10px]">
+                  <span className="text-text-muted text-xs">
                     {t.date}
                   </span>
                 </div>
@@ -256,13 +256,13 @@ export function InsiderSentimentChart({ symbol }: InsiderSentimentChartProps) {
       {summary && (
         <div className="flex gap-3 text-xs">
           <div className="flex-1 px-3 py-2 rounded-lg bg-bg-elevated text-center">
-            <p className="text-[10px] text-text-muted mb-0.5">Net Buys</p>
+            <p className="text-xs text-text-muted mb-0.5">Net Buys</p>
             <p className="font-mono text-bullish">
               {summary.totalBuyShares.toLocaleString()} shares
             </p>
           </div>
           <div className="flex-1 px-3 py-2 rounded-lg bg-bg-elevated text-center">
-            <p className="text-[10px] text-text-muted mb-0.5">Net Sells</p>
+            <p className="text-xs text-text-muted mb-0.5">Net Sells</p>
             <p className="font-mono text-bearish">
               {summary.totalSellShares.toLocaleString()} shares
             </p>

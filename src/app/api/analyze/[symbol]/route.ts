@@ -10,8 +10,14 @@ import { pushSignalToTrader } from "@/lib/trader-push";
 import { eq, and } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
 import { checkTier } from "@/lib/tiers-server";
+import { rateLimit } from "@/lib/rate-limiter";
+import { signalBarTime } from "@/lib/signal-bucket";
 
 const log = createRouteLogger("analyze");
+
+// Per user. Each call fetches bars and runs the hybrid pipeline, and the
+// analysis page fans out one call per watchlist symbol on load.
+const ANALYZE_RATE_LIMIT = { max: 120, windowSeconds: 60 };
 
 export async function GET(
   _request: Request,
@@ -23,6 +29,18 @@ export async function GET(
   }
   const tierFail = await checkTier(session.userId, "trader");
   if (tierFail) return tierFail;
+
+  const limit = rateLimit(
+    `analyze:${session.userId}`,
+    ANALYZE_RATE_LIMIT.max,
+    ANALYZE_RATE_LIMIT.windowSeconds
+  );
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded" },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
+  }
 
   const { symbol } = await params;
   const upperSymbol = symbol.toUpperCase();
@@ -66,8 +84,14 @@ export async function GET(
 
     if (controller.signal.aborted) throw new Error("Route timeout");
 
-    // Persist the signal
-    const [saved] = await withTimeout(3000, async (tx) => {
+    // Persist the signal once per (symbol, resolution, last bar). This GET
+    // backs the preview sheet, the screener modal and the analysis page, so a
+    // repeat view of the same bar must not add a row: the unique index from
+    // migration 0052 makes the insert a no-op, and `inserted` is false for
+    // every caller but the first. The accuracy placeholder and the
+    // notifications below follow it, so the stats, the accuracy cron and
+    // Discord see one signal per bar.
+    const inserted = await withTimeout(3000, async (tx) => {
       const [s] = await tx
         .insert(signals)
         .values({
@@ -78,8 +102,13 @@ export async function GET(
           volume: result.volume,
           indicators: result.indicators,
           plainEnglish: result.plainEnglish,
+          timeframe: resolution,
+          barTime: signalBarTime(bars, resolution),
         })
+        .onConflictDoNothing()
         .returning({ id: signals.id });
+
+      if (!s) return false;
 
       // Create placeholder accuracy row for later outcome checking
       await tx
@@ -91,11 +120,12 @@ export async function GET(
         })
         .onConflictDoNothing();
 
-      return [s];
+      return true;
     });
 
-    // Fire-and-forget: Discord, trader push, alert rules — don't block response
-    if (result.signal !== "HOLD") {
+    // Fire-and-forget: Discord and trader push, only for a newly stored
+    // signal. Don't block the response.
+    if (inserted && result.signal !== "HOLD") {
       const strength = signalStrengthValue(result.signal);
       db.select()
         .from(discordWebhooks)
@@ -120,7 +150,9 @@ export async function GET(
         });
     }
 
-    pushSignalToTrader(result.symbol, result.signal, result.confidence, result.price);
+    if (inserted) {
+      pushSignalToTrader(result.symbol, result.signal, result.confidence, result.price);
+    }
 
     // Alert rules are now evaluated by the scheduled /api/cron/evaluate-alerts
     // job (per-user, on fresh data, market-hours-gated). The old fire-here

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useTier } from "./tier-gate";
 
+import { Button } from "@/components/ui/button";
 const DISMISS_KEY = "beacontry-free-welcome-dismissed-v1";
 
 const FEATURES = [
@@ -79,18 +80,19 @@ export function FreeTierWelcome() {
 
   return (
     <section className="relative mb-6 overflow-hidden rounded-xl border border-accent/22 bg-accent/[0.05] p-5 sm:p-6">
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={handleDismiss}
         aria-label="Dismiss welcome message"
-        className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-text-secondary transition-colors"
+        className="absolute right-1.5 top-1.5 w-11 px-0"
       >
-        <X className="h-4 w-4" />
-      </button>
+        <X className="h-4 w-4" aria-hidden="true" />
+      </Button>
 
       <div className="mb-4 flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-accent" />
-        <span className="font-mono text-[10px] uppercase tracking-wider text-accent">
+        <span className="font-mono text-xs uppercase tracking-wider text-accent">
           Welcome to Beacontry
         </span>
       </div>
@@ -115,7 +117,7 @@ export function FreeTierWelcome() {
           <Link
             key={f.href}
             href={f.href}
-            className="group flex flex-col rounded-lg border border-border bg-bg-surface p-3 transition-all hover:border-accent/40 hover:bg-bg-hover"
+            className="group flex flex-col rounded-lg border border-border bg-bg-surface p-3 transition-colors hover:border-accent/40 hover:bg-bg-hover"
           >
             <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-md bg-accent/10 text-accent">
               <f.icon className="h-4 w-4" />
@@ -123,10 +125,10 @@ export function FreeTierWelcome() {
             <div className="font-semibold text-sm text-text-primary mb-0.5">
               {f.title}
             </div>
-            <div className="text-[0.78rem] leading-snug text-text-secondary">
+            <div className="text-xs leading-snug text-text-secondary">
               {f.desc}
             </div>
-            <span className="mt-2 inline-flex items-center gap-1 text-[0.78rem] text-accent opacity-0 transition-opacity group-hover:opacity-100">
+            <span className="mt-2 inline-flex items-center gap-1 text-xs text-accent opacity-0 transition-opacity group-hover:opacity-100">
               Open <ArrowRight className="h-3 w-3" />
             </span>
           </Link>

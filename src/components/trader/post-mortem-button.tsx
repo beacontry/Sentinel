@@ -164,17 +164,15 @@ export function PostMortemButton({ tradeId, action }: PostMortemButtonProps) {
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={handleOpen}
-        className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded
-          text-text-muted hover:text-accent hover:bg-accent/10
-          transition-colors inline-flex items-center gap-1"
         title="Generate a multi-paragraph post-mortem"
       >
-        <BookOpen className="h-3 w-3" />
-        Post-mortem
-      </button>
+        <BookOpen className="h-3.5 w-3.5" aria-hidden="true" />
+        <span className="text-xs">Post-mortem</span>
+      </Button>
 
       <Modal
         open={open}
@@ -234,7 +232,7 @@ export function PostMortemButton({ tradeId, action }: PostMortemButtonProps) {
                 }
               />
             </div>
-            <div className="text-[11px] text-text-muted">
+            <div className="text-xs text-text-muted">
               Held {result.context.holdDurationDisplay} · {result.context.quantity} shares
             </div>
             <div className="rounded-lg border border-border bg-bg-secondary p-4 max-h-[400px] overflow-y-auto">
@@ -290,7 +288,7 @@ function Stat({
         : "text-text-primary";
   return (
     <div className="rounded-lg bg-bg-elevated p-2">
-      <div className="text-[10px] uppercase tracking-wider text-text-muted">
+      <div className="text-xs uppercase tracking-wider text-text-muted">
         {label}
       </div>
       <div className={`mt-0.5 font-mono text-sm font-semibold ${toneClass}`}>

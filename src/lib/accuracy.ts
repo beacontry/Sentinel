@@ -2,6 +2,9 @@ import { db } from "./db";
 import { signals, signalAccuracy } from "./db/schema";
 import { eq, isNull, isNotNull, lte, and, sql } from "drizzle-orm";
 import { getMarketDataProvider } from "./market-data";
+import { createRouteLogger } from "./logger";
+
+const log = createRouteLogger("accuracy");
 
 /**
  * Check the outcome of a signal by comparing entry price to current price.
@@ -30,6 +33,13 @@ export async function checkSignalOutcome(signalId: string): Promise<void> {
   if (!quote) return;
 
   const exitPrice = quote.price;
+  // A $0 price would score a -100% return (every SELL "correct", every BUY
+  // wrong) and fill exitPrice, so the row would never be re-checked. Leave it
+  // unmeasured and let the next batch retry.
+  if (!(exitPrice > 0)) {
+    log.warn({ signalId, symbol: row.symbol, price: exitPrice }, "Accuracy check skipped: quote has no positive price");
+    return;
+  }
   const actualReturn = ((exitPrice - row.entryPrice) / row.entryPrice) * 100;
 
   const isBuySignal = row.signalType === "BUY" || row.signalType === "STRONG_BUY";

@@ -232,7 +232,7 @@ export default function PathDetailPage() {
                         aria-label="Not started"
                       />
                     )}
-                    <span className="mt-1 text-[11px] font-mono text-text-muted">
+                    <span className="mt-1 text-xs font-mono text-text-muted">
                       {idx + 1}/{guides.length}
                     </span>
                   </div>
