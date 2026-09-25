@@ -36,6 +36,7 @@ import { BrokerSwitcher } from "./broker-switcher";
 import { PnlFormatToggle } from "./pnl-format-toggle";
 import { SidebarTierBadge } from "@/components/tiers/sidebar-tier-badge";
 
+import { Button } from "@/components/ui/button";
 // NAV_ITEMS doesn't carry its SUB_NAV key directly; map by href so
 // nav-config.ts can stay unmodified (cleaner revert).
 const SUB_NAV_KEY_FOR_HREF: Record<string, keyof typeof SUB_NAV | undefined> = {
@@ -47,6 +48,29 @@ const SUB_NAV_KEY_FOR_HREF: Record<string, keyof typeof SUB_NAV | undefined> = {
   "/dashboard/feed": "community",
   "/dashboard/admin": "admin",
 };
+
+/**
+ * One nav item look, keyed off aria-current rather than a parallel active
+ * class, so what is drawn is what a screen reader is told. A section
+ * trigger (a button, which cannot be the current page) adds
+ * NAV_ITEM_SECTION_ACTIVE when its section holds the current page.
+ */
+const NAV_ITEM =
+  "flex min-h-9 items-center gap-1.5 rounded-md px-2.5 text-sm whitespace-nowrap text-text-secondary transition-colors " +
+  "hover:bg-bg-hover hover:text-text-primary " +
+  "aria-[current=page]:bg-bg-hover aria-[current=page]:font-medium aria-[current=page]:text-text-primary";
+
+const NAV_ITEM_SECTION_ACTIVE = "bg-bg-hover font-medium text-text-primary";
+
+const MENU_ITEM =
+  "flex min-h-9 items-center px-3 text-sm text-text-secondary transition-colors " +
+  "hover:bg-bg-hover hover:text-text-primary " +
+  "aria-[current=page]:bg-bg-hover aria-[current=page]:font-medium aria-[current=page]:text-text-primary";
+
+/** Drawer rows are touch targets: 44px. */
+const DRAWER_ITEM =
+  "flex min-h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-sm text-text-secondary " +
+  "aria-[current=page]:bg-bg-hover aria-[current=page]:font-medium aria-[current=page]:text-text-primary";
 
 function getSubTabs(item: NavItem, role: string | null | undefined): SubNavTab[] {
   const key = SUB_NAV_KEY_FOR_HREF[item.href];
@@ -142,11 +166,18 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      {/* First focusable element: jumps past the nav to the page. */}
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
+
       {/* Mobile hamburger */}
       <button
+        type="button"
         onClick={() => setMobileOpen(true)}
-        className="fixed top-3 left-3 z-50 lg:hidden flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-bg-secondary text-text-secondary shadow-sm"
+        className="fixed top-[calc(env(safe-area-inset-top)+12px)] left-3 z-50 lg:hidden flex h-11 w-11 items-center justify-center rounded-lg border border-border-control bg-bg-secondary text-text-secondary shadow-card"
         aria-label="Open menu"
+        aria-expanded={mobileOpen}
       >
         <Menu className="h-5 w-5" />
       </button>
@@ -161,10 +192,10 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
           <div className="flex w-full items-center gap-2 px-4 py-1.5">
             {/* Logo */}
             <Link href="/dashboard" className="flex items-center gap-2.5 shrink-0 mr-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-white">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-on-accent">
                 <BeacontryMark className="h-3.5 w-3.5" aria-label="Beacontry" />
               </div>
-              <span className="text-[14px] font-semibold text-text-primary">Beacontry</span>
+              <span className="text-sm font-semibold text-text-primary">Beacontry</span>
             </Link>
 
             {/* Nav sections with dropdowns */}
@@ -186,13 +217,10 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                     <Link
                       key={item.href}
                       href={item.href}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[13px] whitespace-nowrap transition-colors ${
-                        active
-                          ? "text-text-primary bg-bg-hover font-medium"
-                          : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
-                      }`}
+                      aria-current={active ? "page" : undefined}
+                      className={NAV_ITEM}
                     >
-                      <item.icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      <item.icon className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
                       {item.label}
                     </Link>
                   );
@@ -213,13 +241,9 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                       onClick={() => setOpenSectionHref(isOpen ? null : item.href)}
                       aria-haspopup="menu"
                       aria-expanded={isOpen}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[13px] whitespace-nowrap transition-colors ${
-                        active
-                          ? "text-text-primary bg-bg-hover font-medium"
-                          : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
-                      }`}
+                      className={`${NAV_ITEM} ${active ? NAV_ITEM_SECTION_ACTIVE : ""}`}
                     >
-                      <item.icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      <item.icon className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
                       {item.label}
                       <ChevronDown
                         className={`h-3 w-3 opacity-60 transition-transform ${isOpen ? "rotate-180" : ""}`}
@@ -229,7 +253,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                     {isOpen && (
                       <div
                         role="menu"
-                        className="absolute left-0 top-full mt-1 z-40 min-w-[200px] rounded-lg border border-border bg-bg-elevated shadow-lg py-1"
+                        className="absolute left-0 top-full mt-1 z-40 min-w-[200px] rounded-lg border border-border bg-bg-elevated shadow-pop py-1"
                         onMouseEnter={cancelHoverClose}
                         onMouseLeave={scheduleHoverClose}
                       >
@@ -237,11 +261,8 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                         <Link
                           href={item.href}
                           role="menuitem"
-                          className={`block px-3 py-1.5 text-[13px] transition-colors ${
-                            pathname === item.href
-                              ? "text-text-primary bg-bg-hover font-medium"
-                              : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
-                          }`}
+                          aria-current={pathname === item.href ? "page" : undefined}
+                          className={MENU_ITEM}
                         >
                           {item.label} Overview
                         </Link>
@@ -253,11 +274,8 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                               key={tab.href}
                               href={tab.href}
                               role="menuitem"
-                              className={`block px-3 py-1.5 text-[13px] transition-colors ${
-                                tabActive
-                                  ? "text-text-primary bg-bg-hover font-medium"
-                                  : "text-text-secondary hover:text-text-primary hover:bg-bg-hover/60"
-                              }`}
+                              aria-current={tabActive ? "page" : undefined}
+                              className={MENU_ITEM}
                             >
                               {tab.label}
                             </Link>
@@ -308,7 +326,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                 {userMenuOpen && (
                   <div
                     role="menu"
-                    className="absolute right-0 top-full mt-1 z-40 w-[240px] rounded-lg border border-border bg-bg-elevated shadow-lg p-2"
+                    className="absolute right-0 top-full mt-1 z-40 w-[240px] rounded-lg border border-border bg-bg-elevated shadow-pop p-2"
                   >
                     <div className="px-1 pb-1">
                       <SidebarTierBadge />
@@ -327,7 +345,7 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                       type="button"
                       onClick={handleLogout}
                       role="menuitem"
-                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-[13px] text-text-secondary hover:text-text-primary hover:bg-bg-hover/60 transition-colors"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover/60 transition-colors"
                     >
                       <LogOut className="h-4 w-4" />
                       Sign out
@@ -340,10 +358,10 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Main content */}
-        <main
-          className="flex-1 min-w-0 overflow-y-auto"
-          style={{ backgroundColor: "var(--color-bg-primary)" }}
-        >
+        {/* Below lg the hamburger is fixed over the top-left corner (12px down,
+            44px tall), so the scroller starts under it; otherwise every page
+            title slides beneath the button. */}
+        <main id="main" tabIndex={-1} className="flex-1 min-w-0 overflow-y-auto bg-bg-primary outline-hidden pt-[calc(env(safe-area-inset-top)+56px)] lg:pt-0">
           {children}
         </main>
       </div>
@@ -366,14 +384,16 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
           >
             <div className="flex items-center justify-between px-4 py-3">
               <span className="text-sm font-semibold text-text-primary">Menu</span>
-              <button
+              <Button
                 ref={mobileCloseRef}
+                type="button"
+                variant="ghost"
                 onClick={() => setMobileOpen(false)}
                 aria-label="Close navigation menu"
-                className="flex h-11 w-11 items-center justify-center rounded-lg text-text-secondary"
+                className="w-11 px-0"
               >
-                <X className="h-5 w-5" />
-              </button>
+                <X className="h-5 w-5" aria-hidden="true" />
+              </Button>
             </div>
 
             <div className="px-4 pb-2.5">
@@ -382,12 +402,12 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                 onClick={() => setMobileOpen(false)}
                 className="flex items-center gap-2.5"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent">
                   <BeacontryMark className="h-4 w-4" aria-label="Beacontry" />
                 </div>
                 <div>
-                  <div className="text-[15px] font-semibold text-text-primary">Beacontry</div>
-                  <div className="text-[10px] text-text-muted">Trading Intelligence</div>
+                  <div className="text-base font-semibold text-text-primary">Beacontry</div>
+                  <div className="text-xs text-text-muted">Trading Intelligence</div>
                 </div>
               </Link>
             </div>
@@ -403,13 +423,10 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                     <Link
                       href={item.href}
                       onClick={() => setMobileOpen(false)}
-                      className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] ${
-                        active
-                          ? "text-text-primary bg-bg-hover font-medium"
-                          : "text-text-secondary"
-                      }`}
+                      aria-current={active ? "page" : undefined}
+                      className={DRAWER_ITEM}
                     >
-                      <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                      <item.icon className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden="true" />
                       <span>{item.label}</span>
                     </Link>
                     {subTabs.length > 0 && (
@@ -421,11 +438,8 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                               key={tab.href}
                               href={tab.href}
                               onClick={() => setMobileOpen(false)}
-                              className={`rounded-md px-2.5 py-1 text-[12px] ${
-                                tabActive
-                                  ? "text-text-primary bg-bg-hover font-medium"
-                                  : "text-text-muted"
-                              }`}
+                              aria-current={tabActive ? "page" : undefined}
+                              className={DRAWER_ITEM}
                             >
                               {tab.label}
                             </Link>
@@ -450,17 +464,17 @@ export function TopNavShell({ children }: { children: React.ReactNode }) {
                   toggleChat();
                   setMobileOpen(false);
                 }}
-                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-text-secondary"
+                className={DRAWER_ITEM}
               >
-                <Sparkles className="h-4 w-4" />
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
                 AI Assistant
               </button>
               <button
                 type="button"
                 onClick={handleLogout}
-                className="mt-0.5 flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-text-secondary"
+                className={`mt-0.5 ${DRAWER_ITEM}`}
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-4 w-4" aria-hidden="true" />
                 Sign out
               </button>
             </div>

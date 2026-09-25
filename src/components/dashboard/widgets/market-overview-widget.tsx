@@ -1,157 +1,97 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { TrendingDown, TrendingUp } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SymbolLink } from "@/components/ui/symbol-link";
-import { TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
-import Link from "next/link";
+import { SignedPercent } from "@/components/ui/signed-value";
+import { Skeleton } from "@/components/ui/skeleton";
+import { fetchWidgetJson } from "@/lib/widget-load";
+import { useWidgetLoad } from "./use-widget-load";
+import { WidgetBody, WidgetList, WidgetRow, WidgetRowsSkeleton } from "./widget-body";
 
 interface MarketMover {
   symbol: string;
   change: number;
-  price?: number;
 }
 
+interface Movers {
+  gainers: MarketMover[];
+  losers: MarketMover[];
+}
+
+// /api/breadth computes change% from the last two closes; the screener
+// cache carries no change, which is why this widget once read 0.0%
+// everywhere. The server sends changePct; older shapes sent change.
+function normalize(rows: { symbol: string; changePct?: number; change?: number }[] | undefined): MarketMover[] {
+  return (rows ?? []).map((r) => ({ symbol: r.symbol, change: r.changePct ?? r.change ?? 0 }));
+}
+
+/**
+ * Gainers and losers side by side, a phone included (stacked, ten rows
+ * pushed everything else a screen down). Each
+ * column is headed in words with an icon, and every change prints its
+ * glyph and sign, so neither column rests on its colour.
+ */
 export function MarketOverviewWidget() {
-  const [gainers, setGainers] = useState<MarketMover[]>([]);
-  const [losers, setLosers] = useState<MarketMover[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        // Phase 9 — source from /api/breadth which computes per-symbol change%
-        // from (lastClose - prevClose) / prevClose. The screener cache doesn't
-        // carry change data, which is why this widget showed 0.0% everywhere.
-        const res = await fetch("/api/breadth");
-        if (!res.ok) throw new Error("Failed");
-        const data: { topGainers?: MarketMover[]; topLosers?: MarketMover[] } = await res.json();
-        // Defensive: server returns changePct, type expects change — normalize
-        const norm = (rows: { symbol: string; changePct?: number; change?: number }[]) =>
-          (rows ?? []).map((r) => ({ symbol: r.symbol, change: r.changePct ?? r.change ?? 0 }));
-        setGainers(norm(data.topGainers ?? []));
-        setLosers(norm(data.topLosers ?? []));
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-6 w-full" rounded="md" />
-          ))}
-        </div>
-        <div className="space-y-1.5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-6 w-full" rounded="md" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <p className="text-sm text-text-muted py-4 text-center">
-        Unable to load market data
-      </p>
-    );
-  }
-
-  if (gainers.length === 0 && losers.length === 0) {
-    return (
-      <div className="py-5 text-center">
-        <TrendingUp className="mx-auto mb-2 h-7 w-7 text-text-muted" />
-        <p className="text-sm text-text-muted">No screener data yet</p>
-        <Link
-          href="/dashboard/screener"
-          className="text-xs text-accent hover:text-accent-hover mt-1 inline-block"
-        >
-          Run a scan
-        </Link>
-      </div>
-    );
-  }
+  const load = useWidgetLoad<Movers>(async (signal) => {
+    const data = await fetchWidgetJson<{ topGainers?: MarketMover[]; topLosers?: MarketMover[] }>("/api/breadth", signal);
+    return { gainers: normalize(data.topGainers), losers: normalize(data.topLosers) };
+  });
 
   return (
-    <div>
-      <div className="grid grid-cols-2 gap-3">
-        {/* Gainers */}
-        <div>
-          <div className="mb-1.5 flex items-center gap-1">
-            <TrendingUp className="w-3.5 h-3.5 text-bullish" />
-            <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-bullish">Gainers</span>
-          </div>
-          <div className="space-y-1">
-            {gainers.map((g) => (
-              <div
-                key={g.symbol}
-                className="flex items-center justify-between rounded-[8px] px-2 py-1
-                  bg-bullish/5 hover:bg-bullish/10 transition-colors"
-              >
-                <SymbolLink symbol={g.symbol} className="text-[12px] font-medium">
-                  {g.symbol}
-                </SymbolLink>
-                <div className="flex items-center gap-1">
-                  <div
-                    className="h-1.5 rounded-full bg-bullish"
-                    style={{ width: `${Math.min(Math.abs(g.change) * 4, 40)}px` }}
-                  />
-                  <span className="text-xs font-mono text-bullish">
-                    +{g.change.toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+    <WidgetBody
+      load={load}
+      label="market movers"
+      skeleton={
+        <div className="grid grid-cols-2 gap-x-4 sm:gap-x-6">
+          {[0, 1].map((i) => (
+            <div key={i}>
+              <Skeleton className="mb-1 h-4 w-20" />
+              <WidgetRowsSkeleton rows={5} />
+            </div>
+          ))}
         </div>
-
-        {/* Losers */}
-        <div>
-          <div className="mb-1.5 flex items-center gap-1">
-            <TrendingDown className="w-3.5 h-3.5 text-bearish" />
-            <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-bearish">Losers</span>
-          </div>
-          <div className="space-y-1">
-            {losers.map((l) => (
-              <div
-                key={l.symbol}
-                className="flex items-center justify-between rounded-[8px] px-2 py-1
-                  bg-bearish/5 hover:bg-bearish/10 transition-colors"
-              >
-                <SymbolLink symbol={l.symbol} className="text-[12px] font-medium">
-                  {l.symbol}
-                </SymbolLink>
-                <div className="flex items-center gap-1">
-                  <div
-                    className="h-1.5 rounded-full bg-bearish"
-                    style={{ width: `${Math.min(Math.abs(l.change) * 4, 40)}px` }}
-                  />
-                  <span className="text-xs font-mono text-bearish">
-                    {l.change.toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+      }
+      isEmpty={(d) => d.gainers.length === 0 && d.losers.length === 0}
+      empty={
+        <EmptyState
+          compact
+          icon={<TrendingUp />}
+          title="No market data yet"
+          description="Movers appear once the screener has scanned today's closes."
+          action={{ label: "Open the screener", href: "/dashboard/screener" }}
+        />
+      }
+    >
+      {({ gainers, losers }) => (
+        <div className="grid grid-cols-2 gap-x-4 sm:gap-x-6">
+          <MoverColumn title="Gainers" icon={<TrendingUp className="h-3.5 w-3.5" />} rows={gainers} />
+          <MoverColumn title="Losers" icon={<TrendingDown className="h-3.5 w-3.5" />} rows={losers} />
         </div>
-      </div>
+      )}
+    </WidgetBody>
+  );
+}
 
-      <Link
-        href="/dashboard/screener"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-[11px] uppercase
-          tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
-      >
-        View Screener <ArrowRight className="w-3 h-3" />
-      </Link>
+function MoverColumn({ title, icon, rows }: { title: string; icon: React.ReactNode; rows: MarketMover[] }) {
+  return (
+    <div className="min-w-0">
+      <h3 className="flex items-center gap-1.5 text-xs font-medium text-text-secondary">
+        <span aria-hidden="true">{icon}</span>
+        {title}
+      </h3>
+      {rows.length === 0 ? (
+        <p className="py-3 text-sm text-text-muted">None today</p>
+      ) : (
+        <WidgetList>
+          {rows.map((m) => (
+            <WidgetRow key={m.symbol}>
+              <SymbolLink symbol={m.symbol} className="text-sm font-semibold after:absolute after:inset-0" />
+              <SignedPercent value={m.change} className="text-sm" />
+            </WidgetRow>
+          ))}
+        </WidgetList>
+      )}
     </div>
   );
 }

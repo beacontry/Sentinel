@@ -101,9 +101,9 @@ export function TaxStatusCard() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             <Scale className="h-4 w-4 text-accent" aria-hidden="true" />
-            <span className="text-sm font-semibold text-text-primary">
-              Tax Status
-            </span>
+            <h2 className="text-base font-semibold text-text-primary">
+              Tax status
+            </h2>
             {status.hasTraderTaxStatus && (
               <Badge variant="accent">Trader Tax Status</Badge>
             )}
@@ -116,17 +116,16 @@ export function TaxStatusCard() {
               <span className="text-xs text-text-muted">Not declared</span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-xs font-medium text-text-secondary hover:border-border-hover hover:text-text-primary transition-colors"
-          >
-            <Pencil className="h-3.5 w-3.5" />
+          <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)}>
+            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
             {status.hasTraderTaxStatus || hasMtm ? "Edit" : "Declare"}
-          </button>
+          </Button>
         </div>
+        {/* The sentence and its link are one flex item, so they wrap as
+            prose in a narrow column instead of as three columns. */}
         <p className="mt-3 text-xs text-text-muted leading-relaxed flex items-start gap-1.5">
-          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
           Self-attested. Beacontry does not file or validate election with the
           IRS — record-keeping only.{" "}
           <Link
@@ -136,6 +135,7 @@ export function TaxStatusCard() {
             Read the guide
           </Link>
           .
+          </span>
         </p>
       </Card>
 
@@ -145,7 +145,7 @@ export function TaxStatusCard() {
           </ModalHeader>
 
           <div className="space-y-5 px-1">
-            <div className="rounded-lg border border-warning/20 bg-warning/10 p-3 text-xs leading-relaxed text-text-secondary">
+            <div className="rounded-lg border border-warning-line bg-warning-fill p-3 text-xs leading-relaxed text-text-secondary">
               <strong className="text-text-primary">Self-attestation only.</strong>{" "}
               Beacontry records what you tell it but does not file Form 3115,
               attach the §475(f) election statement to your return, or validate
@@ -181,7 +181,7 @@ export function TaxStatusCard() {
                   value={mtmYear}
                   onChange={(e) => setMtmYear(e.target.value)}
                 />
-                <p className="text-[11px] text-text-muted">
+                <p className="text-xs text-text-muted">
                   The first tax year the election applies. Leave blank if you
                   haven&apos;t elected MTM. Once recorded, the &quot;declared at&quot;
                   timestamp is set by the server.

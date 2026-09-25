@@ -107,15 +107,15 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
   }, [days]);
 
   return (
-    <div className="relative">
+    <div className="relative overflow-x-auto overscroll-x-contain">
       {/* Month labels */}
       <div className="flex ml-8">
         {weeks.map((week, wi) => (
           <div key={wi} className="w-[16px] mx-[1px] text-center shrink-0">
             {week.monthLabel ? (
-              <span className="text-[9px] text-text-muted">{week.monthLabel}</span>
+              <span className="text-xs text-text-muted">{week.monthLabel}</span>
             ) : (
-              <span className="text-[9px]">&nbsp;</span>
+              <span className="text-xs">&nbsp;</span>
             )}
           </div>
         ))}
@@ -126,7 +126,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
         <div className="flex flex-col mr-1 shrink-0 w-7">
           {DAY_LABELS.map((label, i) => (
             <div key={i} className="h-[14px] my-[1px] flex items-center justify-end">
-              <span className="text-[9px] text-text-muted leading-none">{label}</span>
+              <span className="text-xs text-text-muted leading-none">{label}</span>
             </div>
           ))}
         </div>
@@ -154,7 +154,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
                         onDayClick(day);
                       }
                     }}
-                    className={`w-[14px] h-[14px] my-[1px] rounded-[3px] transition-all duration-150
+                    className={`w-[14px] h-[14px] my-[1px] rounded transition-colors duration-150
                       ${day ? getColor(day.pnl, maxAbs) : EMPTY_COLOR}
                       ${isToday ? "ring-1 ring-accent/50" : ""}
                       hover:ring-1 hover:ring-text-muted/50 ${clickable ? "cursor-pointer" : "cursor-default"}
@@ -176,21 +176,21 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
 
       {/* Legend */}
       <div className="flex items-center gap-2 mt-3 ml-8">
-        <span className="text-[10px] text-text-muted">Loss</span>
+        <span className="text-xs text-text-muted">Loss</span>
         {LOSS_COLORS.slice().reverse().map((color, i) => (
-          <div key={`l${i}`} className={`w-[10px] h-[10px] rounded-[2px] ${color}`} />
+          <div key={`l${i}`} className={`w-[10px] h-[10px] rounded ${color}`} />
         ))}
-        <div className={`w-[10px] h-[10px] rounded-[2px] ${EMPTY_COLOR}`} />
+        <div className={`w-[10px] h-[10px] rounded ${EMPTY_COLOR}`} />
         {PROFIT_COLORS.map((color, i) => (
-          <div key={`p${i}`} className={`w-[10px] h-[10px] rounded-[2px] ${color}`} />
+          <div key={`p${i}`} className={`w-[10px] h-[10px] rounded ${color}`} />
         ))}
-        <span className="text-[10px] text-text-muted">Profit</span>
+        <span className="text-xs text-text-muted">Profit</span>
       </div>
 
       {/* Tooltip */}
       {tooltip && (
         <div
-          className="fixed z-50 pointer-events-none px-3 py-2 rounded-lg bg-bg-elevated border border-border shadow-lg shadow-black/30"
+          className="fixed z-50 pointer-events-none px-3 py-2 rounded-lg bg-bg-elevated border border-border shadow-pop"
           style={{
             left: tooltip.x,
             top: tooltip.y - 8,
@@ -210,7 +210,7 @@ export function PnlCalendarGrid({ days, onDayClick }: PnlCalendarGridProps) {
           }`}>
             {tooltip.day.pnl >= 0 ? "+" : ""}${tooltip.day.pnl.toFixed(2)}
           </p>
-          <p className="text-[10px] text-text-muted">
+          <p className="text-xs text-text-muted">
             {tooltip.day.tradesCount} trade{tooltip.day.tradesCount !== 1 ? "s" : ""}
           </p>
         </div>

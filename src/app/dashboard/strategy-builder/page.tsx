@@ -143,16 +143,20 @@ export default function StrategyBuilderPage() {
                 ))}
               </select>
               {ind?.hasValue && (
-                <input
-                  type="number"
-                  value={rule.value}
-                  onChange={(e) => updateRule(type, rule.id, "value", parseFloat(e.target.value) || 0)}
-                  className="bg-bg-elevated border border-border rounded-lg px-2 py-1.5 text-sm text-text-primary font-mono w-20 min-h-[36px]"
-                />
+                <div className="w-24">
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    aria-label="Rule value"
+                    value={rule.value}
+                    onChange={(e) => updateRule(type, rule.id, "value", parseFloat(e.target.value) || 0)}
+                    className="px-2 font-mono"
+                  />
+                </div>
               )}
-              <button onClick={() => removeRule(type, rule.id)} className="p-1 text-text-muted hover:text-bearish transition-colors">
-                <X className="w-4 h-4" />
-              </button>
+              <Button variant="ghost" onClick={() => removeRule(type, rule.id)} className="w-11 px-0" aria-label="Remove rule">
+                <X className="w-4 h-4" aria-hidden="true" />
+              </Button>
             </div>
           );
         })}
@@ -228,7 +232,7 @@ export default function StrategyBuilderPage() {
           </Button>
 
           {error && (
-            <Card className="border border-bearish/20 bg-bearish/5">
+            <Card className="border border-bearish-line bg-bearish-fill">
               <p className="text-sm text-bearish">{error}</p>
             </Card>
           )}
@@ -243,7 +247,7 @@ export default function StrategyBuilderPage() {
                   { label: "Total Trades", value: String(result.totalTrades), tone: "text-text-primary" },
                 ].map((stat) => (
                   <Card key={stat.label}>
-                    <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">{stat.label}</div>
+                    <div className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">{stat.label}</div>
                     <div className={`mt-1 text-xl font-mono font-semibold ${stat.tone}`}>{stat.value}</div>
                   </Card>
                 ))}

@@ -50,7 +50,7 @@ export default async function PublicWatchlistPage({
       <header className="border-b border-border bg-bg-secondary">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
           <Link href="/" className="flex items-center gap-2.5 text-text-primary hover:text-accent transition-colors">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-on-accent">
               <Radar className="h-4 w-4" />
             </div>
             <span className="font-semibold">Beacontry</span>
@@ -110,7 +110,7 @@ export default async function PublicWatchlistPage({
           </p>
         </div>
 
-        <p className="text-center text-[11px] text-text-muted">
+        <p className="text-center text-xs text-text-muted">
           This watchlist is shared publicly via a unique link. The owner can revoke access at any time.
         </p>
       </main>

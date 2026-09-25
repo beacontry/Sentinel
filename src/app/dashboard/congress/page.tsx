@@ -26,6 +26,7 @@ import {
   Filter,
 } from "lucide-react";
 
+import { Segmented } from "@/components/ui/segmented";
 interface CongressTrade {
   symbol: string;
   transactionDate: string;
@@ -231,42 +232,27 @@ export default function CongressPage() {
               placeholder="Pelosi, Burr, …"
             />
           </div>
-          <div className="flex gap-2 lg:items-end">
-            <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
-              {(["all", "House", "Senate"] as const).map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setChamberFilter(c)}
-                  className={`rounded-md px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors
-                    ${chamberFilter === c
-                      ? "bg-bg-elevated text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                    }`}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
-              {[
-                { v: "all" as const, label: "All", icon: null },
-                { v: "buy" as const, label: "Buys", icon: TrendingUp },
-                { v: "sell" as const, label: "Sales", icon: TrendingDown },
-              ].map(({ v, label, icon: Icon }) => (
-                <button
-                  key={v}
-                  onClick={() => setDirectionFilter(v)}
-                  className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors
-                    ${directionFilter === v
-                      ? "bg-bg-elevated text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                    }`}
-                >
-                  {Icon && <Icon className="w-3 h-3" />}
-                  {label}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-wrap gap-2 lg:items-end">
+            <Segmented
+              label="Chamber"
+              value={chamberFilter}
+              onChange={setChamberFilter}
+              options={[
+                { value: "all", label: "All" },
+                { value: "House", label: "House" },
+                { value: "Senate", label: "Senate" },
+              ]}
+            />
+            <Segmented
+              label="Direction"
+              value={directionFilter}
+              onChange={setDirectionFilter}
+              options={[
+                { value: "all", label: "All" },
+                { value: "buy", label: "Buys", icon: <TrendingUp className="w-3 h-3" /> },
+                { value: "sell", label: "Sales", icon: <TrendingDown className="w-3 h-3" /> },
+              ]}
+            />
           </div>
         </div>
       </Card>
@@ -376,7 +362,7 @@ export default function CongressPage() {
                     >
                       <td className="p-3">
                         <div className="text-text-primary">{t.name}</div>
-                        <div className="text-[10px] uppercase tracking-wider text-text-muted">
+                        <div className="text-xs uppercase tracking-wider text-text-muted">
                           {t.position}
                           {t.party && <> · {t.party.slice(0, 3).toUpperCase()}</>}
                         </div>
@@ -392,7 +378,7 @@ export default function CongressPage() {
                       <td className="p-3">
                         <Badge
                           variant={buy ? "bullish" : sell ? "bearish" : "neutral"}
-                          className="text-[10px]"
+                          className="text-xs"
                         >
                           {t.transactionType}
                         </Badge>
@@ -406,7 +392,7 @@ export default function CongressPage() {
                       </td>
                       <td className="p-3 text-text-muted">
                         {formatDate(t.filingDate)}
-                        <div className="text-[10px]">{daysAgo(t.filingDate)}</div>
+                        <div className="text-xs">{daysAgo(t.filingDate)}</div>
                       </td>
                       <td className="p-3">
                         <Link
@@ -426,7 +412,7 @@ export default function CongressPage() {
         </Card>
       )}
 
-      <p className="text-[11px] text-text-muted text-center">
+      <p className="text-xs text-text-muted text-center">
         Data from federal Periodic Transaction Reports (PTRs) via Finnhub.
         Amounts are disclosure ranges, not exact values. PTRs lag by up to 45 days.
       </p>

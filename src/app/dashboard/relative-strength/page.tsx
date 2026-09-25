@@ -241,7 +241,7 @@ export default function RelativeStrengthPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-xl border border-bearish/30 bg-bearish/10 p-4 text-sm text-bearish">
+        <div className="rounded-xl border border-bearish-line bg-bearish-fill p-4 text-sm text-bearish">
           {error}
         </div>
       )}

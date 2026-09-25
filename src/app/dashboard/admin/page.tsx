@@ -1041,9 +1041,9 @@ export default function AdminPage() {
                                   e.stopPropagation();
                                   toggleUserLiveTrading(r.user.id, !r.user.liveTradingEnabled);
                                 }}
-                                className={`text-[10px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider transition-colors ${
+                                className={`text-xs px-1.5 py-0.5 rounded font-mono uppercase tracking-wider transition-colors ${
                                   r.user.liveTradingEnabled
-                                    ? "bg-bullish/10 text-bullish hover:bg-bullish/20"
+                                    ? "bg-bullish-fill text-bullish-fg hover:bg-bullish/20"
                                     : "bg-bg-elevated text-text-muted hover:bg-bg-hover"
                                 }`}
                                 title={r.user.liveTradingEnabled ? "Click to revoke live trading" : "Click to grant live trading"}
@@ -1059,7 +1059,7 @@ export default function AdminPage() {
                       <td className="py-3 pr-4">
                         <Badge variant={stateVariant}>{stateLabel}</Badge>
                         {e?.lastScanAt && (
-                          <div className="text-[10px] text-text-muted mt-1 font-mono">
+                          <div className="text-xs text-text-muted mt-1 font-mono">
                             last: {new Date(e.lastScanAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
                           </div>
                         )}
@@ -1161,7 +1161,7 @@ export default function AdminPage() {
                 exposed in the UI after save.
               </p>
             </div>
-            <ArrowRight className="w-5 h-5 text-text-muted group-hover:text-accent group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+            <ArrowRight className="w-5 h-5 text-text-muted group-hover:text-accent group-hover:translate-x-0.5 transition-[background-color,border-color,color,translate] flex-shrink-0" />
           </Link>
         </Card>
       </div>

@@ -31,7 +31,7 @@ export function SidebarTierBadge() {
           margin: "6px 0 4px",
           padding: "6px 10px",
           borderRadius: 6,
-          fontSize: 11,
+          fontSize: "var(--text-xs)",
           color: "var(--color-text-muted)",
           backgroundColor: "transparent",
           display: "flex",
@@ -46,7 +46,7 @@ export function SidebarTierBadge() {
         <Link
           href="/dashboard/billing"
           style={{
-            fontSize: 10,
+            fontSize: "var(--text-xs)",
             color: "var(--color-text-muted)",
             textDecoration: "underline",
             textDecorationColor: "transparent",

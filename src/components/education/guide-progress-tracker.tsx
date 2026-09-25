@@ -7,6 +7,7 @@ import {
   toggleGuideBookmark,
 } from "@/hooks/use-education-progress";
 
+import { Button } from "@/components/ui/button";
 /**
  * Mounted on each guide detail page. Records a view on mount (fire-and-forget)
  * and renders the bookmark toggle button. Does nothing visible if the user is
@@ -73,11 +74,12 @@ export function GuideProgressTracker({ slug }: { slug: string }) {
           Viewed
         </span>
       )}
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="sm"
         onClick={handleToggle}
         disabled={pending}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-bg-secondary px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-border-hover hover:text-text-primary disabled:opacity-50"
         aria-pressed={bookmarked}
         aria-label={bookmarked ? "Remove bookmark" : "Bookmark this guide"}
       >
@@ -95,7 +97,7 @@ export function GuideProgressTracker({ slug }: { slug: string }) {
             Bookmark
           </>
         )}
-      </button>
+      </Button>
     </div>
   );
 }

@@ -14,9 +14,10 @@ import { join } from "node:path";
 
 const CSS = readFileSync(join(__dirname, "..", "..", "src", "app", "globals.css"), "utf8");
 
-/** Declarations of every rule whose selector is exactly `.animate-*`. */
+/** Declarations of every rule whose selector is exactly `.animate-*`,
+ *  at the top level or indented inside a cascade layer. */
 function animateRules(): [string, string][] {
-  return [...CSS.matchAll(/^(\.animate-[\w-]+)\s*\{([^}]*)\}/gm)].map((m) => [m[1], m[2]]);
+  return [...CSS.matchAll(/^\s*(\.animate-[\w-]+)\s*\{([^}]*)\}/gm)].map((m) => [m[1], m[2]]);
 }
 
 describe("animation utility classes", () => {

@@ -327,7 +327,7 @@ export default function AlertsPage() {
                       {t.label}
                     </span>
                   </div>
-                  <p className="text-[11px] text-text-muted leading-snug">
+                  <p className="text-xs text-text-muted leading-snug">
                     {t.desc}
                   </p>
                 </button>
@@ -346,7 +346,7 @@ export default function AlertsPage() {
             {rules.map((rule) => (
               <div
                 key={rule.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-all
+                className={`flex items-center gap-3 p-3 rounded-lg border transition-[background-color,border-color,color,opacity]
                   ${rule.enabled
                     ? "bg-bg-elevated border-border"
                     : "bg-bg-secondary border-border/50 opacity-60"
@@ -372,7 +372,7 @@ export default function AlertsPage() {
                   size="sm"
                   onClick={() => toggleRule(rule.id, rule.enabled)}
                   className={rule.enabled
-                    ? "bg-bullish/20 text-bullish hover:bg-bullish/30"
+                    ? "bg-bullish-fill text-bullish-fg hover:bg-bullish/30"
                     : "bg-bg-surface text-text-muted hover:bg-bg-elevated"
                   }
                 >

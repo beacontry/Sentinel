@@ -92,7 +92,7 @@ export function TraderTaxCallouts() {
           Tax-Aware Trading
         </span>
         {hasMtm && (
-          <span className="inline-flex items-center gap-1 rounded-full border border-bullish/30 bg-bullish/10 px-2 py-0.5 text-[11px] font-medium text-bullish">
+          <span className="inline-flex items-center gap-1 rounded-full border border-bullish-line bg-bullish-fill px-2 py-0.5 text-xs font-medium text-bullish">
             <Scale className="h-3 w-3" />
             §475(f) MTM • {taxStatus!.mtmElectionYear}
           </span>
@@ -103,8 +103,8 @@ export function TraderTaxCallouts() {
         <div
           className={`rounded-lg border p-3 ${
             hasMtm
-              ? "border-bullish/20 bg-bullish/5"
-              : "border-warning/20 bg-warning/5"
+              ? "border-bullish-line bg-bullish-fill"
+              : "border-warning-line bg-warning-fill"
           }`}
         >
           <p className="text-sm text-text-primary">

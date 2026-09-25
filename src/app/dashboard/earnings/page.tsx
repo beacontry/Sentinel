@@ -321,11 +321,11 @@ function EarningsPage() {
                   >
                     <span className="font-mono font-medium text-text-primary">{s}</span>
                     {next ? (
-                      <span className="font-mono text-[10px] text-accent">
+                      <span className="font-mono text-xs text-accent">
                         {next.date.slice(5)}
                       </span>
                     ) : (
-                      <span className="text-[10px] text-text-muted italic">
+                      <span className="text-xs text-text-muted italic">
                         no date
                       </span>
                     )}
@@ -347,7 +347,7 @@ function EarningsPage() {
             {trackedSymbols.some(
               (s) => !earnings.some((e) => e.symbol === s && e.date >= today)
             ) && (
-              <p className="text-[11px] text-text-muted leading-relaxed">
+              <p className="text-xs text-text-muted leading-relaxed">
                 Symbols showing <span className="italic">no date</span> are tracked but
                 don&apos;t have an earnings date announced in the next 90 days.
                 They&apos;ll appear in the calendar automatically once a date is published.
@@ -382,7 +382,7 @@ function EarningsPage() {
 
           <div className="grid grid-cols-7 gap-px">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-              <div key={d} className="text-center text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted pb-2">{d}</div>
+              <div key={d} className="text-center text-xs font-medium uppercase tracking-[0.08em] text-text-muted pb-2">{d}</div>
             ))}
             {calendarDays.map((day, i) => {
               if (day === null) return <div key={`e-${i}`} />;
@@ -409,7 +409,7 @@ function EarningsPage() {
                         <div key={e.symbol} className="w-1.5 h-1.5 rounded-full bg-accent" title={e.symbol} />
                       ))}
                       {dayEarnings.length > 3 && (
-                        <span className="text-[9px] text-text-muted">+{dayEarnings.length - 3}</span>
+                        <span className="text-xs text-text-muted">+{dayEarnings.length - 3}</span>
                       )}
                     </div>
                   )}

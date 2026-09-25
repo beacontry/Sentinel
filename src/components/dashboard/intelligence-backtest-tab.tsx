@@ -134,7 +134,7 @@ export function IntelligenceBacktestTab({ symbol }: IntelligenceBacktestTabProps
         </div>
         <Badge
           variant={isPositiveReturn ? "bullish" : "bearish"}
-          className="text-[10px] font-mono"
+          className="text-xs font-mono"
         >
           {fmtSigned(result.totalReturn)}%
         </Badge>
@@ -179,7 +179,7 @@ export function IntelligenceBacktestTab({ symbol }: IntelligenceBacktestTabProps
       {/* Recent trades */}
       {(result.trades?.length ?? 0) > 0 && (
         <div>
-          <p className="text-[10px] text-text-muted uppercase tracking-wider mb-2">
+          <p className="text-xs text-text-muted uppercase tracking-wider mb-2">
             Recent Trades
           </p>
           <div className="space-y-1 max-h-[160px] overflow-y-auto">
@@ -194,22 +194,22 @@ export function IntelligenceBacktestTab({ symbol }: IntelligenceBacktestTabProps
                   ) : (
                     <TrendingDown className="w-3 h-3 text-bearish" />
                   )}
-                  <span className="text-text-secondary font-mono text-[10px]">
+                  <span className="text-text-secondary font-mono text-xs">
                     {trade.entryDate.slice(5)}
                   </span>
-                  <Badge variant="neutral" className="text-[9px] px-1 py-0">
+                  <Badge variant="neutral" className="text-xs px-1 py-0">
                     {trade.signal}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-3">
                   <span
-                    className={`font-mono text-[10px] ${
+                    className={`font-mono text-xs ${
                       trade.returnPct >= 0 ? "text-bullish" : "text-bearish"
                     }`}
                   >
                     {fmtSigned(trade.returnPct)}%
                   </span>
-                  <span className="text-[9px] text-text-muted">
+                  <span className="text-xs text-text-muted">
                     {trade.exitReason}
                   </span>
                 </div>
@@ -222,6 +222,8 @@ export function IntelligenceBacktestTab({ symbol }: IntelligenceBacktestTabProps
   );
 }
 
+// A tile in the bg-secondary intelligence pane: one step up (bg-surface),
+// as an Inset is, not two (bg-elevated).
 function StatCard({
   label,
   value,
@@ -232,8 +234,8 @@ function StatCard({
   valueClass: string;
 }) {
   return (
-    <div className="px-3 py-2 rounded-lg bg-bg-elevated">
-      <p className="text-[10px] text-text-muted uppercase tracking-wider leading-none mb-1">
+    <div className="px-3 py-2 rounded-lg bg-bg-surface">
+      <p className="text-xs text-text-muted uppercase tracking-wider leading-none mb-1">
         {label}
       </p>
       <p className={`font-mono text-sm font-medium ${valueClass}`}>{value}</p>

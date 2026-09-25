@@ -45,7 +45,7 @@ export function TradeShareCard({ trade }: TradeShareCardProps) {
             {trade.action}
           </Badge>
           {trade.strategy && (
-            <Badge variant="neutral" className="text-[10px]">
+            <Badge variant="neutral" className="text-xs">
               {trade.strategy}
             </Badge>
           )}

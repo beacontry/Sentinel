@@ -11,6 +11,7 @@ import { EducationalDisclaimer } from "@/components/education/educational-discla
 import { GLOSSARY_TERMS } from "@/lib/glossary-data";
 import { QUALITY_LABELS } from "@/lib/education/spaced-repetition";
 
+import { Button } from "@/components/ui/button";
 interface ReviewQueue {
   dueTerms: string[];
   newTerms: string[];
@@ -136,10 +137,10 @@ export default function GlossaryReviewPage() {
       ) : currentTerm ? (
         <Card className="space-y-5">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+            <span className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
               Review {completed + 1} of {pile.length + completed}
             </span>
-            <span className="text-[11px] text-text-muted">
+            <span className="text-xs text-text-muted">
               {currentTerm.category}
             </span>
           </div>
@@ -149,13 +150,9 @@ export default function GlossaryReviewPage() {
               {currentTerm.term}
             </h2>
             {!showAnswer ? (
-              <button
-                type="button"
-                onClick={() => setShowAnswer(true)}
-                className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-              >
+              <Button type="button" onClick={() => setShowAnswer(true)}>
                 Show definition
-              </button>
+              </Button>
             ) : (
               <div className="text-left max-w-2xl mx-auto space-y-3">
                 <p className="text-sm leading-relaxed text-text-secondary">
@@ -191,18 +188,18 @@ export default function GlossaryReviewPage() {
                       onClick={() => handleGrade(q)}
                       className={`flex flex-col items-center gap-0.5 rounded-lg border px-2 py-2 text-xs transition-colors disabled:opacity-50 ${
                         isWrong
-                          ? "border-bearish/30 bg-bearish/5 hover:bg-bearish/15 text-text-secondary hover:text-bearish"
-                          : "border-bullish/30 bg-bullish/5 hover:bg-bullish/15 text-text-secondary hover:text-bullish"
+                          ? "border-bearish-line bg-bearish-fill hover:bg-bearish/15 text-text-secondary hover:text-bearish"
+                          : "border-bullish-line bg-bullish-fill hover:bg-bullish/15 text-text-secondary hover:text-bullish"
                       }`}
                       title={cfg.description}
                     >
                       <span className="font-semibold">{q}</span>
-                      <span className="text-[10px]">{cfg.label}</span>
+                      <span className="text-xs">{cfg.label}</span>
                     </button>
                   );
                 })}
               </div>
-              <div className="flex items-center justify-center gap-4 pt-2 text-[10px] text-text-muted">
+              <div className="flex items-center justify-center gap-4 pt-2 text-xs text-text-muted">
                 <span className="flex items-center gap-1">
                   <X className="h-3 w-3 text-bearish" /> 0–2 = lapse (resets)
                 </span>

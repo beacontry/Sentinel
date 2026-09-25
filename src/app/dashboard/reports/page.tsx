@@ -7,6 +7,7 @@ import { Tabs, TabPanel } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SignedValue } from "@/components/ui/signed-value";
 import { FileBarChart } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
@@ -162,7 +163,7 @@ function ReportsPage() {
         description="Deep analytics on your trading performance across multiple dimensions."
         stats={[
           { label: "Win Rate", value: analytics ? `${(analytics.winRate * 100).toFixed(0)}%` : `${((perf?.overall.accuracy ?? 0) * 100).toFixed(0)}%`, tone: (analytics?.winRate ?? perf?.overall.accuracy ?? 0) >= 0.5 ? "bullish" : "bearish" },
-          { label: "Expectancy", value: analytics ? `$${analytics.expectancy.toFixed(0)}` : "--", tone: (analytics?.expectancy ?? 0) > 0 ? "bullish" : "bearish" },
+          { label: "Expectancy", value: analytics ? <SignedValue value={analytics.expectancy} /> : "--" },
           { label: "Profit Factor", value: analytics ? (analytics.profitFactor === Infinity ? "∞" : analytics.profitFactor.toFixed(2)) : "--", tone: "brand" },
           { label: "Win Streak", value: analytics ? String(analytics.maxWinStreak) : "--", tone: "bullish" },
         ]}
@@ -194,7 +195,7 @@ function ReportsPage() {
                 { label: "Worst Trade", value: `$${analytics.worstTrade.toFixed(0)}`, color: "text-bearish" },
               ].map((s) => (
                 <Card key={s.label}>
-                  <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">{s.label}</div>
+                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">{s.label}</div>
                   <div className={`mt-1 text-xl font-mono font-semibold ${s.color}`}>{s.value}</div>
                 </Card>
               ))}
@@ -204,11 +205,11 @@ function ReportsPage() {
               <CardHeader className="p-0 pb-3"><CardTitle>Win / Loss Streaks</CardTitle></CardHeader>
               <div className="flex gap-6">
                 <div>
-                  <div className="text-[11px] text-text-muted uppercase tracking-[0.08em]">Longest Win</div>
+                  <div className="text-xs text-text-muted uppercase tracking-[0.08em]">Longest Win</div>
                   <div className="text-2xl font-mono font-semibold text-bullish">{analytics.maxWinStreak}</div>
                 </div>
                 <div>
-                  <div className="text-[11px] text-text-muted uppercase tracking-[0.08em]">Longest Loss</div>
+                  <div className="text-xs text-text-muted uppercase tracking-[0.08em]">Longest Loss</div>
                   <div className="text-2xl font-mono font-semibold text-bearish">{analytics.maxLossStreak}</div>
                 </div>
               </div>

@@ -4,6 +4,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Modal, ModalTitle, ModalDescription, ModalFooter } from "./modal";
 import { Button } from "./button";
+import { Input } from "./input";
 
 /**
  * Crisis-path confirmation (2026-07-15). Replaces the browser-native
@@ -29,11 +30,22 @@ export interface ConfirmActionSpec {
   title: string;
   /** What will and won't happen. Be explicit — this is the contract. */
   description: ReactNode;
-  /** Rows of the numbers being acted on. Values render font-mono. */
-  summary?: { label: string; value: string; tone?: "default" | "bullish" | "bearish" }[];
+  /**
+   * Rows of the numbers being acted on. Values render font-mono. `tone`
+   * colours a string value and states nothing; a gain or loss row passes
+   * a SignedValue as its value instead, which prints the glyph and word
+   * from the figure itself (flat has neither, unknown prints n/a).
+   */
+  summary?: { label: string; value: ReactNode; tone?: "default" | "bullish" | "bearish" }[];
   /** Label for the confirm button, e.g. "Flatten 11 positions". */
   confirmLabel: string;
-  tone?: "danger" | "primary";
+  /**
+   * danger (the default): the everyday destructive button, on the loss
+   * triplet. primary: a confirm that is not destructive. irreversible:
+   * the solid danger fill, kept for the one action that cannot be undone
+   * and moves real money (a LIVE order, a book-wide liquidation).
+   */
+  tone?: "danger" | "primary" | "irreversible";
   /** Require typing this keyword (case-insensitive) to enable confirm. */
   typedKeyword?: string;
   /** Runs on confirm. Throw to keep the dialog open with an inline error. */
@@ -45,6 +57,27 @@ const SUMMARY_TONE: Record<NonNullable<ConfirmActionSpec["summary"]>[number]["to
   bullish: "text-bullish",
   bearish: "text-bearish",
 };
+
+type SummaryRow = NonNullable<ConfirmActionSpec["summary"]>[number];
+
+/**
+ * The numbers being acted on. The dialog is bg-surface, so the summary
+ * sinks one step to bg-primary and keeps a container edge: these rows are
+ * the quantity and price of an irreversible action and must read as one
+ * bounded group, which a same-fill block cannot.
+ */
+export function ConfirmSummary({ rows }: { rows: SummaryRow[] }) {
+  return (
+    <dl className="my-4 divide-y divide-[var(--color-hairline-inner)] rounded-lg border border-border bg-bg-primary">
+      {rows.map((row) => (
+        <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+          <dt className="text-text-secondary">{row.label}</dt>
+          <dd className={`font-mono font-medium tabular-nums ${SUMMARY_TONE[row.tone ?? "default"]}`}>{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
 
 export function ConfirmActionModal({
   spec,
@@ -83,6 +116,7 @@ export function ConfirmActionModal({
   };
 
   const danger = spec?.tone !== "primary";
+  const confirmVariant = spec?.tone === "irreversible" ? "danger" : danger ? "destructive" : "primary";
 
   return (
     <Modal open={spec !== null} onClose={close}>
@@ -90,8 +124,8 @@ export function ConfirmActionModal({
         <>
           <div className="flex items-start gap-3 mb-3">
             {danger && (
-              <div className="shrink-0 rounded-lg bg-bearish/10 p-2 mt-0.5">
-                <AlertTriangle className="w-5 h-5 text-bearish" />
+              <div aria-hidden="true" className="shrink-0 rounded-lg bg-bearish-fill p-2 mt-0.5 text-bearish-fg">
+                <AlertTriangle className="w-5 h-5" />
               </div>
             )}
             <div className="min-w-0">
@@ -100,49 +134,36 @@ export function ConfirmActionModal({
             </div>
           </div>
 
-          {spec.summary && spec.summary.length > 0 && (
-            <div className="rounded-lg border border-border bg-bg-primary/50 divide-y divide-border/50 my-4">
-              {spec.summary.map((row) => (
-                <div key={row.label} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="text-text-muted">{row.label}</span>
-                  <span className={`font-mono font-medium ${SUMMARY_TONE[row.tone ?? "default"]}`}>
-                    {row.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          {spec.summary && spec.summary.length > 0 && <ConfirmSummary rows={spec.summary} />}
 
           {spec.typedKeyword && (
             <div className="my-4">
-              <label className="block text-xs text-text-muted mb-1.5">
-                Type <span className="font-mono font-semibold text-text-primary">{spec.typedKeyword}</span> to confirm
-              </label>
-              <input
+              <Input
+                label={`Type ${spec.typedKeyword} to confirm`}
+                id="confirm-keyword"
                 type="text"
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
                 autoComplete="off"
                 autoCapitalize="characters"
                 spellCheck={false}
-                className="w-full min-h-[44px] rounded-lg border border-border bg-bg-surface px-3 py-2 font-mono text-sm text-text-primary focus:outline-none focus:border-accent"
+                className="font-mono"
                 autoFocus
               />
             </div>
           )}
 
-          {error && (
-            <p role="alert" className="text-sm text-bearish mt-2">
-              {error}
-            </p>
-          )}
+          {/* Mounted while the dialog is open, so the first error is announced. */}
+          <p role="alert" className="mt-2 text-sm text-bearish empty:mt-0">
+            {error ?? ""}
+          </p>
 
           <ModalFooter>
             <Button variant="ghost" onClick={close} disabled={busy}>
               Cancel
             </Button>
             <Button
-              variant={danger ? "destructive" : "primary"}
+              variant={confirmVariant}
               onClick={handleConfirm}
               disabled={!keywordOk || busy}
               loading={busy}

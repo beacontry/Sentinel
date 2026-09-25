@@ -93,27 +93,27 @@ export default function BreadthPage() {
             <div className="space-y-3">
               <div className="flex rounded-lg overflow-hidden h-8">
                 <div
-                  className="bg-bullish/80 flex items-center justify-center text-xs font-mono font-medium text-white transition-all"
+                  className="bg-bullish/80 flex items-center justify-center text-xs font-mono font-medium text-white transition-[width,background-color]"
                   style={{ width: `${data.scanned > 0 ? (data.advancers / data.scanned) * 100 : 50}%` }}
                 >
                   {data.advancers}
                 </div>
                 {data.unchanged > 0 && (
                   <div
-                    className="bg-bg-elevated flex items-center justify-center text-xs font-mono text-text-muted transition-all"
+                    className="bg-bg-elevated flex items-center justify-center text-xs font-mono text-text-muted transition-[width,background-color]"
                     style={{ width: `${(data.unchanged / data.scanned) * 100}%` }}
                   >
                     {data.unchanged}
                   </div>
                 )}
                 <div
-                  className="bg-bearish/80 flex items-center justify-center text-xs font-mono font-medium text-white transition-all"
+                  className="bg-bearish/80 flex items-center justify-center text-xs font-mono font-medium text-white transition-[width,background-color]"
                   style={{ width: `${data.scanned > 0 ? (data.decliners / data.scanned) * 100 : 50}%` }}
                 >
                   {data.decliners}
                 </div>
               </div>
-              <div className="flex justify-between text-[11px] text-text-muted">
+              <div className="flex justify-between text-xs text-text-muted">
                 <span className="flex items-center gap-1"><TrendingUp className="w-3 h-3 text-bullish" /> Advancers</span>
                 <span className="flex items-center gap-1"><TrendingDown className="w-3 h-3 text-bearish" /> Decliners</span>
               </div>
@@ -128,15 +128,15 @@ export default function BreadthPage() {
             ].map((item) => (
               <Card key={item.label}>
                 <div className="text-center py-2">
-                  <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted mb-2">
+                  <div className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted mb-2">
                     {item.label}
                   </div>
-                  <div className={`text-4xl font-mono font-semibold ${item.value >= 60 ? "text-bullish" : item.value >= 40 ? "text-warning" : "text-bearish"}`}>
+                  <div className={`text-2xl font-mono font-semibold ${item.value >= 60 ? "text-bullish" : item.value >= 40 ? "text-warning" : "text-bearish"}`}>
                     {item.value}%
                   </div>
                   <div className="mt-3 mx-auto w-full max-w-[200px] h-2 rounded-full bg-bg-elevated overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all ${item.value >= 60 ? "bg-bullish" : item.value >= 40 ? "bg-warning" : "bg-bearish"}`}
+                      className={`h-full rounded-full transition-[width,background-color] ${item.value >= 60 ? "bg-bullish" : item.value >= 40 ? "bg-warning" : "bg-bearish"}`}
                       style={{ width: `${item.value}%` }}
                     />
                   </div>

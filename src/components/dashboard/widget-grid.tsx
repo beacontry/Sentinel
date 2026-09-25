@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { WidgetWrapper } from "./widget-wrapper";
+import { SortableWidget } from "./widget-tile";
+import { fillClasses } from "@/lib/widget-grid-fill";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button, Spinner } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { LoadingRegion } from "@/components/ui/live-region";
+import { Modal, ModalDescription, ModalHeader, ModalTitle } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
 import {
   WIDGET_REGISTRY,
   DEFAULT_LAYOUT,
@@ -15,14 +19,7 @@ import type {
   WidgetCategory,
   WidgetSize,
 } from "@/lib/widget-registry";
-import {
-  Plus,
-  X,
-  ChevronUp,
-  ChevronDown,
-  GripVertical,
-  Maximize2,
-} from "lucide-react";
+import { LayoutGrid, Plus, X } from "lucide-react";
 // Phase 9 — drag-and-drop on dashboard widgets
 import {
   DndContext,
@@ -38,9 +35,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   rectSortingStrategy,
-  useSortable,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 
 // Widget component imports
 import { WatchlistWidget } from "./widgets/watchlist-widget";
@@ -98,12 +93,11 @@ const CATEGORY_ORDER: WidgetCategory[] = [
 // these in order; the next click after "full" goes back to "sm". Naming is
 // deliberately verbose so the tooltip reads clearly.
 const SIZE_CYCLE: WidgetSize[] = ["sm", "md", "lg", "full"];
-const SIZE_LABELS: Record<WidgetSize, string> = {
-  sm: "Small",
-  md: "Medium",
-  lg: "Large",
-  full: "Full width",
-};
+
+// One column on phones, two from md, three from xl, four from 2xl. At
+// 1280 a "md" widget is two thirds of the row rather than all of it, so
+// a list of five movers no longer stretches across 1,200px.
+const GRID = "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 lg:gap-5";
 
 // Phase 20 — widget entry: id plus optional size override. When size is undefined
 // the widget falls back to its definition's defaultSize. Stored verbatim in the
@@ -151,6 +145,7 @@ interface WidgetGridProps {
 }
 
 export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetGridProps) {
+  const { toast } = useToast();
   const [entries, setEntries] = useState<WidgetEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddPanel, setShowAddPanel] = useState(false);
@@ -208,17 +203,21 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
   const saveLayout = useCallback(async (next: WidgetEntry[]) => {
     setSaving(true);
     try {
-      await fetch("/api/dashboard/layout", {
+      const res = await fetch("/api/dashboard/layout", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ widgets: next }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
-      // Save failed silently; user can retry by triggering another change
+      // The change stays on screen; say it did not stick, so a reload
+      // bringing the old layout back is not a surprise. The next change
+      // saves the whole layout again.
+      toast({ type: "error", message: "Layout not saved. Your next change will try again." });
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [toast]);
 
   function commit(next: WidgetEntry[]) {
     setEntries(next);
@@ -286,21 +285,23 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
   );
 
   if (loading) {
+    // The shape of the default layout: frames with a header and rows.
     return (
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i}>
-            <Card>
-              <Skeleton className="h-6 w-32 mb-3" rounded="md" />
-              <div className="space-y-2">
-                <Skeleton className="h-8 w-full" rounded="lg" />
-                <Skeleton className="h-8 w-full" rounded="lg" />
-                <Skeleton className="h-8 w-full" rounded="lg" />
+      <LoadingRegion label="your dashboard" busy>
+        <div className={GRID}>
+          {["", "md:col-span-2", "md:col-span-2", ""].map((span, i) => (
+            <div key={i} className={`rounded-xl border border-border bg-bg-secondary p-4 shadow-card lg:p-5 ${span}`}>
+              <Skeleton className="mb-1.5 h-4 w-28" />
+              <Skeleton className="mb-4 h-3 w-44" />
+              <div className="space-y-3">
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-5 w-2/3" />
               </div>
-            </Card>
-          </div>
-        ))}
-      </div>
+            </div>
+          ))}
+        </div>
+      </LoadingRegion>
     );
   }
 
@@ -316,11 +317,20 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
   // dnd-kit needs string IDs at the SortableContext level
   const sortableIds = entries.map((e) => e.id);
 
+  // Outside layout mode, a tile beside a blank cell widens into it, so no
+  // row ends in an empty slot (the default layout is 11 cells on a 3-wide
+  // grid). In layout mode every tile shows its chosen size.
+  const shown = entries.filter((e) => getWidgetDefinition(e.id));
+  const fills = editMode
+    ? []
+    : fillClasses(shown.map((e) => e.size ?? getWidgetDefinition(e.id)!.defaultSize));
+  const fillFor = new Map(shown.map((e, i) => [e.id, fills[i] ?? ""]));
+
   return (
     <div className="space-y-5">
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-4 [grid-auto-rows:min-content] [grid-auto-flow:dense]">
+          <div className={`${GRID} [grid-auto-flow:dense] [grid-auto-rows:min-content]`}>
             {entries.map((entry, index) => {
               const def = getWidgetDefinition(entry.id);
               if (!def) return null;
@@ -338,246 +348,93 @@ export function WidgetGrid({ editMode, refreshKey = 0, onLayoutChange }: WidgetG
                   onMoveUp={() => handleMoveUp(index)}
                   onMoveDown={() => handleMoveDown(index)}
                   onCycleSize={() => handleCycleSize(index)}
-                />
+                  fillClass={fillFor.get(entry.id)}
+                >
+                  {renderWidget(def)}
+                </SortableWidget>
               );
             })}
 
-        {/* Add widget button — fills remaining columns */}
+        {/* Add a module: one row across the grid, only in layout mode. */}
         {editMode && availableWidgets.length > 0 && (
-          <div className="col-span-1 md:col-span-2 2xl:col-span-4">
-            <button
-              onClick={() => setShowAddPanel(true)}
-              className="flex min-h-[88px] w-full items-center justify-center gap-3 rounded-xl border border-dashed
-                border-border bg-bg-secondary
-                text-text-muted transition-all duration-150 hover:border-accent/30 hover:bg-accent/10 hover:text-accent cursor-pointer"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-bg-elevated">
-                <Plus className="w-4 h-4" />
-              </div>
-              <div className="text-left">
-                <div className="text-sm font-medium text-text-primary">Add Module</div>
-                <div className="text-xs text-text-muted">
-                  {availableWidgets.length} available
-                </div>
-              </div>
-            </button>
+          <div className="col-span-full">
+            <Button variant="secondary" onClick={() => setShowAddPanel(true)} className="w-full border-dashed">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add a module
+              <span className="font-normal text-text-muted">{availableWidgets.length} available</span>
+            </Button>
           </div>
         )}
           </div>
         </SortableContext>
       </DndContext>
 
-      {/* Empty state */}
       {entries.length === 0 && (
-        <div className="rounded-xl border border-border bg-bg-surface py-16 text-center">
-          <p className="text-text-muted mb-4">
-            Your dashboard is empty. Add some widgets to get started.
-          </p>
-          <Button
-            variant="secondary"
-            onClick={() => setShowAddPanel(true)}
-          >
-            <Plus className="w-4 h-4" />
-            Add Widgets
+        <div className="rounded-xl border border-border bg-bg-secondary">
+          <EmptyState
+            icon={<LayoutGrid className="h-6 w-6" />}
+            title="Your dashboard is empty"
+            description="Add the modules you want to see here."
+            action={{ label: "Add a module", onClick: () => setShowAddPanel(true) }}
+            headingLevel={2}
+          />
+        </div>
+      )}
+
+      <Modal open={showAddPanel} onClose={() => setShowAddPanel(false)} className="max-w-xl">
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <ModalHeader className="mb-0">
+            <ModalTitle>Add a module</ModalTitle>
+            <ModalDescription className="mt-0.5">It joins the end of your layout; drag it where you want it.</ModalDescription>
+          </ModalHeader>
+          <Button variant="ghost" onClick={() => setShowAddPanel(false)} className="-mr-3 -mt-2 w-11 shrink-0 px-0" aria-label="Close">
+            <X className="h-5 w-5" aria-hidden="true" />
           </Button>
         </div>
-      )}
 
-      {/* Add widget panel (modal overlay) */}
-      {showAddPanel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-bg-surface/90"
-            onClick={() => setShowAddPanel(false)}
-          />
-
-          <div className="relative mx-4 max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border
-            bg-bg-surface shadow-2xl">
-            <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-xl border-b border-border bg-bg-surface px-5 py-4">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-accent">
-                  Module Library
-                </p>
-                <h3 className="mt-1 text-lg font-semibold text-text-primary">
-                  Add Module
+        <div className="space-y-5">
+          {availableByCategory.length === 0 ? (
+            <p className="py-6 text-center text-sm text-text-secondary">Every module is already on your dashboard.</p>
+          ) : (
+            availableByCategory.map(({ category, widgets }) => (
+              <section key={category} aria-labelledby={`add-${category}`}>
+                <h3 id={`add-${category}`} className="eyebrow mb-2 text-text-muted">
+                  {CATEGORY_LABELS[category]}
                 </h3>
-              </div>
-              <button
-                onClick={() => setShowAddPanel(false)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-5 p-5">
-              {availableByCategory.length === 0 ? (
-                <p className="py-6 text-center text-sm text-text-muted">
-                  All widgets have been added to your dashboard.
-                </p>
-              ) : (
-                availableByCategory.map(({ category, widgets }) => (
-                  <div key={category}>
-                    <h4 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-                      {CATEGORY_LABELS[category]}
-                    </h4>
-                    <div className="grid gap-2">
-                      {widgets.map((w) => (
-                        <button
-                          key={w.id}
-                          onClick={() => handleAdd(w.id)}
-                          className="group flex w-full items-center justify-between rounded-lg border border-border bg-bg-elevated px-4 py-3 text-left transition-all duration-150 hover:border-accent/20 hover:bg-bg-hover/50"
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-text-primary transition-colors group-hover:text-accent">
-                              {w.name}
-                            </p>
-                            <p className="mt-0.5 text-xs text-text-muted">
-                              {w.description}
-                            </p>
-                          </div>
-                          <div className="ml-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-primary text-text-muted transition-colors group-hover:border-accent/30 group-hover:text-accent">
-                            <Plus className="w-3.5 h-3.5" />
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+                <ul className="divide-y divide-[var(--color-hairline-inner)] rounded-lg bg-bg-primary">
+                  {widgets.map((w) => (
+                    <li key={w.id}>
+                      <button
+                        type="button"
+                        onClick={() => handleAdd(w.id)}
+                        className="group flex min-h-14 w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 hover:bg-bg-hover"
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-text-primary">{w.name}</span>
+                          <span className="block text-xs text-text-secondary">{w.description}</span>
+                        </span>
+                        <Plus className="h-4 w-4 shrink-0 text-text-muted group-hover:text-text-primary" aria-hidden="true" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          )}
         </div>
-      )}
+      </Modal>
 
+      {/* Mounted always so the status is announced when saving starts. */}
+      <div role="status" className="sr-only">{saving ? "Saving layout" : ""}</div>
       {saving && (
-        <div className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-lg
-          border border-border bg-bg-surface px-3 py-2 shadow-lg">
-          <div className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-          <span className="text-xs text-text-secondary">Saving...</span>
+        <div
+          aria-hidden="true"
+          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-lg border border-border bg-bg-surface px-3 py-2 shadow-pop"
+        >
+          <Spinner className="h-3 w-3 text-accent" />
+          <span className="text-xs text-text-secondary">Saving…</span>
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * Phase 9 — sortable widget wrapper. Renders a single dashboard widget that
- * can be dragged via @dnd-kit. Drag handle is the grip icon, visible only in
- * edit mode. The chevrons are kept as a keyboard-accessible fallback in case
- * the user prefers click-to-move (also useful on touch when drag may conflict
- * with scroll).
- *
- * Phase 20 — adds size cycler. Clicking the maximize icon walks through
- * sm → md → lg → full → sm. Hidden outside edit mode.
- */
-function SortableWidget({
-  id,
-  def,
-  size,
-  index,
-  total,
-  editMode,
-  onRemove,
-  onMoveUp,
-  onMoveDown,
-  onCycleSize,
-}: {
-  id: string;
-  def: WidgetDefinition;
-  size: WidgetSize;
-  index: number;
-  total: number;
-  editMode: boolean;
-  onRemove: () => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-  onCycleSize: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-    disabled: !editMode,
-  });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 10 : "auto",
-  };
-
-  // Map effective size → grid column span. Mirrors widget-wrapper's table.
-  const colSpan =
-    size === "full"
-      ? "col-span-full"
-      : size === "lg"
-      ? "col-span-1 md:col-span-2 2xl:col-span-3"
-      : size === "md"
-      ? "col-span-1 md:col-span-2 2xl:col-span-2"
-      : "col-span-1";
-
-  return (
-    <div ref={setNodeRef} style={style} className={colSpan}>
-      <WidgetWrapper
-        title={def.name}
-        size={size}
-        editMode={editMode}
-        index={index}
-        onRemove={onRemove}
-        className=""
-        headerAction={
-          editMode ? (
-            <div className="flex items-center gap-0.5">
-              {/* Drag handle — main interaction in edit mode */}
-              <button
-                {...attributes}
-                {...listeners}
-                className="p-1 rounded text-text-muted hover:text-text-primary cursor-grab active:cursor-grabbing
-                  min-h-[28px] min-w-[28px] flex items-center justify-center touch-none"
-                aria-label={`Drag to reorder ${def.name}`}
-                title="Drag to reorder"
-              >
-                <GripVertical className="w-3.5 h-3.5" />
-              </button>
-              {/* Size cycler — clicks through sm → md → lg → full */}
-              <button
-                onClick={onCycleSize}
-                className="p-1 rounded text-text-muted hover:text-text-primary
-                  transition-colors min-h-[28px] min-w-[28px]
-                  flex items-center justify-center"
-                aria-label={`Resize ${def.name} (currently ${SIZE_LABELS[size]})`}
-                title={`Resize — ${SIZE_LABELS[size]}`}
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-              </button>
-              {/* Chevrons — accessible fallback for reordering */}
-              <button
-                onClick={onMoveUp}
-                disabled={index === 0}
-                className="p-1 rounded text-text-muted hover:text-text-primary
-                  disabled:opacity-30 transition-colors min-h-[28px] min-w-[28px]
-                  flex items-center justify-center"
-                aria-label="Move up"
-              >
-                <ChevronUp className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={onMoveDown}
-                disabled={index === total - 1}
-                className="p-1 rounded text-text-muted hover:text-text-primary
-                  disabled:opacity-30 transition-colors min-h-[28px] min-w-[28px]
-                  flex items-center justify-center"
-                aria-label="Move down"
-              >
-                <ChevronDown className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : undefined
-        }
-      >
-        {renderWidget(def)}
-      </WidgetWrapper>
     </div>
   );
 }

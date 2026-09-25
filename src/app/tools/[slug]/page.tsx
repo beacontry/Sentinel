@@ -123,13 +123,13 @@ export default async function PublicCalculatorPage({
       </Link>
 
       <header className="space-y-3 max-w-3xl mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-ld-text">
+        <h1 className="text-2xl sm:text-2xl font-bold tracking-tight text-ld-text">
           {calc.name}
         </h1>
         <p className="text-base leading-relaxed text-ld-text-secondary">
           {calc.desc}
         </p>
-        <p className="text-[0.8rem] text-ld-text-muted">
+        <p className="text-xs text-ld-text-muted">
           All math runs in your browser. Your numbers are never sent to a server.
         </p>
       </header>
@@ -140,7 +140,7 @@ export default async function PublicCalculatorPage({
       </div>
 
       {/* Sign-up CTA */}
-      <section className="mt-12 rounded-2xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center max-w-3xl">
+      <section className="mt-12 rounded-xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center max-w-3xl">
         <h2 className="text-xl font-bold mb-2">More tools when you sign up</h2>
         <p className="text-ld-text-secondary mb-5 max-w-[520px] mx-auto">
           Beacontry users get backtest, risk simulator, portfolio aggregator, and
@@ -148,7 +148,7 @@ export default async function PublicCalculatorPage({
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-[0.94rem] font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-ld-on-accent hover:-translate-y-0.5 hover:bg-ld-accent-dim transition-[background-color,border-color,color,translate]"
         >
           Sign up free
         </Link>

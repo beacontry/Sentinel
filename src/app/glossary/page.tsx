@@ -75,10 +75,10 @@ export default function PublicGlossaryPage() {
             <a
               key={cat.id}
               href={`#${cat.id}`}
-              className="inline-flex items-center gap-2 rounded-full border border-ld-border bg-ld-card px-3.5 py-1.5 text-[0.85rem] font-medium text-ld-text-secondary hover:border-ld-accent/40 hover:text-ld-text transition-colors"
+              className="inline-flex items-center gap-2 rounded-full border border-ld-border bg-ld-card px-3.5 py-1.5 text-sm font-medium text-ld-text-secondary hover:border-ld-accent/40 hover:text-ld-text transition-colors"
             >
               {cat.label}
-              <span className="font-mono text-[10px] text-ld-text-muted">{count}</span>
+              <span className="font-mono text-xs text-ld-text-muted">{count}</span>
             </a>
           );
         })}
@@ -95,7 +95,7 @@ export default function PublicGlossaryPage() {
                 <h2 className="text-2xl font-bold tracking-tight text-ld-text mb-1">
                   {cat.label}
                 </h2>
-                <p className="text-[0.94rem] text-ld-text-secondary">{cat.desc}</p>
+                <p className="text-base text-ld-text-secondary">{cat.desc}</p>
               </div>
 
               <dl className="space-y-8">
@@ -110,14 +110,14 @@ export default function PublicGlossaryPage() {
                         {term.term}
                       </a>
                     </dt>
-                    <dd className="text-[0.94rem] leading-relaxed text-ld-text-secondary">
+                    <dd className="text-base leading-relaxed text-ld-text-secondary">
                       <p className="mb-3">{term.definition}</p>
                       {term.examples.length > 0 && (
                         <div className="mt-4 rounded-lg border border-ld-border bg-ld-deep/40 p-4">
-                          <p className="font-mono text-[10px] uppercase tracking-wider text-ld-text-muted mb-2">
+                          <p className="font-mono text-xs uppercase tracking-wider text-ld-text-muted mb-2">
                             Examples
                           </p>
-                          <ul className="space-y-2 text-[0.88rem]">
+                          <ul className="space-y-2 text-sm">
                             {term.examples.map((ex, i) => (
                               <li key={i} className="flex gap-2">
                                 <span className="text-ld-accent shrink-0">→</span>
@@ -137,7 +137,7 @@ export default function PublicGlossaryPage() {
       </div>
 
       {/* Sign-up CTA */}
-      <section className="mt-16 rounded-2xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
+      <section className="mt-16 rounded-xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
         <h2 className="text-xl font-bold mb-2">Want deeper context for each term?</h2>
         <p className="text-ld-text-secondary mb-5 max-w-[520px] mx-auto">
           Sign up free for the full education hub — {GLOSSARY_TERMS.length} terms with
@@ -145,7 +145,7 @@ export default function PublicGlossaryPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-[0.94rem] font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-ld-on-accent hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-[background-color,border-color,color,translate,box-shadow]"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

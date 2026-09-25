@@ -121,7 +121,7 @@ function RichTextPart({ part }: { part: TextPart }): ReactNode {
           href={`/dashboard/analysis?symbol=${part.symbol}`}
           onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded
-            bg-accent/10 text-accent font-medium text-[13px] font-mono
+            bg-accent/10 text-accent font-medium text-sm font-mono
             hover:bg-accent/20 transition-colors duration-150 no-underline"
         >
           <TrendingUp className="w-3 h-3" />
@@ -135,7 +135,7 @@ function RichTextPart({ part }: { part: TextPart }): ReactNode {
           href={part.href}
           onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded
-            bg-bg-hover text-text-primary text-[13px] font-medium
+            bg-bg-hover text-text-primary text-sm font-medium
             hover:bg-accent/10 hover:text-accent transition-colors duration-150 no-underline"
         >
           {part.label}

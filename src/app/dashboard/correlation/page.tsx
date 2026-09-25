@@ -161,7 +161,7 @@ export default function CorrelationPage() {
               </tbody>
             </table>
           </div>
-          <div className="mt-3 flex items-center gap-4 text-[10px] text-text-muted">
+          <div className="mt-3 flex items-center gap-4 text-xs text-text-muted">
             <div className="flex items-center gap-1">
               <div className="w-3 h-3 rounded bg-bullish/80" />
               Strong positive (&gt;0.7)

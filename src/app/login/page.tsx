@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { BeacontryMark } from "@/components/brand/beacontry-mark";
+import { AuthShell, AuthHeading, AuthError, AuthSwitch } from "@/components/auth/auth-shell";
 
 const LAST_USER_KEY = "sentinel-last-user";
 
@@ -39,23 +38,6 @@ function getLandingPage(): string {
     // fall through
   }
   return "/dashboard";
-}
-
-/**
- * The sign-in error. Always mounted as role="alert" so a screen reader
- * announces the text when it appears; when there is no error it is an
- * empty, visually hidden region.
- */
-function LoginError({ id, error }: { id: string; error: string }) {
-  return (
-    <div
-      id={id}
-      role="alert"
-      className={error ? "rounded-lg border border-bearish/25 bg-bearish/10 px-3 py-2 text-sm text-bearish" : "sr-only"}
-    >
-      {error}
-    </div>
-  );
 }
 
 export default function LoginPage() {
@@ -178,125 +160,85 @@ export default function LoginPage() {
   // ── PIN Login View ──
   if (pinMode && lastUser && hasPin) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
-        <div className="w-full max-w-sm">
-          <div className="mb-8 text-center">
-            <Link href="/" className="inline-flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
-                <BeacontryMark variant="full" className="h-6 w-6" aria-label="Beacontry" />
-              </div>
-              <span className="text-xl font-semibold text-text-primary">Beacontry</span>
-            </Link>
+      <AuthShell>
+        <div className="flex items-center gap-4">
+          <div aria-hidden="true" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-bg-surface text-lg font-semibold text-accent">
+            {lastUser.name.charAt(0).toUpperCase()}
           </div>
-
-          <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
-            <div className="text-center mb-5">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent text-xl font-bold mb-3">
-                {lastUser.name.charAt(0).toUpperCase()}
-              </div>
-              <h1 className="text-xl font-semibold text-text-primary">Welcome back</h1>
-              <p className="mt-1 text-sm text-text-secondary">{lastUser.name}</p>
-            </div>
-
-            <form onSubmit={handlePinLogin} className="space-y-4">
-              <LoginError id="pin-error" error={error} />
-              <Input
-                ref={pinRef}
-                label="PIN"
-                aria-invalid={error ? true : undefined}
-                aria-describedby={error ? "pin-error" : undefined}
-                type="password"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                placeholder="Enter your PIN"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                required
-                autoComplete="off"
-              />
-              <Button type="submit" loading={loading} className="w-full">
-                Unlock
-              </Button>
-            </form>
-
-            <div className="mt-4 flex items-center justify-between text-sm">
-              <button
-                type="button"
-                onClick={switchToFullLogin}
-                className="text-text-muted hover:text-accent transition-colors"
-              >
-                Use password
-              </button>
-              <button
-                type="button"
-                onClick={switchUser}
-                className="text-text-muted hover:text-accent transition-colors"
-              >
-                Not {lastUser.name.split(" ")[0]}?
-              </button>
-            </div>
-          </div>
+          <AuthHeading title="Welcome back">{lastUser.name}</AuthHeading>
         </div>
-      </div>
+
+        <form onSubmit={handlePinLogin} className="mt-6 space-y-4">
+          <AuthError id="pin-error" error={error} />
+          <Input
+            ref={pinRef}
+            label="PIN"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "pin-error" : undefined}
+            type="password"
+            inputMode="numeric"
+            enterKeyHint="go"
+            pattern="[0-9]*"
+            maxLength={6}
+            placeholder="Enter your PIN"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            required
+            autoComplete="off"
+          />
+          <Button type="submit" loading={loading} className="w-full">
+            Unlock
+          </Button>
+        </form>
+
+        <div className="mt-4 flex items-center justify-between text-sm">
+          <Button type="button" variant="ghost" size="sm" onClick={switchToFullLogin} className="-ml-3">
+            Use password
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={switchUser} className="-mr-3">
+            Not {lastUser.name.split(" ")[0]}?
+          </Button>
+        </div>
+      </AuthShell>
     );
   }
 
   // ── Standard Login View ──
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
-              <BeacontryMark variant="full" className="h-6 w-6" aria-label="Beacontry" />
-            </div>
-            <span className="text-xl font-semibold text-text-primary">Beacontry</span>
-          </Link>
-        </div>
+    <AuthShell>
+      <AuthHeading title="Sign in">Enter your credentials to open the desk.</AuthHeading>
 
-        <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
-          <h1 className="text-xl font-semibold text-text-primary">Sign in</h1>
-          <p className="mt-1 text-sm text-text-secondary">Enter your credentials to access the desk.</p>
+      <form onSubmit={handlePasswordLogin} className="mt-6 space-y-4">
+        <AuthError id="login-error" error={error} />
+        <Input
+          label="Email"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "login-error" : undefined}
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          autoComplete="email"
+          autoFocus
+        />
+        <Input
+          label="Password"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "login-error" : undefined}
+          type="password"
+          enterKeyHint="go"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          autoComplete="current-password"
+        />
+        <Button type="submit" loading={loading} className="w-full">
+          Sign in
+        </Button>
+      </form>
 
-          <form onSubmit={handlePasswordLogin} className="mt-5 space-y-4">
-            <LoginError id="login-error" error={error} />
-            <Input
-              label="Email"
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? "login-error" : undefined}
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-              autoFocus
-            />
-            <Input
-              label="Password"
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? "login-error" : undefined}
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-            />
-            <Button type="submit" loading={loading} className="w-full">
-              Sign In
-            </Button>
-          </form>
-
-          <p className="mt-4 text-center text-sm text-text-muted">
-            No account?{" "}
-            <Link href="/register" className="font-medium text-accent hover:text-accent-hover">
-              Create one
-            </Link>
-          </p>
-        </div>
-      </div>
-    </div>
+      <AuthSwitch prompt="No account?" href="/register" label="Create one" />
+    </AuthShell>
   );
 }

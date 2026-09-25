@@ -85,7 +85,7 @@ export function SafeguardsOnboardingModal() {
             body="Every privileged action — login, broker connection change, engine start/stop, order placed or rejected — is recorded in a hash-chained log scoped to your user id." />
         </div>
 
-        <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-text-secondary">
+        <div className="rounded-lg border border-warning-line bg-warning-fill p-3 text-xs text-text-secondary">
           <strong className="text-warning">Live trading is admin-gated.</strong> By default the engine refuses to start
           on any live broker connection. Live access requires explicit server-side approval.
         </div>

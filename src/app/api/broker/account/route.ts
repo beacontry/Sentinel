@@ -84,6 +84,10 @@ export async function GET() {
         portfolioValue: account.portfolioValue,
         lastEquity: account.lastEquity,
       },
+      // A positions read that failed answers [] like an account with none
+      // held. This says which one it was, so a caller showing "none held"
+      // can say "unavailable" instead.
+      positionsAvailable: positionsResult.status === "fulfilled",
       positions: positions.map((p) => ({
         symbol: p.symbol,
         qty: p.qty,

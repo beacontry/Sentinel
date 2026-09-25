@@ -96,63 +96,70 @@ Each user has their own broker connections (`brokerConnections` table, scoped by
 ## Design System
 
 ### Theme: 5 themes (dark default; light, coral, light-blue, gray)
-All tokens defined in `src/app/globals.css` `@theme` block. **Dark is the default for first-time visitors** (2026-07-15 — matches the low-light trading-terminal identity); `light` is the class-less base theme in CSS terms, applied only when explicitly chosen. `/public/theme-init.js` runs blocking in `<head>` and stamps the stored (or default `dark`) class **before first paint** — no theme flash; `<html>` carries `suppressHydrationWarning` for this. Each non-light theme = a single class on `<html>`: `dark`, `coral`, `light-blue`, `gray`. Only one applies at a time; the theme provider strips others before adding the new one.
+All tokens live in `src/app/globals.css`, in OKLCH: the `@theme` block is the light theme (and what Tailwind generates utilities from), and each other theme is one `html.<name>` block redefining the same names, with its own `color-scheme`. **Dark is the default for first-time visitors** (2026-07-15 — matches the low-light trading-terminal identity); `light` is the class-less base theme in CSS terms, applied only when explicitly chosen. `/public/theme-init.js` runs blocking in `<head>` and stamps the stored (or default `dark`) class **before first paint** — no theme flash; `<html>` carries `suppressHydrationWarning` for this. Each non-light theme = a single class on `<html>`: `dark`, `coral`, `light-blue`, `gray`. Only one applies at a time; the theme provider strips others before adding the new one.
 
 | Theme | Surface character | Accent |
 |-------|-------------------|--------|
-| light | white on neutral gray, classic | emerald |
-| dark | emerald-tinted near-black | emerald |
-| coral | warm peach surfaces (light variant) | coral (#f97066) |
-| light-blue | cool sky tints (light variant) | blue-500 |
-| gray | true neutral grays (dark variant, no green tint) | emerald |
+| light | near-white on green-grey (hue 163) | emerald, dark fill + white label |
+| dark | emerald-tinted lightness ladder | emerald, light fill + dark label |
+| coral | warm light ladder | orange-coral, white label; loss is its own darker crimson, held apart from the accent by the contrast test |
+| light-blue | cool light ladder | blue, white label |
+| gray | the dark ladder with no tint | emerald |
 
-Trading semantics (`bullish`, `bearish`, `warning`) stay universal red/green across all themes so P&L is recognizable.
+**Colour-blind mode** is a second `<html>` class, `colorblind`, that replaces the state colours (gain, loss, warning and their `-fg`/`-fill`/`-line`) and the accent with **one fixed set per luminance family**, whatever the theme (`html.colorblind` for light/coral/light-blue, `html.colorblind.dark, .gray` for the dark two): blue gain, vermillion-to-amber loss, yellow warning, neutral-blue accent (every theme's own accent collided with the set under simulated deuteranopia or protanopia). Never tune a per-theme colour-blind variant. **`tests/unit/theme-contrast.test.ts` measures every meaningful pair in all 5 themes × colour-blind mode** — change a value, run it.
 
-**ThemeProvider** (`src/components/theme-provider.tsx`): persists to `localStorage("sentinel-theme")`, sets `<html>` class, updates PWA `theme-color`. `useTheme()` → `{ theme, setTheme, toggleTheme }`. `isDarkTheme(theme)` (true for `dark`/`gray`) exported for TradingView embed.
+**ThemeProvider** (`src/components/theme-provider.tsx`): persists to `localStorage("sentinel-theme")`, sets `<html>` class, updates PWA `theme-color` (hex copies of each theme's `--color-bg-primary`, pinned by `tests/unit/theme-meta.test.ts`). `useTheme()` → `{ theme, setTheme, toggleTheme }`. `isDarkTheme(theme)` (true for `dark`/`gray`) exported for TradingView embed.
 
 **Theme picker** (`src/components/theme-picker.tsx`): `variant="icon"` (palette button, downward popover; dashboard top bar + landing navbar) and `variant="sidebar"` (full-width button, upward popover; mobile drawer of `TopNavShell` — name predates layout swap, means "stacked-menu button" not literal sidebar).
 
-**Landing page** uses separate `ld-*` tokens (`bg-ld-deep`, `text-ld-accent`, …) that also switch via `html.dark` overrides.
+**Landing page** `ld-*` tokens (`bg-ld-deep`, `text-ld-accent`, …) are aliases of the app tokens with the same role, not a second palette.
 
-**Backgrounds** (dark, higher elevation = lighter): `bg-bg-primary` (10%L) → `secondary` (13%) → `surface` (16%) → `elevated` (20%) → `hover` (24%). **Text:** `text-text-primary` (96%) / `secondary` (68%) / `muted` (50%). **Borders:** `border-border` (28%) / `border-border-hover` (36%). **Accent:** `text-accent`/`bg-accent` (emerald), `bg-accent-hover`.
+**Roles:** backgrounds `bg-bg-primary` → `secondary` (cards, inputs) → `surface` → `elevated` (menus) → `hover`. Text `text-text-primary` / `secondary` / `muted`, all ≥4.5:1 on every surface. Edges: `border-border` is the faint container edge; **controls use `border-border-control` (≥3:1)**. Accent fills take **`text-on-accent`, never `text-white`**. Focus ring: `--color-focus`.
 
-**Trading semantics:** `text-bullish` / `text-bearish` / `text-warning` (badges use the `/10` tint). `font-mono` for ALL financial numbers.
+**Trading semantics:** `text-bullish` / `text-bearish` / `text-warning` for figures. Chips, badges and banners use the triplets through **`STATUS_TONE_CLASSES` in `src/lib/status-tone.ts`** (`border-X-line bg-X-fill text-X-fg`); trade/order statuses map through `tradeStatusTone()`. Never build state colour from alpha (`bg-bearish/10`) — the style ratchet counts it. State is never colour alone: print the word or a ▲/▼. `font-mono` for ALL financial numbers.
+
+**Charts** read tokens through `src/lib/chart-theme.ts`, which resolves OKLCH/`color-mix()` to `rgba()` for the canvas; key a chart on `${theme}:${colorBlindMode}` to re-theme it.
 
 ### Typography
-- Display/Body: Geist Sans (`geist` npm package) | Monospace: Geist Mono / JetBrains Mono (`font-mono`)
+- Display/Body: Geist Sans (`geist` npm package) | Monospace: Geist Mono (`font-mono`)
+- **Seven sizes, 12px floor:** `text-xs` 12 · `sm` 14 · `base` 16 · `lg` 20 · `xl` 24 · `2xl` 32 · `display` (marketing clamp). Tailwind's own steps are reset: `text-3xl` and up compile to nothing. No `text-[Npx]`.
 - Page title: `text-2xl font-semibold tracking-tight`
 - Card title: `text-sm font-semibold text-text-primary`
-- Stat label: `text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted`
-- Body: `text-sm` (0.875rem) with `leading-relaxed` for paragraphs
-- Stat values: always `font-mono` for tabular alignment
+- Stat label / kicker: the `eyebrow` utility (12px, 600, 0.08em, uppercase in CSS)
+- Body: `text-sm` with `leading-relaxed` for paragraphs; inputs `text-base sm:text-sm` (no iOS zoom)
+- A label that does not fit at 12px on a phone is hidden below `sm`, never shrunk
 
-### Border Radius
-Cards: `rounded-xl` | Buttons: `rounded-lg` | Inputs: `rounded-lg` | Badges: `rounded-full` | Modals: `rounded-xl` | Dropdowns: `rounded-lg`
+### Border Radius and Elevation
+`rounded` (4px, tiny marks) | `rounded-md` (6px) | `rounded-lg` (8px: buttons, inputs, dropdowns) | `rounded-xl` (12px: cards, modals) | `rounded-full` (badges). `rounded-sm`, `rounded-2xl` and larger do not exist. Shadows: `shadow-card`, `shadow-pop`, `shadow-modal`, set per theme (none on dark cards).
+
+**Guards:** `npm run lint:style` (`scripts/style-ratchet.mjs`, in CI and lint-staged) holds off-token class patterns to a baseline that only goes down and off-scale sizes at zero. `scripts/codemods/tokenize-classes.mjs <family>` moves ad-hoc classes onto the tokens. Full role reference: `.claude/skills/sentinel-redesign/references/design-tokens.md`; the staged redesign plan: `docs/design/redesign-plan.md`.
 
 **Design anti-patterns (NEVER do these — Impeccable bans):**
-- No `rounded-[22px]`, `rounded-[24px]`, `rounded-3xl` — use standard Tailwind radii only
+- No arbitrary or oversized radii (`rounded-[22px]`, `rounded-3xl`) — use the scale
 - No gradient backgrounds on UI surfaces (`bg-[linear-gradient(...)]`)
 - No side-stripe borders (`border-left: 3px solid` accent bars on cards/nav)
 - No gradient text (`background-clip: text` with gradients)
 - No heavy box-shadows or glassmorphism on every surface
+- No `transition-all`: name the properties (`transition-colors`, `transition-[…,transform]`)
 
 ### Animations
-`animate-fade-in` (0.2s) | `animate-scale-in` (0.15s) | `animate-slide-up` (0.25s) | shimmer (skeleton loading)
-All use `cubic-bezier(0.16, 1, 0.3, 1)` (expo ease-out) — no bounce/elastic easing
+`animate-fade-in` (0.2s) | `animate-scale-in` (0.2s) | `animate-slide-up` (0.25s) | `animate-fade-in-up` (0.5s, marketing) | shimmer (skeleton loading)
+All use `cubic-bezier(0.16, 1, 0.3, 1)` (expo ease-out) — no bounce/elastic easing. The classes sit in `@layer components`, so a utility (`motion-reduce:animate-none`) overrides them.
 
 ## Component Library (`src/components/ui/`)
 
-Always use existing components — never recreate them:
-- **Button** — variants primary/secondary/ghost/destructive/outline, sizes sm/md/lg, `loading` prop
-- **Card / CardHeader / CardTitle** — `rounded-xl`, optional `hover`, selected `border-accent/50`
-- **Badge** (default/bullish/bearish/warning/neutral, pill) + **SignalBadge** (STRONG_BUY…STRONG_SELL → Badge variants)
-- **StatCard** — label/value/subtext, tone coloring, bare icon
-- **Input** (label/error/icon, `rounded-lg min-h-[44px]`), **Select, Textarea, Checkbox, Toggle**
-- **Modal** suite — focus trap, Escape close; **Tabs / TabPanel** — underline, active `text-accent`
-- **ConfirmActionModal / useConfirmAction** — the ONLY way to confirm destructive or money-moving actions (native `confirm()`/`alert()` are banned in dashboard code as of 2026-07-15). Supports summary rows (font-mono), typed-keyword gate for book-wide liquidations, inline error + busy state. `const { requestConfirm, dialog } = useConfirmAction()` → render `{dialog}` once per page
-- **Pagination** (ellipsis), **Skeleton** (shimmer), **EmptyState** (icon/title/desc/CTA)
-- **Toast** (`useToast()`, solid bg), **Dropdown** + **Tooltip** (solid `bg-bg-elevated`, `rounded-lg`)
-- **Avatar, SearchInput, CommandPalette, DataTable**
+Always use existing components — never recreate them. Full reference: `.claude/skills/sentinel-redesign/references/component-patterns.md`; every primitive in every state renders at `/dashboard/admin/ui-kit` (admin only).
+- **Button** — variants primary/secondary/ghost/destructive/danger (`outline` = secondary, deprecated), sizes md (44px) / sm (36px on a 44px hit area; `lg` = md, deprecated), `loading` (aria-busy), `disabledReason`. `danger` is the solid fill for the one irreversible confirm only. **ButtonLink** puts the same classes on `next/link` — never a Button inside a Link
+- **Card / CardHeader / CardTitle (`as`)** and **Inset** — a group inside a card is an Inset (`bg-bg-surface`, no border), never a second card
+- **SignedValue** — every gain/loss: ▲/▼, U+2212 minus, hidden "gain"/"loss", from `formatPnl` (`src/lib/format-pnl.ts`, the only formatter)
+- **StatusChip / OrderStatusChip** — from `STATUS_TONE_CLASSES`; icon required for bullish/bearish; order statuses through `orderStatusMeta()` (`src/lib/order-status.ts`). **Badge** shares the chip shape; **SignalBadge** prints ▲/▼
+- **StatCard** — eyebrow label, `text-xl` mono value, toned values print a glyph
+- **Input / Select / Textarea / SearchInput** share `FIELD_BASE` (card fill, 3:1 edge, 16px on phones, 44px, `aria-invalid` + `aria-describedby` on error); **Toggle**; **Segmented** (2-5 exclusive options, `aria-pressed`, per-option tone)
+- **Modal** suite; **Tabs / TabPanel** — panels mount on first show, then hide rather than unmount
+- **ConfirmActionModal / useConfirmAction** — the ONLY way to confirm destructive or money-moving actions (native `confirm()`/`alert()` are banned in dashboard code as of 2026-07-15). Tones danger/primary/irreversible, summary rows, typed-keyword gate, inline error + busy state. `const { requestConfirm, dialog } = useConfirmAction()` → render `{dialog}` once per page
+- **EmptyState** (`kind` empty / filtered / not-connected) vs **ErrorState** (role=alert, retry, trace reference) — a failed load is never an EmptyState
+- **Skeleton** (token sheen, aria-hidden) inside **LoadingRegion**; **LiveRegion** for mounted status/alert text
+- **Toast** (`useToast()`, icon per kind, 44px dismiss, `traceId`, max 3), **Pagination**, **Dropdown** + **Tooltip**, **Avatar, CommandPalette, DataTable**
 
 ## Registration & Invites
 
@@ -230,7 +237,7 @@ Gate ordering inside `canPlaceBuyOrder()`: earnings blackout → **split blackou
 Manual orders go through `/dashboard/trade` (index: symbol search + recently-viewed + watchlist quick-trade + open-orders) → `/dashboard/trade/[symbol]` (the ticket). Tier-gated at `trader`. Engine-gated at THREE layers:
 
 1. **API** — `/api/broker/orders` POST returns 409 `ENGINE_RUNNING` via `peekEngineStatus(userId).running` (hard block).
-2. **Ticket UI** — `validate()` blocks submit with "Stop the engine before placing manual orders."
+2. **Ticket UI** — `validateTicket()` (`src/lib/order-ticket.ts`) blocks submit with "Stop the engine before placing manual orders."
 3. **Index UI** — warning banner when the engine runs, linking to `/dashboard/trader` to stop it.
 
 The block prevents position-map drift: the engine's in-memory map lags the broker by up to one scan interval, risking a protective stop sized for the wrong quantity.

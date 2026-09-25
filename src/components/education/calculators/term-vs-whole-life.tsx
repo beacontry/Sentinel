@@ -213,7 +213,7 @@ function Bar({
   return (
     <div className={`rounded-xl border p-3 space-y-2 ${toneClass}`}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
           {label}
         </p>
       </div>
@@ -222,7 +222,7 @@ function Bar({
       </p>
       <div className="h-1.5 rounded-full bg-bg-elevated overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${
+          className={`h-full rounded-full transition-[width,background-color] duration-500 ${
             tone === "win" ? "bg-accent" : "bg-text-muted/40"
           }`}
           style={{ width: `${pct}%` }}

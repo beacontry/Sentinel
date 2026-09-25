@@ -1,0 +1,119 @@
+"use client";
+
+import type { ReactNode } from "react";
+
+/**
+ * Two to five mutually exclusive choices that apply at once: Buy/Sell,
+ * order type, engine mode, a chart range.
+ *
+ * A sunken track (bg-primary) holding transparent buttons; the chosen one
+ * is raised onto the card fill with a control edge (3:1 on the track) and
+ * the card shadow, in full text colour and semibold, so the choice reads
+ * by its edge first, not by weight alone. Styled from aria-pressed, never from a parallel class.
+ * Radii are concentric: an 8px track with 4px padding gives 4px buttons.
+ *
+ * Buttons are 40px drawn with the hit area padded to 48px vertically.
+ * A `tone` on an option colours it from the status triplet when chosen,
+ * for Buy and Sell; give those options an `icon` (▲ ▼) as well, since the
+ * word and the glyph are what carry the side, not the colour.
+ */
+
+type Tone = "bullish" | "bearish";
+
+export interface SegmentedOption<T extends string> {
+  value: T;
+  label: ReactNode;
+  icon?: ReactNode;
+  tone?: Tone;
+  disabled?: boolean;
+}
+
+interface SegmentedProps<T extends string> {
+  options: SegmentedOption<T>[];
+  value: T | null | undefined;
+  onChange: (value: T) => void;
+  /** Names the group for screen readers, e.g. "Order side". */
+  label: string;
+  disabled?: boolean;
+  /** Not ready yet (the current value is still loading): disabled and aria-busy. */
+  busy?: boolean;
+  /** Stretch the buttons to fill the track. */
+  fullWidth?: boolean;
+  /**
+   * Below sm, lay the choices out two to a row instead of one row. For
+   * four longer labels (engine modes) that cannot share 360px without
+   * clipping; from sm up the track is a single row again.
+   */
+  twoUpOnPhone?: boolean;
+  className?: string;
+}
+
+const PRESSED_TONE: Record<Tone | "neutral", string> = {
+  // The edge is what marks the choice: fill and text alone measure about
+  // 1.1:1 and 1.8:1 against the track and the unchosen labels, and dark
+  // themes have no card shadow. border-control is held at 3:1 or better
+  // on bg-primary by theme-contrast.test.ts.
+  neutral: "aria-pressed:border-border-control aria-pressed:bg-bg-secondary aria-pressed:text-text-primary",
+  bullish: "aria-pressed:border-bullish-line aria-pressed:bg-bullish-fill aria-pressed:text-bullish-fg",
+  bearish: "aria-pressed:border-bearish-line aria-pressed:bg-bearish-fill aria-pressed:text-bearish-fg",
+};
+
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+  disabled = false,
+  busy = false,
+  fullWidth = false,
+  twoUpOnPhone = false,
+  className = "",
+}: SegmentedProps<T>) {
+  // Whole class names, so the Tailwind scanner sees every one. Two rows
+  // are 8px apart, so each button's 4px hit-area pad meets its
+  // neighbour's instead of overlapping it.
+  const layout = twoUpOnPhone
+    ? fullWidth
+      ? "grid grid-cols-2 gap-x-1 gap-y-2 sm:flex"
+      : "grid grid-cols-2 gap-x-1 gap-y-2 sm:inline-flex"
+    : fullWidth
+      ? "flex gap-1"
+      : "inline-flex gap-1";
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      aria-busy={busy || undefined}
+      className={`${layout} max-w-full rounded-lg bg-bg-primary p-1 ${className}`}
+    >
+      {options.map((opt) => {
+        const pressed = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            aria-pressed={pressed}
+            disabled={disabled || busy || opt.disabled}
+            onClick={() => {
+              if (!pressed) onChange(opt.value);
+            }}
+            className={`relative inline-flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded border border-transparent px-3 text-sm
+              text-text-secondary whitespace-nowrap cursor-pointer transition-[background-color,border-color,color] duration-150
+              before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']
+              enabled:hover:text-text-primary
+              aria-pressed:font-semibold aria-pressed:shadow-card
+              disabled:cursor-not-allowed disabled:opacity-55
+              ${PRESSED_TONE[opt.tone ?? "neutral"]} ${fullWidth ? "flex-1" : ""}`}
+          >
+            {opt.icon && (
+              <span aria-hidden="true" className="inline-flex shrink-0">
+                {opt.icon}
+              </span>
+            )}
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

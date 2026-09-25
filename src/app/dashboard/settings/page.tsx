@@ -23,6 +23,7 @@ import {
   type LandingPage,
 } from "@/components/display-prefs-provider";
 
+import { Segmented } from "@/components/ui/segmented";
 // ─── Types ──────────────────────────────────────────────────────────
 
 interface BrokerConnection {
@@ -651,7 +652,7 @@ Any trade you place will use real money. The engine remains stopped — you must
           {/* Live confirmation — required when newly switching to live OR creating a live connection */}
           {brokerForm.environment === "live" &&
             (!editingBroker || editingBroker.environment !== "live") && (
-              <div className="rounded-lg border border-bearish/40 bg-bearish/5 p-3 space-y-3">
+              <div className="rounded-lg border border-bearish-line bg-bearish-fill p-3 space-y-3">
                 <div className="flex items-start gap-2">
                   <span className="inline-block w-2 h-2 rounded-full bg-bearish mt-1.5 animate-pulse" />
                   <div className="text-sm">
@@ -687,8 +688,8 @@ Any trade you place will use real money. The engine remains stopped — you must
             <div
               className={`p-3 rounded-lg border text-sm ${
                 brokerTestResult.success
-                  ? "border-bullish/20 bg-bullish/5 text-bullish"
-                  : "border-bearish/20 bg-bearish/5 text-bearish"
+                  ? "border-bullish-line bg-bullish-fill text-bullish-fg"
+                  : "border-bearish-line bg-bearish-fill text-bearish-fg"
               }`}
             >
               <div className="flex items-center gap-2 mb-1">
@@ -829,7 +830,7 @@ Any trade you place will use real money. The engine remains stopped — you must
               <span>JSON summary</span>
             </Button>
           </div>
-          <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-text-secondary">
+          <div className="rounded-lg border border-warning-line bg-warning-fill p-3 text-xs text-text-secondary">
             <strong className="text-warning">Self-attested — not a tax substitute.</strong> Beacontry computes FIFO
             lots + wash-sale flags. Wash-sale rule is applied at symbol level only — substantially-identical ETF
             cross-matches (SPY↔IVV) are NOT detected. If you elected §475(f) MTM, disregard the wash-sale column.
@@ -853,42 +854,33 @@ Any trade you place will use real money. The engine remains stopped — you must
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* P&L format */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-text-secondary">P&L format</label>
-            <div className="flex gap-0.5 rounded-lg border border-border bg-bg-secondary p-0.5">
-              {(["dollar", "percent", "both"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setPnlFormat(v)}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors
-                    ${pnlFormat === v
-                      ? "bg-bg-elevated text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                    }`}
-                >
-                  {v === "dollar" ? "Dollars" : v === "percent" ? "Percent" : "Both"}
-                </button>
-              ))}
-            </div>
+            <p className="text-xs font-medium text-text-secondary" aria-hidden="true">P&L format</p>
+            <Segmented
+              label="P&L format"
+              fullWidth
+              value={pnlFormat}
+              onChange={setPnlFormat}
+              options={[
+                { value: "dollar", label: "Dollars" },
+                { value: "percent", label: "Percent" },
+                { value: "both", label: "Both" },
+              ]}
+            />
           </div>
 
           {/* Time format */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-text-secondary">Time format</label>
-            <div className="flex gap-0.5 rounded-lg border border-border bg-bg-secondary p-0.5">
-              {(["12h", "24h"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setTimeFormat(v)}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors
-                    ${timeFormat === v
-                      ? "bg-bg-elevated text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                    }`}
-                >
-                  {v === "12h" ? "12-hour" : "24-hour"}
-                </button>
-              ))}
-            </div>
+            <p className="text-xs font-medium text-text-secondary" aria-hidden="true">Time format</p>
+            <Segmented
+              label="Time format"
+              fullWidth
+              value={timeFormat}
+              onChange={setTimeFormat}
+              options={[
+                { value: "12h", label: "12-hour" },
+                { value: "24h", label: "24-hour" },
+              ]}
+            />
           </div>
 
           {/* Default landing page */}
@@ -906,8 +898,9 @@ Any trade you place will use real money. The engine remains stopped — you must
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-text-primary">Color-blind palette</div>
               <p className="text-xs text-text-muted mt-0.5">
-                Swap bullish/bearish to a deuteranopia-friendly blue/orange (Wong palette).
-                Affects every $/%, badge, and chart color across the app.
+                Swap bullish/bearish to a deuteranopia-friendly blue/orange (Wong palette),
+                with a yellow warning and a blue accent. Affects every $/%, badge, and chart
+                color across the app.
               </p>
             </div>
             <Toggle
@@ -1212,7 +1205,7 @@ function DigestEmailToggle() {
           notifications + Discord delivery happen regardless of this setting.
         </p>
         {loaded && delivery && (
-          <p className="text-[11px] text-text-muted mt-1">
+          <p className="text-xs text-text-muted mt-1">
             Would send to <span className="font-mono">{delivery}</span>
           </p>
         )}

@@ -16,7 +16,7 @@ import {
   ColorType,
   CrosshairMode,
 } from "lightweight-charts";
-import { getChartTheme } from "@/lib/chart-theme";
+import { getChartTheme, withAlpha, CHART_FONT_SIZE } from "@/lib/chart-theme";
 import { useTheme } from "@/components/theme-provider";
 import { useDisplayPrefs } from "@/components/display-prefs-provider";
 
@@ -39,13 +39,14 @@ interface PriceChartProps {
   events?: ChartEvent[];
 }
 
-const indicatorColors: Record<string, string> = {
-  sma_9: "#10b981",
-  sma_20: "#7dd3fc",
-  sma_50: "#c084fc",
-  ema_9: "#fb923c",
-  ema_21: "#22d3ee",
-  vwap: "#f472b6",
+/** Each overlay's slot in the chart series palette (--color-series-1 … 6). */
+const indicatorSeries: Record<string, number> = {
+  sma_9: 0,
+  sma_20: 1,
+  sma_50: 2,
+  ema_9: 3,
+  ema_21: 4,
+  vwap: 5,
 };
 
 type VisibleIndicators = Record<string, boolean>;
@@ -72,7 +73,7 @@ function makeChartOptions(container: HTMLElement, height: number) {
       background: { type: ColorType.Solid as const, color: theme.background },
       textColor: theme.textColor,
       fontFamily: "'Aptos', 'Segoe UI', sans-serif",
-      fontSize: 11,
+      fontSize: CHART_FONT_SIZE,
     },
     grid: {
       vertLines: { color: theme.gridColor },
@@ -223,6 +224,7 @@ function PriceChartView({ analysis, height = 400, events }: PriceChartProps) {
     }
     overlaySeriesRef.current = [];
 
+    const palette = getChartTheme();
     const overlayKeys = ["sma_9", "sma_20", "sma_50", "ema_9", "ema_21", "vwap"] as const;
 
     for (const key of overlayKeys) {
@@ -240,7 +242,7 @@ function PriceChartView({ analysis, height = 400, events }: PriceChartProps) {
       if (lineData.length === 0) continue;
 
       const lineSeries = chart.addSeries(LineSeries, {
-        color: indicatorColors[key] ?? "#6b7280",
+        color: palette.series[indicatorSeries[key]],
         lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
@@ -274,16 +276,16 @@ function PriceChartView({ analysis, height = 400, events }: PriceChartProps) {
   return (
     <div className={useFillLayout ? "flex flex-col h-full gap-3 min-h-0" : "space-y-3"}>
       <div className="flex flex-wrap gap-1.5 shrink-0">
-        {Object.entries(indicatorColors).map(([key, color]) => (
+        {Object.entries(indicatorSeries).map(([key, slot]) => (
           <button
             key={key}
             onClick={() => toggleIndicator(key)}
-            className={`rounded-full border px-2.5 py-1 text-xs font-mono transition-all
+            className={`rounded-full border px-2.5 py-1 text-xs font-mono transition-[background-color,border-color,color,opacity]
               ${visible[key]
                 ? "border-current bg-bg-secondary opacity-100"
                 : "border-border opacity-50 hover:opacity-80"
               }`}
-            style={{ color }}
+            style={{ color: `var(--color-series-${slot + 1})` }}
           >
             {key.replace("_", " ").toUpperCase()}
           </button>
@@ -315,7 +317,7 @@ function PriceChartView({ analysis, height = 400, events }: PriceChartProps) {
       <div className="flex gap-1.5 shrink-0">
         <button
           onClick={() => setShowRsi(!showRsi)}
-          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all
+          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
             ${showRsi
               ? "border-accent/30 bg-accent/12 text-accent"
               : "border-border text-text-muted hover:border-border-hover hover:text-text-secondary"
@@ -325,7 +327,7 @@ function PriceChartView({ analysis, height = 400, events }: PriceChartProps) {
         </button>
         <button
           onClick={() => setShowMacd(!showMacd)}
-          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all
+          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
             ${showMacd
               ? "border-accent/30 bg-accent/12 text-accent"
               : "border-border text-text-muted hover:border-border-hover hover:text-text-secondary"
@@ -358,7 +360,7 @@ function RsiSubChart({
         background: { type: ColorType.Solid as const, color: theme.background },
         textColor: theme.textColor,
         fontFamily: "'Aptos', 'Segoe UI', sans-serif",
-        fontSize: 10,
+        fontSize: CHART_FONT_SIZE,
       },
       grid: {
         vertLines: { color: theme.gridColor },
@@ -369,7 +371,7 @@ function RsiSubChart({
     });
 
     const series = chart.addSeries(LineSeries, {
-      color: "#a855f7",
+      color: theme.series[2],
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: true,
@@ -384,8 +386,8 @@ function RsiSubChart({
     series.setData(data);
 
     // Overbought / oversold lines
-    series.createPriceLine({ price: 70, color: "rgba(239,68,68,0.4)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
-    series.createPriceLine({ price: 30, color: "rgba(34,197,94,0.4)", lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
+    series.createPriceLine({ price: 70, color: withAlpha(theme.bearish, 0.4), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
+    series.createPriceLine({ price: 30, color: withAlpha(theme.bullish, 0.4), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
 
     chart.timeScale().fitContent();
 
@@ -399,7 +401,7 @@ function RsiSubChart({
 
   return (
     <div className="relative">
-      <span className="absolute top-1 left-2 text-[10px] font-mono text-text-muted z-10">RSI (14)</span>
+      <span className="absolute top-1 left-2 text-xs font-mono text-text-muted z-10">RSI (14)</span>
       <div ref={ref} className="overflow-hidden rounded-xl border border-border bg-bg-surface" />
     </div>
   );
@@ -429,7 +431,7 @@ function MacdSubChart({
         background: { type: ColorType.Solid as const, color: theme.background },
         textColor: theme.textColor,
         fontFamily: "'Aptos', 'Segoe UI', sans-serif",
-        fontSize: 10,
+        fontSize: CHART_FONT_SIZE,
       },
       grid: {
         vertLines: { color: theme.gridColor },
@@ -451,7 +453,7 @@ function MacdSubChart({
         histData.push({
           time: toTime(bars[i].date),
           value: histogram[i] as number,
-          color: (histogram[i] as number) >= 0 ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)",
+          color: (histogram[i] as number) >= 0 ? withAlpha(theme.bullish, 0.5) : withAlpha(theme.bearish, 0.5),
         });
       }
     }
@@ -459,7 +461,7 @@ function MacdSubChart({
 
     // MACD line
     const macdSeries = chart.addSeries(LineSeries, {
-      color: "#3b82f6",
+      color: theme.series[1],
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -474,7 +476,7 @@ function MacdSubChart({
 
     // Signal line
     const sigSeries = chart.addSeries(LineSeries, {
-      color: "#f59e0b",
+      color: theme.eventEarnings,
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -499,7 +501,7 @@ function MacdSubChart({
 
   return (
     <div className="relative">
-      <span className="absolute top-1 left-2 text-[10px] font-mono text-text-muted z-10">MACD (12,26,9)</span>
+      <span className="absolute top-1 left-2 text-xs font-mono text-text-muted z-10">MACD (12,26,9)</span>
       <div ref={ref} className="overflow-hidden rounded-xl border border-border bg-bg-surface" />
     </div>
   );

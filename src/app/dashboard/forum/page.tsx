@@ -333,7 +333,7 @@ export default function ForumPage() {
           />
           {activeCategory ? (
             <div>
-              <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted mb-1.5">
+              <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted mb-1.5">
                 Category
               </p>
               <Badge variant="default">{activeCategory.name}</Badge>
@@ -441,13 +441,13 @@ function CategoryRow({
               <p className="font-mono font-semibold text-text-secondary text-sm">
                 {formatCount(category.threadCount)}
               </p>
-              <p className="text-[10px] uppercase tracking-wider">threads</p>
+              <p className="text-xs uppercase tracking-wider">threads</p>
             </div>
             <div className="text-center w-16">
               <p className="font-mono font-semibold text-text-secondary text-sm">
                 {formatCount(category.replyCount)}
               </p>
-              <p className="text-[10px] uppercase tracking-wider">replies</p>
+              <p className="text-xs uppercase tracking-wider">replies</p>
             </div>
           </div>
 
@@ -458,7 +458,7 @@ function CategoryRow({
                 <p className="text-xs text-text-secondary truncate">
                   {category.lastThreadTitle}
                 </p>
-                <p className="text-[11px] text-text-muted mt-0.5">
+                <p className="text-xs text-text-muted mt-0.5">
                   by {category.lastThreadAuthor}
                   {category.lastActivityAt && (
                     <> &middot; {relativeTime(category.lastActivityAt)}</>

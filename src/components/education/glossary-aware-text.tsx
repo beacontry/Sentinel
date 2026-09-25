@@ -131,7 +131,7 @@ export function GlossaryAwareText({ text }: { text: string }): ReactNode {
               side="top"
               align="center"
               sideOffset={6}
-              className="z-50 max-w-sm rounded-lg border border-border bg-bg-elevated p-3 text-xs leading-relaxed text-text-secondary shadow-lg animate-fade-in"
+              className="z-50 max-w-sm rounded-lg border border-border bg-bg-elevated p-3 text-xs leading-relaxed text-text-secondary shadow-pop animate-fade-in"
             >
               <p className="font-semibold text-text-primary mb-1">
                 {term.term}

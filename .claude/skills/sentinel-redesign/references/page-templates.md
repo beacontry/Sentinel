@@ -4,7 +4,7 @@ Standard layouts and responsive patterns for all Sentinel dashboard pages.
 
 ## App Architecture
 
-- **Root layout** (`src/app/layout.tsx`): Loads Inter + JetBrains Mono fonts, sets dark color scheme
+- **Root layout** (`src/app/layout.tsx`): Loads Geist Sans + Geist Mono, runs /theme-init.js before first paint (dark by default)
 - **Dashboard layout** (`src/app/dashboard/layout.tsx`): `flex flex-col h-screen` with Topbar + scrollable main area
 - **Main content**: `flex-1 min-h-0 overflow-y-auto` — the scrollable content area below the topbar
 
@@ -20,7 +20,7 @@ Standard layouts and responsive patterns for all Sentinel dashboard pages.
 
 ### Logo
 ```tsx
-<div className="w-8 h-8 rounded-2xl bg-accent/15 ring-1 ring-accent/20 flex items-center justify-center">
+<div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-on-accent">
   <Shield className="w-4 h-4 text-accent" />
 </div>
 ```
@@ -70,7 +70,7 @@ export default function DashboardPage() {
     <div className="p-4 lg:p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
-          <h1 className="text-4xl font-semibold tracking-tight">Command Center</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Command Center</h1>
           <p className="mt-1 text-text-secondary">Tagline describing the page.</p>
         </div>
         <div className="flex items-center gap-3">
