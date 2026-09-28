@@ -6,7 +6,70 @@
  * of placeholder fill vs actual fill direction.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// ─── Real-module harness for the concurrency tests at the bottom ────────────
+// A tiny trader_trades table: select returns its PENDING rows, and an
+// update ... returning takes a row only while it is still PENDING, the way
+// the fenced WHERE does in Postgres. The mirror tests above do not use it.
+
+type Row = {
+  id: string; userId: string; brokerOrderId: string; symbol: string; signal: string;
+  action: string; quantity: number; fillPrice: number | null; pnl: number | null; status: string;
+};
+
+const dbState = vi.hoisted(() => ({
+  rows: [] as Array<Record<string, unknown>>,
+  /** Rows a select hands back, when set: a stale read of a row that has
+   *  already moved on. Otherwise the PENDING rows of `rows`. */
+  staleSelect: null as Array<Record<string, unknown>> | null,
+  updates: [] as Array<Record<string, unknown>>,
+  journalStubs: 0,
+}));
+
+vi.mock("@/lib/db", () => {
+  function chain(kind: string): unknown {
+    let setPayload: Record<string, unknown> | null = null;
+    const proxy: unknown = new Proxy(
+      {},
+      {
+        get(_t, prop) {
+          if (prop === "then") {
+            return (resolve: (v: unknown) => void) => {
+              if (kind === "select") {
+                resolve((dbState.staleSelect ?? dbState.rows.filter((r) => r.status === "PENDING")).map((r) => ({ ...r })));
+                return;
+              }
+              if (kind === "update" && setPayload) {
+                // One open row in these tests; the fence is "still PENDING".
+                const open = dbState.rows.find((r) => r.status === "PENDING");
+                if (!open) { resolve([]); return; }
+                Object.assign(open, setPayload);
+                dbState.updates.push(setPayload);
+                resolve([{ id: open.id }]);
+                return;
+              }
+              resolve([]);
+            };
+          }
+          return (...args: unknown[]) => {
+            if (prop === "set") setPayload = args[0] as Record<string, unknown>;
+            return proxy;
+          };
+        },
+      }
+    );
+    return proxy;
+  }
+  const db = new Proxy({}, { get: (_t, prop) => () => chain(String(prop)) });
+  return { db, withTimeout: <T,>(p: Promise<T>) => p, isStatementTimeout: () => false };
+});
+
+vi.mock("@/lib/journal-auto-stub", () => ({
+  createAutoJournalStub: async () => { dbState.journalStubs++; },
+}));
+
+vi.mock("@/lib/crypto", () => ({ decrypt: (v: string) => v, encrypt: (v: string) => v }));
 
 interface PlaceholderRow {
   action: "BUY" | "SELL";
@@ -165,5 +228,83 @@ describe("Phase 11 — Today's P&L intraday vs lifetime", () => {
     const result = computeTodayUnrealized([{ unrealizedPnl: 1000, unrealizedIntradayPnl: 0.01 }]);
     // The 0.01 triggers the intraday branch
     expect(result).toBeCloseTo(0.01);
+  });
+});
+
+// ─── Real reconcilePendingTrades: concurrent passes (WP06, finding #47) ─────
+
+describe("reconcilePendingTrades: a fill delta is applied to dailyLoss once", () => {
+  const g = globalThis as typeof globalThis & {
+    __tradingEngines?: Map<string, import("@/lib/trading-engine").EngineState>;
+  };
+  let seq = 0;
+
+  async function setup() {
+    const mod = await import("@/lib/trading-engine");
+    seq++;
+    const userId = `00000000-0000-4000-8000-${String(600000 + seq).padStart(12, "0")}`;
+    mod.getEngineStatus(userId);
+    const engine = g.__tradingEngines!.get(userId)!;
+    engine.userId = userId;
+    // The placeholder -$100 was accrued at exit time.
+    engine.dailyLoss = -100;
+    const row: Row = {
+      id: "row-1", userId, brokerOrderId: "ord-1", symbol: "AAPL", signal: "stop_loss",
+      action: "SELL", quantity: 300, fillPrice: 50, pnl: -100, status: "PENDING",
+    };
+    dbState.rows = [row as unknown as Record<string, unknown>];
+    // The stop recorded at a $50.00 quote filled at $48.00 on 300 shares.
+    const client = {
+      getOrders: async () => {
+        await new Promise((r) => setTimeout(r, 5));
+        return [{ id: "ord-1", symbol: "AAPL", side: "sell", status: "filled", filledPrice: 48, filledAt: "2026-09-23T15:00:00Z" }];
+      },
+    } as unknown as import("@/lib/brokers").BrokerClient;
+    return { mod, engine, userId, client };
+  }
+
+  beforeEach(() => {
+    dbState.rows = [];
+    dbState.staleSelect = null;
+    dbState.updates = [];
+    dbState.journalStubs = 0;
+  });
+
+  it("two overlapping reconciles on one PENDING row move dailyLoss by the -$600 delta once", async () => {
+    const { mod, engine, userId, client } = await setup();
+
+    await Promise.all([
+      mod.reconcilePendingTrades(client, userId),
+      mod.reconcilePendingTrades(client, userId),
+    ]);
+
+    expect(engine.dailyLoss).toBe(-700);
+    expect(dbState.updates).toHaveLength(1);
+    expect(dbState.rows[0]).toMatchObject({ status: "FILLED", fillPrice: 48, pnl: -700 });
+    expect(dbState.journalStubs).toBe(1);
+  });
+
+  it("an UPDATE that matches no row (already moved by another pass) applies no delta and no journal stub", async () => {
+    const { mod, engine, userId, client } = await setup();
+    // This pass read the row while it was PENDING; another pass has since
+    // reconciled it, so the fenced UPDATE matches nothing.
+    dbState.staleSelect = [{ ...dbState.rows[0] }];
+    dbState.rows[0].status = "FILLED";
+
+    await mod.reconcilePendingTrades(client, userId);
+
+    expect(engine.dailyLoss).toBe(-100);
+    expect(dbState.updates).toHaveLength(0);
+    expect(dbState.journalStubs).toBe(0);
+  });
+
+  it("the in-flight claim is released afterwards, so a later pass still runs", async () => {
+    const { mod, engine, userId, client } = await setup();
+    await mod.reconcilePendingTrades(client, userId);
+    expect(engine.dailyLoss).toBe(-700);
+
+    dbState.rows = [{ ...dbState.rows[0], id: "row-2", brokerOrderId: "ord-1", status: "PENDING", fillPrice: 50, pnl: -100 }];
+    await mod.reconcilePendingTrades(client, userId);
+    expect(engine.dailyLoss).toBe(-1300);
   });
 });

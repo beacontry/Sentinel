@@ -50,7 +50,7 @@ export function IntelligenceIndicatorsTab({ analysis }: IntelligenceIndicatorsTa
           thresholds={[30, 70]}
           color="var(--color-accent)"
         />
-        <div className="flex justify-between text-[10px] text-text-muted mt-1">
+        <div className="flex justify-between text-xs text-text-muted mt-1">
           <span>Oversold (30)</span>
           <span>Overbought (70)</span>
         </div>
@@ -81,7 +81,7 @@ export function IntelligenceIndicatorsTab({ analysis }: IntelligenceIndicatorsTa
           histogram={macdHistData}
           height={60}
         />
-        <div className="flex items-center gap-4 text-[10px] text-text-muted mt-1">
+        <div className="flex items-center gap-4 text-xs text-text-muted mt-1">
           <span className="flex items-center gap-1">
             <span className="inline-block w-2 h-0.5 bg-accent rounded-full" />
             MACD
@@ -91,7 +91,7 @@ export function IntelligenceIndicatorsTab({ analysis }: IntelligenceIndicatorsTa
             Signal
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block w-2 h-2 bg-bullish/40 rounded-sm" />
+            <span className="inline-block w-2 h-2 bg-bullish/40 rounded" />
             Histogram
           </span>
         </div>

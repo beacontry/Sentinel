@@ -1,107 +1,119 @@
 "use client";
 
-import Link from "next/link";
-import { useState, useEffect, useCallback } from "react";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, Suspense } from "react";
+import { Receipt, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  Receipt,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  AlertTriangle,
-  Download,
-  Leaf,
-  Calendar,
-  BookOpen,
-} from "lucide-react";
+import { ErrorState } from "@/components/ui/error-state";
+import { useToast } from "@/components/ui/toast";
 import { PageIntro } from "@/components/layout/page-intro";
 import { TaxStatusCard } from "@/components/education/tax-status-card";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
+import { useLatestRequest } from "@/hooks/use-latest-request";
+import { useUrlParam } from "@/hooks/use-url-param";
+import {
+  CURRENT_TAX_YEAR,
+  TAX_YEAR_OPTIONS,
+  TAX_YEAR_VALUES,
+  type TaxSummary,
+} from "@/components/tax/tax-format";
+import { NoLotsForYear } from "@/components/tax/no-lots-for-year";
+import { PersonalizedTaxEducation } from "@/components/tax/tax-education";
+import { YearSummary, YearSummarySkeleton } from "@/components/tax/year-summary";
+import {
+  HarvestSuggestions,
+  type HarvestState,
+  type HarvestingSuggestion,
+} from "@/components/tax/harvest-suggestions";
 
-interface TaxSummary {
-  shortTermGains: number;
-  shortTermLosses: number;
-  longTermGains: number;
-  longTermLosses: number;
-  netGain: number;
-  estimatedTax: number;
-  tradeCount: number;
+// useUrlParam reads useSearchParams, which needs a Suspense boundary so
+// the SSR shell can render while the client hydrates.
+export default function TaxCenterPageWrapper() {
+  return (
+    <Suspense fallback={null}>
+      <TaxCenterPage />
+    </Suspense>
+  );
 }
 
-interface HarvestingSuggestion {
-  symbol: string;
-  currentLoss: number;
-  potentialSavings: number;
-  washSaleDate: string;
-  quantity: number;
-  entryPrice: number;
-  currentPrice: number;
-  isLongTerm: boolean;
-  holdingPeriodKnown: boolean;
-}
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  }).format(value);
-}
-
-const currentYear = new Date().getFullYear();
-const yearOptions = Array.from({ length: 5 }, (_, i) => ({
-  value: String(currentYear - i),
-  label: String(currentYear - i),
-}));
-
-export default function TaxCenterPage() {
-  const [year, setYear] = useState(String(currentYear));
-  const [summary, setSummary] = useState<TaxSummary | null>(null);
+function TaxCenterPage() {
+  const { toast } = useToast();
+  // The year lives in the URL, like the Tax Report's, so a reload or a
+  // shared link shows the same year.
+  const [year, setYear] = useUrlParam("year", CURRENT_TAX_YEAR, TAX_YEAR_VALUES);
+  // The summary is stored with the year it was fetched for and shown only
+  // while that year is selected, so a slower response for the previous
+  // year cannot paint over this one. A failed fetch is its own state, not
+  // "No Trade Data".
+  const [report, setReport] = useState<{ year: string; summary: TaxSummary | null } | null>(null);
+  const [reportError, setReportError] = useState<{ year: string; locked: boolean } | null>(null);
+  const [reportNonce, setReportNonce] = useState(0);
+  const reportRequest = useLatestRequest();
   const [suggestions, setSuggestions] = useState<HarvestingSuggestion[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [unpricedSymbols, setUnpricedSymbols] = useState<string[]>([]);
   const [harvestLoading, setHarvestLoading] = useState(true);
+  const [harvestError, setHarvestError] = useState(false);
+  const [harvestNonce, setHarvestNonce] = useState(0);
+  const harvestRequest = useLatestRequest();
   const [exporting, setExporting] = useState(false);
 
-  const fetchReport = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/tax/report?year=${year}`);
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setSummary(data.summary);
-    } catch {
-      setSummary(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [year]);
+  useEffect(() => {
+    const ticket = reportRequest.begin();
+    // An error left by an earlier request for the same inputs must not
+    // show while this one is in flight; the skeleton does until it lands.
+    setReportError(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/tax/report?year=${year}`, { signal: ticket.signal });
+        if (!ticket.isCurrent()) return;
+        if (!res.ok) {
+          // 402 is the tier gate. The PaywallBanner explains it, so it
+          // gets no Retry.
+          setReportError({ year, locked: res.status === 402 });
+          return;
+        }
+        const data = await res.json();
+        if (!ticket.isCurrent()) return;
+        setReport({ year, summary: data?.summary ?? null });
+      } catch {
+        if (ticket.isCurrent()) setReportError({ year, locked: false });
+      }
+    })();
+  }, [year, reportNonce, reportRequest]);
 
-  const fetchHarvesting = useCallback(async () => {
+  useEffect(() => {
+    const ticket = harvestRequest.begin();
     setHarvestLoading(true);
-    try {
-      const res = await fetch("/api/tax/harvesting");
-      if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setSuggestions(data.suggestions ?? []);
-    } catch {
-      setSuggestions([]);
-    } finally {
-      setHarvestLoading(false);
-    }
-  }, []);
+    setHarvestError(false);
+    (async () => {
+      try {
+        const res = await fetch("/api/tax/harvesting", { signal: ticket.signal });
+        if (!res.ok) throw new Error("Failed to fetch");
+        const data = await res.json();
+        if (!ticket.isCurrent()) return;
+        setSuggestions(Array.isArray(data?.suggestions) ? data.suggestions : []);
+        setUnpricedSymbols(Array.isArray(data?.unpricedSymbols) ? data.unpricedSymbols : []);
+      } catch {
+        if (!ticket.isCurrent()) return;
+        setSuggestions([]);
+        setUnpricedSymbols([]);
+        setHarvestError(true);
+      } finally {
+        if (ticket.isCurrent()) setHarvestLoading(false);
+      }
+    })();
+  }, [harvestNonce, harvestRequest]);
 
-  useEffect(() => {
-    fetchReport();
-  }, [fetchReport]);
+  const reportForYear = report?.year === year ? report : null;
+  const summary = reportForYear?.summary ?? null;
+  const failed = !reportForYear && reportError?.year === year ? reportError : null;
+  const loading = !reportForYear && !failed;
 
-  useEffect(() => {
-    fetchHarvesting();
-  }, [fetchHarvesting]);
+  const retryReport = () => {
+    setReportError(null);
+    setReportNonce((n) => n + 1);
+  };
 
   async function handleExport() {
     setExporting(true);
@@ -118,465 +130,83 @@ export default function TaxCenterPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      // Silent fail for export
+      toast({ type: "error", message: "Tax CSV export failed. Try again in a moment." });
     } finally {
       setExporting(false);
     }
   }
 
+  const harvestState: HarvestState = harvestLoading
+    ? { status: "loading" }
+    : harvestError
+      ? { status: "error", retry: () => setHarvestNonce((n) => n + 1) }
+      : { status: "ready", suggestions, unpricedSymbols };
+
   return (
-    <div className="p-4 lg:p-6 space-y-6">
+    <div className="p-4 lg:p-6">
       <PaywallBanner minTier="trader" featureName="Tax Center" description="Realized gains + harvesting candidates merged from manual + engine trades." />
       <PageIntro
-        eyebrow="Record"
         title="Tax Center"
-        description="Monitor your realized gains, estimated tax liability, and harvesting opportunities."
+        description="What your closed trades realized this year, the tax they may carry, and the open losses that could offset it."
         actions={
-          <div className="flex items-center gap-3">
+          <>
             <Select
-              options={yearOptions}
+              options={TAX_YEAR_OPTIONS}
               value={year}
               onChange={(value) => setYear(value)}
               className="w-32"
+              aria-label="Tax year"
             />
             <Button
               variant="secondary"
-              size="sm"
               onClick={handleExport}
               loading={exporting}
             >
-              <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">Export CSV</span>
+              <Download className="h-4 w-4" aria-hidden="true" />
+              Export CSV
             </Button>
-          </div>
+          </>
         }
-        stats={[
-          { label: "Net Gain", value: summary ? formatCurrency(summary.netGain) : "--", tone: summary ? (summary.netGain >= 0 ? "bullish" : "bearish") : "neutral" },
-          { label: "Estimated Tax", value: summary ? formatCurrency(summary.estimatedTax) : "--" },
-          { label: "Total Trades", value: summary ? String(summary.tradeCount) : "--" },
-          { label: "Harvest Opps", value: String(suggestions.length), tone: suggestions.length > 0 ? "bullish" : "neutral" },
-        ]}
       />
 
-      {/* Summary Cards */}
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-28" rounded="lg" />
-          ))}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="min-w-0 space-y-6">
+          {loading ? (
+            <YearSummarySkeleton />
+          ) : summary && summary.tradeCount > 0 ? (
+            <YearSummary year={year} summary={summary} />
+          ) : failed?.locked ? (
+            <div className="rounded-xl border border-border bg-bg-secondary">
+              <EmptyState
+                headingLevel={2}
+                icon={<Receipt className="h-7 w-7" />}
+                title="The Tax Center needs the Trader plan"
+                description="Upgrade to see realized gains and estimated tax from your trades."
+              />
+            </div>
+          ) : failed ? (
+            <div className="rounded-xl border border-border bg-bg-secondary">
+              <ErrorState
+                headingLevel={2}
+                title="Could not load the tax report"
+                description={`The ${year} summary did not load, so nothing here reflects your trades yet.`}
+                onRetry={retryReport}
+              />
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border bg-bg-secondary">
+              <NoLotsForYear year={year} onYearChange={setYear} />
+            </div>
+          )}
+
+          <HarvestSuggestions state={harvestState} />
         </div>
-      ) : summary ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                  Short-Term Gains
-                </p>
-                <p className="text-xl font-bold text-bullish mt-1">
-                  {formatCurrency(summary.shortTermGains)}
-                </p>
-                <p className="text-xs text-text-muted mt-1">22% tax rate</p>
-              </div>
-              <div className="p-2 rounded-lg bg-bullish/10">
-                <TrendingUp className="w-4 h-4 text-bullish" />
-              </div>
-            </div>
-          </Card>
 
-          <Card>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                  Long-Term Gains
-                </p>
-                <p className="text-xl font-bold text-bullish mt-1">
-                  {formatCurrency(summary.longTermGains)}
-                </p>
-                <p className="text-xs text-text-muted mt-1">15% tax rate</p>
-              </div>
-              <div className="p-2 rounded-lg bg-bullish/10">
-                <TrendingUp className="w-4 h-4 text-bullish" />
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                  Total Losses
-                </p>
-                <p className="text-xl font-bold text-bearish mt-1">
-                  {formatCurrency(summary.shortTermLosses + summary.longTermLosses)}
-                </p>
-                <p className="text-xs text-text-muted mt-1">
-                  {summary.tradeCount} trades
-                </p>
-              </div>
-              <div className="p-2 rounded-lg bg-bearish/10">
-                <TrendingDown className="w-4 h-4 text-bearish" />
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                  Estimated Tax
-                </p>
-                <p className="text-xl font-bold text-warning mt-1">
-                  {formatCurrency(summary.estimatedTax)}
-                </p>
-                <p className="text-xs text-text-muted mt-1">
-                  Net: {formatCurrency(summary.netGain)}
-                </p>
-                <Link
-                  href="/dashboard/education/guides/quarterly-estimated-taxes-for-traders"
-                  className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
-                >
-                  <BookOpen className="w-3 h-3" />
-                  Owe quarterly?
-                </Link>
-              </div>
-              <div className="p-2 rounded-lg bg-warning/10">
-                <DollarSign className="w-4 h-4 text-warning" />
-              </div>
-            </div>
-          </Card>
-        </div>
-      ) : (
-        <EmptyState
-          icon={<Receipt className="w-12 h-12" />}
-          title="No Trade Data"
-          description="Create a portfolio and make some trades to see your tax report."
-        />
-      )}
-
-      {/* Gains Breakdown */}
-      {summary && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Gains & Losses Breakdown</CardTitle>
-          </CardHeader>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-3">
-              <h4 className="text-sm font-semibold text-text-secondary">
-                Short-Term (held &lt; 1 year)
-              </h4>
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <span className="text-sm text-text-secondary">Gains</span>
-                <span className="text-sm font-medium text-bullish">
-                  +{formatCurrency(summary.shortTermGains)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <span className="text-sm text-text-secondary">Losses</span>
-                <span className="text-sm font-medium text-bearish">
-                  -{formatCurrency(summary.shortTermLosses)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <span className="text-sm font-medium text-text-primary">Net</span>
-                <span
-                  className={`text-sm font-bold ${
-                    summary.shortTermGains - summary.shortTermLosses >= 0
-                      ? "text-bullish"
-                      : "text-bearish"
-                  }`}
-                >
-                  {formatCurrency(summary.shortTermGains - summary.shortTermLosses)}
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <h4 className="text-sm font-semibold text-text-secondary">
-                Long-Term (held &gt; 1 year)
-              </h4>
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <span className="text-sm text-text-secondary">Gains</span>
-                <span className="text-sm font-medium text-bullish">
-                  +{formatCurrency(summary.longTermGains)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <span className="text-sm text-text-secondary">Losses</span>
-                <span className="text-sm font-medium text-bearish">
-                  -{formatCurrency(summary.longTermLosses)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <span className="text-sm font-medium text-text-primary">Net</span>
-                <span
-                  className={`text-sm font-bold ${
-                    summary.longTermGains - summary.longTermLosses >= 0
-                      ? "text-bullish"
-                      : "text-bearish"
-                  }`}
-                >
-                  {formatCurrency(summary.longTermGains - summary.longTermLosses)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Tax Status — TTS / MTM declaration */}
-      <TaxStatusCard />
-
-      {/* Tax-Loss Harvesting */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Leaf className="w-4 h-4 text-bullish" />
-            Tax-Loss Harvesting Suggestions
-          </CardTitle>
-          <Link
-            href="/dashboard/education/guides/wash-sale-rules-deep-dive"
-            className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            Wash sale rules
-          </Link>
-        </CardHeader>
-
-        {harvestLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-16" rounded="lg" />
-            ))}
-          </div>
-        ) : suggestions.length === 0 ? (
-          <div className="py-8 text-center space-y-3">
-            <p className="text-sm text-text-muted">
-              No harvesting opportunities found. Positions with unrealized
-              losses will appear here.
-            </p>
-            <p className="text-xs text-text-muted">
-              Want to see how harvesting actually works?{" "}
-              <Link
-                href="/dashboard/education#calculators"
-                className="text-accent hover:underline inline-flex items-center gap-1"
-              >
-                <BookOpen className="w-3 h-3" />
-                Try the Tax-Loss Harvesting calculator
-              </Link>
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {suggestions.map((s) => (
-              <div
-                key={s.symbol}
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-bg-elevated border border-border"
-              >
-                <div className="flex items-center gap-3">
-                  <Badge variant="bearish">{s.symbol}</Badge>
-                  <div>
-                    <p className="text-sm font-medium text-text-primary">
-                      {s.quantity} shares at {formatCurrency(s.entryPrice)}
-                    </p>
-                    <p className="text-xs text-text-muted">
-                      Current: {formatCurrency(s.currentPrice)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="text-sm font-semibold text-bearish">
-                      -{formatCurrency(s.currentLoss)}
-                    </p>
-                    <p className="text-xs text-bullish">
-                      Save ~{formatCurrency(s.potentialSavings)}
-                      <span
-                        className="text-text-muted"
-                        title={
-                          s.holdingPeriodKnown
-                            ? s.isLongTerm
-                              ? "Long-term: valued at the LTCG rate"
-                              : "Short-term: valued at the ordinary rate"
-                            : "Holding period unknown (broker lot) — estimated at the short-term/ordinary rate"
-                        }
-                      >
-                        {" "}
-                        ({s.holdingPeriodKnown ? (s.isLongTerm ? "LT" : "ST") : "est."})
-                      </span>
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 text-xs text-warning">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      Wash sale until {s.washSaleDate}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            <p className="text-xs text-text-muted mt-2">
-              * Estimated savings = loss × the rate matching its holding period
-              (LT = long-term/LTCG, ST = short-term/ordinary, est. = holding
-              period unknown, assumed short-term). It&apos;s a gross upper bound:
-              losses deducted against ordinary income are capped at $3,000/yr
-              ($1,500 married-separate) when you have no offsetting capital gains.
-              Tax-loss harvesting sells at a loss to offset gains; the wash-sale
-              rule prevents repurchasing the same security within 30 days.{" "}
-              <Link
-                href="/dashboard/education/guides/wash-sale-rules-deep-dive"
-                className="text-accent hover:underline"
-              >
-                Read the deep-dive on wash sales
-              </Link>{" "}
-              before acting — IRA replacements can permanently kill the loss.
-            </p>
-          </div>
-        )}
-      </Card>
-
-      {/* Education footer — data-driven ranking based on user state */}
-      <PersonalizedTaxEducation
-        summary={summary}
-        suggestionsCount={suggestions.length}
-      />
-    </div>
-  );
-}
-
-// ─── Personalized Education Footer ──────────────────────────────────────
-
-interface EducationLink {
-  href: string;
-  title: string;
-  blurb: string;
-  /** Higher score = more prominent (sorted desc). */
-  score: number;
-  icon: typeof BookOpen;
-}
-
-function PersonalizedTaxEducation({
-  summary,
-  suggestionsCount,
-}: {
-  summary: TaxSummary | null;
-  suggestionsCount: number;
-}) {
-  // Score education links based on user state. Each adds its baseline score
-  // plus context-specific bumps; we surface the top 4.
-  const links: EducationLink[] = [];
-
-  // Wash sale guide — bumped if user has any harvesting opportunities (most
-  // common reason wash sales become relevant).
-  links.push({
-    href: "/dashboard/education/guides/wash-sale-rules-deep-dive",
-    title: "Wash Sale Rules: A Deep Dive",
-    blurb: suggestionsCount > 0
-      ? `You have ${suggestionsCount} harvesting candidate${suggestionsCount === 1 ? "" : "s"} — read this BEFORE selling`
-      : "Cross-account traps, IRA disasters, ETF swap pairs that work",
-    score: 50 + (suggestionsCount > 0 ? 30 : 0),
-    icon: BookOpen,
-  });
-
-  // TLH calculator — directly actionable when there are opportunities
-  links.push({
-    href: "/dashboard/education#calculators",
-    title: "Tax-Loss Harvesting Calculator",
-    blurb: suggestionsCount > 0
-      ? "Estimate this year's tax savings from your harvestable losses"
-      : "Run hypothetical numbers — no opportunities yet",
-    score: 40 + (suggestionsCount > 0 ? 25 : 0),
-    icon: DollarSign,
-  });
-
-  // MTM guide — bumped for users who appear to be active traders (proxied by
-  // high trade count or substantial short-term gains)
-  const looksLikeActiveTrader =
-    !!summary &&
-    (summary.tradeCount > 50 || summary.shortTermGains > 50_000);
-  links.push({
-    href: "/dashboard/education/guides/trader-tax-status-and-mtm-election",
-    title: "Trader Tax Status & §475(f) MTM",
-    blurb: looksLikeActiveTrader
-      ? "You look like an active trader — MTM election may apply"
-      : "Who qualifies, what it does, and the irreversible commitment",
-    score: 30 + (looksLikeActiveTrader ? 35 : 0),
-    icon: BookOpen,
-  });
-
-  // Quarterly estimates — bumped when estimated tax > $1,000 (the trigger
-  // threshold per IRS rules)
-  const owesEstimates = !!summary && summary.estimatedTax > 1_000;
-  links.push({
-    href: "/dashboard/education/guides/quarterly-estimated-taxes-for-traders",
-    title: "Quarterly Estimated Taxes",
-    blurb: owesEstimates
-      ? `Estimated tax: ${formatCurrency(summary.estimatedTax)} — you likely owe quarterly`
-      : "Safe harbors, deadlines, and the withholding hack",
-    score: 25 + (owesEstimates ? 35 : 0),
-    icon: BookOpen,
-  });
-
-  // Asset location — bumped when there are mixed gain/loss patterns
-  const hasMixedGains =
-    !!summary && summary.shortTermGains > 0 && summary.longTermGains > 0;
-  links.push({
-    href: "/dashboard/education/guides/asset-location-strategy",
-    title: "Asset Location Strategy",
-    blurb: hasMixedGains
-      ? "Mixed S/T and L/T gains — placing assets in the right account saves 30-100 bps/yr"
-      : "Putting the right asset in the right account",
-    score: 20 + (hasMixedGains ? 15 : 0),
-    icon: BookOpen,
-  });
-
-  // Estate planning — always present at low priority
-  links.push({
-    href: "/dashboard/education/guides/estate-planning-basics",
-    title: "Estate Planning Basics",
-    blurb: "Wills, beneficiary designations, the step-up trick",
-    score: 10,
-    icon: BookOpen,
-  });
-
-  links.sort((a, b) => b.score - a.score);
-  const top = links.slice(0, 4);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-accent" />
-          Tax Education
-        </CardTitle>
-        <span className="text-[11px] text-text-muted">
-          Personalized to your data
-        </span>
-      </CardHeader>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {top.map((link) => {
-          const Icon = link.icon;
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="flex items-start gap-3 rounded-lg border border-border bg-bg-elevated p-3 hover:border-border-hover transition-colors"
-            >
-              <Icon className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-text-primary">
-                  {link.title}
-                </p>
-                <p className="text-xs text-text-muted mt-0.5">{link.blurb}</p>
-              </div>
-            </Link>
-          );
-        })}
+        <aside aria-label="Tax status and guides" className="min-w-0 space-y-6">
+          <TaxStatusCard />
+          <PersonalizedTaxEducation summary={summary} suggestionsCount={suggestions.length} />
+        </aside>
       </div>
-    </Card>
+    </div>
   );
 }

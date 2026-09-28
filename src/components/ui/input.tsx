@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, type InputHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useId, type InputHTMLAttributes, type ReactNode } from "react";
 import { HelpTip } from "./help-tip";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -16,9 +16,48 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   help?: string;
 }
 
+/**
+ * Shared by Input, Textarea and the Select trigger, so every control sits
+ * on one fill with one edge and one focus ring.
+ *
+ * - `text-base` below `sm`: iOS Safari zooms the page on focus into any
+ *   field under 16px and does not zoom back.
+ * - The edge is border-control (3:1 or better on every surface); an
+ *   invalid field turns it to the loss line.
+ * - `outline-hidden` keeps a transparent outline under the 2px ring, which
+ *   forced-colours mode repaints (globals.css), where the box-shadow ring
+ *   is dropped.
+ */
+export const FIELD_BASE =
+  "w-full rounded-lg border bg-bg-secondary text-base sm:text-sm text-text-primary placeholder:text-text-muted " +
+  "transition-[border-color] duration-150 outline-hidden focus-visible:ring-2 " +
+  "disabled:cursor-not-allowed disabled:opacity-55";
+
+export function fieldStateClasses(invalid: boolean): string {
+  return invalid
+    ? "border-bearish-line focus:border-bearish focus-visible:ring-bearish"
+    : "border-border-control focus:border-accent focus-visible:ring-accent";
+}
+
+/** The error line under a field. Its id is what aria-describedby points at. */
+export function FieldError({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <p id={id} className="text-xs text-bearish">
+      {children}
+    </p>
+  );
+}
+
+/** Joins describedby ids, dropping the empty ones. */
+export function describedBy(...ids: (string | undefined | false)[]): string | undefined {
+  return ids.filter(Boolean).join(" ") || undefined;
+}
+
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, icon, help, className = "", id, ...props }, ref) => {
-    const inputId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
+  ({ label, error, icon, help, className = "", id, "aria-describedby": ariaDescribedBy, ...props }, ref) => {
+    const autoId = useId();
+    const inputId = id ?? (label ? label.toLowerCase().replace(/\s+/g, "-") : autoId);
+    const errorId = `${inputId}-error`;
 
     return (
       <div className="space-y-1.5">
@@ -42,18 +81,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           <input
             ref={ref}
             id={inputId}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={describedBy(ariaDescribedBy, error && errorId)}
             style={icon ? { paddingLeft: 48 } : undefined}
-            className={`w-full min-h-[44px] rounded-lg border bg-bg-secondary px-3 py-2.5
-              text-sm text-text-primary placeholder:text-text-muted
-              transition-colors duration-150
-              focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/30
-              disabled:pointer-events-none disabled:opacity-50
-              ${error ? "border-bearish focus:border-bearish focus:ring-bearish/30" : "border-border"}
-              ${className}`}
+            className={`${FIELD_BASE} min-h-11 px-3 py-2.5 ${fieldStateClasses(Boolean(error))} ${className}`}
             {...props}
           />
         </div>
-        {error && <p className="text-xs text-bearish">{error}</p>}
+        {error && <FieldError id={errorId}>{error}</FieldError>}
       </div>
     );
   }

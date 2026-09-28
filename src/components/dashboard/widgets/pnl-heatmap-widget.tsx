@@ -1,19 +1,19 @@
 "use client";
 
-// Per-symbol realized P&L heatmap. Shows which symbols actually contribute
-// to or detract from the user's bottom line. Source: /api/performance/
-// attribution (aggregates SELL + manual_close fills from trader_trades).
-//
-// Widget vs the bigger AttributionCard on /dashboard/performance:
-// the page card shows the top 10 with proportional bars + win-rate
-// inline; the widget surfaces just the headline top 4-5 with $ + %.
+// Per-symbol realized P&L: which symbols add to or take from the bottom
+// line. Source: /api/performance/attribution (SELL and manual_close fills
+// from trader_trades). The Performance page's AttributionCard shows the
+// top 10 with win rates; this shows the top five.
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Skeleton } from "@/components/ui/skeleton";
+import { TrendingUp } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SignedValue } from "@/components/ui/signed-value";
 import { SymbolLink } from "@/components/ui/symbol-link";
-import { TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
-import { useDisplayPrefs, formatPnl } from "@/components/display-prefs-provider";
+import { useDisplayPrefs } from "@/components/display-prefs-provider";
+import { fetchWidgetJson } from "@/lib/widget-load";
+import { pnlDirection } from "@/lib/format-pnl";
+import { useWidgetLoad } from "./use-widget-load";
+import { WidgetBody, WidgetFacts, WidgetRowsSkeleton } from "./widget-body";
 
 interface AttributionRow {
   symbol: string;
@@ -30,118 +30,57 @@ interface AttributionData {
 
 export function PnlHeatmapWidget() {
   const { pnlFormat } = useDisplayPrefs();
-  const [data, setData] = useState<AttributionData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/performance/attribution")
-      .then(async (res) => {
-        if (cancelled || !res.ok) return;
-        const json = await res.json();
-        setData(json);
-      })
-      .catch(() => {
-        /* non-critical */
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="space-y-2">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full" rounded="lg" />
-        ))}
-      </div>
-    );
-  }
-
-  if (!data || data.rows.length === 0) {
-    return (
-      <div className="py-5 text-center">
-        <TrendingUp className="mx-auto mb-2 h-7 w-7 text-text-muted" />
-        <p className="text-sm text-text-muted">No closed trades yet</p>
-        <Link
-          href="/dashboard/performance"
-          className="text-xs text-accent hover:text-accent-hover mt-1 inline-block"
-        >
-          View performance
-        </Link>
-      </div>
-    );
-  }
-
-  const top = data.rows.slice(0, 5);
-  const maxAbs = top.reduce((m, r) => Math.max(m, Math.abs(r.pnl)), 0);
+  // A failed read used to be swallowed and shown as "No closed trades yet".
+  const load = useWidgetLoad<AttributionData>((signal) =>
+    fetchWidgetJson<AttributionData>("/api/performance/attribution", signal),
+  );
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] uppercase tracking-wider text-text-muted">
-          Top contributors
-        </span>
-        <span
-          className={`font-mono text-xs font-semibold ${
-            data.totalPnl >= 0 ? "text-bullish" : "text-bearish"
-          }`}
-        >
-          {formatPnl(data.totalPnl, undefined, pnlFormat)}
-        </span>
-      </div>
-      <div className="space-y-1">
-        {top.map((r) => {
-          const widthPct = maxAbs === 0 ? 0 : (Math.abs(r.pnl) / maxAbs) * 100;
-          const isPositive = r.pnl >= 0;
-          return (
-            <div
-              key={r.symbol}
-              className="grid grid-cols-[50px_1fr_auto] gap-2 items-center text-xs"
-            >
-              <SymbolLink symbol={r.symbol} className="font-medium text-[12px]" />
-              <div className="relative h-5 rounded-md bg-bg-elevated overflow-hidden">
-                <div
-                  className={`absolute inset-y-0 left-0 ${
-                    isPositive ? "bg-bullish/30" : "bg-bearish/30"
-                  } transition-all`}
-                  style={{ width: `${widthPct}%` }}
-                />
-              </div>
-              <span
-                className={`font-mono text-[11px] font-medium ${
-                  isPositive ? "text-bullish" : "text-bearish"
-                }`}
-              >
-                {formatPnl(r.pnl, undefined, pnlFormat)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <Link
-        href="/dashboard/performance"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-2 text-[11px] uppercase
-          tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
-      >
-        Full attribution <ArrowRight className="w-3 h-3" />
-      </Link>
-      {data.totalPnl >= 0 && (
-        <p className="text-[10px] text-text-muted text-center mt-1">
-          <TrendingUp className="inline w-3 h-3 mr-0.5" />
-          Lifetime realized
-        </p>
-      )}
-      {data.totalPnl < 0 && (
-        <p className="text-[10px] text-text-muted text-center mt-1">
-          <TrendingDown className="inline w-3 h-3 mr-0.5" />
-          Lifetime realized
-        </p>
-      )}
-    </div>
+    <WidgetBody
+      load={load}
+      label="P&L by symbol"
+      skeleton={<WidgetRowsSkeleton rows={5} />}
+      isEmpty={(d) => !d.rows || d.rows.length === 0}
+      empty={
+        <EmptyState
+          compact
+          icon={<TrendingUp />}
+          title="No closed trades yet"
+          description="Each symbol's realized P&L appears once a position has been closed."
+        />
+      }
+    >
+      {(data) => {
+        const top = data.rows.slice(0, 5);
+        const maxAbs = top.reduce((m, r) => Math.max(m, Math.abs(r.pnl)), 0);
+        return (
+          <div>
+            <ul className="divide-y divide-[var(--color-hairline-inner)]">
+              {top.map((r) => {
+                const width = maxAbs === 0 ? 0 : (Math.abs(r.pnl) / maxAbs) * 100;
+                const dir = pnlDirection(r.pnl);
+                return (
+                  <li
+                    key={r.symbol}
+                    className="relative grid min-h-11 grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 py-1.5"
+                  >
+                    <SymbolLink symbol={r.symbol} className="text-sm font-semibold after:absolute after:inset-0" />
+                    {/* The bar shows size only; the figure beside it carries the sign. */}
+                    <span aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-bg-surface">
+                      <span
+                        className={`block h-full rounded-full ${dir === "loss" ? "bg-bearish-line" : "bg-bullish-line"}`}
+                        style={{ width: `${width}%` }}
+                      />
+                    </span>
+                    <SignedValue value={r.pnl} format={pnlFormat} className="text-sm" />
+                  </li>
+                );
+              })}
+            </ul>
+            <WidgetFacts items={[{ label: "Lifetime realized", value: <SignedValue value={data.totalPnl} format={pnlFormat} /> }]} />
+          </div>
+        );
+      }}
+    </WidgetBody>
   );
 }

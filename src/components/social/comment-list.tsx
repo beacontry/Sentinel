@@ -6,6 +6,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { RichText } from "@/components/social/rich-text";
 
+import { Input } from "@/components/ui/input";
 interface Comment {
   id: string;
   content: string;
@@ -127,17 +128,15 @@ export function CommentList({ postId, initialComments }: CommentListProps) {
       )}
 
       <form onSubmit={handleSubmit} className="flex gap-2">
-        <input
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Write a comment..."
-          maxLength={1000}
-          className="flex-1 rounded-lg border border-border bg-bg-elevated px-3 py-2
-            text-sm text-text-primary placeholder:text-text-muted
-            transition-colors duration-150
-            focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent
-            min-h-[44px]"
-        />
+        <div className="min-w-0 flex-1">
+          <Input
+            aria-label="Write a comment"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Write a comment..."
+            maxLength={1000}
+          />
+        </div>
         <Button
           type="submit"
           variant="secondary"

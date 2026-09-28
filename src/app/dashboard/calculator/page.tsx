@@ -44,6 +44,10 @@ export default function CalculatorPage() {
 
   const dollarRisk = canCalculate ? shares * stopDistance : 0;
   const positionValue = canCalculate ? shares * entry : 0;
+  // Over half the account in one position. The bar turns warning, and the
+  // same state is printed beside the percentage so it does not rest on
+  // colour alone.
+  const overHalfAccount = canCalculate && positionValue / account > 0.5;
 
   const rewardDistance =
     hasTarget && hasEntry ? Math.abs(target - entry) : 0;
@@ -244,18 +248,24 @@ export default function CalculatorPage() {
             {/* Account usage bar */}
             {canCalculate && (
               <div className="rounded-lg border border-border bg-bg-elevated p-4 space-y-2 sm:col-span-2">
-                <div className="flex items-center justify-between text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
                   <span className="text-text-muted">Account Usage</span>
-                  <span className="text-text-secondary font-medium">
-                    {((positionValue / account) * 100).toFixed(1)}%
+                  <span className="flex items-center gap-1.5 font-medium">
+                    {overHalfAccount && (
+                      <span className="flex items-center gap-1 text-warning">
+                        <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                        Over half your account
+                      </span>
+                    )}
+                    <span className="text-text-secondary">
+                      {((positionValue / account) * 100).toFixed(1)}%
+                    </span>
                   </span>
                 </div>
                 <div className="h-2 rounded-full bg-bg-primary overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-300 ${
-                      positionValue / account > 0.5
-                        ? "bg-warning"
-                        : "bg-accent"
+                    className={`h-full rounded-full transition-[width,background-color] duration-300 ${
+                      overHalfAccount ? "bg-warning" : "bg-accent"
                     }`}
                     style={{
                       width: `${Math.min((positionValue / account) * 100, 100)}%`,

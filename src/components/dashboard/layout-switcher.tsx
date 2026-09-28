@@ -195,11 +195,11 @@ export function LayoutSwitcher({ currentEntries, onChanged }: LayoutSwitcherProp
             align="end"
             sideOffset={6}
             className="z-50 min-w-[260px] max-w-[320px] rounded-lg border border-border bg-bg-elevated p-1
-              animate-scale-in shadow-lg"
+              animate-scale-in shadow-pop"
           >
             {layouts.length > 0 && (
               <>
-                <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-text-muted">
+                <div className="px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-[0.1em] text-text-muted">
                   Saved layouts
                 </div>
                 {layouts.map((l) => (

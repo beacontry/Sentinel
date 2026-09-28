@@ -46,11 +46,12 @@ import {
   optimizationSymbolResults,
 } from "./db/schema";
 import { eq } from "drizzle-orm";
-import { writeFile, readFile, mkdir } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
 import { Worker } from "node:worker_threads";
 import pino from "pino";
+import { isOptimizerCachedBars, readJsonCache, writeJsonCache, type OptimizerCachedBars } from "./bar-cache";
 
 const logger = pino({ name: "optimizer" });
 
@@ -82,28 +83,79 @@ interface Individual { params: OptimizableParams; fitness: number }
  * comparable across runs (each run fetches its own data snapshot/split).
  *
  * Rules:
- *   - No incumbent (first-ever active preset)  → promote unconditionally.
+ *   - Empty holdout (zero test dates)          → never promote. Both scores
+ *     come out as a finite 0 on no data, which is not a result.
  *   - Non-finite candidate score               → never promote (bad backtest).
+ *   - No incumbent (first-ever active preset, or a legacy incumbent that
+ *     can't be scored) → promote only on a strictly positive candidate score.
+ *     There is nothing to beat, so the bar is "beat buy-and-hold at all".
  *   - Otherwise promote iff candidateOOS > incumbentOOS + margin.
  *
  * `margin` is in the same units as the OOS score (excess-return percentage
  * points, e.g. 2 = candidate must beat the incumbent by 2pp). A strictly
  * positive margin creates hysteresis so noise-level improvements don't churn
  * the global active slot on every run.
+ *
+ * `testDates` is the length of the shared holdout's test segment. The cron
+ * already defers below HOLDOUT_MIN_TEST_DATES; the zero check here is the
+ * rule's own floor so no caller can promote on an empty holdout.
  */
 export function decidePromotion(input: {
   candidateOOS: number;
   incumbentOOS: number | null;
   margin: number;
-}): { promote: boolean; reason: "no_incumbent" | "beat_margin" | "below_margin" | "invalid_candidate" } {
-  const { candidateOOS, incumbentOOS, margin } = input;
+  testDates: number;
+}): {
+  promote: boolean;
+  reason:
+    | "no_incumbent"
+    | "no_incumbent_not_positive"
+    | "beat_margin"
+    | "below_margin"
+    | "invalid_candidate"
+    | "empty_holdout";
+} {
+  const { candidateOOS, incumbentOOS, margin, testDates } = input;
+  if (!(testDates > 0)) return { promote: false, reason: "empty_holdout" };
   if (!Number.isFinite(candidateOOS)) return { promote: false, reason: "invalid_candidate" };
-  if (incumbentOOS === null || !Number.isFinite(incumbentOOS))
-    return { promote: true, reason: "no_incumbent" };
+  if (incumbentOOS === null || !Number.isFinite(incumbentOOS)) {
+    return candidateOOS > 0
+      ? { promote: true, reason: "no_incumbent" }
+      : { promote: false, reason: "no_incumbent_not_positive" };
+  }
   const threshold = incumbentOOS + Math.max(0, margin);
   return candidateOOS > threshold
     ? { promote: true, reason: "beat_margin" }
     : { promote: false, reason: "below_margin" };
+}
+
+/** Minimum share of the symbols the GA trained on that the auto-optimizer's
+ *  holdout must also fetch before it may decide a run. */
+export const HOLDOUT_MIN_COVERAGE = 0.8;
+/** Minimum test-segment length (trading dates) for a decidable holdout. */
+export const HOLDOUT_MIN_TEST_DATES = 60;
+
+/**
+ * Is the auto-optimizer's freshly fetched holdout complete enough to decide a
+ * run on? A promotion decision is permanent (autoPromotionDecidedAt), so a
+ * holdout built while the data provider was throttled or down must defer, not
+ * decide. Pure so the floor is tested away from the fetch loop.
+ *
+ * `expected` is the number of symbols the GA itself trained on when known
+ * (the run's totalSymbols), else the universe size. Measuring against what the
+ * GA actually had keeps a universe with permanently unfetchable names (the
+ * sp500 point-in-time union includes delisted members) from deferring forever.
+ */
+export function assessHoldoutCoverage(input: {
+  expected: number;
+  fetched: number;
+  testDates: number;
+}): { ok: boolean; coverage: number; reason: "ok" | "low_coverage" | "short_holdout" } {
+  const { expected, fetched, testDates } = input;
+  const coverage = expected > 0 ? fetched / expected : 0;
+  if (!(coverage >= HOLDOUT_MIN_COVERAGE)) return { ok: false, coverage, reason: "low_coverage" };
+  if (!(testDates >= HOLDOUT_MIN_TEST_DATES)) return { ok: false, coverage, reason: "short_holdout" };
+  return { ok: true, coverage, reason: "ok" };
 }
 
 export interface OptimizationConfig {
@@ -222,31 +274,22 @@ function cacheKey(symbol: string): string {
   return join(CACHE_DIR, `${symbol.replace(/[^A-Z0-9]/g, "_")}.json`);
 }
 
-interface CachedData {
-  bars: Bar[];
-  fetchedAt: string;
-  lastDate: string; // last bar date for incremental updates
-}
-
-async function getCachedData(symbol: string): Promise<CachedData | null> {
-  try {
-    const raw = await readFile(cacheKey(symbol), "utf-8");
-    return JSON.parse(raw) as CachedData;
-  } catch { return null; }
+// Read and written through bar-cache.ts. A corrupt or wrong-shape file is
+// logged and treated as a miss, so fetchSymbolBars does a full fetch and
+// rewrites it. Before, a parseable file of the wrong shape was returned cast
+// to OptimizerCachedBars, `cached.bars.length` threw, and fetchAllBars'
+// allSettled dropped the symbol from every run without refetching or logging.
+// Writes are temp-file-then-rename (lastDate is the last bar's date, used for
+// incremental updates).
+async function getCachedData(symbol: string): Promise<OptimizerCachedBars | null> {
+  return readJsonCache(cacheKey(symbol), isOptimizerCachedBars, `optimizer-cache:${symbol}`);
 }
 
 async function cacheBars(symbol: string, bars: Bar[]) {
   if (bars.length === 0) return;
   const lastDate = bars[bars.length - 1].date.split("T")[0];
-  try {
-    await writeFile(cacheKey(symbol), JSON.stringify({
-      bars,
-      fetchedAt: new Date().toISOString(),
-      lastDate,
-    }));
-  } catch (err) {
-    logger.warn({ symbol, err: (err as Error).message }, "Failed to cache bars");
-  }
+  const entry: OptimizerCachedBars = { bars, fetchedAt: new Date().toISOString(), lastDate };
+  await writeJsonCache(cacheKey(symbol), entry, isOptimizerCachedBars, `optimizer-cache:${symbol}`);
 }
 
 async function fetchSymbolBars(symbol: string): Promise<Bar[]> {
@@ -326,6 +369,14 @@ async function fetchAllBars(
     for (let j = 0; j < batch.length; j++) {
       const r = results[j];
       if (r.status === "fulfilled" && r.value.length > 200) barsMap.set(batch[j], r.value);
+      else if (r.status === "rejected") {
+        // Dropped from this run; say which symbol and why rather than
+        // shrinking the universe silently.
+        logger.warn(
+          { symbol: batch[j], err: r.reason instanceof Error ? r.reason.message : String(r.reason) },
+          "Optimizer dropped symbol: bar fetch failed"
+        );
+      }
       fetched++;
     }
     onProgress(fetched);

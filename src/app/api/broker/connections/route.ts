@@ -16,6 +16,22 @@ import { checkTier } from "@/lib/tiers-server";
 
 const log = createRouteLogger("broker-connections");
 
+// Migration 0049: at most one active connection per user.
+const ONE_ACTIVE_INDEX = "broker_connections_one_active_per_user_idx";
+const USER_BROKER_ENV_INDEX = "broker_connections_user_broker_env_idx";
+
+// Drizzle wraps the driver error ("Failed query: ..."), so the constraint
+// name is on err.cause, not in err.message. Check both.
+function violatesIndex(err: unknown, index: string): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.message.includes(index)) return true;
+  const cause = err.cause as { message?: unknown; constraint_name?: unknown } | undefined;
+  return (
+    cause?.constraint_name === index ||
+    (typeof cause?.message === "string" && cause.message.includes(index))
+  );
+}
+
 function maskSecret(_secret: string): string {
   return "••••••••";
 }
@@ -83,8 +99,8 @@ export async function POST(request: Request) {
     );
   }
 
-  try {
-    const [connection] = await db
+  const insertConnection = (isActive: boolean) =>
+    db
       .insert(brokerConnections)
       .values({
         userId: auth.userId,
@@ -93,8 +109,35 @@ export async function POST(request: Request) {
         apiKey: encrypt(parsed.data.apiKey),
         apiSecret: encrypt(parsed.data.apiSecret),
         environment: parsed.data.environment,
+        isActive,
       })
       .returning();
+
+  try {
+    // Only a user's first connection starts active. Adding another never
+    // changes the account the engine, the kill switch and manual orders act
+    // on: the user switches with /activate, which refuses while the engine
+    // runs. Before this every new row was active, so a user could hold a
+    // paper and a live connection active at once.
+    const [existingActive] = await db
+      .select({ id: brokerConnections.id })
+      .from(brokerConnections)
+      .where(
+        and(
+          eq(brokerConnections.userId, auth.userId),
+          eq(brokerConnections.isActive, true)
+        )
+      )
+      .limit(1);
+
+    let connection: typeof brokerConnections.$inferSelect;
+    try {
+      [connection] = await insertConnection(!existingActive);
+    } catch (err) {
+      // A concurrent add activated another row first: keep this one inactive.
+      if (existingActive || !violatesIndex(err, ONE_ACTIVE_INDEX)) throw err;
+      [connection] = await insertConnection(false);
+    }
 
     await writeAudit({
       actor: { userId: auth.userId, email: auth.email, role: auth.role },
@@ -129,7 +172,7 @@ export async function POST(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     // Unique constraint violation — user already has this broker+env
-    if (message.includes("broker_connections_user_broker_env_idx")) {
+    if (violatesIndex(err, USER_BROKER_ENV_INDEX)) {
       return NextResponse.json(
         { error: "A connection for this broker and environment already exists" },
         { status: 409 }
@@ -159,16 +202,36 @@ export async function PATCH(request: Request) {
     );
   }
 
+  // Which connection is active is changed only by /activate, which demotes
+  // the others in one transaction and refuses while the engine runs. Setting
+  // isActive here bypassed both, and could leave two connections active or
+  // deactivate the one a running engine and its kill switch resolve.
+  if (parsed.data.isActive !== undefined) {
+    return NextResponse.json(
+      {
+        error: "Switch the active broker account with the account switcher, not an edit.",
+        code: "USE_ACTIVATE",
+        retryable: false,
+      },
+      { status: 400 }
+    );
+  }
+
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.label !== undefined) updates.label = parsed.data.label;
   if (parsed.data.apiKey !== undefined) updates.apiKey = encrypt(parsed.data.apiKey);
   if (parsed.data.apiSecret !== undefined) updates.apiSecret = encrypt(parsed.data.apiSecret);
   if (parsed.data.environment !== undefined) updates.environment = parsed.data.environment;
-  if (parsed.data.isActive !== undefined) updates.isActive = parsed.data.isActive;
 
   if (Object.keys(updates).length <= 1) {
     return NextResponse.json({ error: "No updates provided" }, { status: 400 });
   }
+
+  // Changing the environment turns the account every caller acts on from
+  // paper to live (or back) without /activate or its engine gate, so it is
+  // allowed only on an inactive connection. Fenced in the statement, not
+  // checked before it, so an activation in between cannot slip past.
+  const changesEnvironment = parsed.data.environment !== undefined;
 
   try {
     const [updated] = await db
@@ -177,12 +240,36 @@ export async function PATCH(request: Request) {
       .where(
         and(
           eq(brokerConnections.id, parsed.data.id),
-          eq(brokerConnections.userId, auth.userId)
+          eq(brokerConnections.userId, auth.userId),
+          ...(changesEnvironment ? [eq(brokerConnections.isActive, false)] : [])
         )
       )
       .returning();
 
     if (!updated) {
+      if (changesEnvironment) {
+        const [existing] = await db
+          .select({ id: brokerConnections.id })
+          .from(brokerConnections)
+          .where(
+            and(
+              eq(brokerConnections.id, parsed.data.id),
+              eq(brokerConnections.userId, auth.userId)
+            )
+          )
+          .limit(1);
+        if (existing) {
+          return NextResponse.json(
+            {
+              error:
+                "This is your active broker account. Add a new connection for the other environment, or switch to another account before changing this one.",
+              code: "CONNECTION_ACTIVE",
+              retryable: false,
+            },
+            { status: 409 }
+          );
+        }
+      }
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
@@ -219,6 +306,12 @@ export async function PATCH(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+    if (violatesIndex(err, USER_BROKER_ENV_INDEX)) {
+      return NextResponse.json(
+        { error: "A connection for this broker and environment already exists" },
+        { status: 409 }
+      );
+    }
     log.error({ err: message }, "Failed to update broker connection");
     return NextResponse.json({ error: "Failed to update connection" }, { status: 500 });
   }

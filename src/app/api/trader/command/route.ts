@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthWithCsrf } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { brokerConnections, traderTrades, traderDailyPnl } from "@/lib/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { traderTrades } from "@/lib/db/schema";
 import { createBrokerClient } from "@/lib/brokers";
+import { resolveActiveConnection } from "@/lib/broker-connection";
 import { decrypt } from "@/lib/crypto";
 import { createRouteLogger } from "@/lib/logger";
 import { writeAudit, AuditAction } from "@/lib/audit";
 import { rateLimit } from "@/lib/rate-limiter";
 import { checkTier } from "@/lib/tiers-server";
-import { getETDateString } from "@/lib/market-hours";
-import { reserveManualFlatten } from "@/lib/trading-engine";
+import { isMarketOpen } from "@/lib/market-hours";
+import { reserveManualFlatten, cancelAllAndWait, cancelSymbolOrdersAndWait, reconcilePendingTrades } from "@/lib/trading-engine";
 import { z } from "zod";
+import { isShuttingDown, shuttingDownResponseInit } from "@/lib/shutdown-state";
 
 const commandSchema = z.object({
   command: z.enum(["flatten", "risk"]),
@@ -20,6 +21,10 @@ const commandSchema = z.object({
 });
 
 const log = createRouteLogger("trader-command");
+
+/** Delay before the one reconcile pass a flatten starts during market hours,
+ *  long enough for a market sell to fill. */
+const FLATTEN_RECONCILE_DELAY_MS = 3000;
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuthWithCsrf(request);
@@ -51,6 +56,15 @@ export async function POST(request: NextRequest) {
 
   const { command, symbol } = parsed.data;
 
+  // Flatten cancels the symbol's stops before its market sell. During the
+  // shutdown drain the exit can land between the two and leave the position
+  // with neither, so it waits for the new container. The emergency halt on
+  // /api/trader/engine stays available.
+  if (command === "flatten" && isShuttingDown()) {
+    const { body: refusal, init } = shuttingDownResponseInit();
+    return NextResponse.json(refusal, init);
+  }
+
   // Flatten reservation tracked at handler scope so the catch below can
   // release it if a per-symbol audit-write throws and escapes the loop.
   let flattenRelease: ((sold: string[]) => void) | null = null;
@@ -61,9 +75,9 @@ export async function POST(request: NextRequest) {
       case "flatten": {
         // Sell a single position or all positions directly through Alpaca
 
-        const [conn] = await db.select().from(brokerConnections)
-          .where(and(eq(brokerConnections.userId, auth.userId), eq(brokerConnections.isActive, true)))
-          .limit(1);
+        // The shared resolver, so flatten acts on the same account as the
+        // engine and the kill switch, never an arbitrary active row.
+        const conn = await resolveActiveConnection(auth.userId);
 
         if (!conn) {
           return NextResponse.json({ error: "No active broker connection" }, { status: 400 });
@@ -92,33 +106,39 @@ export async function POST(request: NextRequest) {
         // keeps cancelAllOrders (consistent with closing every position).
         try {
           if (symbol && client.cancelOrder) {
-            const openOrders = await client.getOrders(100, "open");
-            const toCancel = openOrders.filter(
-              (o) =>
-                o.symbol === symbol &&
-                o.side === "sell" &&
-                (o.type === "stop" || o.type === "stop_limit"),
-            );
-            for (const o of toCancel) {
-              try {
-                await client.cancelOrder(o.id);
-              } catch (err) {
-                log.warn(
-                  { orderId: o.id, symbol, err: err instanceof Error ? err.message : "unknown" },
-                  "Failed to cancel blocking order before flatten",
-                );
-              }
-            }
-            if (toCancel.length > 0) {
-              await new Promise(r => setTimeout(r, 500)); // settle time
+            // Poll until the cancelled stops have actually released their
+            // shares instead of a fixed 500ms settle, for the same reason as
+            // flatten-all below.
+            const cancel = await cancelSymbolOrdersAndWait(client, symbol, {
+              filter: (o) => o.side === "sell" && (o.type === "stop" || o.type === "stop_limit"),
+            });
+            if (!cancel.released) {
+              log.warn(
+                { symbol, failedOrderIds: cancel.failedOrderIds },
+                "Stop cancel before flatten did not fully release; the sell may be rejected",
+              );
             }
           } else if (client.cancelAllOrders) {
-            await client.cancelAllOrders();
-            await new Promise(r => setTimeout(r, 500)); // settle time
+            // Poll until the broker has actually released the cancelled
+            // orders instead of a fixed 500ms: Alpaca cancels asynchronously
+            // and a sell sent while a stop is pending_cancel is rejected for
+            // insufficient qty.
+            const cancel = await cancelAllAndWait(client);
+            if (!cancel.released || cancel.failedOrderIds) {
+              log.warn(
+                { released: cancel.released, failedOrderIds: cancel.failedOrderIds },
+                "Cancel-all before flatten did not fully release; some sells may be rejected",
+              );
+            }
           }
         } catch (err) {
           log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders before flatten");
         }
+
+        // A flatten is protective, so it is never refused for the hour. Outside
+        // regular hours the broker queues the market sells for the next open,
+        // and the response says so rather than reporting them as sold.
+        const queuedForOpen = !isMarketOpen();
 
         const results: { symbol: string; qty: number; status: string; pnl?: number }[] = [];
         // Reserve these symbols in the running engine's pendingExits so its
@@ -129,17 +149,23 @@ export async function POST(request: NextRequest) {
         for (const pos of toClose) {
           if (pos.qty <= 0) continue;
           try {
-            await client.placeOrder({
+            const order = await client.placeOrder({
               symbol: pos.symbol,
               side: "sell",
               qty: String(pos.qty),
               type: "market",
               timeInForce: "day",
             });
-            const realizedPnl = pos.unrealizedPnl;
-            results.push({ symbol: pos.symbol, qty: pos.qty, status: "sold", pnl: realizedPnl });
+            // The snapshot's unrealized P&L is an estimate, not the realized
+            // figure: the sell has not filled yet (and outside regular hours
+            // fills at the next open).
+            const estimatedPnl = pos.unrealizedPnl;
+            results.push({ symbol: pos.symbol, qty: pos.qty, status: queuedForOpen ? "queued" : "sold", pnl: estimatedPnl });
             flattenSold.push(pos.symbol);
-            log.info({ symbol: pos.symbol, qty: pos.qty, pnl: realizedPnl }, "Position closed via command");
+            log.info(
+              { symbol: pos.symbol, qty: pos.qty, estimatedPnl, brokerOrderId: order.id, queuedForOpen },
+              "Position close submitted via command"
+            );
 
             await writeAudit({
               actor: { userId: auth.userId, email: auth.email, role: auth.role },
@@ -150,7 +176,9 @@ export async function POST(request: NextRequest) {
                 side: "sell",
                 qty: pos.qty,
                 type: "market",
-                pnl: realizedPnl,
+                estimatedPnl,
+                brokerOrderId: order.id,
+                queuedForOpen,
                 broker: conn.broker,
                 environment: conn.environment,
                 source: command === "flatten" && symbol ? "manual_flatten_one" : "manual_flatten_all",
@@ -158,47 +186,43 @@ export async function POST(request: NextRequest) {
               request,
             });
 
-            // Record trade in DB
+            // Record the trade PENDING with the broker order id, the same way
+            // the engine records its exits. reconcilePendingTrades sets the
+            // real fill price, fill time and P&L when the broker reports the
+            // fill, and adds the realized P&L to the daily total then, keyed
+            // by the fill date. The snapshot price is kept only as the
+            // placeholder the correction starts from. The broker order id is
+            // also what keeps the broker-side exit reconciler from recording
+            // this sell a second time.
             try {
               await db.insert(traderTrades).values({
                 userId: auth.userId,
+                brokerOrderId: order.id,
                 symbol: pos.symbol,
                 action: "manual_close",
                 signal: "MANUAL",
                 quantity: pos.qty,
                 orderType: "market",
-                fillPrice: pos.currentPrice,
-                status: "FILLED",
-                pnl: realizedPnl,
-                notes: `Closed via Trader UI`,
+                fillPrice: null,
+                placeholderFillPrice: pos.currentPrice,
+                status: "PENDING",
+                pnl: estimatedPnl,
+                notes: queuedForOpen
+                  ? `Closed via Trader UI outside market hours; queued for the next open`
+                  : `Closed via Trader UI`,
                 traderTimestamp: new Date(),
               });
-            } catch { /* best effort */ }
-
-            // Update daily P&L. Key by ET date — the engine writes every
-            // traderDailyPnl row via getETDateString(); a UTC key here would
-            // fragment the day's realized total into a separate (tomorrow-
-            // dated) row whenever a flatten lands after ~8 PM ET.
-            // Atomic upsert on the (date, userId) accumulator row (audit #35).
-            // The old select-then-(insert|update) lost a flatten's realized P&L
-            // under concurrency: two writers both saw "no row", raced the
-            // INSERT, the unique (date,userId) index rejected one, and the catch
-            // swallowed it; the UPDATE branch was a lost-update RMW. ON CONFLICT
-            // folds the deltas in one statement.
-            try {
-              await db.insert(traderDailyPnl)
-                .values({ userId: auth.userId, date: getETDateString(), realizedPnl, unrealizedPnl: 0, tradesCount: 1, halted: false })
-                .onConflictDoUpdate({
-                  target: [traderDailyPnl.date, traderDailyPnl.userId],
-                  set: {
-                    realizedPnl: sql`${traderDailyPnl.realizedPnl} + ${realizedPnl}`,
-                    tradesCount: sql`${traderDailyPnl.tradesCount} + 1`,
-                  },
-                });
             } catch (err) {
-              log.warn(
-                { err: err instanceof Error ? err.message : "unknown", symbol: pos.symbol },
-                "Failed to record flatten P&L to daily total"
+              // The sell is at the broker; only its record is missing. Log
+              // enough to recover it (tax report, performance, daily P&L).
+              log.error(
+                {
+                  err: err instanceof Error ? err.message : "unknown",
+                  symbol: pos.symbol,
+                  qty: pos.qty,
+                  brokerOrderId: order.id,
+                },
+                "Failed to record flatten trade row; the sell was placed but trader_trades has no row for it"
               );
             }
           } catch (err) {
@@ -223,7 +247,30 @@ export async function POST(request: NextRequest) {
 
         flattenRelease(flattenSold);
         flattenRelease = null;
-        return NextResponse.json({ status: "ok", closed: results });
+
+        // One reconcile pass once the market sells have had time to fill, so
+        // the rows reach FILLED with their real price even when the engine is
+        // stopped (its scans and exit check are the usual reconcile callers).
+        // Manual-close rows only: engine SELL rows are left to the engine.
+        // Anything still open is picked up by the engine's next reconcile or,
+        // with the engine stopped, by the dashboard's.
+        if (flattenSold.length > 0 && !queuedForOpen) {
+          const userId = auth.userId;
+          setTimeout(() => {
+            reconcilePendingTrades(client, userId, { manualCloseOnly: true }).catch((err) => {
+              log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Post-flatten reconcile failed");
+            });
+          }, FLATTEN_RECONCILE_DELAY_MS);
+        }
+
+        return NextResponse.json({
+          status: "ok",
+          closed: results,
+          queuedForOpen,
+          ...(queuedForOpen && flattenSold.length > 0
+            ? { message: "The market is closed. The sell orders are queued and will fill at the next open." }
+            : {}),
+        });
       }
 
       case "risk": {

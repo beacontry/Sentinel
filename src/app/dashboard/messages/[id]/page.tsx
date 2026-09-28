@@ -168,7 +168,7 @@ export default function DmThreadPage({
                   }`}
                 >
                   <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.body}</p>
-                  <p className="text-[10px] text-text-muted mt-1 text-right">
+                  <p className="text-xs text-text-muted mt-1 text-right">
                     {formatTime(m.createdAt)}
                   </p>
                 </div>
@@ -197,7 +197,7 @@ export default function DmThreadPage({
             className="w-full rounded-lg border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50"
           />
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-text-muted">
+            <span className="text-xs text-text-muted">
               Enter to send · Shift+Enter for newline
             </span>
             <Button onClick={sendReply} loading={submitting} disabled={!reply.trim()} size="sm">

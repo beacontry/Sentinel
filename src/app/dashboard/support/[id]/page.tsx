@@ -158,7 +158,7 @@ export default function SupportTicketPage({
                 <div className="flex flex-wrap items-center gap-2 mt-2">
                   <Badge variant={STATUS_VARIANT[ticket.status]}>{ticket.status}</Badge>
                   <Badge variant="neutral">{ticket.priority}</Badge>
-                  <span className="text-[11px] text-text-muted">
+                  <span className="text-xs text-text-muted">
                     Opened {formatTimestamp(ticket.createdAt)}
                   </span>
                 </div>
@@ -207,7 +207,7 @@ export default function SupportTicketPage({
                       <span className="text-xs font-semibold text-text-primary uppercase tracking-wider">
                         {m.authorRole === "admin" ? "Beacontry team" : "You"}
                       </span>
-                      <span className="text-[11px] text-text-muted">{formatTimestamp(m.createdAt)}</span>
+                      <span className="text-xs text-text-muted">{formatTimestamp(m.createdAt)}</span>
                     </div>
                     <p className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
                       {m.body}

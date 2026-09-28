@@ -39,6 +39,13 @@ jobs:
       - name: Doc staleness check
         run: npm run docs:check
 
+      # Blocking: counts of off-token class patterns (sub-12px text,
+      # arbitrary radii and shadows, transition-all, text-white …) may only
+      # go down, and sizes removed from the theme must stay at zero. See
+      # scripts/style-ratchet.mjs and its committed baseline.
+      - name: Style ratchet
+        run: npm run lint:style
+
       - name: Test
         run: npm test
 
@@ -173,8 +180,14 @@ jobs:
             TimeoutStartSec=180
             TimeoutStopSec=70
             ExecStart=/usr/bin/podman run --cidfile=%t/%n.ctr-id --cgroups=no-conmon --rm --sdnotify=conmon -d --replace --name sentinel-app --network=host --env-file /opt/apps/sentinel/.env -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache -v /opt/apps/sentinel/cache:/data/cache:Z -m 2g $IMAGE_LC
-            ExecStop=/usr/bin/podman stop --ignore -t 10 --cidfile=%t/%n.ctr-id
-            ExecStopPost=/usr/bin/podman rm -f --ignore -t 10 --cidfile=%t/%n.ctr-id
+            # -t 30 is CONTAINER_STOP_GRACE_S from src/lib/shutdown-config.ts,
+            # which must exceed FORCE_EXIT_MS (20s) or SIGKILL lands mid-drain
+            # and the safety stops never reach the broker. It matters more here
+            # than it did in the deploy job: systemd now owns every stop, so a
+            # reboot and a `systemctl restart` take this path too, not just a
+            # deploy. TimeoutStopSec must stay above it.
+            ExecStop=/usr/bin/podman stop -t 30 --ignore --cidfile=%t/%n.ctr-id
+            ExecStopPost=/usr/bin/podman rm -f -t 30 --ignore --cidfile=%t/%n.ctr-id
             Type=notify
             NotifyAccess=all
 

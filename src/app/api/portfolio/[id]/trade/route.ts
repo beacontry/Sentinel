@@ -49,7 +49,9 @@ export async function POST(
     // Get current market price
     const provider = getMarketDataProvider();
     const quote = await provider.fetchQuote(parsed.data.symbol);
-    if (!quote) {
+    // Only a positive price is a price: a $0 BUY would credit the shares and
+    // deduct no cash. `!(x > 0)` also rejects NaN.
+    if (!quote || !(quote.price > 0)) {
       return NextResponse.json(
         { error: "Unable to get current price" },
         { status: 422 }

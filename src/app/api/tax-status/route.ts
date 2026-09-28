@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession, requireAuthWithCsrf } from "@/lib/auth";
 import { db, withTimeout, isStatementTimeout } from "@/lib/db";
 import { userTaxStatus } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createRouteLogger } from "@/lib/logger";
 
 const log = createRouteLogger("tax-status");
@@ -62,12 +62,18 @@ export async function GET() {
  * PUT /api/tax-status — upsert user's self-attested status.
  * Body: {
  *   hasTraderTaxStatus: boolean,
- *   mtmElectionYear: number | null,
- *   notes: string | null
+ *   mtmElectionYear?: number | null,
+ *   notes?: string | null
  * }
  *
- * mtmDeclaredAt is set automatically the first time mtmElectionYear becomes
- * non-null. Pure self-attestation — we don't validate against IRS rules.
+ * An omitted mtmElectionYear or notes leaves the stored value unchanged; an
+ * explicit null clears it. A caller that never loaded the row (the trader
+ * page's MTM checkbox after a failed status read) therefore cannot wipe the
+ * user's notes or rewrite a prior election year by re-asserting the flag.
+ *
+ * mtmDeclaredAt is set the first time mtmElectionYear becomes non-null and
+ * kept on later writes (COALESCE), cleared only with the year itself.
+ * Pure self-attestation. We don't validate against IRS rules.
  */
 export async function PUT(request: Request) {
   const auth = await requireAuthWithCsrf(request);
@@ -85,6 +91,8 @@ export async function PUT(request: Request) {
   }
 
   const hasTraderTaxStatus = body.hasTraderTaxStatus === true;
+  // undefined = leave the stored year alone; null = clear it.
+  const yearProvided = body.mtmElectionYear !== undefined;
   const mtmElectionYear =
     body.mtmElectionYear === null || body.mtmElectionYear === undefined
       ? null
@@ -102,12 +110,26 @@ export async function PUT(request: Request) {
     );
   }
 
-  const notes =
-    typeof body.notes === "string"
-      ? body.notes.slice(0, 1000)
-      : body.notes === null
-        ? null
-        : null;
+  // undefined = leave the stored notes alone; null = clear them.
+  if (
+    body.notes !== undefined &&
+    body.notes !== null &&
+    typeof body.notes !== "string"
+  ) {
+    return NextResponse.json(
+      { error: "notes must be a string or null" },
+      { status: 400 },
+    );
+  }
+  const notesProvided = body.notes !== undefined;
+  const notes = typeof body.notes === "string" ? body.notes.slice(0, 1000) : null;
+
+  // Keep the first declaration date across re-asserts; clear it only with
+  // the year.
+  const declaredAt =
+    mtmElectionYear !== null
+      ? sql`COALESCE(${userTaxStatus.mtmDeclaredAt}, now())`
+      : null;
 
   try {
     const [row] = await db
@@ -123,10 +145,8 @@ export async function PUT(request: Request) {
         target: userTaxStatus.userId,
         set: {
           hasTraderTaxStatus,
-          mtmElectionYear,
-          // Only update mtmDeclaredAt the FIRST time election year goes non-null
-          mtmDeclaredAt: mtmElectionYear !== null ? new Date() : null,
-          notes,
+          ...(yearProvided ? { mtmElectionYear, mtmDeclaredAt: declaredAt } : {}),
+          ...(notesProvided ? { notes } : {}),
           updatedAt: new Date(),
         },
       })

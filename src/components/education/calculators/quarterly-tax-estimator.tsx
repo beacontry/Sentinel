@@ -175,7 +175,7 @@ export function QuarterlyTaxEstimatorCalculator() {
       </div>
 
       <div className="space-y-2">
-        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
           Filing status
         </p>
         <div className="flex gap-2">
@@ -266,8 +266,8 @@ export function QuarterlyTaxEstimatorCalculator() {
       <div
         className={`rounded-xl border p-4 ${
           result.meetsSafeHarbor
-            ? "border-bullish/30 bg-bullish/10"
-            : "border-warning/30 bg-warning/10"
+            ? "border-bullish-line bg-bullish-fill"
+            : "border-warning-line bg-warning-fill"
         }`}
       >
         {result.meetsSafeHarbor ? (
@@ -350,7 +350,7 @@ function SummaryBox({
 }) {
   return (
     <div className="rounded-xl border border-border bg-bg-secondary p-3">
-      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+      <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
         {label}
       </p>
       <p className="mt-1 text-lg font-mono font-semibold text-text-primary">

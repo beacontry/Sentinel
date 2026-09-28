@@ -455,7 +455,7 @@ export default function MomentumPage() {
                         )}
 
                         <div className="space-y-1.5">
-                          <div className="text-[11px] uppercase tracking-wider text-text-muted">
+                          <div className="text-xs uppercase tracking-wider text-text-muted">
                             Reasons
                           </div>
                           <ul className="space-y-1 text-xs text-text-secondary">
@@ -523,7 +523,7 @@ function Stat({
         : "text-text-primary";
   return (
     <div className="rounded-lg bg-bg-elevated p-2">
-      <div className="text-[10px] uppercase tracking-wider text-text-muted">
+      <div className="text-xs uppercase tracking-wider text-text-muted">
         {label}
       </div>
       <div className={`mt-0.5 font-mono text-sm font-semibold ${toneClass}`}>

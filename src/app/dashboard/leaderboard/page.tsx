@@ -74,7 +74,7 @@ export default function LeaderboardPage() {
 
       {/* Your status banner */}
       {optIn === false && (
-        <Card className="p-4 border-warning/30 bg-warning/5">
+        <Card className="p-4 border-warning-line bg-warning-fill">
           <div className="flex items-start gap-3">
             <Lock className="w-5 h-5 text-warning shrink-0 mt-0.5" />
             <div className="flex-1">

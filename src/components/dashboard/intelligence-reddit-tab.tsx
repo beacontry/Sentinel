@@ -133,7 +133,7 @@ export function IntelligenceRedditTab({ symbol }: IntelligenceRedditTabProps) {
       <div className="text-xs text-text-muted text-center py-6">
         <MessagesSquare className="w-8 h-8 mx-auto mb-2 text-text-muted" />
         No recent Reddit mentions for {symbol}
-        <div className="mt-1 text-[10px]">
+        <div className="mt-1 text-xs">
           Searched: {data.subreddits.map((s) => `r/${s}`).join(", ")}
         </div>
       </div>
@@ -149,11 +149,11 @@ export function IntelligenceRedditTab({ symbol }: IntelligenceRedditTabProps) {
           <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
             Reddit mentions
           </span>
-          <Badge variant="neutral" className="text-[10px] font-mono">
+          <Badge variant="neutral" className="text-xs font-mono">
             {data.posts.length}
           </Badge>
         </div>
-        <span className="text-[10px] text-text-muted">
+        <span className="text-xs text-text-muted">
           {data.subreddits.length} sub{data.subreddits.length === 1 ? "" : "s"}
         </span>
       </div>
@@ -169,10 +169,10 @@ export function IntelligenceRedditTab({ symbol }: IntelligenceRedditTabProps) {
             className="block rounded-lg border border-border bg-bg-elevated p-3 transition-colors hover:border-border-hover hover:bg-bg-hover focus-visible:border-accent/40 focus-visible:outline-none"
           >
             <div className="flex items-start justify-between gap-2">
-              <span className="font-mono text-[10px] text-accent shrink-0">
+              <span className="font-mono text-xs text-accent shrink-0">
                 r/{p.subreddit}
               </span>
-              <span className="text-[10px] text-text-muted shrink-0">
+              <span className="text-xs text-text-muted shrink-0">
                 {timeAgo(p.createdUtc)}
               </span>
             </div>
@@ -181,7 +181,7 @@ export function IntelligenceRedditTab({ symbol }: IntelligenceRedditTabProps) {
               {p.title}
             </p>
 
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-text-muted">
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
               {/* Score + comment count are only populated when sourced
                   from an OAuth-authenticated fetch. RSS (our default
                   path on datacenter IPs) leaves them at 0 — hide the
@@ -201,14 +201,14 @@ export function IntelligenceRedditTab({ symbol }: IntelligenceRedditTabProps) {
               )}
               <span className="font-mono text-text-muted">u/{p.author}</span>
               {p.flair && (
-                <Badge variant="neutral" className="text-[9px] px-1.5 py-0">
+                <Badge variant="neutral" className="text-xs px-1.5 py-0">
                   {p.flair}
                 </Badge>
               )}
               {p.sentiment !== "neutral" && (
                 <Badge
                   variant={p.sentiment === "bullish" ? "bullish" : "bearish"}
-                  className="text-[9px] px-1.5 py-0"
+                  className="text-xs px-1.5 py-0"
                 >
                   {p.sentiment}
                 </Badge>
@@ -223,7 +223,7 @@ export function IntelligenceRedditTab({ symbol }: IntelligenceRedditTabProps) {
 
       {/* Footer note: any errored subs + sources */}
       {data.errored.length > 0 && (
-        <p className="text-[10px] text-text-muted italic">
+        <p className="text-xs text-text-muted italic">
           {data.errored.length} sub{data.errored.length === 1 ? "" : "s"} unreachable
           this fetch
         </p>

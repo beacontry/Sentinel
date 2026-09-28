@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 
 /**
  * Five-theme system. Each value here is also the CSS class applied to <html>
@@ -24,36 +24,36 @@ export const THEME_META: Record<
   light: {
     label: "Light",
     isDark: false,
-    pwaColor: "#f1f5f9",
-    swatch: "#10b981", // emerald accent on white
+    pwaColor: "#f0f5f2",
+    swatch: "#006f47", // emerald accent, light fill
     description: "Classic white surfaces, emerald accent",
   },
   dark: {
     label: "Dark",
     isDark: true,
-    pwaColor: "#0d1511",
-    swatch: "#10b981", // emerald accent on emerald-tinted dark
+    pwaColor: "#07120d",
+    swatch: "#15ba81", // emerald accent on emerald-tinted dark
     description: "Emerald-tinted dark, easy on the eyes",
   },
   coral: {
     label: "Coral",
     isDark: false,
-    pwaColor: "#fdf5f3",
-    swatch: "#f97066",
+    pwaColor: "#faf1ee",
+    swatch: "#82241c", // coral accent, oklch(41% 0.13 29)
     description: "Warm peach surfaces, coral accent",
   },
   "light-blue": {
     label: "Light Blue",
     isDark: false,
-    pwaColor: "#f0f7ff",
-    swatch: "#3b82f6",
+    pwaColor: "#eff4fa",
+    swatch: "#1e59cd",
     description: "Cool sky tints, blue accent",
   },
   gray: {
     label: "Gray",
     isDark: true,
-    pwaColor: "#0f0f10",
-    swatch: "#94a3b8",
+    pwaColor: "#0f0f0f",
+    swatch: "#989898",
     description: "True neutral grays, no chromatic tint",
   },
 };
@@ -95,8 +95,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setMounted(true);
   }, []);
 
-  // Sync class to <html>, update PWA theme-color, and persist
-  useEffect(() => {
+  // Sync class to <html>, update PWA theme-color, and persist. A layout
+  // effect, so the class is in place before any child's passive effect
+  // reads the CSS tokens (PriceChart remounts on a theme change).
+  useLayoutEffect(() => {
     if (!mounted) return;
     const root = document.documentElement;
 
@@ -112,7 +114,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, theme);
 
     // Update PWA theme-color meta tag for browser chrome
-    const themeColor = THEME_META[theme]?.pwaColor ?? "#0d1511";
+    const themeColor = THEME_META[theme]?.pwaColor ?? "#07120d";
     let meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
     if (meta) {
       meta.content = themeColor;

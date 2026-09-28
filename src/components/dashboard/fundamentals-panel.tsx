@@ -212,13 +212,13 @@ export function FundamentalsPanel({ symbol, currentPrice }: FundamentalsPanelPro
             {/* Current position */}
             {weekPosition !== null && (
               <div
-                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-text-primary rounded-full border-2 border-bg-elevated shadow-sm"
+                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-text-primary rounded-full border-2 border-bg-elevated shadow-card"
                 style={{ left: `calc(${weekPosition}% - 6px)` }}
                 title={currentPrice ? `Current: $${currentPrice.toFixed(2)}` : undefined}
               />
             )}
           </div>
-          <div className="flex justify-between text-[10px] mt-1">
+          <div className="flex justify-between text-xs mt-1">
             <span className="text-bearish flex items-center gap-0.5">
               <TrendingDown className="w-3 h-3" />
               Low
@@ -245,7 +245,7 @@ function MetricCard({
 }) {
   return (
     <div className="px-3 py-2 rounded-lg bg-bg-elevated">
-      <p className="text-[10px] text-text-muted uppercase tracking-wider leading-none mb-1">
+      <p className="text-xs text-text-muted uppercase tracking-wider leading-none mb-1">
         {label}
       </p>
       <p className={`font-mono text-sm font-medium ${valueClass}`}>{value}</p>

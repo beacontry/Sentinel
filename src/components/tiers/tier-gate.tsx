@@ -132,7 +132,7 @@ export function TierGate({ minTier, featureName, children, fallback }: TierGateP
       </div>
       <Link
         href="/dashboard/billing"
-        className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover transition-colors"
+        className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-hover transition-colors"
       >
         Upgrade
         <ArrowRight className="h-4 w-4" />

@@ -43,8 +43,10 @@ const ACTION_FILTER_OPTIONS = [
   { value: "engine.halted", label: "engine.halted" },
   { value: "engine.mode_switched", label: "engine.mode_switched" },
   { value: "engine.live_blocked", label: "engine.live_blocked" },
+  { value: "engine.live_protective_action", label: "engine.live_protective_action" },
   { value: "order.placed", label: "order.placed" },
   { value: "order.rejected", label: "order.rejected" },
+  { value: "order.unconfirmed", label: "order.unconfirmed" },
   { value: "broker.connection.created", label: "broker.connection.created" },
   { value: "broker.connection.updated", label: "broker.connection.updated" },
   { value: "broker.connection.deleted", label: "broker.connection.deleted" },
@@ -303,7 +305,7 @@ export default function AuditLogPage() {
                       <td className="p-3">
                         <div className="text-text-primary">{r.actorEmail ?? "—"}</div>
                         {r.actorRole && (
-                          <div className="text-[10px] text-text-muted uppercase tracking-wide">{r.actorRole}</div>
+                          <div className="text-xs text-text-muted uppercase tracking-wide">{r.actorRole}</div>
                         )}
                       </td>
                       <td className="p-3">
@@ -328,7 +330,7 @@ export default function AuditLogPage() {
                         <td colSpan={6} className="p-4 space-y-2">
                           {r.metadata && (
                             <div>
-                              <div className="text-[10px] uppercase tracking-wide text-text-muted mb-1">Metadata</div>
+                              <div className="text-xs uppercase tracking-wide text-text-muted mb-1">Metadata</div>
                               <pre className="text-xs bg-bg-primary border border-border rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all">
                                 {JSON.stringify(r.metadata, null, 2)}
                               </pre>
@@ -336,16 +338,16 @@ export default function AuditLogPage() {
                           )}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                             <div>
-                              <div className="text-[10px] uppercase tracking-wide text-text-muted">Hash</div>
+                              <div className="text-xs uppercase tracking-wide text-text-muted">Hash</div>
                               <div className="break-all text-text-secondary">{r.hash}</div>
                             </div>
                             <div>
-                              <div className="text-[10px] uppercase tracking-wide text-text-muted">Prev hash</div>
+                              <div className="text-xs uppercase tracking-wide text-text-muted">Prev hash</div>
                               <div className="break-all text-text-muted">{r.prevHash}</div>
                             </div>
                             {r.userAgent && (
                               <div className="md:col-span-2">
-                                <div className="text-[10px] uppercase tracking-wide text-text-muted">User agent</div>
+                                <div className="text-xs uppercase tracking-wide text-text-muted">User agent</div>
                                 <div className="break-all text-text-muted">{r.userAgent}</div>
                               </div>
                             )}

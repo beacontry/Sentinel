@@ -1,46 +1,145 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════════════
+   Design tokens. One place for every colour, in OKLCH.
+
+   The @theme block is the light theme and the source Tailwind generates
+   utilities from (bg-bg-secondary, text-bullish, border-border-control …).
+   Every other theme is one `html.<name>` block below that redefines the
+   same names and nothing else; theme-init.js and ThemeProvider put that
+   class on <html> before first paint. Colour-blind mode is a second class
+   on <html> that swaps only the state colours.
+
+   Roles:
+   - bg-primary → secondary → surface → elevated → hover: the lightness
+     ladder. Cards and inputs sit on secondary, menus on elevated.
+   - border: decorative container edge, deliberately faint (~1.3:1).
+     border-control: the edge of a control, 3:1 or better on every
+     surface (WCAG 1.4.11). hairline-inner: dividers inside a container.
+   - accent + on-accent: the primary action and its label, 4.5:1 or
+     better at rest and on hover.
+   - bullish / bearish / warning: the state colour for text and marks,
+     4.5:1 on bg-secondary. Each also has a triplet for chips and
+     banners: -fg (text) on -fill (background) with a -line edge.
+   - bearish-solid + on-bearish: only for the one irreversible confirm.
+
+   tests/unit/theme-contrast.test.ts measures every pair above in every
+   theme and in colour-blind mode. Change a value, run it.
+   ═══════════════════════════════════════════════════════════════════════ */
 @theme {
   --font-display: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   --font-body: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), "JetBrains Mono", monospace;
 
-  /* ── Surfaces ── Light theme, white cards on gray body */
-  --color-bg-primary: #f1f5f9;
-  --color-bg-secondary: #ffffff;
-  --color-bg-surface: #f8fafc;
-  --color-bg-elevated: #f1f5f9;
-  --color-bg-hover: #e2e8f0;
+  /* ── Type scale ── seven steps with a 12px floor. Nothing smaller
+     exists: a label that does not fit at 12px is hidden below a
+     breakpoint, not shrunk. display is for marketing headings only.
+     Each namespace is reset first, so Tailwind's own steps (text-3xl,
+     rounded-2xl, shadow-lg …) stop existing. A class naming one of them
+     compiles to nothing, which is why the style ratchet holds them at
+     zero. */
+  --text-*: initial;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.6;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.6;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.3;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 1.3;
+  --text-2xl: 2rem;
+  --text-2xl--line-height: 1.15;
+  --text-display: clamp(2.5rem, 4vw + 1.5rem, 4.5rem);
+  --text-display--line-height: 1.05;
 
-  /* ── Borders ── */
-  --color-border: #e2e8f0;
-  --color-border-hover: #cbd5e1;
+  /* ── Radius ── controls md, cards and inputs lg, panels and modals xl.
+     Pills use rounded-full. Bare `rounded` (4px) is kept for tiny marks
+     such as legend swatches. */
+  --radius-*: initial;
+  --radius: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
 
-  /* ── Text ── Dark on light, maximum contrast */
-  --color-text-primary: #0f172a;
-  --color-text-secondary: #334155;
-  --color-text-muted: #475569;
+  /* ── Elevation ── three steps. The values are per theme (see the
+     --elevation-* variables in the theme blocks): on the dark themes a
+     card has no shadow, because depth there comes from the lightness
+     ladder. Tailwind copies a theme shadow into each utility, so the
+     indirection through a variable is what lets a theme change it. */
+  --shadow-*: initial;
+  --shadow-card: var(--elevation-card);
+  --shadow-pop: var(--elevation-pop);
+  --shadow-modal: var(--elevation-modal);
 
-  /* ── Accent (emerald, darker for light bg) ── */
-  --color-accent: #10b981;
-  --color-accent-hover: #059669;
-  --color-accent-muted: rgba(16, 185, 129, 0.10);
+  /* ── Surfaces ── light: near-white cards on a green-grey page, hue 163 */
+  --color-bg-primary: oklch(96.5% 0.006 163);
+  --color-bg-secondary: oklch(99.5% 0.003 163);
+  --color-bg-surface: oklch(98% 0.004 163);
+  --color-bg-elevated: oklch(95% 0.007 163);
+  --color-bg-hover: oklch(92% 0.010 163);
 
-  /* ── Trading semantics (darker for light bg contrast) ── */
-  --color-bullish: #059669;
-  --color-bullish-muted: rgba(5, 150, 105, 0.10);
-  --color-bearish: #dc2626;
-  --color-bearish-muted: rgba(220, 38, 38, 0.10);
-  --color-warning: #d97706;
-  --color-warning-muted: rgba(217, 119, 6, 0.10);
-  --color-neutral: #94a3b8;
+  /* ── Edges ── */
+  --color-border: oklch(90% 0.010 163);
+  --color-border-hover: oklch(84% 0.012 163);
+  --color-border-control: oklch(60% 0.015 163);
+  --color-hairline-inner: rgb(0 0 0 / 0.07);
 
-  /* ── Signals ── */
-  --color-strong-buy: #047857;
-  --color-buy: #059669;
-  --color-hold: #94a3b8;
-  --color-sell: #dc2626;
-  --color-strong-sell: #b91c1c;
+  /* ── Text ── */
+  --color-text-primary: oklch(22% 0.020 163);
+  --color-text-secondary: oklch(38% 0.020 163);
+  --color-text-muted: oklch(47% 0.020 163);
+
+  /* ── Accent ── the fill moved dark enough for a white label, rather
+     than tinting the label (white on the old #10b981 was 2.5:1). It sits
+     at 47% rather than 50% because it is also text: an active pill puts
+     text-accent on bg-accent/15, which measured 4.09:1 at 50%. */
+  --color-accent: oklch(47% 0.12 163);
+  --color-accent-hover: oklch(42% 0.11 163);
+  --color-on-accent: oklch(99.5% 0.003 163);
+  --color-accent-muted: color-mix(in oklch, var(--color-accent) 12%, transparent);
+  --color-focus: var(--color-accent);
+
+  /* ── Trading states ── */
+  --color-bullish: oklch(48% 0.12 160);
+  --color-bearish: oklch(52% 0.19 27);
+  --color-warning: oklch(50% 0.13 65);
+  --color-bullish-muted: color-mix(in oklch, var(--color-bullish) 12%, transparent);
+  --color-bearish-muted: color-mix(in oklch, var(--color-bearish) 12%, transparent);
+  --color-warning-muted: color-mix(in oklch, var(--color-warning) 12%, transparent);
+  --color-bullish-fg: oklch(38% 0.09 160);
+  --color-bullish-fill: oklch(95% 0.030 160);
+  --color-bullish-line: oklch(62% 0.10 160);
+  --color-bearish-fg: oklch(42% 0.14 25);
+  --color-bearish-fill: oklch(95% 0.025 22);
+  --color-bearish-line: oklch(64% 0.13 25);
+  --color-warning-fg: oklch(42% 0.10 65);
+  --color-warning-fill: oklch(95% 0.040 85);
+  --color-warning-line: oklch(66% 0.12 70);
+  --color-bearish-solid: oklch(52% 0.19 27);
+  --color-on-bearish: oklch(99.5% 0.003 27);
+  --color-neutral: oklch(68% 0.015 163);
+
+  /* ── Signals ── follow the state colours, so colour-blind mode reaches them */
+  --color-strong-buy: var(--color-bullish-fg);
+  --color-buy: var(--color-bullish);
+  --color-hold: var(--color-neutral);
+  --color-sell: var(--color-bearish);
+  --color-strong-sell: var(--color-bearish-fg);
+
+  /* ── Chart series ── a categorical palette for indicator lines: one
+     lightness per theme, hues spread so no two neighbours read alike.
+     3:1 or better on bg-surface. */
+  --color-series-1: oklch(52% 0.12 180);
+  --color-series-2: oklch(52% 0.12 250);
+  --color-series-3: oklch(52% 0.12 305);
+  --color-series-4: oklch(52% 0.12 50);
+  --color-series-5: oklch(52% 0.12 100);
+  --color-series-6: oklch(52% 0.12 350);
+
+  /* ── Loading shimmer ── */
+  --color-skeleton-sheen: color-mix(in oklch, var(--color-text-primary) 6%, transparent);
 
   /* ── Spacing ── */
   --space-xs: 4px;
@@ -52,269 +151,312 @@
   --space-3xl: 48px;
   --space-4xl: 64px;
 
-  /* ── Landing page ── */
-  --color-ld-deep: #f8fafc;
-  --color-ld-panel: #f1f5f9;
-  --color-ld-card: #ffffff;
-  --color-ld-card-hover: #f8fafc;
-  --color-ld-border: #e2e8f0;
-  --color-ld-border-accent: #d1fae5;
-  --color-ld-text: #0f172a;
-  --color-ld-text-secondary: #334155;
-  --color-ld-text-muted: #64748b;
-  --color-ld-accent: #059669;
-  --color-ld-accent-dim: #047857;
-  --color-ld-red: #dc2626;
-  --color-ld-cyan: #0891b2;
-  --color-ld-amber: #d97706;
-  --color-ld-green: #059669;
+  /* ── Landing page ── the marketing pages used to carry their own
+     purple-black ladder (hue 285). Each ld-* name now points at the app
+     token with the same role, so the public site and the app share one
+     palette per theme and the markup did not have to change. */
+  --color-ld-deep: var(--color-bg-primary);
+  --color-ld-panel: var(--color-bg-secondary);
+  --color-ld-card: var(--color-bg-secondary);
+  --color-ld-card-hover: var(--color-bg-surface);
+  --color-ld-border: var(--color-border);
+  --color-ld-border-accent: color-mix(in oklch, var(--color-accent) 35%, var(--color-border));
+  --color-ld-text: var(--color-text-primary);
+  --color-ld-text-secondary: var(--color-text-secondary);
+  --color-ld-text-muted: var(--color-text-muted);
+  --color-ld-accent: var(--color-accent);
+  --color-ld-accent-dim: var(--color-accent-hover);
+  --color-ld-on-accent: var(--color-on-accent);
+  --color-ld-red: var(--color-bearish);
+  --color-ld-amber: var(--color-warning);
+  --color-ld-green: var(--color-bullish);
+}
+
+/* The uppercase kicker above a heading or on a stat label. Sentence case
+   in the source; the capitals are CSS, so copy-paste and screen readers
+   get the words. 12px floor, tracking in em. */
+@utility eyebrow {
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Readout tiles that keep every money figure whole. A figure never breaks
+   mid-number (a sign cut off from its digits is a misread), so the tile
+   has to fit its widest token instead:
+
+   - tile-grid: at most --tile-cols across, but no tile narrower than
+     --tile-min (the widest token at the 12px floor, plus padding). A
+     figure too wide for that many columns drops a column.
+   - figure-fit: the tile's ladder size (--figure-max, stepped by
+     container query) or smaller, down to the 12px floor, so --figure-ch
+     characters of the mono face (0.6em advance) fit the tile's width.
+
+   Both are set by the readout from the formatted strings; see
+   src/components/trader/account-readout.tsx. */
+@utility tile-grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, max(var(--tile-min, 0px), (100% - (var(--tile-cols, 2) - 1) * 0.5rem) / var(--tile-cols, 2))), 1fr)
+  );
+}
+
+@utility figure-fit {
+  font-size: clamp(var(--text-xs), 100cqi / (var(--figure-ch, 1) * 0.6 + 0.4), var(--figure-max, var(--text-base)));
+  line-height: 1.3;
 }
 
 @layer base {
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  /* ── Dark mode overrides ── */
-  html.dark {
-    /* Dashboard surfaces */
-    --color-bg-primary: #0d1511;
-    --color-bg-secondary: #131d18;
-    --color-bg-surface: #18241e;
-    --color-bg-elevated: #1e2e27;
-    --color-bg-hover: #25382f;
-    --color-border: #2d4038;
-    --color-border-hover: #3d5349;
-    --color-text-primary: #edf3f0;
-    --color-text-secondary: #8da69c;
-    /* v3.1 — bumped from #607b71 to #7f9389 to clear WCAG AA (≥4.5:1)
-       on bg-surface #18241e. Old contrast ~3.5:1 (failed AA for
-       normal text); new ~4.9:1. */
-    --color-text-muted: #7f9389;
-    --color-accent: #10b981;
-    --color-accent-hover: #34d399;
-    --color-accent-muted: rgba(16, 185, 129, 0.15);
-    --color-bullish: #10b981;
-    --color-bullish-muted: rgba(16, 185, 129, 0.15);
-    --color-bearish: #ef4444;
-    --color-bearish-muted: rgba(239, 68, 68, 0.15);
-    --color-warning: #f59e0b;
-    --color-warning-muted: rgba(245, 158, 11, 0.15);
-    --color-neutral: #6b7f76;
-    --color-strong-buy: #10b981;
-    --color-buy: #34d399;
-    --color-hold: #6b7f76;
-    --color-sell: #ef4444;
-    --color-strong-sell: #dc2626;
-
-    /* Landing page surfaces */
-    --color-ld-deep: #0a0a0f;
-    --color-ld-panel: #0f0f18;
-    --color-ld-card: #12121e;
-    --color-ld-card-hover: #181828;
-    --color-ld-border: #1e1e35;
-    --color-ld-border-accent: #0a3d2a;
-    --color-ld-text: #e8e6f0;
-    --color-ld-text-secondary: #9b96b3;
-    /* v3.1 — bumped from #67627e to #8780a3 to clear WCAG AA on
-       ld-deep #0a0a0f. Old contrast ~3.4:1; new ~5.6:1. */
-    --color-ld-text-muted: #8780a3;
-    --color-ld-accent: #10b981;
-    --color-ld-accent-dim: #059669;
-    --color-ld-red: #ef4444;
-    --color-ld-cyan: #4df0e6;
-    --color-ld-amber: #ffa94d;
-    --color-ld-green: #54d38a;
+  /* Native controls, scrollbars and the select popup follow the theme. */
+  html {
+    color-scheme: light;
+    --elevation-card: 0 1px 2px oklch(20% 0.02 163 / 0.06);
+    --elevation-pop: 0 8px 24px oklch(20% 0.02 163 / 0.12);
+    --elevation-modal: 0 16px 48px oklch(20% 0.02 163 / 0.18);
   }
 
-  html.dark ::-webkit-scrollbar-thumb { background: #3d5349; }
-  html.dark ::-webkit-scrollbar-thumb:hover { background: #4d6559; }
-  html.dark ::selection { background-color: rgba(16, 185, 129, 0.30); }
+  /* ── Dark (the default for first-time visitors), hue 163 ──
+     A lightness ladder about +3.5 L per step; depth comes from the
+     ladder, not from shadow. */
+  html.dark {
+    color-scheme: dark;
+    --color-bg-primary: oklch(17% 0.020 163);
+    --color-bg-secondary: oklch(20.5% 0.024 163);
+    --color-bg-surface: oklch(24% 0.028 163);
+    --color-bg-elevated: oklch(27.5% 0.031 164);
+    --color-bg-hover: oklch(31% 0.033 164);
+    --color-border: oklch(30% 0.030 165);
+    --color-border-hover: oklch(36% 0.032 165);
+    --color-border-control: oklch(55% 0.035 165);
+    --color-hairline-inner: rgb(255 255 255 / 0.045);
+    --color-text-primary: oklch(96% 0.006 165);
+    --color-text-secondary: oklch(76% 0.028 165);
+    --color-text-muted: oklch(68% 0.026 165);
+    --color-accent: oklch(70% 0.15 162);
+    --color-accent-hover: oklch(76% 0.15 162);
+    --color-on-accent: oklch(17% 0.020 163);
+    --color-accent-muted: color-mix(in oklch, var(--color-accent) 15%, transparent);
+    --color-bullish: oklch(72% 0.16 160);
+    --color-bearish: oklch(72% 0.17 25);
+    --color-warning: oklch(78% 0.15 75);
+    --color-bullish-muted: color-mix(in oklch, var(--color-bullish) 15%, transparent);
+    --color-bearish-muted: color-mix(in oklch, var(--color-bearish) 15%, transparent);
+    --color-warning-muted: color-mix(in oklch, var(--color-warning) 15%, transparent);
+    --color-bullish-fg: oklch(84% 0.09 160);
+    --color-bullish-fill: oklch(27% 0.050 160);
+    --color-bullish-line: oklch(74% 0.12 160);
+    --color-bearish-fg: oklch(84% 0.088 22);
+    --color-bearish-fill: oklch(27.5% 0.046 22);
+    --color-bearish-line: oklch(74% 0.14 22);
+    --color-warning-fg: oklch(86% 0.10 80);
+    --color-warning-fill: oklch(28% 0.045 75);
+    --color-warning-line: oklch(74% 0.12 75);
+    --color-bearish-solid: oklch(55% 0.19 25);
+    --color-on-bearish: oklch(98% 0.005 25);
+    --color-neutral: oklch(60% 0.020 165);
+    --elevation-card: 0 0 #0000;
+    --elevation-pop: 0 8px 24px oklch(0% 0 0 / 0.45);
+    --elevation-modal: 0 16px 48px oklch(0% 0 0 / 0.55);
+    --color-series-1: oklch(74% 0.12 180);
+    --color-series-2: oklch(74% 0.12 250);
+    --color-series-3: oklch(74% 0.12 305);
+    --color-series-4: oklch(74% 0.12 50);
+    --color-series-5: oklch(74% 0.12 100);
+    --color-series-6: oklch(74% 0.12 350);
+  }
 
-  /* Color-blind palette swap. Activated by the `colorblind` class on
-     the <html> element, toggled by useDisplayPrefs.setColorBlindMode.
-     Replaces red/green with a deuteranopia-friendly orange/blue pair
-     (Wong palette). Bullish stays a vivid color (still emotionally
-     positive), bearish swaps to orange (distinguishable from green
-     for the ~8% of men + ~0.5% of women who can't tell red from green).
-     The hex values match Bang Wong's published recommendations:
-     - blue:   #0072B2 (positive / bullish)
-     - orange: #E69F00 (negative / bearish) */
+  /* ── Gray: the dark ladder with the tint taken out ("true neutral").
+     Keeps the emerald accent. */
+  html.gray {
+    color-scheme: dark;
+    --color-bg-primary: oklch(17% 0 0);
+    --color-bg-secondary: oklch(20.5% 0.002 286);
+    --color-bg-surface: oklch(24% 0.003 286);
+    --color-bg-elevated: oklch(27.5% 0.004 286);
+    --color-bg-hover: oklch(31% 0.004 286);
+    --color-border: oklch(30% 0.004 286);
+    --color-border-hover: oklch(36% 0.004 286);
+    --color-border-control: oklch(55% 0.004 286);
+    --color-hairline-inner: rgb(255 255 255 / 0.045);
+    --color-text-primary: oklch(96% 0 0);
+    --color-text-secondary: oklch(76% 0.004 286);
+    --color-text-muted: oklch(68% 0.004 286);
+    --color-accent: oklch(70% 0.15 162);
+    --color-accent-hover: oklch(76% 0.15 162);
+    --color-on-accent: oklch(17% 0 0);
+    --color-accent-muted: color-mix(in oklch, var(--color-accent) 15%, transparent);
+    --color-bullish: oklch(72% 0.16 160);
+    --color-bearish: oklch(72% 0.17 25);
+    --color-warning: oklch(78% 0.15 75);
+    --color-bullish-muted: color-mix(in oklch, var(--color-bullish) 15%, transparent);
+    --color-bearish-muted: color-mix(in oklch, var(--color-bearish) 15%, transparent);
+    --color-warning-muted: color-mix(in oklch, var(--color-warning) 15%, transparent);
+    --color-bullish-fg: oklch(84% 0.09 160);
+    --color-bullish-fill: oklch(27% 0.050 160);
+    --color-bullish-line: oklch(74% 0.12 160);
+    --color-bearish-fg: oklch(84% 0.088 22);
+    --color-bearish-fill: oklch(27.5% 0.046 22);
+    --color-bearish-line: oklch(74% 0.14 22);
+    --color-warning-fg: oklch(86% 0.10 80);
+    --color-warning-fill: oklch(28% 0.045 75);
+    --color-warning-line: oklch(74% 0.12 75);
+    --color-bearish-solid: oklch(55% 0.19 25);
+    --color-on-bearish: oklch(98% 0.005 25);
+    --color-neutral: oklch(60% 0.004 286);
+    --elevation-card: 0 0 #0000;
+    --elevation-pop: 0 8px 24px oklch(0% 0 0 / 0.45);
+    --elevation-modal: 0 16px 48px oklch(0% 0 0 / 0.55);
+    --color-series-1: oklch(74% 0.12 180);
+    --color-series-2: oklch(74% 0.12 250);
+    --color-series-3: oklch(74% 0.12 305);
+    --color-series-4: oklch(74% 0.12 50);
+    --color-series-5: oklch(74% 0.12 100);
+    --color-series-6: oklch(74% 0.12 350);
+  }
+
+  /* ── Coral: the light ladder turned to a warm hue 40, coral accent ──
+     Coral puts a warm accent among a loss and a warning that are warm
+     too, so its semantic colours are chosen as one set rather than a
+     pair at a time: accent, hover, gain, loss, warning and the text
+     ladder. Each state keeps 0.10 deltaE OK or more from every other
+     state, from the accent and hover, and from the text;
+     theme-contrast.test.ts measures the whole set. Colour-blind mode
+     replaces all of it with the shared light set (below).
+
+     - The accent is a terracotta (hue 29), not an orange. Orange reads
+       as yellow to a deuteranope, the colour of the warning; every
+       orange accent that cleared 4.5:1 left the two at 0.05 or less.
+     - The loss is a raspberry (hue 1): red, but bluer than the accent.
+     - The warning is amber (hue 62). The yellow it replaces (hue 100)
+       sat 0.108 from the base green gain; amber is 0.17 from it.
+     - The text carries less tint (chroma 0.01) and the primary sits
+       darker: a tinted near-black was within 0.10 of the loss.
+     Earlier rounds, pair by pair: the shared hue-27 accent measured
+     0.02 from the loss, and then the amber warning matched a hovered
+     button. */
+  html.coral {
+    --color-bg-primary: oklch(96.5% 0.010 40);
+    --color-bg-secondary: oklch(99.5% 0.003 40);
+    --color-bg-surface: oklch(98% 0.006 40);
+    --color-bg-elevated: oklch(95% 0.014 40);
+    --color-bg-hover: oklch(92% 0.020 38);
+    --color-border: oklch(90% 0.018 38);
+    --color-border-hover: oklch(84% 0.024 36);
+    --color-border-control: oklch(60% 0.030 36);
+    --color-text-primary: oklch(18% 0.010 38);
+    --color-text-secondary: oklch(38.5% 0.010 38);
+    --color-text-muted: oklch(47% 0.018 38);
+    --color-accent: oklch(41% 0.13 29);
+    --color-accent-hover: oklch(41% 0.125 41);
+    --color-on-accent: oklch(99.5% 0.003 40);
+    --color-warning: oklch(50.5% 0.110 62);
+    --color-warning-fg: oklch(42% 0.090 62);
+    --color-warning-fill: oklch(95% 0.040 75);
+    --color-warning-line: oklch(66% 0.12 68);
+    --color-bearish: oklch(50% 0.168 1);
+    --color-bearish-fg: oklch(42% 0.14 1);
+    --color-bearish-fill: oklch(95% 0.025 1);
+    --color-bearish-line: oklch(62% 0.15 1);
+    --color-bearish-solid: oklch(50% 0.168 1);
+    --color-on-bearish: oklch(99.5% 0.003 1);
+    --color-neutral: oklch(66% 0.025 40);
+  }
+
+  /* ── Light blue: the light ladder turned to hue 250, blue accent ── */
+  html.light-blue {
+    --color-bg-primary: oklch(96.5% 0.010 250);
+    --color-bg-secondary: oklch(99.5% 0.003 250);
+    --color-bg-surface: oklch(98% 0.006 250);
+    --color-bg-elevated: oklch(95% 0.014 250);
+    --color-bg-hover: oklch(92% 0.022 250);
+    --color-border: oklch(90% 0.020 250);
+    --color-border-hover: oklch(84% 0.028 250);
+    --color-border-control: oklch(60% 0.040 250);
+    --color-text-primary: oklch(24% 0.050 255);
+    --color-text-secondary: oklch(36% 0.050 255);
+    --color-text-muted: oklch(47% 0.040 255);
+    --color-accent: oklch(50% 0.19 262);
+    --color-accent-hover: oklch(45% 0.19 262);
+    --color-on-accent: oklch(99.5% 0.003 250);
+    --color-neutral: oklch(66% 0.040 250);
+  }
+
+  /* ── Colour-blind mode ── a class beside the theme class. It replaces
+     the theme's state colours with ONE fixed set per luminance family:
+     html.colorblind for the light themes (light, coral, light-blue) and
+     html.colorblind.dark / .gray for the dark ones. The set does not
+     follow the theme, because a deuteranope or protanope keeps only
+     lightness and the blue-yellow axis, and tuning a variant per theme
+     kept moving a collision from one pair to the next.
+
+     - Gain is blue, loss is vermillion-to-amber, warning is yellow
+       (after Bang Wong's deuteranopia-safe palette), spread in lightness
+       as well as hue so the three stay apart once red-green is gone.
+     - Each -fg is the state colour itself: it already clears 4.5:1 on
+       its -fill, and one value per state is one value to keep distinct
+       from the text.
+     - The accent is overridden too, to a neutral blue. Every theme's own
+       accent collided with this set under simulation: the emerald reads
+       as the olive of the warning, coral's terracotta as the loss, and
+       light-blue's blue as the gain. The neutral blue sits apart from
+       the gain in chroma and lightness.
+
+     theme-contrast.test.ts measures every theme with this mode on, as
+     typical, deuteranope and protanope vision see it. */
   html.colorblind {
-    --color-bullish: #0072B2;
-    --color-bullish-muted: rgba(0, 114, 178, 0.15);
-    --color-bearish: #E69F00;
-    --color-bearish-muted: rgba(230, 159, 0, 0.15);
+    --color-bullish: oklch(52% 0.20 265);
+    --color-bearish: oklch(40% 0.14 40);
+    --color-warning: oklch(50% 0.11 108);
+    --color-bullish-fg: oklch(52% 0.20 265);
+    --color-bullish-fill: oklch(95% 0.025 265);
+    --color-bullish-line: oklch(62% 0.14 265);
+    --color-bearish-fg: oklch(40% 0.14 40);
+    --color-bearish-fill: oklch(95% 0.030 45);
+    --color-bearish-line: oklch(58% 0.13 42);
+    --color-warning-fg: oklch(50% 0.11 108);
+    --color-warning-fill: oklch(95% 0.060 105);
+    --color-warning-line: oklch(66% 0.11 105);
+    --color-accent: oklch(46% 0.10 245);
+    --color-accent-hover: oklch(41% 0.10 245);
+    --color-on-accent: oklch(99.5% 0.003 245);
   }
   html.colorblind.dark,
   html.colorblind.gray {
-    --color-bullish: #56B4E9;
-    --color-bullish-muted: rgba(86, 180, 233, 0.15);
-    --color-bearish: #E69F00;
-    --color-bearish-muted: rgba(230, 159, 0, 0.20);
+    --color-bullish: oklch(69% 0.16 265);
+    --color-bearish: oklch(78% 0.16 65);
+    --color-warning: oklch(94% 0.15 105);
+    --color-bullish-fg: oklch(69% 0.16 265);
+    --color-bullish-fill: oklch(27% 0.050 265);
+    --color-bullish-line: oklch(66% 0.13 265);
+    --color-bearish-fg: oklch(78% 0.16 65);
+    --color-bearish-fill: oklch(28% 0.045 62);
+    --color-bearish-line: oklch(72% 0.14 62);
+    --color-warning-fg: oklch(94% 0.15 105);
+    --color-warning-fill: oklch(28% 0.045 102);
+    --color-warning-line: oklch(86% 0.14 102);
+    --color-accent: oklch(76% 0.12 228);
+    --color-accent-hover: oklch(82% 0.11 228);
+    --color-on-accent: oklch(17% 0.020 228);
   }
+  /* The -muted mixes are declared once per theme and resolve on <html>,
+     so each picks up the swapped colour without being repeated here. */
 
   /* ─────────────────────────────────────────────────────────────────
-     Coral theme — warm light variant, peachy off-white surfaces +
-     coral accent. Light-mode contrast model; trading semantics stay
-     the universal red/green so positions are still readable at a glance.
+     Focus mode — the Analysis page's opt-in collapse of the desktop top
+     bar, so the chart workspace gets the full viewport height. Toggled by
+     adding `focus-mode` to <html>. The rule used to target the left
+     sidebar (aside[data-app-sidebar]), which no longer exists since the
+     shell moved to a top bar, so the button did nothing. Phones are
+     unaffected: that header is already hidden below lg and the menu
+     button stays.
      ───────────────────────────────────────────────────────────────── */
-  html.coral {
-    --color-bg-primary: #fdf5f3;
-    --color-bg-secondary: #ffffff;
-    --color-bg-surface: #fefaf9;
-    --color-bg-elevated: #fbe8e1;
-    --color-bg-hover: #f5d0c5;
-    --color-border: #f0c8bd;
-    --color-border-hover: #e3a796;
-    --color-text-primary: #4a1e0f;
-    --color-text-secondary: #6a3322;
-    --color-text-muted: #8a5240;
-    --color-accent: #f97066;
-    --color-accent-hover: #ef5a4e;
-    --color-accent-muted: rgba(249, 112, 102, 0.12);
-    --color-bullish: #047857;
-    --color-bullish-muted: rgba(4, 120, 87, 0.10);
-    --color-bearish: #b91c1c;
-    --color-bearish-muted: rgba(185, 28, 28, 0.10);
-    --color-warning: #b45309;
-    --color-warning-muted: rgba(180, 83, 9, 0.10);
-    --color-neutral: #a8826a;
-    --color-strong-buy: #065f46;
-    --color-buy: #047857;
-    --color-hold: #a8826a;
-    --color-sell: #b91c1c;
-    --color-strong-sell: #991b1b;
-
-    /* Landing page surfaces for coral */
-    --color-ld-deep: #fef4f1;
-    --color-ld-panel: #fdebe6;
-    --color-ld-card: #ffffff;
-    --color-ld-card-hover: #fefaf9;
-    --color-ld-border: #f0c8bd;
-    --color-ld-border-accent: #fcd1ca;
-    --color-ld-text: #4a1e0f;
-    --color-ld-text-secondary: #6a3322;
-    --color-ld-text-muted: #8a5240;
-    --color-ld-accent: #ef5a4e;
-    --color-ld-accent-dim: #c2410c;
-    --color-ld-red: #b91c1c;
-    --color-ld-cyan: #0891b2;
-    --color-ld-amber: #b45309;
-    --color-ld-green: #047857;
-  }
-
-  /* ─────────────────────────────────────────────────────────────────
-     Light Blue theme — cool light variant, sky-tinted surfaces, blue
-     accent. Same contrast model as light/coral.
-     ───────────────────────────────────────────────────────────────── */
-  html.light-blue {
-    --color-bg-primary: #f0f7ff;
-    --color-bg-secondary: #ffffff;
-    --color-bg-surface: #f8fcff;
-    --color-bg-elevated: #e0f0ff;
-    --color-bg-hover: #c7e2ff;
-    --color-border: #bdd9f5;
-    --color-border-hover: #94c0e8;
-    --color-text-primary: #0c2340;
-    --color-text-secondary: #1e3a5f;
-    --color-text-muted: #4a6580;
-    --color-accent: #3b82f6;
-    --color-accent-hover: #2563eb;
-    --color-accent-muted: rgba(59, 130, 246, 0.12);
-    --color-bullish: #047857;
-    --color-bullish-muted: rgba(4, 120, 87, 0.10);
-    --color-bearish: #b91c1c;
-    --color-bearish-muted: rgba(185, 28, 28, 0.10);
-    --color-warning: #b45309;
-    --color-warning-muted: rgba(180, 83, 9, 0.10);
-    --color-neutral: #6b8cb0;
-    --color-strong-buy: #065f46;
-    --color-buy: #047857;
-    --color-hold: #6b8cb0;
-    --color-sell: #b91c1c;
-    --color-strong-sell: #991b1b;
-
-    /* Landing page surfaces for light-blue */
-    --color-ld-deep: #f0f7ff;
-    --color-ld-panel: #e3eefe;
-    --color-ld-card: #ffffff;
-    --color-ld-card-hover: #f8fcff;
-    --color-ld-border: #bdd9f5;
-    --color-ld-border-accent: #c7e2ff;
-    --color-ld-text: #0c2340;
-    --color-ld-text-secondary: #1e3a5f;
-    --color-ld-text-muted: #4a6580;
-    --color-ld-accent: #2563eb;
-    --color-ld-accent-dim: #1d4ed8;
-    --color-ld-red: #b91c1c;
-    --color-ld-cyan: #0891b2;
-    --color-ld-amber: #b45309;
-    --color-ld-green: #047857;
-  }
-
-  /* ─────────────────────────────────────────────────────────────────
-     Gray theme — true neutral dark variant. No emerald tint in surfaces
-     (the default dark theme leans green). Accent stays emerald so
-     bullish/CTA elements still pop.
-     ───────────────────────────────────────────────────────────────── */
-  html.gray {
-    --color-bg-primary: #0f0f10;
-    --color-bg-secondary: #18181b;
-    --color-bg-surface: #1f1f23;
-    --color-bg-elevated: #27272a;
-    --color-bg-hover: #3f3f46;
-    --color-border: #3f3f46;
-    --color-border-hover: #52525b;
-    --color-text-primary: #fafafa;
-    --color-text-secondary: #a1a1aa;
-    /* v3.1 — bumped from #71717a to #8d8d96 for AA on bg-surface
-       #1f1f23. Old ~3.3:1; new ~5.0:1. */
-    --color-text-muted: #8d8d96;
-    --color-accent: #10b981;
-    --color-accent-hover: #34d399;
-    --color-accent-muted: rgba(16, 185, 129, 0.15);
-    --color-bullish: #10b981;
-    --color-bullish-muted: rgba(16, 185, 129, 0.15);
-    --color-bearish: #ef4444;
-    --color-bearish-muted: rgba(239, 68, 68, 0.15);
-    --color-warning: #f59e0b;
-    --color-warning-muted: rgba(245, 158, 11, 0.15);
-    --color-neutral: #71717a;
-    --color-strong-buy: #10b981;
-    --color-buy: #34d399;
-    --color-hold: #71717a;
-    --color-sell: #ef4444;
-    --color-strong-sell: #dc2626;
-
-    /* Landing page surfaces for gray */
-    --color-ld-deep: #0a0a0a;
-    --color-ld-panel: #18181b;
-    --color-ld-card: #1f1f23;
-    --color-ld-card-hover: #27272a;
-    --color-ld-border: #3f3f46;
-    --color-ld-border-accent: #404040;
-    --color-ld-text: #fafafa;
-    --color-ld-text-secondary: #a1a1aa;
-    /* v3.1 — same bump as dashboard muted for AA on ld-deep #0a0a0a. */
-    --color-ld-text-muted: #8d8d96;
-    --color-ld-accent: #10b981;
-    --color-ld-accent-dim: #059669;
-    --color-ld-red: #ef4444;
-    --color-ld-cyan: #4df0e6;
-    --color-ld-amber: #ffa94d;
-    --color-ld-green: #54d38a;
-  }
-  html.gray ::-webkit-scrollbar-thumb { background: #3f3f46; }
-  html.gray ::-webkit-scrollbar-thumb:hover { background: #52525b; }
-  html.gray ::selection { background-color: rgba(16, 185, 129, 0.30); }
-
-  /* ─────────────────────────────────────────────────────────────────
-     Focus mode — opt-in collapse of the left dashboard sidebar so a
-     single page (Analysis, Trader, anywhere a chart lives) gets the
-     full viewport width. Toggled by writing localStorage and adding
-     `focus-mode` to <html>. Mobile is unaffected (sidebar is already
-     hidden via `hidden lg:flex`).
-     ───────────────────────────────────────────────────────────────── */
-  html.focus-mode aside[data-app-sidebar] {
+  html.focus-mode header[data-app-topnav] {
     display: none !important;
   }
 }
@@ -325,6 +467,13 @@
    unwrapped silently breaks `text-text-secondary` on Link tags, etc.
    (See memory: feedback_tailwind_v4_layers.md.) */
 @layer base {
+  /* One horizontal gutter for every contained band on the public pages
+     (nav, hero, sections, footer): px-[var(--gutter)] on the inner
+     wrapper, so the bands' first content edges line up at every width. */
+  :root {
+    --gutter: clamp(16px, 4vw, 56px);
+  }
+
   html {
     background-color: var(--color-bg-primary);
   }
@@ -353,95 +502,131 @@
   ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--color-border-hover); }
 
-  ::selection { background-color: rgba(16, 185, 129, 0.20); color: var(--color-text-primary); }
+  ::selection { background-color: color-mix(in oklch, var(--color-accent) 25%, transparent); color: var(--color-text-primary); }
   input, textarea, select, button { font-family: var(--font-body); }
+
+  /* Default keyboard focus indicator. A component that draws its own ring
+     (Button, the form primitives) overrides this with utilities. */
+  :where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  /* "Skip to content": the first focusable element in each shell, off
+     screen until a keyboard user tabs onto it (plan 1.3). The links and
+     their #main targets land with the shells in Stage 2. */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 16px;
+    z-index: 100;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    background-color: var(--color-bg-elevated);
+    color: var(--color-text-primary);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    box-shadow: var(--elevation-pop);
+  }
+  .skip-link:focus {
+    left: 16px;
+  }
 }
 
-/* ── Keyframes ── */
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(24px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes scale-in {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes slide-in-left {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
-}
-@keyframes slide-in-right {
-  from { opacity: 0; transform: translateX(24px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3); }
-  50% { box-shadow: 0 0 10px 3px rgba(16, 185, 129, 0.1); }
+/* Forced colours (Windows High Contrast) drop box-shadow rings and
+   background changes, so a focused control is only visible through its
+   outline. Unlayered on purpose: it has to beat every outline-none
+   utility in the app, and the browser repaints the colour itself. */
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
 }
 
-.animate-fade-in { animation: fade-in 0.2s ease-out both; }
-.animate-fade-in-up { animation: fade-in-up 0.5s ease-out both; opacity: 0; }
-.animate-scale-in { animation: scale-in 0.2s ease-out both; }
-.animate-slide-up { animation: slide-up 0.25s ease-out both; }
-.animate-slide-in-left { animation: slide-in-left 0.25s ease-out both; }
-.animate-slide-in-right { animation: slide-in-right 0.35s ease-out both; }
-.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+/* Animation classes, the landing grid and the legacy accent-line hooks.
+   In @layer components rather than unlayered: an unlayered rule beats
+   every Tailwind utility regardless of specificity, so `motion-reduce:
+   animate-none` or an `opacity-*` utility on the same element used to
+   lose silently. Components sit below utilities, so a utility now wins.
+   These stay plain classes (not @utility) because callers build some of
+   the names at runtime (`stagger-${i + 1}`), which Tailwind's scanner
+   cannot see. */
+@layer components {
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slide-in-left {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(24px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
 
-.stagger-1 { animation-delay: 0.05s; }
-.stagger-2 { animation-delay: 0.10s; }
-.stagger-3 { animation-delay: 0.15s; }
-.stagger-4 { animation-delay: 0.20s; }
-.stagger-5 { animation-delay: 0.25s; }
-.stagger-6 { animation-delay: 0.30s; }
-.stagger-7 { animation-delay: 0.35s; }
-.stagger-8 { animation-delay: 0.40s; }
+  /* One exponential ease-out for every entrance, as the design notes say. */
+  .animate-fade-in { animation: fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-fade-in-up { animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-scale-in { animation: scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-slide-up { animation: slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-slide-in-left { animation: slide-in-left 0.25s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-slide-in-right { animation: slide-in-right 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
 
-.focus-ring {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--color-bg-secondary), 0 0 0 4px var(--color-accent);
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.10s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.20s; }
+  .stagger-5 { animation-delay: 0.25s; }
+  .stagger-6 { animation-delay: 0.30s; }
+  .stagger-7 { animation-delay: 0.35s; }
+  .stagger-8 { animation-delay: 0.40s; }
+
+  /* ── Landing page ── */
+  .landing-grid-bg {
+    background-image:
+      linear-gradient(var(--color-ld-border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-ld-border) 1px, transparent 1px);
+    background-size: 62px 62px;
+    opacity: 0.28;
+    mask-image: radial-gradient(ellipse at center, black 36%, transparent 72%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 36%, transparent 72%);
+  }
+
+  /* card-accent-line / top-accent-line: the animated accent stripes were
+     removed 2026-07-15 as a template tell. The names stay as positioning
+     hooks so existing markup keeps its containing block. */
+  .card-accent-line,
+  .top-accent-line {
+    position: relative;
+  }
 }
 
-/* ── Landing page styles ── */
-
-.landing-grid-bg {
-  background-image:
-    linear-gradient(var(--color-ld-border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--color-ld-border) 1px, transparent 1px);
-  background-size: 62px 62px;
-  opacity: 0.28;
-  mask-image: radial-gradient(ellipse at center, black 36%, transparent 72%);
-  -webkit-mask-image: radial-gradient(ellipse at center, black 36%, transparent 72%);
-}
-
-/* card-accent-line / top-accent-line removed 2026-07-15 (design review):
-   animated gradient accent stripes were a recognizable template tell, and
-   top-accent-line introduced a cyan that exists nowhere else in the product.
-   The classes are kept as no-ops so any straggler markup degrades silently. */
-.card-accent-line,
-.top-accent-line {
-  position: relative;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-.animate-pulse-dot {
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
+/* Last unlayered rules on purpose: the blanket reduced-motion override
+   covers every animation and transition added later, and print must beat
+   the themes. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

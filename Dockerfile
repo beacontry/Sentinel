@@ -20,6 +20,10 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
+# The app's SIGTERM handler (src/instrumentation.ts) must be the only one that
+# exits: Next's own cleanup would process.exit(0) before the engine drain
+# places safety stops. This switches Next's handler off.
+ENV NEXT_MANUAL_SIG_HANDLE=true
 
 RUN apk add --no-cache curl
 RUN addgroup --system --gid 1001 nodejs && \

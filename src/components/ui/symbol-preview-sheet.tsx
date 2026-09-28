@@ -17,8 +17,9 @@
  *   - Trade (→ /dashboard/trade/…)
  *   - Add to watchlist (POST /api/watchlist, optimistic toast)
  *
- * Data fetched from /api/analyze/[symbol] (already exists, cached
- * server-side for 60s). Closes on overlay click, X, or Escape.
+ * Data fetched from /api/analyze/[symbol]. There is no server-side cache:
+ * each open runs the full analysis (the response carries a 60s private
+ * browser cache header, nothing more). Closes on overlay click, X, or Escape.
  *
  * Render once per page near the root; show by setting the controlled
  * `symbol` prop. `null` hides it.
@@ -55,11 +56,11 @@ interface AnalysisResponse {
 }
 
 const SIGNAL_TONE: Record<string, { label: string; cls: string }> = {
-  STRONG_BUY: { label: "Strong Buy", cls: "bg-bullish/15 text-bullish border-bullish/30" },
-  BUY: { label: "Buy", cls: "bg-bullish/10 text-bullish border-bullish/20" },
+  STRONG_BUY: { label: "Strong Buy", cls: "bg-bullish-fill text-bullish-fg border-bullish/30" },
+  BUY: { label: "Buy", cls: "bg-bullish-fill text-bullish-fg border-bullish/20" },
   HOLD: { label: "Hold", cls: "bg-text-muted/10 text-text-muted border-border" },
-  SELL: { label: "Sell", cls: "bg-bearish/10 text-bearish border-bearish/20" },
-  STRONG_SELL: { label: "Strong Sell", cls: "bg-bearish/15 text-bearish border-bearish/30" },
+  SELL: { label: "Sell", cls: "bg-bearish-fill text-bearish-fg border-bearish/20" },
+  STRONG_SELL: { label: "Strong Sell", cls: "bg-bearish-fill text-bearish-fg border-bearish/30" },
 };
 
 export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps) {
@@ -70,8 +71,10 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
   const [adding, setAdding] = useState(false);
 
   // Fetch on open. Reset on close so a re-open of the same symbol re-fetches
-  // (price may have moved). The /api/analyze cache (60s server-side) keeps
-  // this cheap.
+  // (price may have moved). The route has no server-side cache, so every open
+  // re-runs the analysis and counts against the per-user analyze rate limit.
+  // Its signal row is stored once per bar (migration 0052), so re-opening
+  // does not add rows or re-send Discord and trader notifications.
   useEffect(() => {
     if (!symbol) {
       setData(null);
@@ -166,7 +169,7 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
         aria-label={`${symbol} quick info`}
         tabIndex={-1}
         className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm overflow-y-auto
-          border-l border-border bg-bg-surface shadow-2xl animate-slide-in-right
+          border-l border-border bg-bg-surface shadow-modal animate-slide-in-right
           focus:outline-none"
       >
         {/* Header */}
@@ -215,9 +218,9 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
             <>
               {/* Price */}
               <div>
-                <div className="text-[11px] uppercase tracking-[0.08em] text-text-muted">Last price</div>
+                <div className="text-xs uppercase tracking-[0.08em] text-text-muted">Last price</div>
                 <div className="flex items-baseline gap-3 mt-0.5">
-                  <span className="font-mono text-3xl font-semibold text-text-primary">
+                  <span className="font-mono text-2xl font-semibold text-text-primary">
                     ${price.toFixed(2)}
                   </span>
                   {changePct !== null && (
@@ -235,7 +238,7 @@ export function SymbolPreviewSheet({ symbol, onClose }: SymbolPreviewSheetProps)
 
               {/* Signal */}
               <div>
-                <div className="text-[11px] uppercase tracking-[0.08em] text-text-muted">Current signal</div>
+                <div className="text-xs uppercase tracking-[0.08em] text-text-muted">Current signal</div>
                 <div className="mt-1 flex items-center gap-2">
                   <span
                     className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${signalMeta.cls}`}
@@ -324,7 +327,7 @@ interface StatProps {
 function Stat({ label, value, tone = "neutral", sub }: StatProps) {
   return (
     <div className="rounded-lg bg-bg-elevated px-3 py-2">
-      <div className="text-[10px] uppercase tracking-[0.08em] text-text-muted">{label}</div>
+      <div className="text-xs uppercase tracking-[0.08em] text-text-muted">{label}</div>
       <div
         className={`mt-0.5 font-mono text-sm font-medium ${
           tone === "warning" ? "text-warning" : "text-text-primary"
@@ -332,7 +335,7 @@ function Stat({ label, value, tone = "neutral", sub }: StatProps) {
       >
         {value}
       </div>
-      {sub && <div className="text-[10px] text-text-muted">{sub}</div>}
+      {sub && <div className="text-xs text-text-muted">{sub}</div>}
     </div>
   );
 }

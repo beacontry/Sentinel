@@ -138,7 +138,7 @@ export function CommandPalette() {
               className="h-12 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted outline-none"
               autoFocus
             />
-            <kbd className="hidden rounded-md border border-border bg-bg-elevated px-2 py-1 font-mono text-[11px] text-text-muted sm:inline-flex">
+            <kbd className="hidden rounded-md border border-border bg-bg-elevated px-2 py-1 font-mono text-xs text-text-muted sm:inline-flex">
               ESC
             </kbd>
           </div>
@@ -154,7 +154,7 @@ export function CommandPalette() {
               <Command.Group
                 heading={`Symbol: ${upperQuery}`}
                 className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-2
-                  [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:uppercase
+                  [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:uppercase
                   [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-accent
                   [&_[cmdk-group-heading]]:font-medium"
               >
@@ -204,7 +204,7 @@ export function CommandPalette() {
               <Command.Group
                 heading="Recently viewed"
                 className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-2
-                  [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:uppercase
+                  [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:uppercase
                   [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-text-muted
                   [&_[cmdk-group-heading]]:font-medium"
               >
@@ -236,7 +236,7 @@ export function CommandPalette() {
             <Command.Group
               heading="Pages"
               className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-2
-                [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:uppercase
+                [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:uppercase
                 [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-text-muted
                 [&_[cmdk-group-heading]]:font-medium"
             >
@@ -267,7 +267,7 @@ export function CommandPalette() {
             <Command.Group
               heading="Actions"
               className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-2
-                [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:uppercase
+                [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:uppercase
                 [&_[cmdk-group-heading]]:tracking-[0.12em] [&_[cmdk-group-heading]]:text-text-muted
                 [&_[cmdk-group-heading]]:font-medium"
             >
@@ -288,7 +288,7 @@ export function CommandPalette() {
             </Command.Group>
           </Command.List>
 
-          <div className="flex items-center justify-between border-t border-border px-4 py-2.5 text-[11px] text-text-muted">
+          <div className="flex items-center justify-between border-t border-border px-4 py-2.5 text-xs text-text-muted">
             <span>Navigate with <kbd className="font-mono">↑↓</kbd> and <kbd className="font-mono">Enter</kbd></span>
             <span className="font-mono">{allPages.length} routes</span>
           </div>

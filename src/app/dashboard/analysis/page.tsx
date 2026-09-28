@@ -52,6 +52,8 @@ import {
 import { ChartFullscreenOverlay } from "@/components/ui/chart-fullscreen-overlay";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
 
+import { Segmented } from "@/components/ui/segmented";
+import { Input } from "@/components/ui/input";
 const FOCUS_STORAGE_KEY = "sentinel-focus-mode";
 
 const POPULAR_SYMBOLS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN"];
@@ -132,12 +134,12 @@ function AnalysisCockpit() {
   // removal so PanelGroup doesn't drift.
   const [chartFullscreen, setChartFullscreen] = useState(false);
 
-  // Focus mode — collapses the left dashboard sidebar to maximize the
-  // research workspace. Persists across visits via localStorage. The
-  // sidebar listens for an `html.focus-mode` class (see globals.css).
+  // Focus mode — hides the desktop top bar to maximize the research
+  // workspace. Persists across visits via localStorage. The top bar
+  // listens for an `html.focus-mode` class (see globals.css).
   // The class is also removed on unmount in case the user navigates to
-  // a different page and forgets to disable it (sidebar otherwise stays
-  // hidden globally, which would be confusing).
+  // a different page and forgets to disable it (the navigation would
+  // otherwise stay hidden globally, which would be confusing).
   const [focusMode, setFocusModeState] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -458,7 +460,7 @@ function AnalysisCockpit() {
                 ? "border-accent/40 bg-accent/10 text-accent"
                 : "border-border bg-bg-secondary text-text-secondary hover:text-text-primary hover:bg-bg-hover"
             }`}
-            title={focusMode ? "Show the sidebar" : "Hide the sidebar for more chart space"}
+            title={focusMode ? "Show the navigation bar" : "Hide the navigation bar for more chart space"}
             aria-pressed={focusMode}
           >
             <Focus className="w-3.5 h-3.5" />
@@ -469,12 +471,12 @@ function AnalysisCockpit() {
         }
       />
 
-      <div className="min-h-[760px] flex-1 overflow-hidden rounded-xl border border-border bg-bg-surface shadow-2xl">
+      <div className="min-h-[760px] flex-1 overflow-hidden rounded-xl border border-border bg-bg-surface shadow-modal">
         {/* ─── Mobile ─── */}
         <div className="flex flex-col lg:hidden flex-1 min-h-0 overflow-y-auto">
           <div className="shrink-0 border-b border-border bg-bg-secondary">
             <div className="flex items-center gap-2 overflow-x-auto px-4 py-3">
-              <span className="text-[10px] uppercase tracking-wider text-text-muted shrink-0">
+              <span className="text-xs uppercase tracking-wider text-text-muted shrink-0">
                 Watchlist
               </span>
               {symbols.length === 0 ? (
@@ -486,7 +488,7 @@ function AnalysisCockpit() {
                     <button
                       key={sym}
                       onClick={() => handleSelectSignal(sym)}
-                      className={`shrink-0 flex min-h-[38px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-mono transition-all
+                      className={`shrink-0 flex min-h-[38px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-mono transition-colors
                         ${isSelected ? "bg-accent/15 text-accent border-accent/30" : "bg-bg-secondary text-text-secondary border-border hover:border-border-hover"}`}
                     >
                       {sym}
@@ -506,30 +508,33 @@ function AnalysisCockpit() {
 
             {showAddInput && (
               <div className="flex gap-2 px-4 pb-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                  <input
+                <div className="min-w-0 flex-1">
+                  <Input
                     type="text"
+                    icon={<Search className="w-4 h-4" aria-hidden="true" />}
+                    aria-label="Symbol to add to the watchlist"
                     value={newSymbol}
                     onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
                     onKeyDown={(e) => { if (e.key === "Enter") handleAddSymbol(newSymbol); }}
                     placeholder="Add to watchlist..."
                     maxLength={10}
+                    autoCapitalize="characters"
+                    autoComplete="off"
                     autoFocus
-                    className="w-full rounded-lg border border-border bg-bg-elevated pl-10 pr-3 py-2
-                      text-sm text-text-primary placeholder:text-text-muted font-mono
-                      focus:outline-none focus:border-accent/50 min-h-[44px]"
+                    className="font-mono"
                   />
                 </div>
                 <Button size="md" onClick={() => handleAddSymbol(newSymbol)}>
                   Add
                 </Button>
-                <button
+                <Button
+                  variant="ghost"
                   onClick={() => { setShowAddInput(false); setNewSymbol(""); }}
-                  className="rounded-[14px] p-2 text-text-muted hover:bg-bg-elevated hover:text-text-primary"
+                  className="w-11 px-0"
+                  aria-label="Close add symbol"
                 >
-                  <X className="w-4 h-4" />
-                </button>
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </Button>
               </div>
             )}
           </div>
@@ -612,38 +617,24 @@ function AnalysisCockpit() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="flex gap-0.5 rounded-lg border border-border p-0.5 bg-bg-secondary">
-                    <button
-                      onClick={() => switchChartMode("engine")}
-                      className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
-                        ${chartMode === "engine"
-                          ? "bg-bg-elevated text-text-primary"
-                          : "text-text-muted hover:text-text-secondary"
-                        }`}
-                      title="Beacontry's chart with signal/earnings markers"
-                    >
-                      Engine view
-                    </button>
-                    <button
-                      onClick={() => switchChartMode("tradingview")}
-                      className={`rounded-md px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors
-                        ${chartMode === "tradingview"
-                          ? "bg-bg-elevated text-text-primary"
-                          : "text-text-muted hover:text-text-secondary"
-                        }`}
-                      title="TradingView Advanced Chart with full drawing tools"
-                    >
-                      TradingView
-                    </button>
-                  </div>
-                  <button
+                  <Segmented
+                    label="Chart"
+                    value={chartMode}
+                    onChange={switchChartMode}
+                    options={[
+                      { value: "engine", label: "Engine view" },
+                      { value: "tradingview", label: "TradingView" },
+                    ]}
+                  />
+                  <Button
+                    variant="secondary"
                     onClick={() => setChartFullscreen(true)}
-                    className="rounded-md border border-border bg-bg-secondary p-1.5 text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
+                    className="w-11 px-0"
                     title="Expand chart to full screen (Esc to exit)"
                     aria-label="Expand chart to full screen"
                   >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                  </button>
+                    <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  </Button>
                 </div>
               </div>
             )}
@@ -710,28 +701,29 @@ function AnalysisCockpit() {
                     }}
                     className="flex gap-2"
                   >
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
-                      <input
+                    <div className="min-w-0 flex-1">
+                      <Input
                         type="text"
+                        icon={<Search className="w-3.5 h-3.5" aria-hidden="true" />}
+                        aria-label="Symbol to add to the watchlist"
                         value={newSymbol}
                         onChange={(e) => setNewSymbol(e.target.value.toUpperCase())}
                         placeholder="Add to watchlist..."
                         maxLength={10}
-                        className="w-full rounded-lg border border-border bg-bg-elevated pl-9 pr-3 py-1.5
-                          text-xs text-text-primary placeholder:text-text-muted font-mono
-                          focus:outline-none focus:border-accent/50 min-h-[38px]"
+                        autoCapitalize="characters"
+                        autoComplete="off"
+                        className="font-mono"
                       />
                     </div>
-                    <button
+                    <Button
                       type="submit"
+                      variant="secondary"
                       disabled={!newSymbol.trim()}
-                      className="min-h-[38px] rounded-lg border border-border px-2.5 py-1.5 text-text-muted
-                        transition-colors hover:border-accent/30 hover:text-accent disabled:opacity-30
-                        disabled:cursor-not-allowed"
+                      className="w-11 shrink-0 px-0"
+                      aria-label="Add symbol"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
+                      <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                    </Button>
                   </form>
 
                   {symbols.length === 0 && (
@@ -740,7 +732,7 @@ function AnalysisCockpit() {
                         <button
                           key={sym}
                           onClick={() => handleAddSymbol(sym)}
-                          className="rounded-full border border-border px-2.5 py-1 text-[10px] font-mono
+                          className="rounded-full border border-border px-2.5 py-1 text-xs font-mono
                             text-text-muted transition-colors hover:border-accent/30 hover:text-accent"
                         >
                           + {sym}
@@ -776,7 +768,7 @@ function AnalysisCockpit() {
                           if (selectedSymbol) analyzeSymbol(selectedSymbol);
                         }}
                         disabled={isSelectedLoading}
-                        className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-[16px]
+                        className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-xl
                           border border-border px-3 py-1.5 text-xs text-text-muted transition-colors
                           hover:border-accent/30 hover:text-accent disabled:opacity-30"
                       >
@@ -785,7 +777,7 @@ function AnalysisCockpit() {
                       </button>
                       <Link
                         href={`/dashboard/trade/${encodeURIComponent(selectedSymbol)}`}
-                        className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-[16px]
+                        className="flex min-h-[38px] items-center justify-center gap-1.5 rounded-xl
                           border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent transition-colors
                           hover:bg-accent/20"
                       >

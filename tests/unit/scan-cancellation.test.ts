@@ -13,12 +13,40 @@
  * ScanCancelledError and exits.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// haltEngine touches the db (connection lookup, halt persistence). Every
+// query resolves to no rows, so a halt here finds no broker connection. The
+// pure tests below do not use the db at all.
+vi.mock("@/lib/db", () => {
+  function chain(): unknown {
+    const proxy: unknown = new Proxy(
+      {},
+      {
+        get(_t, prop) {
+          if (prop === "then") return (resolve: (v: unknown) => void) => resolve([]);
+          return () => proxy;
+        },
+      }
+    );
+    return proxy;
+  }
+  return {
+    db: new Proxy({}, { get: () => () => chain() }),
+    withTimeout: <T,>(p: Promise<T>) => p,
+    isStatementTimeout: () => false,
+  };
+});
+
 import {
   ScanCancelledError,
   throwIfScanCancelled,
+  haltEngine,
+  placeEngineOrder,
+  EngineClosedForEntriesError,
   type EngineState,
 } from "@/lib/trading-engine";
+import type { BrokerClient } from "@/lib/brokers";
 
 function makeMinimalEngineWithGeneration(gen: number): EngineState {
   // Only scanGeneration matters for the cancellation logic; cast through
@@ -116,5 +144,44 @@ describe("generation lifecycle (simulating runScan flow)", () => {
     expect(() => throwIfScanCancelled(engine, genA)).toThrow(ScanCancelledError);
     expect(() => throwIfScanCancelled(engine, genB)).toThrow(ScanCancelledError);
     expect(() => throwIfScanCancelled(engine, genC)).not.toThrow();
+  });
+});
+
+describe("emergency halt cancels an in-flight tactical-smart entry loop (finding #43)", () => {
+  it("the loop's next check throws and its BUY is refused once haltEngine has run", async () => {
+    const userId = "00000000-0000-4000-a000-000000000001";
+    const halt = haltEngine(userId); // creates the engine and halts it synchronously
+    const g = globalThis as typeof globalThis & { __tradingEngines?: Map<string, EngineState> };
+    const engine = g.__tradingEngines!.get(userId)!;
+    await halt;
+
+    // A scan that started before the halt holds an older generation. Model
+    // it the way runTacticalSmartScan does: capture, then (for this test)
+    // put the halt between capture and the per-symbol check.
+    engine.running = true;
+    engine.halted = false;
+    const myGeneration = ++engine.scanGeneration;
+    await haltEngine(userId);
+
+    // Top-of-iteration and pre-order checks in the tactical-smart loop.
+    expect(() => throwIfScanCancelled(engine, myGeneration)).toThrow(ScanCancelledError);
+
+    // And if a BUY slipped past the check (the check sits in a try whose
+    // catch now rethrows ScanCancelledError), placeEngineOrder refuses it.
+    const placed: unknown[] = [];
+    const client = {
+      placeOrder: async (p: unknown) => {
+        placed.push(p);
+        return { id: "x", status: "accepted" };
+      },
+    } as unknown as BrokerClient;
+    await expect(
+      placeEngineOrder(
+        client,
+        { symbol: "AAPL", side: "buy", qty: "1", type: "limit", timeInForce: "day", limitPrice: "100" },
+        engine
+      )
+    ).rejects.toBeInstanceOf(EngineClosedForEntriesError);
+    expect(placed).toEqual([]);
   });
 });

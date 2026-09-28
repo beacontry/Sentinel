@@ -1,7 +1,10 @@
 "use client";
 
-import { Fragment, useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback, useRef } from "react";
 import { usePolling } from "@/hooks/usePolling";
+import { useRecoveryPoll } from "@/hooks/useRecoveryPoll";
+import { accessRegained } from "@/lib/recovery-poll";
+import { accessLossStatus } from "@/lib/trader-view";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -107,6 +110,12 @@ export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Set when a read answers 401/402/403 or the session expires: every
+  // user's data is cleared and the page shows only the denial. Loads compare
+  // their generation against genRef, so one already in flight when access
+  // was lost cannot repaint the table. Holds the denying status (401/402/403).
+  const [accessDenied, setAccessDenied] = useState<number | null>(null);
+  const genRef = useRef(0);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -133,11 +142,29 @@ export default function AdminPage() {
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [copiedUrl, setCopiedUrl] = useState("");
 
+  // Defined before the loaders so each can call it; the setters it uses are
+  // stable, and the slices declared further down are cleared through
+  // clearPrivateRef once they exist.
+  const clearPrivateRef = useRef<() => void>(() => {});
+  const revokeAccess = useCallback((status: number) => {
+    genRef.current++;
+    clearPrivateRef.current();
+    setError(
+      status === 401
+        ? "Your session ended. Sign in again to continue."
+        : "You do not have permission to access this page",
+    );
+    setAccessDenied(status);
+    setLoading(false);
+  }, []);
+
   const loadUsers = useCallback(async () => {
+    const gen = genRef.current;
     try {
       const res = await fetch("/api/admin/users");
-      if (res.status === 403) {
-        setError("You do not have permission to access this page");
+      if (gen !== genRef.current) return;
+      if (accessLossStatus(res.status)) {
+        revokeAccess(res.status);
         return;
       }
       if (!res.ok) {
@@ -145,23 +172,34 @@ export default function AdminPage() {
         return;
       }
       const data = await res.json();
+      if (gen !== genRef.current) return;
       setUsers(data.users ?? []);
+      // A good read after a denial means access is back (the denial was a
+      // role-read outage, or the role was restored).
+      setAccessDenied(null);
     } catch {
-      setError("Failed to load users");
+      if (gen === genRef.current) setError("Failed to load users");
     } finally {
-      setLoading(false);
+      if (gen === genRef.current) setLoading(false);
     }
-  }, []);
+  }, [revokeAccess]);
 
   const loadInvites = useCallback(async () => {
+    const gen = genRef.current;
     try {
       const res = await fetch("/api/admin/invites");
+      if (gen !== genRef.current) return;
+      if (accessLossStatus(res.status)) {
+        revokeAccess(res.status);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
+        if (gen !== genRef.current) return;
         setInviteList(data.invites ?? []);
       }
     } catch { /* ignore — invites are secondary */ }
-  }, []);
+  }, [revokeAccess]);
 
   // Phase 16 — slippage report
   const [slippageUsers, setSlippageUsers] = useState<UserSlippage[]>([]);
@@ -170,16 +208,23 @@ export default function AdminPage() {
   const [slippageDays, setSlippageDays] = useState(30);
 
   const loadSlippage = useCallback(async () => {
+    const gen = genRef.current;
     setSlippageLoading(true);
     try {
       const res = await fetch(`/api/admin/slippage-report?days=${slippageDays}`);
+      if (gen !== genRef.current) return;
+      if (accessLossStatus(res.status)) {
+        revokeAccess(res.status);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
+        if (gen !== genRef.current) return;
         setSlippageUsers(data.users ?? []);
         setSlippageNote(data.note ?? "");
       }
     } catch { /* ignore */ } finally { setSlippageLoading(false); }
-  }, [slippageDays]);
+  }, [slippageDays, revokeAccess]);
 
   // Phase 12 — position drift audit
   const [driftUsers, setDriftUsers] = useState<UserDrift[]>([]);
@@ -187,15 +232,22 @@ export default function AdminPage() {
   const [expandedDrift, setExpandedDrift] = useState<Set<string>>(new Set());
 
   const loadDrift = useCallback(async () => {
+    const gen = genRef.current;
     setDriftLoading(true);
     try {
       const res = await fetch("/api/admin/position-drift");
+      if (gen !== genRef.current) return;
+      if (accessLossStatus(res.status)) {
+        revokeAccess(res.status);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
+        if (gen !== genRef.current) return;
         setDriftUsers(data.users ?? []);
       }
     } catch { /* ignore */ } finally { setDriftLoading(false); }
-  }, []);
+  }, [revokeAccess]);
 
   function toggleDriftExpanded(userId: string) {
     setExpandedDrift((prev) => {
@@ -212,14 +264,42 @@ export default function AdminPage() {
   const [engineCmdError, setEngineCmdError] = useState("");
 
   const loadEngines = useCallback(async () => {
+    const gen = genRef.current;
     try {
       const res = await fetch("/api/admin/engine");
+      if (gen !== genRef.current) return;
+      if (accessLossStatus(res.status)) {
+        revokeAccess(res.status);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
+        if (gen !== genRef.current) return;
         setEngineRows(data.rows ?? []);
       }
     } catch { /* ignore */ }
-  }, []);
+  }, [revokeAccess]);
+
+  // Every slice that holds other users' data, cleared on loss of access.
+  clearPrivateRef.current = () => {
+    setUsers([]);
+    setEngineRows([]);
+    setInviteList([]);
+    setSlippageUsers([]);
+    setSlippageNote("");
+    setDriftUsers([]);
+    setExpandedDrift(new Set());
+    setModalOpen(false);
+    setEditingUser(null);
+    setDeletingId(null);
+  };
+
+  // csrf-init dispatches session-expired on a 401 before its redirect delay.
+  useEffect(() => {
+    const onExpired = () => revokeAccess(401);
+    window.addEventListener("session-expired", onExpired);
+    return () => window.removeEventListener("session-expired", onExpired);
+  }, [revokeAccess]);
 
   function toggleUserLiveTrading(targetUserId: string, enabled: boolean) {
     const target = engineRows.find((r) => r.user.id === targetUserId);
@@ -321,7 +401,22 @@ export default function AdminPage() {
   // Refresh engine rows every 30s so admin sees state changes. usePolling
   // also pauses when the tab is hidden so we don't burn API calls in
   // backgrounded admin tabs.
-  usePolling(loadEngines, 30_000);
+  usePolling(loadEngines, 30_000, { enabled: accessDenied === null });
+  // getCurrentRole answers null on a DB error, so a 403 can be an outage
+  // rather than a demotion. Keep re-checking the users read with backoff; a
+  // 401 is a real sign-out and csrf-init redirects to login.
+  useRecoveryPoll(loadUsers, accessDenied !== null && accessDenied !== 401);
+  // Access came back: clear the denial message and reload what the denial
+  // wiped. (The slippage and drift reports stay on-demand.)
+  const prevDeniedRef = useRef<number | null>(null);
+  useEffect(() => {
+    const prev = prevDeniedRef.current;
+    prevDeniedRef.current = accessDenied;
+    if (!accessRegained(prev, accessDenied)) return;
+    setError("");
+    loadInvites();
+    loadEngines();
+  }, [accessDenied, loadInvites, loadEngines]);
 
   async function handleSendInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -487,7 +582,7 @@ export default function AdminPage() {
     );
   }
 
-  if (error && users.length === 0) {
+  if (accessDenied !== null || (error && users.length === 0)) {
     return (
       <div className="p-4 lg:p-6">
         <div className="flex flex-col items-center justify-center py-20">
@@ -946,9 +1041,9 @@ export default function AdminPage() {
                                   e.stopPropagation();
                                   toggleUserLiveTrading(r.user.id, !r.user.liveTradingEnabled);
                                 }}
-                                className={`text-[10px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider transition-colors ${
+                                className={`text-xs px-1.5 py-0.5 rounded font-mono uppercase tracking-wider transition-colors ${
                                   r.user.liveTradingEnabled
-                                    ? "bg-bullish/10 text-bullish hover:bg-bullish/20"
+                                    ? "bg-bullish-fill text-bullish-fg hover:bg-bullish/20"
                                     : "bg-bg-elevated text-text-muted hover:bg-bg-hover"
                                 }`}
                                 title={r.user.liveTradingEnabled ? "Click to revoke live trading" : "Click to grant live trading"}
@@ -964,7 +1059,7 @@ export default function AdminPage() {
                       <td className="py-3 pr-4">
                         <Badge variant={stateVariant}>{stateLabel}</Badge>
                         {e?.lastScanAt && (
-                          <div className="text-[10px] text-text-muted mt-1 font-mono">
+                          <div className="text-xs text-text-muted mt-1 font-mono">
                             last: {new Date(e.lastScanAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
                           </div>
                         )}
@@ -1066,7 +1161,7 @@ export default function AdminPage() {
                 exposed in the UI after save.
               </p>
             </div>
-            <ArrowRight className="w-5 h-5 text-text-muted group-hover:text-accent group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+            <ArrowRight className="w-5 h-5 text-text-muted group-hover:text-accent group-hover:translate-x-0.5 transition-[background-color,border-color,color,translate] flex-shrink-0" />
           </Link>
         </Card>
       </div>

@@ -9,7 +9,15 @@
 // flag, full error isolation per symbol.
 
 import type { Bar } from "@/types";
-import { createBrokerClient, BrokerError } from "./brokers";
+import { randomUUID } from "crypto";
+import {
+  createBrokerClient,
+  BrokerError,
+  CancelAllPartialError,
+  isAmbiguousOrderError,
+  isNotWorkingOrder,
+  lookupOrderByClientId,
+} from "./brokers";
 import type { BrokerClient, BrokerAccount, BrokerPosition, BrokerOrder, PlaceOrderParams } from "./brokers";
 import { decrypt } from "./crypto";
 import { getMarketDataProvider } from "./market-data";
@@ -39,9 +47,12 @@ import {
   users,
   engineAlerts,
 } from "./db/schema";
-import { eq, and, desc, gt, inArray, lt, isNotNull, sql } from "drizzle-orm";
+import { eq, and, or, desc, gt, inArray, lt, isNotNull, isNull, sql } from "drizzle-orm";
 import { createRouteLogger } from "./logger";
+import { DRAIN_BUDGET_MS } from "./shutdown-config";
+import { isShuttingDown, SHUTTING_DOWN_CODE, SHUTTING_DOWN_MESSAGE } from "./shutdown-state";
 import { writeAudit, AuditAction } from "./audit";
+import { resolveActiveConnection } from "./broker-connection";
 import { detectMarketRegime } from "./market-regime";
 import { createAutoJournalStub } from "./journal-auto-stub";
 import { getUserTier } from "./tiers-server";
@@ -275,6 +286,16 @@ export interface EngineState {
    * broker (in syncPositionMapFromBroker).
    */
   unprotectedSymbols: Set<string>;
+  /**
+   * Engine BUYs whose submit outcome stayed unknown, keyed by the
+   * client_order_id they were sent with. Their trade row was written FAILED
+   * because nothing confirmed them. resolveUnconfirmedBuys looks each one up
+   * again at the next scans: an order the broker has turns the row PENDING
+   * with its broker order id, so reconcilePendingTrades carries it to FILLED
+   * and trade history matches the position. In memory only and bounded; a
+   * restart loses it, which leaves the row FAILED as before.
+   */
+  unconfirmedBuyOrders: Map<string, { symbol: string; tradeId: string | null; recordedAt: number }>;
   /** User's effective tier at engine start. Captured once so mid-session
    *  tier changes don't reshape the running pipeline (we'd lose AI score
    *  history mid-trade if it flipped). Read by `buildHybridOpts()` to
@@ -335,6 +356,7 @@ function createDefaultEngine(): EngineState {
     exitRejectionCount: new Map(),
     exitSuppressedUntil: new Map(),
     unprotectedSymbols: new Set(),
+    unconfirmedBuyOrders: new Map(),
     environment: null,
     boot: null,
     dailyNotional: 0,
@@ -1022,7 +1044,7 @@ function buildSectorExposureContext(
  * Returns { ok: false, reason } if blocked, { ok: true } otherwise.
  * Caller must call recordOrderPlacement() AFTER a successful placeOrder.
  */
-async function canPlaceBuyOrder(
+export async function canPlaceBuyOrder(
   engine: EngineState,
   symbol: string,
   notionalUsd: number,
@@ -1031,6 +1053,16 @@ async function canPlaceBuyOrder(
   /** Phase 4 — sector cap needs the live position map (symbol → market value) to sum exposure */
   sectorExposureContext?: { positionMarketValues: Map<string, number>; equity: number }
 ): Promise<{ ok: true } | { ok: false; reason: string; details: Record<string, unknown> }> {
+  // Fail closed on a halted or stopped engine before any await. A scan that
+  // was already past its own halt check when the kill switch fired must not
+  // open new exposure (finding #43). Exported for tests.
+  if (engine.halted || !engine.running) {
+    return {
+      ok: false,
+      reason: "engine_halted",
+      details: { symbol, halted: engine.halted, running: engine.running },
+    };
+  }
   // Refresh wash-sale set if stale. The helper has its own age check
   // (WASH_SALE_REFRESH_MS) so this is cheap when the cache is hot.
   await maybeRefreshWashSaleSet(engine);
@@ -1719,10 +1751,95 @@ async function enforceUnrealizedLossHalt(
   // forward protection we want.
 }
 
-async function placeEngineOrder(
+/**
+ * Scan-end mark-to-market step shared by the tactical scans: fetch the
+ * broker's unrealized P&L, run the MTM drawdown halt, write the daily row.
+ *
+ * A failed scan-end positions fetch leaves the unrealized figure UNKNOWN, not
+ * zero. It used to be summed into a 0 inside a silent catch, so a 429 or a
+ * timeout overwrote today's stored unrealized P&L with 0 and ran the MTM halt
+ * as if there were no open loss, letting the next scan's BUYs through. Now:
+ *   - the failure is logged;
+ *   - upsertDailyPnl gets null, which preserves the stored value;
+ *   - the halt runs against the start-of-scan positions the scan already
+ *     read from the broker (the scan aborts without them), leaving out the
+ *     symbols the scan sold. Their P&L is already in dailyLoss as realized,
+ *     and counting it again as unrealized could halt the engine for the
+ *     rest of the day on one transient fetch failure.
+ */
+export async function recordScanEndPnl(
+  engine: EngineState,
   client: BrokerClient,
-  params: Omit<PlaceOrderParams, "positionIntent">
+  startOfScanPositions: BrokerPosition[],
+  equity: number,
+  today: string,
+  realizedDelta: number,
+  tradesDelta: number,
+  /** Symbols this scan sold in full; their P&L is already in dailyLoss. */
+  soldThisScan: ReadonlySet<string> = new Set(),
+): Promise<void> {
+  let totalUnrealizedPnl: number | null = null;
+  try {
+    const brokerPositions = await client.getPositions();
+    let sum = 0;
+    for (const bp of brokerPositions) sum += bp.unrealizedPnl;
+    totalUnrealizedPnl = sum;
+  } catch (err) {
+    log.warn(
+      { userId: engine.userId, err: err instanceof Error ? err.message : "unknown" },
+      "Scan-end positions fetch failed: unrealized P&L unknown, keeping the stored value and checking the MTM halt against start-of-scan positions"
+    );
+  }
+
+  let unrealizedForHalt = totalUnrealizedPnl;
+  if (unrealizedForHalt === null) {
+    unrealizedForHalt = 0;
+    for (const bp of startOfScanPositions) {
+      if (!soldThisScan.has(bp.symbol)) unrealizedForHalt += bp.unrealizedPnl;
+    }
+  }
+  // Mark-to-market drawdown halt (post-2026-06-10). See
+  // enforceUnrealizedLossHalt() for full rationale.
+  await enforceUnrealizedLossHalt(engine, equity, unrealizedForHalt, today);
+  await upsertDailyPnl(today, realizedDelta, totalUnrealizedPnl, tradesDelta, engine.halted, undefined, engine.userId);
+}
+
+/**
+ * Thrown by placeEngineOrder for a BUY when the engine is halted or not
+ * running. Sells are never refused by this check.
+ */
+export class EngineClosedForEntriesError extends Error {
+  constructor(public readonly symbol: string) {
+    super(`Engine is halted or stopped: refusing to submit BUY for ${symbol}`);
+    this.name = "EngineClosedForEntriesError";
+  }
+}
+
+/**
+ * Exported for tests. `engine` is required for a BUY: a BUY with no engine,
+ * or on an engine that is halted or not running, is refused (fail closed).
+ * This backs up the per-scan halt checks, because a scan already past them
+ * when the kill switch fires would otherwise keep buying (finding #43).
+ *
+ * After an ambiguous failure the order is looked up by its client_order_id,
+ * bounded by ORDER_LOOKUP_TIMEOUT_MS. `opts.lookupSignal` bounds it further:
+ * the shutdown safety stops pass their drain deadline, so the lookup never
+ * runs past it (and is skipped once it has passed) and cannot push a
+ * cancel-then-place pair past the force exit.
+ */
+export async function placeEngineOrder(
+  client: BrokerClient,
+  params: Omit<PlaceOrderParams, "positionIntent">,
+  engine?: EngineState,
+  opts: { lookupSignal?: AbortSignal } = {}
 ): Promise<BrokerOrder> {
+  if (params.side === "buy" && (!engine || engine.halted || !engine.running)) {
+    log.warn(
+      { symbol: params.symbol, qty: params.qty, halted: engine?.halted ?? null, running: engine?.running ?? null },
+      "BUY refused: engine is halted or not running"
+    );
+    throw new EngineClosedForEntriesError(params.symbol);
+  }
   // Phase 10 — refuse market orders when market is closed. Limit/stop orders
   // are allowed (limits expire at close with TIF=day; stops are GTC).
   if (params.type === "market" && !isMarketOpen()) {
@@ -1746,10 +1863,221 @@ async function placeEngineOrder(
     throw new MarketClosedError(params.symbol, params.side);
   }
 
-  return client.placeOrder({
-    ...params,
-    positionIntent: params.side === "buy" ? "buy_to_open" : "sell_to_close",
-  });
+  // The client_order_id is fixed before the POST so a lost response can be
+  // resolved by looking the order up, instead of logging a live order FAILED.
+  const clientOrderId = params.clientOrderId ?? randomUUID();
+  log.info(
+    { symbol: params.symbol, side: params.side, type: params.type, qty: params.qty, clientOrderId },
+    "Submitting engine order"
+  );
+  try {
+    return await client.placeOrder({
+      ...params,
+      clientOrderId,
+      positionIntent: params.side === "buy" ? "buy_to_open" : "sell_to_close",
+    });
+  } catch (err) {
+    // A timeout, dropped connection or 5xx after the POST was sent does not
+    // prove the broker refused the order. Look it up before the caller writes
+    // FAILED and skips the notional and rate counters for a live order.
+    if (!isAmbiguousOrderError(err)) throw err;
+    err.clientOrderId = clientOrderId;
+    const found = await lookupOrderByClientId(client, clientOrderId, { signal: opts.lookupSignal });
+    if (!found) {
+      log.warn(
+        { symbol: params.symbol, side: params.side, clientOrderId, outcome: err.orderOutcome, err: err.message },
+        "Engine order outcome unknown: lookup by client_order_id found nothing"
+      );
+      throw err;
+    }
+    if (isNotWorkingOrder(found)) {
+      // The broker has it, but rejected, canceled or expired with nothing
+      // filled: a refusal, not a placed order. A definite answer, so the
+      // caller neither counts it nor records a PENDING row for it.
+      log.warn(
+        { symbol: params.symbol, side: params.side, clientOrderId, orderId: found.id, status: found.status },
+        "Engine order found by client_order_id but not working; treated as refused"
+      );
+      const refused = new BrokerError(
+        `Order ${found.id} found by client_order_id with status ${found.status}`,
+        400,
+        "The broker did not accept the order"
+      );
+      refused.clientOrderId = clientOrderId;
+      throw refused;
+    }
+    log.warn(
+      { symbol: params.symbol, side: params.side, clientOrderId, orderId: found.id, outcome: err.orderOutcome },
+      "Engine order confirmed by client_order_id lookup after an ambiguous submit"
+    );
+    return found;
+  }
+}
+
+/**
+ * BUYs of the current scan whose outcome is unknown. They are not in the
+ * position map (no fill to track), so the scan's max-positions and exposure
+ * checks add these to it.
+ */
+export interface UnconfirmedBuyTally {
+  count: number;
+  notional: number;
+}
+
+/**
+ * A BUY whose placement threw: log it, put it on the engine's error list and
+ * write a FAILED trade row carrying the client_order_id. When the outcome is
+ * unknown (placeEngineOrder's lookup could not confirm or rule out the order),
+ * the BUY is also counted against the order-rate and daily notional caps as
+ * if placed, because under-counting real exposure is the unsafe direction.
+ *
+ * With `scan`, an unconfirmed BUY is also counted in the scan's own state as
+ * if placed: the symbol joins pendingBuySymbols (no second BUY this scan),
+ * its notional joins the sector context (the sector cap), and `scan.tally`
+ * gains one position and its notional, which the caller adds to its
+ * max-positions and exposure checks. The order may be live, and the scan
+ * must not size later entries as if it were not. Returns
+ * `unconfirmed: true` in that case. Exported for tests.
+ */
+export async function recordFailedEngineBuy(
+  engine: EngineState,
+  failure: { symbol: string; signal: string; qty: number; buyNotional: number; err: unknown; source: string },
+  scan?: {
+    pendingBuySymbols: Set<string>;
+    sectorCtx?: { positionMarketValues: Map<string, number> } | null;
+    tally?: UnconfirmedBuyTally;
+  }
+): Promise<{ unconfirmed: boolean }> {
+  const { symbol, signal, qty, buyNotional, err, source } = failure;
+  const msg = err instanceof Error ? err.message : "unknown";
+  const unconfirmed = isAmbiguousOrderError(err);
+  const clientOrderId = err instanceof BrokerError ? err.clientOrderId : null;
+  log.error({ err: msg, symbol, source, clientOrderId, unconfirmed }, "Failed to place buy order");
+  pushError(
+    engine,
+    unconfirmed
+      ? `Buy order status unknown for ${symbol} (client id ${clientOrderId ?? "n/a"}): ${msg}`
+      : `Buy order failed for ${symbol}: ${msg}`
+  );
+  if (unconfirmed) {
+    recordOrderPlacement(engine, "buy", buyNotional);
+    if (scan) {
+      scan.pendingBuySymbols.add(symbol);
+      scan.sectorCtx?.positionMarketValues.set(symbol, buyNotional);
+      if (scan.tally) {
+        scan.tally.count++;
+        scan.tally.notional += buyNotional;
+      }
+    }
+  }
+  const tradeId = await logTrade(
+    symbol,
+    signal,
+    "BUY",
+    qty,
+    null,
+    "FAILED",
+    null,
+    unconfirmed
+      ? `Order status unknown (client_order_id ${clientOrderId ?? "n/a"}): ${msg}`
+      : `Order failed: ${msg}`,
+    null,
+    null,
+    engine.userId
+  );
+  if (unconfirmed && clientOrderId) {
+    // Bounded: drop the oldest rather than grow without limit.
+    if (engine.unconfirmedBuyOrders.size >= UNCONFIRMED_BUY_MAX_TRACKED) {
+      const oldest = engine.unconfirmedBuyOrders.keys().next().value;
+      if (oldest !== undefined) engine.unconfirmedBuyOrders.delete(oldest);
+    }
+    engine.unconfirmedBuyOrders.set(clientOrderId, { symbol, tradeId, recordedAt: Date.now() });
+  }
+  return { unconfirmed };
+}
+
+/** How many unconfirmed BUYs one engine keeps looking up. */
+const UNCONFIRMED_BUY_MAX_TRACKED = 50;
+/** How many of them one scan looks up (each lookup is bounded at 3 s). */
+const UNCONFIRMED_BUY_LOOKUPS_PER_SCAN = 5;
+/**
+ * How long an unconfirmed BUY is looked up for. A POST that reached the
+ * broker is visible to the lookup within seconds, so one still not found
+ * after this never landed (or the broker cannot be asked), and its FAILED
+ * row stands.
+ */
+const UNCONFIRMED_BUY_LOOKUP_WINDOW_MS = 30 * 60 * 1000;
+
+/**
+ * Look up again every BUY recordFailedEngineBuy left unconfirmed. One the
+ * broker has, working or filled, turns its FAILED row into PENDING with the
+ * broker order id, so the reconcilePendingTrades call that follows carries it
+ * to FILLED like any placed order. One found rejected, canceled or expired
+ * with nothing filled, or still not found after
+ * UNCONFIRMED_BUY_LOOKUP_WINDOW_MS, keeps its FAILED row and is dropped. A
+ * lookup that finds nothing inside the window is tried again next scan.
+ * Called before reconcilePendingTrades in each scan. Never throws. Exported
+ * for tests.
+ */
+export async function resolveUnconfirmedBuys(client: BrokerClient, engine: EngineState): Promise<void> {
+  if (engine.unconfirmedBuyOrders.size === 0) return;
+  // Each lookup can take ORDER_LOOKUP_TIMEOUT_MS, so a scan does only the
+  // oldest few; the rest wait for the next scan.
+  const batch = [...engine.unconfirmedBuyOrders].slice(0, UNCONFIRMED_BUY_LOOKUPS_PER_SCAN);
+  for (const [clientOrderId, entry] of batch) {
+    try {
+      const found = await lookupOrderByClientId(client, clientOrderId);
+      if (!found) {
+        if (Date.now() - entry.recordedAt > UNCONFIRMED_BUY_LOOKUP_WINDOW_MS) {
+          engine.unconfirmedBuyOrders.delete(clientOrderId);
+          log.warn(
+            { symbol: entry.symbol, clientOrderId, tradeId: entry.tradeId },
+            "Unconfirmed BUY never found at the broker; its FAILED row stands"
+          );
+        } else {
+          // Back of the queue, so newer entries get their turn next scan.
+          engine.unconfirmedBuyOrders.delete(clientOrderId);
+          engine.unconfirmedBuyOrders.set(clientOrderId, entry);
+        }
+        continue;
+      }
+      engine.unconfirmedBuyOrders.delete(clientOrderId);
+      if (isNotWorkingOrder(found)) {
+        log.info(
+          { symbol: entry.symbol, clientOrderId, orderId: found.id, status: found.status },
+          "Unconfirmed BUY found not working at the broker; its FAILED row stands"
+        );
+        continue;
+      }
+      log.warn(
+        { symbol: entry.symbol, clientOrderId, orderId: found.id, status: found.status, tradeId: entry.tradeId },
+        "Unconfirmed BUY found at the broker; its trade row is now PENDING"
+      );
+      if (!entry.tradeId || !engine.userId) continue;
+      // Fenced on the owner and on FAILED with no broker id, so it can only
+      // turn this engine's own unconfirmed row.
+      await db
+        .update(traderTrades)
+        .set({
+          status: "PENDING",
+          brokerOrderId: found.id,
+          notes: `Order confirmed at the broker after an unknown submit (client_order_id ${clientOrderId})`,
+        })
+        .where(
+          and(
+            eq(traderTrades.id, entry.tradeId),
+            eq(traderTrades.userId, engine.userId),
+            eq(traderTrades.status, "FAILED"),
+            isNull(traderTrades.brokerOrderId)
+          )
+        );
+    } catch (err) {
+      log.warn(
+        { symbol: entry.symbol, clientOrderId, err: err instanceof Error ? err.message : "unknown" },
+        "Could not resolve an unconfirmed BUY; will retry next scan"
+      );
+    }
+  }
 }
 
 // ─── Phase 5: MTM / Wash-Sale helpers ─────────────────────────────────────────
@@ -2854,8 +3182,22 @@ function tradingDaysBetween(from: Date, to: Date): number {
 
 // ─── Broker Client Resolution ────────────────────────────────────────────────
 
+type ResolvedBroker = { client: BrokerClient; connectionId: string; environment: "paper" | "live"; broker: string };
+
 /**
- * Resolve the user's active broker connection into an instantiated client.
+ * Why a resolve is happening. "open" may lead to new exposure (engine start,
+ * scans, buys) and is subject to both live-permission gates. "protect" only
+ * reduces or guards existing exposure (kill switch, safety and disaster
+ * stops, stop ratcheting, the exit check) and skips those two gates, because
+ * a gate that exists to stop the engine opening live exposure must never also
+ * stop it closing or protecting what is already open.
+ */
+type BrokerResolvePurpose = "open" | "protect";
+
+/**
+ * Resolve the user's active broker connection into an instantiated client,
+ * for OPENING exposure. Both live gates apply: ALLOW_LIVE_TRADING and the
+ * per-user live_trading_enabled flag (fail closed on a DB error).
  *
  * Exported as of 2026-05-13 so non-engine surfaces (e.g. the Portfolio
  * summary route) can fetch live positions directly when the in-memory
@@ -2863,30 +3205,80 @@ function tradingDaysBetween(from: Date, to: Date): number {
  * session). Otherwise the Portfolio page shows $0 even though the user
  * has a connected broker — confusing dead-end.
  */
-export async function resolveBrokerClient(
-  userId: string
-): Promise<{ client: BrokerClient; connectionId: string; environment: "paper" | "live"; broker: string } | null> {
-  const connections = await db
-    .select()
-    .from(brokerConnections)
-    .where(
-      and(
-        eq(brokerConnections.userId, userId),
-        eq(brokerConnections.isActive, true)
-      )
-    );
+export async function resolveBrokerClient(userId: string): Promise<ResolvedBroker | null> {
+  return resolveBrokerClientFor(userId, "open");
+}
 
-  if (connections.length === 0) {
+/**
+ * Resolve the same connection as resolveBrokerClient, for PROTECTIVE actions
+ * only: haltEngine, placeSafetyStops, placeDisasterStops, syncBrokerStops and
+ * runExitCheck. It skips the two live-permission gates so that revoking live
+ * permission, clearing ALLOW_LIVE_TRADING, or a failed permission read cannot
+ * turn the kill switch and the stops into silent no-ops while real positions
+ * are open. Never use it on a path that can place a BUY.
+ */
+export async function resolveBrokerClientForProtection(userId: string): Promise<ResolvedBroker | null> {
+  return resolveBrokerClientFor(userId, "protect");
+}
+
+// Throttle for the audit row written when a protective resolve runs against a
+// live connection whose entry gate is closed. The exit check runs every minute,
+// so an unthrottled audit would flood the hash chain. Bounded by users x reasons.
+const PROTECTIVE_LIVE_AUDIT_THROTTLE_MS = 60 * 60 * 1000;
+const _protectiveLiveAuditAt = new Map<string, number>();
+
+async function describeLiveGate(userId: string): Promise<{ open: boolean; reason: string | null; email: string | null }> {
+  if (!isLiveTradingAllowed()) return { open: false, reason: "ALLOW_LIVE_TRADING_not_set", email: null };
+  try {
+    const [u] = await db
+      .select({ liveEnabled: users.liveTradingEnabled, email: users.email })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!u?.liveEnabled) return { open: false, reason: "user_not_granted_live", email: u?.email ?? null };
+    return { open: true, reason: null, email: u.email ?? null };
+  } catch {
+    return { open: false, reason: "live_permission_read_failed", email: null };
+  }
+}
+
+async function resolveBrokerClientFor(
+  userId: string,
+  purpose: BrokerResolvePurpose
+): Promise<ResolvedBroker | null> {
+  // The shared resolver: the same connection manual orders, flatten and the
+  // dashboard act on. Paper is preferred if several rows are active (only
+  // possible before migration 0049). Live requires both env-gate AND per-user
+  // permission (Phase 13) below.
+  const conn = await resolveActiveConnection(userId);
+  if (!conn) {
     log.warn({ userId }, "No active broker connections found");
     return null;
   }
 
-  // Prefer paper environment connections; live requires both env-gate AND
-  // per-user permission (Phase 13).
-  const conn =
-    connections.find((c) => c.environment === "paper") ?? connections[0];
-
-  if (conn.environment === "live") {
+  if (conn.environment === "live" && purpose === "protect") {
+    // Protective actions run regardless of the live-entry gates. Record when
+    // that bypass actually matters (gate closed) so it is visible afterwards.
+    const gate = await describeLiveGate(userId);
+    if (!gate.open) {
+      log.warn(
+        { userId, connectionId: conn.id, broker: conn.broker, reason: gate.reason },
+        "Protective action running against LIVE broker while the live-entry gate is closed"
+      );
+      const key = `${userId}:${gate.reason}`;
+      const last = _protectiveLiveAuditAt.get(key) ?? 0;
+      if (Date.now() - last >= PROTECTIVE_LIVE_AUDIT_THROTTLE_MS) {
+        _protectiveLiveAuditAt.set(key, Date.now());
+        void writeAudit({
+          actor: { userId, email: gate.email, role: null },
+          action: AuditAction.ENGINE_LIVE_PROTECTIVE_ACTION,
+          resourceType: "broker_connection",
+          resourceId: conn.id,
+          metadata: { reason: gate.reason, broker: conn.broker },
+        });
+      }
+    }
+  } else if (conn.environment === "live") {
     // Gate 1 — global infra env flag (server-side kill switch)
     if (!isLiveTradingAllowed()) {
       log.error(
@@ -3009,6 +3401,7 @@ async function _loadOptimizedParams(userId: string | null): Promise<void> {
       .select({ bestParams: optimizationRuns.bestParams, bestTestReturn: optimizationRuns.bestTestReturn })
       .from(optimizationRuns)
       .where(and(eq(optimizationRuns.status, "complete"), eq(optimizationRuns.isActive, true)))
+      .orderBy(desc(optimizationRuns.completedAt), desc(optimizationRuns.id))
       .limit(1);
     // 2. Fallback: the engine owner's OWN latest completed run — scoped by
     //    userId so user B never inherits user A's params (audit #12). When
@@ -3129,7 +3522,9 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
   if (!engine.userId || !engine.running) return;
   if (!isMarketOpen()) return;
 
-  const resolved = await resolveBrokerClient(engine.userId);
+  // Sells only: protective resolver, so a mid-session live revocation cannot
+  // strip the stop/trailing exits from positions that are already open.
+  const resolved = await resolveBrokerClientForProtection(engine.userId);
   if (!resolved) return;
 
   const { client } = resolved;
@@ -3465,10 +3860,10 @@ async function logTrade(
   brokerOrderId: string | null = null,
   signalId: string | null = null,
   userId?: string | null
-): Promise<void> {
+): Promise<string | null> {
   const engine = userId ? getEngine(userId) : getEngine();
   try {
-    await db.insert(traderTrades).values({
+    const [row] = await db.insert(traderTrades).values({
       userId: engine.userId,
       brokerOrderId,
       signalId,
@@ -3486,12 +3881,14 @@ async function logTrade(
       pnl,
       notes,
       traderTimestamp: new Date(),
-    });
+    }).returning({ id: traderTrades.id });
+    return row?.id ?? null;
   } catch (err) {
     log.error(
       { err: err instanceof Error ? err.message : "unknown", symbol },
       "Failed to log trade"
     );
+    return null;
   }
 }
 
@@ -3948,9 +4345,9 @@ async function syncPositionMapFromBroker(
  * concurrent sync raced us), the INSERT silently no-ops.
  *
  * Never throws — failures are logged but don't propagate, so a transient
- * broker hiccup doesn't block positionMap cleanup.
+ * broker hiccup doesn't block positionMap cleanup. Exported for tests.
  */
-async function reconcileBrokerSideExit(
+export async function reconcileBrokerSideExit(
   client: BrokerClient,
   symbol: string,
   expectedPos: TrackedPosition,
@@ -4094,6 +4491,29 @@ async function reconcileBrokerSideExit(
   }
 }
 
+/** Fold one filled manual flatten into the day's accumulator row. Atomic
+ *  upsert, like upsertDailyPnl, but touches only the realized total and the
+ *  trade count, so it needs no engine. Logs and returns on failure. */
+async function recordManualCloseDailyPnl(userId: string, date: string, realizedPnl: number): Promise<void> {
+  try {
+    await db
+      .insert(traderDailyPnl)
+      .values({ userId, date, realizedPnl, unrealizedPnl: 0, tradesCount: 1, halted: false })
+      .onConflictDoUpdate({
+        target: [traderDailyPnl.date, traderDailyPnl.userId],
+        set: {
+          realizedPnl: sql`${traderDailyPnl.realizedPnl} + ${realizedPnl}`,
+          tradesCount: sql`${traderDailyPnl.tradesCount} + 1`,
+        },
+      });
+  } catch (err) {
+    log.error(
+      { userId, date, err: err instanceof Error ? err.message : "unknown" },
+      "Failed to add a filled manual flatten to the daily P&L total"
+    );
+  }
+}
+
 /**
  * Phase 11 — trade-status reconciliation.
  *
@@ -4114,8 +4534,85 @@ async function reconcileBrokerSideExit(
  *
  * Idempotent — re-running on the same row just no-ops (status already FILLED etc).
  * Never throws — per-row failures log and continue.
+ *
+ * Concurrency: the scans, runExitCheck's throttled call, startEngine, the
+ * flatten route and the dashboard can all run this for one user at once, and
+ * each pass reads the same PENDING rows before its broker round trip. Two
+ * guards keep a fill's delta from being applied to engine.dailyLoss twice:
+ *   - a per-user in-flight claim on globalThis, taken synchronously before
+ *     the first await. An overlapping call gets the running pass's promise,
+ *     so awaiting it still means the pass is done. A full pass that finds
+ *     only a manual-close pass running queues behind it instead;
+ *   - the UPDATE is fenced on owner and a still-open status, and the delta
+ *     and the journal stub are applied only when it returned the row. The
+ *     fence is the control; the claim saves the broker round trip.
+ *
+ * `manualCloseOnly` limits the pass to manual flatten (manual_close) rows.
+ * The flatten route and the dashboard use it, so a pass run outside the
+ * engine never settles an engine SELL, whose fill delta belongs in the
+ * dailyLoss of the engine that accrued its placeholder.
+ * Exported for tests.
  */
-async function reconcilePendingTrades(client: BrokerClient, userId: string): Promise<void> {
+type ReconcileClaim = { manualCloseOnly: boolean; promise: Promise<void> };
+
+const reconcileGlobal = globalThis as typeof globalThis & {
+  __reconcileInFlight?: Map<string, ReconcileClaim>;
+  __manualCloseReconcileAt?: Map<string, number>;
+};
+
+export function reconcilePendingTrades(
+  client: BrokerClient,
+  userId: string,
+  opts: { manualCloseOnly?: boolean } = {}
+): Promise<void> {
+  const manualCloseOnly = opts.manualCloseOnly === true;
+  const claims = (reconcileGlobal.__reconcileInFlight ??= new Map());
+  const running = claims.get(userId);
+  // A running full pass covers any request; a running manual-close pass
+  // covers only another manual-close request.
+  if (running && (!running.manualCloseOnly || manualCloseOnly)) {
+    log.debug({ userId }, "reconcilePendingTrades already running for this user, joining it");
+    return running.promise;
+  }
+  const claim: ReconcileClaim = { manualCloseOnly, promise: Promise.resolve() };
+  const pass = running
+    ? running.promise.then(() => runReconcilePass(client, userId, manualCloseOnly))
+    : runReconcilePass(client, userId, manualCloseOnly);
+  claim.promise = pass.finally(() => {
+    if (claims.get(userId) === claim) claims.delete(userId);
+  });
+  claims.set(userId, claim);
+  return claim.promise;
+}
+
+/** Minimum spacing between the dashboard's manual-close reconcile passes. */
+const MANUAL_CLOSE_RECONCILE_THROTTLE_MS = 60 * 1000;
+
+/**
+ * Settle PENDING manual flatten rows while the engine is stopped. The
+ * engine's scans, exit check and startEngine are the usual reconcile
+ * callers, so without this a user who flattens and then stops the engine
+ * (or flattens after hours, when the route skips its own pass) keeps those
+ * rows PENDING until the next Start: out of the tax report, performance and
+ * the daily P&L. Called by the dashboard GET; throttled per user, and a
+ * no-op while the engine runs, since it reconciles for itself.
+ */
+export function reconcileManualClosesIfEngineStopped(client: BrokerClient, userId: string): void {
+  if (g.__tradingEngines?.get(userId)?.running) return;
+  const lastRun = (reconcileGlobal.__manualCloseReconcileAt ??= new Map());
+  const now = Date.now();
+  if (now - (lastRun.get(userId) ?? 0) < MANUAL_CLOSE_RECONCILE_THROTTLE_MS) return;
+  // Bounded: drop stamps past the throttle window before adding one.
+  if (lastRun.size >= 1000) {
+    for (const [id, at] of lastRun) if (now - at >= MANUAL_CLOSE_RECONCILE_THROTTLE_MS) lastRun.delete(id);
+  }
+  lastRun.set(userId, now);
+  void reconcilePendingTrades(client, userId, { manualCloseOnly: true }).catch((err) => {
+    log.warn({ userId, err: err instanceof Error ? err.message : "unknown" }, "Manual-close reconcile failed");
+  });
+}
+
+async function runReconcilePass(client: BrokerClient, userId: string, manualCloseOnly: boolean): Promise<void> {
   try {
     // Find PENDING rows from the last 7d that have a broker_order_id.
     //
@@ -4126,6 +4623,12 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
     // 7d covers any realistic halted-engine window without flooding the
     // broker fetch — and getOrders(200) below caps the broker pull
     // regardless.
+    //
+    // Manual flatten rows are exempt from the window. Only the engine and
+    // the dashboard reconcile them, a flatten is often followed by stopping
+    // the engine, and a row left PENDING is missing from the tax report and
+    // the daily P&L. Newest first, so rows whose orders the broker purged
+    // (they stay PENDING) cannot crowd recent ones out of the limit.
     const sinceMs = Date.now() - RECONCILE_LOOKBACK_MS;
     const pending = await db
       .select()
@@ -4135,9 +4638,12 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
           eq(traderTrades.userId, userId),
           eq(traderTrades.status, "PENDING"),
           isNotNull(traderTrades.brokerOrderId),
-          gt(traderTrades.createdAt, new Date(sinceMs))
+          manualCloseOnly
+            ? eq(traderTrades.action, "manual_close")
+            : or(gt(traderTrades.createdAt, new Date(sinceMs)), eq(traderTrades.action, "manual_close"))
         )
       )
+      .orderBy(desc(traderTrades.createdAt))
       .limit(200);
 
     if (pending.length === 0) return;
@@ -4190,24 +4696,33 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
       let newFillPrice: number | null = null;
       let newFillTime: Date | null = null;
       let newPnl: number | null = row.pnl;
+      /** Correction to engine.dailyLoss, applied only if the fenced UPDATE
+       *  below takes the row. */
+      let dailyLossDelta = 0;
 
       if (bs === "filled") {
         newStatus = "FILLED";
         newFillPrice = brokerOrder.filledPrice ?? row.fillPrice;
         newFillTime = brokerOrder.filledAt ? new Date(brokerOrder.filledAt) : new Date();
-        // P&L correction via delta math (no schema change). Only for SELLs with placeholder pnl.
+        // P&L correction via delta math (no schema change). Only for exits
+        // with placeholder pnl: engine SELLs, whose placeholder is the quote
+        // in fillPrice, and manual flatten rows (manual_close), which carry no
+        // fillPrice until they fill and keep the snapshot quote in
+        // placeholderFillPrice.
+        const isManualClose = row.action === "manual_close";
+        const placeholderPrice = isManualClose ? row.placeholderFillPrice : row.fillPrice;
         if (
-          row.action === "SELL" &&
+          (row.action === "SELL" || isManualClose) &&
           row.pnl !== null &&
           // Both prices must be positive finite numbers before money math
           // (audit #39): a broker price coerced to 0 from a malformed field
           // would otherwise produce delta = (0 - entry)·qty — a fabricated loss
           // written to the daily-P&L accumulator. Skipping the correction
           // leaves the quote-based placeholder pnl in place.
-          row.fillPrice !== null && row.fillPrice > 0 &&
+          placeholderPrice !== null && placeholderPrice > 0 &&
           newFillPrice !== null && newFillPrice > 0
         ) {
-          const delta = (newFillPrice - row.fillPrice) * row.quantity;
+          const delta = (newFillPrice - placeholderPrice) * row.quantity;
           newPnl = row.pnl + delta;
           // Correct the in-memory daily-loss accumulator by the same delta
           // (audit #24): the placeholder (quote-based) pnl was already added to
@@ -4216,11 +4731,10 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
           // never the full pnl, to avoid double-counting. The consecutive-loss
           // streak is left as-is — a post-hoc sign flip can't be cleanly
           // unwound in a sequential streak, and the placeholder ≈ the fill
-          // except on gap days.
-          if (delta !== 0) {
-            const engine = g.__tradingEngines?.get(userId);
-            if (engine) accrueRealizedPnl(engine, delta);
-          }
+          // except on gap days. Applied only after the fenced UPDATE below
+          // takes the row. A manual flatten was never accrued at submit, so
+          // it has no placeholder in dailyLoss to correct.
+          if (!isManualClose) dailyLossDelta = delta;
         }
       } else if (bs === "canceled" || bs === "expired") {
         newStatus = bs === "canceled" ? "CANCELED" : "EXPIRED";
@@ -4237,7 +4751,10 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
       }
 
       try {
-        await db
+        // Fenced on owner and a still-open status: a concurrent reconcile
+        // that already moved this row matches nothing here, so its fill delta
+        // is not applied a second time.
+        const moved = await db
           .update(traderTrades)
           .set({
             status: newStatus,
@@ -4245,8 +4762,40 @@ async function reconcilePendingTrades(client: BrokerClient, userId: string): Pro
             ...(newFillTime ? { fillTime: newFillTime } : {}),
             pnl: newPnl,
           })
-          .where(eq(traderTrades.id, row.id));
+          .where(
+            and(
+              eq(traderTrades.id, row.id),
+              eq(traderTrades.userId, userId),
+              inArray(traderTrades.status, ["PENDING", "PARTIAL_FILLED"])
+            )
+          )
+          .returning({ id: traderTrades.id });
+        if (moved.length === 0) {
+          log.debug({ orderId: row.brokerOrderId }, "Reconcile: row already moved by another pass, skipping");
+          continue;
+        }
         updated++;
+
+        if (dailyLossDelta !== 0) {
+          const engine = g.__tradingEngines?.get(userId);
+          if (engine) accrueRealizedPnl(engine, dailyLossDelta);
+        }
+
+        // A manual flatten's realized P&L reaches the daily total here, at
+        // the fill, keyed by the ET date it filled (the route no longer
+        // writes the snapshot estimate at submit). Engine exits are counted
+        // by the scan that placed them, so only manual_close rows take this.
+        if (newStatus === "FILLED" && row.action === "manual_close" && newPnl !== null && newFillTime) {
+          const fillDate = getETDateStringShared(newFillTime);
+          await recordManualCloseDailyPnl(userId, fillDate, newPnl);
+          // The realized P&L also reaches a running engine's daily-loss halt
+          // when it filled on the engine's current day. The flatten removed
+          // the symbols from the position map, so no broker-side exit
+          // reconcile books it there. Accrual only: a user's own flatten does
+          // not advance the consecutive-loss streak.
+          const engine = g.__tradingEngines?.get(userId);
+          if (engine?.running && engine.dailyLossDate === fillDate) accrueRealizedPnl(engine, newPnl);
+        }
 
         // Journal v2 — phase 1: when a trade reconciles to FILLED,
         // auto-create a journal stub pre-filled with the trade
@@ -4427,6 +4976,8 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
     return;
   }
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
+  await resolveUnconfirmedBuys(client, engine);
+  engine.lastReconcileAt = Date.now();
   await reconcilePendingTrades(client, engine.userId!);
   engine.positionCount = positionMap.size;
 
@@ -4475,6 +5026,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
   // flatten previously recorded neither realized P&L nor any halt signal).
   let tacticalRealized = 0;
   let tacticalExits = 0;
+  const soldThisScan = new Set<string>();
 
   if (isInvested && confirmedBelow && spyPrice < smaExit) {
     // ── EXIT: Confirmed weakness → sell everything (simple, no graduated) ──
@@ -4490,6 +5042,7 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
         accrueRealizedPnl(engine, pos.unrealizedPnl);
         tacticalRealized += pos.unrealizedPnl;
         tacticalExits++;
+        soldThisScan.add(pos.symbol);
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -4513,14 +5066,18 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
 
     const riskLimits = await loadRiskLimits(engine.userId!);
     const perPosition = equity * riskLimits.positionPct;
+    const unconfirmedBuys: UnconfirmedBuyTally = { count: 0, notional: 0 };
 
     for (const symbol of SCAN_UNIVERSE) {
-      if (positionMap.size >= riskLimits.maxPositions) break;
+      if (positionMap.size + unconfirmedBuys.count >= riskLimits.maxPositions) break;
       // PR 21c / P1 #1 (2026-06-09 audit) — cooperative cancellation. An
       // override-fired stale tactical scan exits cleanly here instead of
       // placing orders against the newer scan's state.
       throwIfScanCancelled(engine, myGeneration);
 
+      // Set around the placement so the catch can tell a failed order from a
+      // failed quote or gate read.
+      let placing: { qty: number; buyNotional: number } | null = null;
       try {
         const quote = await provider.fetchQuote(symbol);
         if (!quote || quote.price <= 0) continue;
@@ -4558,7 +5115,9 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
           });
           continue;
         }
-        const tentryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        placing = { qty, buyNotional };
+        const tentryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
+        placing = null;
         recordOrderPlacement(engine, "buy", buyNotional);
         // Accumulate this buy in the sector context so a later same-sector buy
         // in this same scan sees it — otherwise N same-sector buys each read a
@@ -4572,26 +5131,25 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
           stopLoss: quote.price * 0.88, takeProfit: quote.price * 1.5,
           trailingStopPct: 0.117, entryDate: new Date(), holdPeriod: 999,
         });
-      } catch { /* skip */ }
+      } catch (err) {
+        if (placing) {
+          await recordFailedEngineBuy(engine, {
+            symbol, signal: "tactical_entry", qty: placing.qty, buyNotional: placing.buyNotional, err,
+            source: "engine_tactical",
+          }, { pendingBuySymbols, sectorCtx: tacticalSectorCtx, tally: unconfirmedBuys });
+        } else {
+          log.warn({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Tactical entry skipped for symbol");
+        }
+      }
       await new Promise(r => setTimeout(r, 100));
     }
     engine.positionCount = positionMap.size;
     log.info({ positions: positionMap.size }, "Tactical entry complete");
   }
 
-  // Update daily P&L from broker positions
-  let totalUnrealizedPnl = 0;
-  try {
-    const brokerPositions = await client.getPositions();
-    for (const bp of brokerPositions) {
-      totalUnrealizedPnl += bp.unrealizedPnl;
-    }
-  } catch { /* use 0 */ }
-  // Mark-to-market drawdown halt (post-2026-06-10) — fires when
-  // realized+unrealized exceeds 1.5× the realized threshold. See
-  // enforceUnrealizedLossHalt() for full rationale.
-  await enforceUnrealizedLossHalt(engine, account.equity, totalUnrealizedPnl, today);
-  await upsertDailyPnl(today, tacticalRealized, totalUnrealizedPnl, tacticalExits, engine.halted, undefined, engine.userId);
+  // Update daily P&L from broker positions, then the MTM drawdown halt. An
+  // unknown unrealized figure is never written or checked as 0.
+  await recordScanEndPnl(engine, client, currentPositions, account.equity, today, tacticalRealized, tacticalExits, soldThisScan);
 
   // Update status — scan completed, clear in-flight marker
   engine.lastScanAt = new Date();
@@ -4750,6 +5308,8 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
   }
   phase("getPositions");
   await syncPositionMapFromBroker(currentPositions, positionMap, engine.userId!, client);
+  await resolveUnconfirmedBuys(client, engine);
+  engine.lastReconcileAt = Date.now();
   await reconcilePendingTrades(client, engine.userId!);
   phase("syncAndReconcile");
   engine.positionCount = positionMap.size;
@@ -4758,6 +5318,8 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
   // when the next scan runs, so without these counters the dashboard sees zero.
   let realizedPnlThisScan = 0;
   let tradesThisScan = 0;
+  // Symbols sold in full this scan, left out of the scan-end MTM fallback.
+  const soldThisScan = new Set<string>();
 
   // Pending buy orders — symbols with an open buy that hasn't filled yet must
   // be treated as "already held" so the next scan doesn't re-buy them. This
@@ -4821,6 +5383,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         tsFlattenRealized += pos.unrealizedPnl;
         tsFlattenExits++;
         tradesThisScan++;
+        soldThisScan.add(pos.symbol);
         positionMap.delete(pos.symbol);
       } catch (err) {
         log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Exit failed");
@@ -4921,6 +5484,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
     const totalInvVol = toBuy.reduce((sum, s) => sum + s.invVol, 0);
 
     for (const { symbol, price, invVol } of toBuy) {
+      // Cooperative cancellation (finding #43): this loop had no check at
+      // all, so a scan superseded by stopEngine or haltEngine kept buying.
+      throwIfScanCancelled(engine, myGeneration);
       const volWeight = totalInvVol > 0 ? invVol / totalInvVol : 1 / toBuy.length;
       const positionValue = equity * Math.min(volWeight, riskLimits.positionPct);
       const qty = Math.min(Math.floor(positionValue / price), riskLimits.maxPositionSize);
@@ -4942,6 +5508,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         });
         continue;
       }
+      // Set around the placement so the catch can tell a failed order from a
+      // failed gate read.
+      let placing: { qty: number; buyNotional: number } | null = null;
       try {
         const limitPrice = (price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
@@ -4956,7 +5525,11 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           });
           continue;
         }
-        const tsEntryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        // Re-check right before placing: canPlaceBuyOrder awaited above.
+        throwIfScanCancelled(engine, myGeneration);
+        placing = { qty, buyNotional };
+        const tsEntryOrder = await placeEngineOrder(client, { symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
+        placing = null;
         recordOrderPlacement(engine, "buy", buyNotional);
         tsSectorCtx?.positionMarketValues.set(symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
@@ -4968,7 +5541,16 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           trailingStopPct: 0.117, entryDate: new Date(), holdPeriod: 999,
         });
       } catch (err) {
-        log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Smart entry failed");
+        // A cancelled scan must exit, not log and move to the next symbol.
+        if (err instanceof ScanCancelledError) throw err;
+        if (placing) {
+          await recordFailedEngineBuy(engine, {
+            symbol, signal: "tactical_smart_entry", qty: placing.qty, buyNotional: placing.buyNotional, err,
+            source: "engine_tactical_smart",
+          }, { pendingBuySymbols, sectorCtx: tsSectorCtx });
+        } else {
+          log.error({ symbol, err: err instanceof Error ? err.message : "unknown" }, "Smart entry failed");
+        }
       }
       await new Promise(r => setTimeout(r, 100));
     }
@@ -5061,6 +5643,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
 
     // 1. Swap: sell weak held positions and replace with top STRONG_BUY candidates
     let swapCount = 0;
+    // Swap and add BUYs whose outcome is unknown: counted by the add loop's
+    // position cap and exposure check below.
+    const unconfirmedBuys: UnconfirmedBuyTally = { count: 0, notional: 0 };
     for (const weak of weakHeld) {
       // Cooperative cancellation: a Stop or a superseding scan bumps the
       // generation; exit cleanly instead of placing more swap orders (audit #3).
@@ -5121,6 +5706,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         // Discretionary single-position exit → counts toward the streak (audit #2).
         recordRealizedExit(engine, bp.unrealizedPnl, riskLimits, weak.symbol);
         tradesThisScan++;
+        soldThisScan.add(weak.symbol);
         positionMap.delete(weak.symbol);
         heldSymbols.delete(weak.symbol);
       } catch (err) {
@@ -5134,6 +5720,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       const qty = Math.min(Math.floor(positionValue / replacement.price), riskLimits.maxPositionSize);
       if (qty <= 0) continue;
 
+      let placing: { qty: number; buyNotional: number } | null = null;
       try {
         const limitPrice = (replacement.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
@@ -5148,7 +5735,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           });
           continue;
         }
-        const swapBuyOrder = await placeEngineOrder(client, { symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        placing = { qty, buyNotional };
+        const swapBuyOrder = await placeEngineOrder(client, { symbol: replacement.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
+        placing = null;
         recordOrderPlacement(engine, "buy", buyNotional);
         tsSectorCtx?.positionMarketValues.set(replacement.symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(replacement.symbol); // Phase 7: prevent re-fire within this scan
@@ -5162,7 +5751,15 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         heldSymbols.add(replacement.symbol);
         swapCount++;
       } catch (err) {
-        log.error({ symbol: replacement.symbol, err: err instanceof Error ? err.message : "unknown" }, "Swap buy failed");
+        if (placing) {
+          const { unconfirmed } = await recordFailedEngineBuy(engine, {
+            symbol: replacement.symbol, signal: "tactical_smart_swap_buy", qty: placing.qty, buyNotional: placing.buyNotional, err,
+            source: "engine_swap",
+          }, { pendingBuySymbols, sectorCtx: tsSectorCtx, tally: unconfirmedBuys });
+          if (unconfirmed) heldSymbols.add(replacement.symbol);
+        } else {
+          log.error({ symbol: replacement.symbol, err: err instanceof Error ? err.message : "unknown" }, "Swap buy failed");
+        }
       }
       await new Promise(r => setTimeout(r, 100));
     }
@@ -5173,7 +5770,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
     for (const cand of candidates) {
       // Cooperative cancellation (audit #3) — see swap loop above.
       throwIfScanCancelled(engine, myGeneration);
-      if (positionMap.size >= hardCap) break;
+      if (positionMap.size + unconfirmedBuys.count >= hardCap) break;
 
       const positionValue = equity * riskLimits.positionPct;
       const qty = Math.min(Math.floor(positionValue / cand.price), riskLimits.maxPositionSize);
@@ -5182,7 +5779,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
       // Check exposure (use equity as cap when not configured)
       const effectiveMaxExposure = riskLimits.maxExposure < 0 ? equity * Math.abs(riskLimits.maxExposure) : riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
       const currentExposure = Array.from(positionMap.values())
-        .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0);
+        .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0) + unconfirmedBuys.notional;
       if (currentExposure + cand.price * qty > effectiveMaxExposure) break;
 
       // Phase 7 — duplicate-order guard: skip add if buy already pending on broker
@@ -5207,6 +5804,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         });
         continue;
       }
+      let placing: { qty: number; buyNotional: number } | null = null;
       try {
         const limitPrice = (cand.price * 1.001).toFixed(2);
         const buyNotional = qty * parseFloat(limitPrice);
@@ -5221,7 +5819,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
           });
           continue;
         }
-        const addOrder = await placeEngineOrder(client, { symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice });
+        placing = { qty, buyNotional };
+        const addOrder = await placeEngineOrder(client, { symbol: cand.symbol, side: "buy", qty: String(qty), type: "limit", timeInForce: "day", limitPrice }, engine);
+        placing = null;
         recordOrderPlacement(engine, "buy", buyNotional);
         tsSectorCtx?.positionMarketValues.set(cand.symbol, buyNotional); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(cand.symbol); // Phase 7: prevent re-fire within this scan
@@ -5234,7 +5834,14 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
         });
         addCount++;
       } catch (err) {
-        log.error({ symbol: cand.symbol, err: err instanceof Error ? err.message : "unknown" }, "Add position failed");
+        if (placing) {
+          await recordFailedEngineBuy(engine, {
+            symbol: cand.symbol, signal: "tactical_smart_add", qty: placing.qty, buyNotional: placing.buyNotional, err,
+            source: "engine_add",
+          }, { pendingBuySymbols, sectorCtx: tsSectorCtx, tally: unconfirmedBuys });
+        } else {
+          log.error({ symbol: cand.symbol, err: err instanceof Error ? err.message : "unknown" }, "Add position failed");
+        }
       }
       await new Promise(r => setTimeout(r, 100));
     }
@@ -5246,18 +5853,9 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
     }
   }
 
-  // Update daily P&L from broker positions
-  let totalUnrealizedPnl = 0;
-  try {
-    const brokerPositions = await client.getPositions();
-    for (const bp of brokerPositions) {
-      totalUnrealizedPnl += bp.unrealizedPnl;
-    }
-  } catch { /* use 0 */ }
-  // Mark-to-market drawdown halt (post-2026-06-10) — fires when
-  // realized+unrealized exceeds 1.5× the realized threshold.
-  await enforceUnrealizedLossHalt(engine, account.equity, totalUnrealizedPnl, today);
-  await upsertDailyPnl(today, realizedPnlThisScan, totalUnrealizedPnl, tradesThisScan, engine.halted, undefined, engine.userId);
+  // Update daily P&L from broker positions, then the MTM drawdown halt. An
+  // unknown unrealized figure is never written or checked as 0.
+  await recordScanEndPnl(engine, client, currentPositions, account.equity, today, realizedPnlThisScan, tradesThisScan, soldThisScan);
 
   engine.lastScanAt = new Date();
   engine.scanCount++;
@@ -5542,6 +6140,8 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
 
   // Sync position map with broker — handles manual sells/buys on Alpaca
   await syncPositionMapFromBroker(brokerPositions, positionMap, engine.userId!, client);
+  await resolveUnconfirmedBuys(client, engine);
+  engine.lastReconcileAt = Date.now();
   await reconcilePendingTrades(client, engine.userId!);
   engine.positionCount = positionMap.size;
 
@@ -5618,6 +6218,9 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
   // sync anyway; checking against a slightly-stale view is acceptable
   // and saves a Map rebuild per symbol.
   const scanSectorCtx = buildSectorExposureContext(engine.userId!, equity);
+  // BUYs of this scan whose outcome is unknown: counted by the position cap,
+  // the exposure check and the swap-sell planner as if placed.
+  const unconfirmedBuys: UnconfirmedBuyTally = { count: 0, notional: 0 };
 
   // 5. Scan each symbol
   for (const symbol of symbols) {
@@ -5998,7 +6601,9 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         log.info({ symbol, signal, marketHealthy, confidence: confidence.toFixed(3) }, "STRONG_BUY skipped — market unhealthy or signal not confirmed");
         continue;
       }
-      if (isStrongSignal && positionMap.size >= positionCap) {
+      // BUYs of this scan whose outcome is unknown hold a slot as if placed.
+      const heldCount = positionMap.size + unconfirmedBuys.count;
+      if (isStrongSignal && heldCount >= positionCap) {
         // Swap-sell: instead of silently dropping, defer the candidate.
         // After the loop, if exits freed slots, the highest-confidence
         // deferred candidates get bought to redeploy that capital this
@@ -6023,7 +6628,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         continue;
       }
 
-      if (shouldBuy && positionMap.size < positionCap) {
+      if (shouldBuy && heldCount < positionCap) {
         // Skip if there's already a pending buy order for this symbol
         if (pendingBuySymbols.has(symbol)) {
           if (isStrongSignal) log.info({ symbol }, "STRONG_BUY skipped — pending buy order already exists");
@@ -6072,7 +6677,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         // Check max portfolio exposure (use equity as cap when not configured)
         const effectiveMaxExposure = riskLimits.maxExposure < 0 ? equity * Math.abs(riskLimits.maxExposure) : riskLimits.maxExposure > 0 ? riskLimits.maxExposure : equity * 1.5;
         const currentExposure = Array.from(positionMap.values())
-          .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0);
+          .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0) + unconfirmedBuys.notional;
         if (currentExposure + (currentPrice * qty) > effectiveMaxExposure) {
           if (isStrongSignal) log.info({ symbol, currentExposure: currentExposure.toFixed(2), maxExposure: effectiveMaxExposure.toFixed(2), orderCost: (currentPrice * qty).toFixed(2) }, "STRONG_BUY skipped — max exposure reached");
           else log.info({ symbol, currentExposure, maxExposure: effectiveMaxExposure }, "Max exposure reached, skipping");
@@ -6172,7 +6777,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
             type: "limit",
             timeInForce: "day",
             limitPrice: String(limitPrice),
-          });
+          }, engine);
           recordOrderPlacement(engine, "buy", buyNotional);
           scanSectorCtx?.positionMarketValues.set(symbol, buyNotional); // accumulate in-scan (audit #15)
           pendingBuySymbols.add(symbol); // Phase 7: prevent re-fire within this scan
@@ -6226,23 +6831,11 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           );
 
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "unknown";
-          log.error({ err: msg, symbol }, "Failed to place buy order");
-          pushError(engine, `Buy order failed for ${symbol}: ${msg}`);
-
-          await logTrade(
-            symbol,
-            signal,
-            "BUY",
-            qty,
-            null,
-            "FAILED",
-            null,
-            `Order failed: ${msg}`,
-            null,
-            null,
-            engine.userId
-          );
+          const { unconfirmed } = await recordFailedEngineBuy(engine, {
+            symbol, signal, qty, buyNotional, err, source: "engine_scan",
+          }, { pendingBuySymbols, sectorCtx: scanSectorCtx, tally: unconfirmedBuys });
+          // The order may be live: the same cooldown as a placed BUY.
+          if (unconfirmed) engine.cooldowns.set(symbol, Date.now());
         }
       }
     } catch (err) {
@@ -6272,7 +6865,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           : equity * 1.5;
     const COOLDOWN_MS = 150 * 60 * 1000;
     const currentExposure = Array.from(positionMap.values())
-      .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0);
+      .reduce((sum, p) => sum + (p.marketValue ?? (p.currentPrice ?? p.entryPrice) * p.qty), 0) + unconfirmedBuys.notional;
 
     // Re-fetch buying power (audit #26): `account` was snapshotted at scan
     // start, and the in-loop entry buys placed this scan have since reserved
@@ -6298,7 +6891,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         currentPrice: c.currentPrice,
         signal: c.signal,
       })),
-      positionMapSize: positionMap.size,
+      positionMapSize: positionMap.size + unconfirmedBuys.count,
       hardCap: Math.floor(riskLimits.maxPositions * 1.5),
       pendingBuySymbols,
       cooldowns: engine.cooldowns,
@@ -6331,6 +6924,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
       // orderCost is recomputed from a fresh quote below (audit #44), so the
       // planner's price-based attempt.orderCost is intentionally not used here.
 
+      let placing: { buyNotional: number } | null = null;
       try {
         // Position-map drift guard (post-2026-06-11) — same defense as the
         // in-loop entry path. Refuse the redeploy BUY if broker holds the
@@ -6389,6 +6983,7 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         // Re-check cancellation right before placing (audit #23) — same window
         // as the main buy loop, in the post-loop redeploy.
         throwIfScanCancelled(engine, myGeneration);
+        placing = { buyNotional: freshOrderCost };
         const order = await placeEngineOrder(client, {
           symbol: candFull.symbol,
           side: "buy",
@@ -6396,7 +6991,8 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
           type: "limit",
           timeInForce: "day",
           limitPrice,
-        });
+        }, engine);
+        placing = null;
         recordOrderPlacement(engine, "buy", freshOrderCost);
         scanSectorCtx?.positionMarketValues.set(candFull.symbol, freshOrderCost); // accumulate in-scan (audit #15)
         pendingBuySymbols.add(candFull.symbol);
@@ -6428,10 +7024,18 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         redeployed++;
         tradesThisScan++;
       } catch (err) {
-        log.error(
-          { symbol: candFull.symbol, err: err instanceof Error ? err.message : "unknown" },
-          "Swap-sell redeploy failed"
-        );
+        if (placing) {
+          const { unconfirmed } = await recordFailedEngineBuy(engine, {
+            symbol: candFull.symbol, signal: `swap_sell_redeploy:${candFull.signal}`, qty,
+            buyNotional: placing.buyNotional, err, source: "engine_swap_sell",
+          }, { pendingBuySymbols, sectorCtx: scanSectorCtx, tally: unconfirmedBuys });
+          if (unconfirmed) engine.cooldowns.set(candFull.symbol, Date.now());
+        } else {
+          log.error(
+            { symbol: candFull.symbol, err: err instanceof Error ? err.message : "unknown" },
+            "Swap-sell redeploy failed"
+          );
+        }
       }
       await new Promise((r) => setTimeout(r, 100));
     }
@@ -6520,7 +7124,17 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
 export async function startEngine(userId: string, mode: EngineMode = "optimized"): Promise<{
   ok: boolean;
   error?: string;
+  /** SHUTTING_DOWN when refused because the process is draining. */
+  code?: string;
 }> {
+  // No start once the shutdown drain has begun, from a route, the watchdog or
+  // boot. placeDisasterStops below cancels every order before re-placing
+  // stops, and the drain's exit can land between the two.
+  if (isShuttingDown()) {
+    log.warn({ userId, mode }, "Engine start refused; process is shutting down");
+    return { ok: false, error: SHUTTING_DOWN_MESSAGE, code: SHUTTING_DOWN_CODE };
+  }
+
   const engine = getEngine(userId);
 
   if (engine.running || engine.starting) {
@@ -6633,6 +7247,15 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
 
   // PDT preemptive block fully removed 2026-06-04 (FINRA Rule 4210 amended,
   // PDT designation retired). Intraday mode itself was removed earlier.
+
+  // A shutdown that began during the awaits above: stop before the
+  // cancel-all. Once placeDisasterStops has started, shutdownAllEngines waits
+  // for this boot to finish and then stops the engine normally.
+  if (isShuttingDown()) {
+    engine.starting = false;
+    log.warn({ userId, mode }, "Engine start abandoned before disaster stops; process is shutting down");
+    return { ok: false, error: SHUTTING_DOWN_MESSAGE, code: SHUTTING_DOWN_CODE };
+  }
 
   // Replace old safety stops with wide disaster stops (engine manages tighter exits dynamically).
   // placeDisasterStops cancels existing orders and waits for shares to release before placing.
@@ -7047,7 +7670,11 @@ export async function startEngine(userId: string, mode: EngineMode = "optimized"
   return { ok: true };
 }
 
-export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?: string }> {
+export async function stopEngine(
+  userId?: string,
+  /** Shutdown drain deadline, passed through to placeSafetyStops. */
+  signal?: AbortSignal
+): Promise<{ ok: boolean; error?: string }> {
   const engine = userId ? getEngine(userId) : getEngine();
 
   if (!engine.running) {
@@ -7078,7 +7705,7 @@ export async function stopEngine(userId?: string): Promise<{ ok: boolean; error?
   engine.scanGeneration++;
 
   // Place broker-side safety stop orders for all open positions
-  await placeSafetyStops(engine.userId);
+  await placeSafetyStops(engine.userId, signal);
 
   log.info("Trading engine stopped — safety stops placed on broker");
 
@@ -7305,7 +7932,7 @@ function selectExternalSymbolsForTactical(
 async function syncBrokerStops(userId: string | null): Promise<void> {
   if (!userId) return;
 
-  const resolved = await resolveBrokerClient(userId);
+  const resolved = await resolveBrokerClientForProtection(userId);
   if (!resolved || !resolved.client.replaceOrder) return;
   const { client } = resolved;
 
@@ -7512,24 +8139,159 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
  * Alpaca's DELETE /v2/orders ack is async — the response returns before shares
  * actually release from `held_for_orders`. Without this wait, immediately placing
  * a new sell stop fails with 403 "insufficient qty available".
+ *
+ * A 207 partial still waits on every open order, including the ones the
+ * broker named as failed: if the 207 body were misread, every order would
+ * look failed and skipping them would skip the wait entirely. A genuinely
+ * failed cancel costs at most the deadline and shows up as released=false.
  */
-async function cancelAllAndWait(client: BrokerClient, maxMs = 5000): Promise<void> {
-  if (!client.cancelAllOrders) return;
-  await client.cancelAllOrders();
+export async function cancelAllAndWait(
+  client: BrokerClient,
+  maxMs = 5000
+): Promise<{
+  /** True when the broker reported no open or pending_cancel order before the deadline. */
+  released: boolean;
+  /**
+   * Orders the broker said it could not cancel (207 partial). Null when the
+   * cancel was not partial; an empty array means partial with unknown ids.
+   */
+  failedOrderIds: string[] | null;
+}> {
+  if (!client.cancelAllOrders) return { released: false, failedOrderIds: null };
+  let failedOrderIds: string[] | null = null;
+  try {
+    await client.cancelAllOrders();
+  } catch (err) {
+    // A 207 partial still cancelled the other orders, so wait for those to
+    // release and hand the failures to the caller. Any other error throws,
+    // as before.
+    if (!(err instanceof CancelAllPartialError)) throw err;
+    failedOrderIds = err.failedOrderIds;
+    log.warn({ failedOrderIds }, "Cancel-all was partial; still waiting for every order to release");
+  }
   const deadline = Date.now() + maxMs;
   const PENDING = new Set(["new", "accepted", "pending_new", "partially_filled", "held", "pending_cancel"]);
   while (Date.now() < deadline) {
     try {
       // status="open" — same Alpaca default-status trap as the per-scan guards.
       // Without it, a still-pending cancel can be hidden behind filled noise
-      // and we'd return early thinking the broker is clean.
-      const orders = await client.getOrders(100, "open");
-      if (!orders.some((o) => PENDING.has(o.status))) return;
+      // and we'd return early thinking the broker is clean. A full page
+      // cannot prove the rest are released, so it counts as still pending.
+      const orders = await client.getOrders(OPEN_ORDERS_PAGE, "open");
+      if (orders.length < OPEN_ORDERS_PAGE && !orders.some((o) => PENDING.has(o.status))) {
+        return { released: true, failedOrderIds };
+      }
     } catch {
       // Transient broker error — keep polling until deadline
     }
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, CANCEL_POLL_MS));
   }
+  log.warn({ maxMs }, "Cancelled orders were still pending at the deadline");
+  return { released: false, failedOrderIds };
+}
+
+/** Poll interval while waiting for cancelled orders to release held shares. */
+const CANCEL_POLL_MS = 250;
+/**
+ * Page size for the kill-switch and cancel-and-wait order listings. Alpaca
+ * caps /v2/orders at 500 and truncates silently, so every reader of these
+ * pages treats a full page as incomplete rather than as the whole book.
+ */
+const OPEN_ORDERS_PAGE = 500;
+
+/**
+ * Cancel one symbol's open orders, then poll until none of them is still open
+ * or pending_cancel, so the shares they held are free before a sell. Alpaca
+ * cancels asynchronously: a sell sent while a stop is pending_cancel is
+ * rejected for insufficient qty (finding #42). Orders of the symbol that are
+ * already pending_cancel (cancelled by an earlier call or another path) are
+ * waited on too, so a second call really does re-poll instead of returning
+ * at once. `minWait` sleeps at least one poll interval even when there is
+ * nothing to wait on: Alpaca can show an order canceled a beat before its
+ * shares leave held_for_orders. `filter` narrows which open orders are
+ * cancelled (default: all of the symbol's). Never throws.
+ */
+export async function cancelSymbolOrdersAndWait(
+  client: BrokerClient,
+  symbol: string,
+  opts: { maxMs?: number; minWait?: boolean; filter?: (o: BrokerOrder) => boolean } = {}
+): Promise<{ released: boolean; failedOrderIds: string[] }> {
+  const maxMs = opts.maxMs ?? 5000;
+  const failedOrderIds: string[] = [];
+  if (!client.cancelOrder) return { released: false, failedOrderIds };
+  const CANCELLABLE = ["new", "accepted", "pending_new", "partially_filled", "held"];
+  const HOLDING = new Set([...CANCELLABLE, "pending_cancel"]);
+  // Orders whose release this call waits for: the ones it cancels plus any of
+  // the symbol's orders already in pending_cancel.
+  const waitIds = new Set<string>();
+  let pageFull = false;
+  try {
+    // status="open" for the same Alpaca default-status reason as
+    // cancelPendingOrdersForSymbol.
+    const orders = await client.getOrders(OPEN_ORDERS_PAGE, "open");
+    if (orders.length >= OPEN_ORDERS_PAGE) {
+      pageFull = true;
+      log.warn({ symbol, count: orders.length }, "Open-order page is full; some of this symbol's orders may not be listed");
+    }
+    for (const o of orders) {
+      if (o.symbol === symbol && o.status === "pending_cancel") waitIds.add(o.id);
+    }
+    const pending = orders.filter(
+      (o) => o.symbol === symbol && CANCELLABLE.includes(o.status) && (!opts.filter || opts.filter(o))
+    );
+    for (const o of pending) {
+      try {
+        await client.cancelOrder(o.id);
+        waitIds.add(o.id);
+        log.info({ symbol, orderId: o.id, type: o.type }, "Cancelled order before sell");
+      } catch (err) {
+        failedOrderIds.push(o.id);
+        log.warn(
+          { symbol, orderId: o.id, err: err instanceof Error ? err.message : "unknown" },
+          "Failed to cancel order before sell"
+        );
+      }
+    }
+  } catch (err) {
+    log.warn(
+      { symbol, err: err instanceof Error ? err.message : "unknown" },
+      "Could not list open orders before sell"
+    );
+    if (opts.minWait) await new Promise((r) => setTimeout(r, CANCEL_POLL_MS));
+    return { released: false, failedOrderIds };
+  }
+  if (waitIds.size === 0 && !pageFull) {
+    if (opts.minWait) await new Promise((r) => setTimeout(r, CANCEL_POLL_MS));
+    return { released: failedOrderIds.length === 0, failedOrderIds };
+  }
+
+  // Poll at least once, even when the caller's budget is already spent.
+  const deadline = Date.now() + maxMs;
+  do {
+    await new Promise((r) => setTimeout(r, CANCEL_POLL_MS));
+    try {
+      const orders = await client.getOrders(OPEN_ORDERS_PAGE, "open");
+      const stillHeld = orders.some(
+        (o) =>
+          o.symbol === symbol &&
+          (o.status === "pending_cancel" || (waitIds.has(o.id) && HOLDING.has(o.status)))
+      );
+      // A full page cannot prove the symbol's orders are gone.
+      if (!stillHeld && orders.length < OPEN_ORDERS_PAGE) {
+        return { released: failedOrderIds.length === 0, failedOrderIds };
+      }
+    } catch {
+      // Transient broker error: keep polling until the deadline.
+    }
+  } while (Date.now() < deadline);
+  log.warn({ symbol, maxMs }, "Cancelled orders still pending at the deadline; selling anyway");
+  return { released: false, failedOrderIds };
+}
+
+/** An Alpaca rejection because shares are still held by an open order. */
+function isInsufficientQtyError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /insufficient qty|held_for_orders|order 403/i.test(msg);
 }
 
 /**
@@ -7541,7 +8303,7 @@ async function cancelAllAndWait(client: BrokerClient, maxMs = 5000): Promise<voi
 async function placeDisasterStops(userId: string | null): Promise<void> {
   if (!userId) return;
 
-  const resolved = await resolveBrokerClient(userId);
+  const resolved = await resolveBrokerClientForProtection(userId);
   if (!resolved) return;
 
   try {
@@ -7587,50 +8349,464 @@ async function placeDisasterStops(userId: string | null): Promise<void> {
 }
 
 /**
- * Place tighter safety stops when engine is stopping (strategy-level stop loss).
- * These are more protective since the engine won't be managing exits dynamically.
+ * Settle a promise, or reject as soon as `signal` aborts. The underlying call
+ * is abandoned, not cancelled: a broker request already sent may still land.
+ * The safety-stop path only races calls that raise protection or leave it as
+ * it was; a stop that follows a sent cancel is awaited in full instead.
  */
-async function placeSafetyStops(userId: string | null): Promise<void> {
+function untilAborted<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    p.catch((err) =>
+      log.debug(
+        { err: err instanceof Error ? err.message : "unknown" },
+        "Broker call abandoned at the drain deadline later failed"
+      )
+    );
+    return Promise.reject(signal.reason ?? new Error("aborted"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(
+      (v) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(v);
+      },
+      (e) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(e);
+      }
+    );
+  });
+}
+
+/** Sell-side order types that already protect a position at the broker. */
+const PROTECTIVE_SELL_TYPES = new Set(["stop", "stop_limit", "trailing_stop"]);
+
+/**
+ * Cancel-then-place on the safety-stop path. A sent cancel is always followed
+ * by its stop, and that stop is not raced against the drain deadline, so only
+ * FORCE_EXIT_MS bounds it. To keep the pair inside the force exit, no new
+ * cancel starts once SAFETY_CANCEL_CUTOFF_MS of the drain has passed, and the
+ * wait for released shares is capped at SAFETY_CANCEL_WAIT_MS. That leaves
+ * 8 s of the drain budget plus the 5 s force-exit headroom for the cancel,
+ * the wait and the place. The client_order_id lookup after an ambiguous
+ * place gets the drain deadline as its lookupSignal, so it never runs past
+ * DRAIN_BUDGET_MS and adds nothing to that worst case (7 + 2 + 10 = 19 s).
+ */
+const SAFETY_CANCEL_WAIT_MS = 2_000;
+const SAFETY_CANCEL_CUTOFF_MS = DRAIN_BUDGET_MS - 8_000;
+
+/**
+ * Order statuses that no longer work at the broker. Not every broker honours
+ * getOrders(..., "open"): Tradier ignores the status argument and returns the
+ * whole day's book, so a filled or rejected stop comes back beside the live
+ * ones. A dead stop protects nothing and must not count as the existing one.
+ * A deny list rather than Alpaca's live set, because Tradier's live statuses
+ * are "open" and "pending" and IBKR's are capitalised: an unknown status is
+ * treated as live, which leaves that order alone rather than stacking a
+ * second sell on top of it. Compared lowercase.
+ */
+const DEAD_ORDER_STATUSES = new Set([
+  "filled", "canceled", "cancelled", "rejected", "expired",
+  "done_for_day", "replaced", "calculated", "inactive", "error",
+]);
+
+/**
+ * Make sure every open position has a strategy-level GTC stop at the broker
+ * when the engine stops (user Stop, SIGTERM drain). The engine
+ * will not be managing exits after this, so the resting stop is the only
+ * protection until the next start.
+ *
+ * It never lowers protection. The target per position is the highest of the
+ * existing broker stop, the engine's in-memory stop (breakeven promotions and
+ * trail ratchets land there), and the strategy's fixed-% stop from entry,
+ * clamped just below market. An existing stop is moved UP in place with
+ * replaceOrder, never cancelled first; a position with no stop gets one.
+ * There is no cancel-all: an interrupted drain (force exit, SIGKILL) leaves
+ * every position with at least the stop it had before.
+ *
+ * Brokers without replaceOrder: a stop that should rise is cancelled and
+ * re-placed one symbol at a time, so at most one position is between orders
+ * at any moment. A broker with neither leaves existing stops alone.
+ *
+ * A price raise and a qty change go to replaceOrder as two calls, price
+ * first: a qty increase can be rejected while another sell holds shares, and
+ * that must not cost the ratchet.
+ *
+ * Open BUY orders are cancelled one by one so a resting entry cannot fill
+ * after the engine stops. Other open sells of a symbol with no stop (a
+ * pending limit exit) are cancelled before its stop is placed, as before.
+ *
+ * Everything runs under one deadline: `signal` (the shutdown drain passes
+ * one) combined with DRAIN_BUDGET_MS. Past it no new broker call starts.
+ * The exception is a cancel already sent: its stop is placed and awaited
+ * whatever the deadline, and no new cancel starts after
+ * SAFETY_CANCEL_CUTOFF_MS so that pair fits inside the force exit.
+ * The boot-time placeDisasterStops and stop-sync remain the backstop.
+ */
+export async function placeSafetyStops(userId: string | null, signal?: AbortSignal): Promise<void> {
   if (!userId) return;
 
-  const resolved = await resolveBrokerClient(userId);
-  if (!resolved) return;
-
-  const { client } = resolved;
+  const budget = AbortSignal.timeout(DRAIN_BUDGET_MS);
+  const deadline = signal ? AbortSignal.any([signal, budget]) : budget;
+  const startedAt = Date.now();
+  const canStartCancel = () => !deadline.aborted && Date.now() - startedAt < SAFETY_CANCEL_CUTOFF_MS;
 
   try {
-    const positions = await client.getPositions();
-    if (positions.length === 0) return;
+    const resolved = await untilAborted(resolveBrokerClientForProtection(userId), deadline);
+    if (!resolved) {
+      log.error({ userId }, "No broker client for safety stops; existing broker-side orders left as they are");
+      return;
+    }
+    const { client } = resolved;
 
-    await cancelAllAndWait(client);
+    const positions = (await untilAborted(client.getPositions(), deadline)).filter((p) => p.qty > 0);
+    const listed = await untilAborted(client.getOrders(OPEN_ORDERS_PAGE, "open"), deadline);
+    if (listed.length >= OPEN_ORDERS_PAGE) {
+      log.warn({ userId, count: listed.length }, "Open-order page is full; some existing stops may not be listed");
+    }
+    // Orders still working at the broker. A pending_cancel order may still
+    // hold shares (so it counts when freeing a symbol's sells) but protects
+    // nothing and cannot be cancelled again.
+    const openOrders = listed.filter((o) => !DEAD_ORDER_STATUSES.has(o.status.toLowerCase()));
+    const working = openOrders.filter((o) => o.status.toLowerCase() !== "pending_cancel");
+
+    // A resting entry must not fill after the engine stops.
+    const buys = working.filter((o) => o.side === "buy");
+    const buyCancels = client.cancelOrder
+      ? buys.map((o) =>
+          untilAborted(client.cancelOrder!(o.id), deadline).then(
+            () => log.info({ symbol: o.symbol, orderId: o.id }, "Cancelled open buy on engine stop"),
+            (err) =>
+              log.warn(
+                { symbol: o.symbol, orderId: o.id, err: err instanceof Error ? err.message : "unknown" },
+                "Failed to cancel open buy on engine stop"
+              )
+          )
+        )
+      : [];
+    if (buys.length > 0 && !client.cancelOrder) {
+      log.warn({ userId, count: buys.length }, "Broker cannot cancel single orders; open buys left working");
+    }
+
+    if (positions.length === 0) {
+      await Promise.allSettled(buyCancels);
+      return;
+    }
+
+    const positionMap = getPositionMap(userId);
+    const engine = getEngine(userId);
+    const cancelReplace: Array<() => Promise<void>> = [];
+    const parallel: Array<Promise<void>> = [...buyCancels];
 
     for (const pos of positions) {
-      if (pos.qty <= 0) continue;
+      const sells = openOrders.filter((o) => o.symbol === pos.symbol && o.side === "sell");
+      const protecting = working.filter((o) => o.symbol === pos.symbol && o.side === "sell");
+      const stops = protecting
+        .filter((o) => o.type === "stop" && o.stopPrice && parseFloat(o.stopPrice) > 0)
+        .sort((a, b) => parseFloat(b.stopPrice!) - parseFloat(a.stopPrice!));
+      const existing = stops[0];
 
-      const strategy = await resolveStrategy(userId, pos.symbol);
-      // Clamp below current price (audit #17) — a gapped-down position whose
-      // fixed stop sits above market would otherwise be rejected by Alpaca and
-      // left broker-unprotected.
-      const rawStop = pos.avgEntryPrice * (1 - strategy.stopLossPct);
-      const stopPrice = Math.min(rawStop, pos.currentPrice * (1 - 0.001)).toFixed(2);
-
-      try {
-        await placeEngineOrder(client, {
-          symbol: pos.symbol, side: "sell", qty: String(pos.qty),
-          type: "stop", timeInForce: "gtc", stopPrice,
-        });
-        log.info({ symbol: pos.symbol, stopPrice, qty: pos.qty }, "Safety stop placed");
-      } catch (err) {
-        log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Failed to place safety stop");
+      if (!existing && protecting.some((o) => PROTECTIVE_SELL_TYPES.has(o.type))) {
+        // A stop_limit or trailing stop already protects it; its level cannot
+        // be compared here, so leave it rather than risk a second sell.
+        log.info({ symbol: pos.symbol }, "Safety stop skipped; broker already holds a protective sell");
+        continue;
       }
+
+      const tracked = positionMap.get(pos.symbol);
+      const task = async (): Promise<void> => {
+        if (deadline.aborted) return;
+        const strategy = await untilAborted(resolveStrategy(userId, pos.symbol), deadline);
+        const existingStop = existing ? parseFloat(existing.stopPrice!) : 0;
+        const fixedStop = pos.avgEntryPrice * (1 - strategy.stopLossPct);
+        const memStop = tracked && tracked.stopLoss > 0 ? tracked.stopLoss : 0;
+        // Clamp below current price (audit #17): a stop at or above market is
+        // rejected by Alpaca and would leave the position broker-unprotected.
+        const rawTarget = Math.max(existingStop, memStop, fixedStop);
+        const target = pos.currentPrice > 0 ? Math.min(rawTarget, pos.currentPrice * (1 - 0.001)) : rawTarget;
+        const targetStr = target.toFixed(2);
+
+        const markProtected = (price: number) => {
+          if (tracked && price > tracked.stopLoss) tracked.stopLoss = price;
+          engine.unprotectedSymbols.delete(pos.symbol);
+        };
+
+        if (!existing && sells.length > 0) {
+          // No stop at the broker, but another sell (a pending limit exit)
+          // holds the shares. Free them first. Once that cancel is sent the
+          // stop is placed and awaited, deadline or not.
+          if (!canStartCancel()) {
+            log.warn({ symbol: pos.symbol }, "Safety stop not placed; too late in the drain to cancel the open sell first");
+            return;
+          }
+          await cancelSymbolOrdersAndWait(client, pos.symbol, {
+            filter: (o) => o.side === "sell",
+            maxMs: SAFETY_CANCEL_WAIT_MS,
+          });
+          try {
+            await placeEngineOrder(client, {
+              symbol: pos.symbol, side: "sell", qty: String(pos.qty),
+              type: "stop", timeInForce: "gtc", stopPrice: targetStr,
+            }, undefined, { lookupSignal: deadline });
+          } catch (err) {
+            engine.unprotectedSymbols.add(pos.symbol);
+            throw err;
+          }
+          markProtected(target);
+          log.info({ symbol: pos.symbol, stopPrice: targetStr, qty: pos.qty }, "Safety stop placed");
+          return;
+        }
+
+        if (!existing) {
+          // No stop and nothing holding the shares: nothing was cancelled, so
+          // abandoning this place at the deadline loses nothing.
+          await untilAborted(
+            placeEngineOrder(client, {
+              symbol: pos.symbol, side: "sell", qty: String(pos.qty),
+              type: "stop", timeInForce: "gtc", stopPrice: targetStr,
+            }, undefined, { lookupSignal: deadline }),
+            deadline
+          );
+          markProtected(target);
+          log.info({ symbol: pos.symbol, stopPrice: targetStr, qty: pos.qty }, "Safety stop placed");
+          return;
+        }
+
+        // Never downward: only a strictly higher cent value moves the stop.
+        const raise = parseFloat(targetStr) > existingStop;
+        const qtyChanged = stops.length === 1 && existing.qty !== pos.qty;
+        if (!raise && !qtyChanged) {
+          markProtected(existingStop);
+          log.info({ symbol: pos.symbol, stopPrice: existing.stopPrice }, "Safety stop kept; existing broker stop is at or above target");
+          return;
+        }
+
+        if (client.replaceOrder) {
+          // Price first, on its own. A qty increase is rejected while another
+          // sell (a take-profit limit) holds the rest of the shares, and in a
+          // combined call that rejection would take the ratchet with it.
+          let stopId = existing.id;
+          if (raise) {
+            const replaced = await untilAborted(client.replaceOrder(existing.id, { stopPrice: targetStr }), deadline);
+            if (replaced.id) stopId = replaced.id; // Alpaca gives the replacement a new id
+            markProtected(target);
+            log.info({ symbol: pos.symbol, oldStop: existing.stopPrice, newStop: targetStr }, "Safety stop ratcheted in place");
+          } else {
+            markProtected(existingStop);
+          }
+          if (qtyChanged) {
+            try {
+              await untilAborted(client.replaceOrder(stopId, { qty: String(pos.qty) }), deadline);
+              log.info({ symbol: pos.symbol, oldQty: existing.qty, qty: pos.qty }, "Safety stop qty matched to position");
+            } catch (err) {
+              log.warn(
+                { symbol: pos.symbol, oldQty: existing.qty, qty: pos.qty, err: err instanceof Error ? err.message : "unknown" },
+                "Safety stop qty not updated; stop price kept"
+              );
+            }
+          }
+          return;
+        }
+
+        if (!client.cancelOrder) {
+          log.warn({ symbol: pos.symbol, stopPrice: existing.stopPrice }, "Broker cannot replace or cancel; existing stop left as it is");
+          return;
+        }
+
+        // Cancel-and-replace. Once the cancel is sent the replacement MUST be
+        // placed, deadline or not: the force exit is the only bound here.
+        const cancel = await cancelSymbolOrdersAndWait(client, pos.symbol, {
+          filter: (o) => o.id === existing.id,
+          maxMs: SAFETY_CANCEL_WAIT_MS,
+        });
+        if (cancel.failedOrderIds.length > 0) {
+          log.warn({ symbol: pos.symbol }, "Stop cancel failed; existing stop left as it is");
+          return;
+        }
+        try {
+          await placeEngineOrder(client, {
+            symbol: pos.symbol, side: "sell", qty: String(pos.qty),
+            type: "stop", timeInForce: "gtc", stopPrice: raise ? targetStr : existing.stopPrice!,
+          }, undefined, { lookupSignal: deadline });
+          markProtected(raise ? target : existingStop);
+          log.info({ symbol: pos.symbol, oldStop: existing.stopPrice, newStop: targetStr }, "Safety stop replaced");
+        } catch (err) {
+          engine.unprotectedSymbols.add(pos.symbol);
+          throw err;
+        }
+      };
+
+      const run = () =>
+        task().catch((err) => {
+          log.error(
+            { symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" },
+            deadline.aborted ? "Safety stop not updated before the drain deadline" : "Failed to place safety stop"
+          );
+        });
+
+      if (existing && !client.replaceOrder) cancelReplace.push(run);
+      else parallel.push(run());
     }
+
+    // One symbol at a time for cancel-and-replace, alongside the parallel work.
+    parallel.push(
+      (async () => {
+        for (const [i, run] of cancelReplace.entries()) {
+          if (!canStartCancel()) {
+            log.warn(
+              { userId, notStarted: cancelReplace.length - i },
+              "Stop cancel-and-replace not started; too late in the drain, existing stops left as they are"
+            );
+            break;
+          }
+          await run();
+        }
+      })()
+    );
+
+    await Promise.allSettled(parallel);
   } catch (err) {
-    log.error({ err: err instanceof Error ? err.message : "unknown" }, "Failed to place safety stops");
+    log.error(
+      { userId, err: err instanceof Error ? err.message : "unknown" },
+      deadline.aborted
+        ? "Safety stops not reached before the drain deadline; existing broker-side orders left as they are"
+        : "Failed to place safety stops; existing broker-side orders left as they are"
+    );
   }
 }
 
-export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?: string }> {
+/**
+ * Place one GTC strategy-level safety stop for a long position. Returns true
+ * when the broker accepted it. Never throws.
+ */
+async function placeSafetyStopForPosition(
+  client: BrokerClient,
+  userId: string,
+  pos: BrokerPosition
+): Promise<boolean> {
+  try {
+    const strategy = await resolveStrategy(userId, pos.symbol);
+    // Clamp below current price (audit #17) — a gapped-down position whose
+    // fixed stop sits above market would otherwise be rejected by Alpaca and
+    // left broker-unprotected.
+    const rawStop = pos.avgEntryPrice * (1 - strategy.stopLossPct);
+    const stopPrice = Math.min(rawStop, pos.currentPrice * (1 - 0.001)).toFixed(2);
+
+    await placeEngineOrder(client, {
+      symbol: pos.symbol, side: "sell", qty: String(pos.qty),
+      type: "stop", timeInForce: "gtc", stopPrice,
+    });
+    log.info({ symbol: pos.symbol, stopPrice, qty: pos.qty }, "Safety stop placed");
+    return true;
+  } catch (err) {
+    log.error({ symbol: pos.symbol, err: err instanceof Error ? err.message : "unknown" }, "Failed to place safety stop");
+    return false;
+  }
+}
+
+/**
+ * Kill-switch helper: cancel open BUY orders (pending entry exposure) without
+ * touching any SELL order, so the resting disaster and safety stops that
+ * protect open long positions stay in place. Buys on symbols in `keepSymbols`
+ * (held short, where the buy is the protective side) are left alone too. Best
+ * effort: never throws.
+ */
+async function cancelOpenEntryOrders(client: BrokerClient, keepSymbols: Set<string>): Promise<void> {
+  if (!client.cancelOrder) return;
+  const PAGE = OPEN_ORDERS_PAGE;
+  try {
+    // status="open" for the same Alpaca default-status reason as
+    // cancelPendingOrdersForSymbol.
+    const orders = await client.getOrders(PAGE, "open");
+    if (orders.length >= PAGE) {
+      log.warn({ count: orders.length }, "Open-order page is full on halt; some pending buys may not have been cancelled");
+    }
+    const entries = orders.filter(
+      (o) =>
+        o.side === "buy" &&
+        !keepSymbols.has(o.symbol) &&
+        ["new", "accepted", "pending_new", "partially_filled", "held"].includes(o.status)
+    );
+    for (const o of entries) {
+      try {
+        await client.cancelOrder(o.id);
+        log.info({ symbol: o.symbol, orderId: o.id }, "Cancelled pending entry order on halt");
+      } catch (err) {
+        log.warn(
+          { symbol: o.symbol, orderId: o.id, err: err instanceof Error ? err.message : "unknown" },
+          "Failed to cancel pending entry order on halt"
+        );
+      }
+    }
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown" },
+      "Could not list open orders on halt; pending entry orders were not cancelled"
+    );
+  }
+}
+
+/**
+ * Stable code when the kill switch could not reach the broker at all. No
+ * order was cancelled and nothing was liquidated.
+ */
+export const HALT_BROKER_UNRESOLVED = "BROKER_UNRESOLVED";
+/**
+ * Stable code when the broker was reached but at least one long position was
+ * not liquidated (market closed, order rejected, or the halt failed part way).
+ */
+export const HALT_LIQUIDATION_FAILED = "LIQUIDATION_FAILED";
+/**
+ * Stable code when the market is closed: no market sell can be placed, so
+ * nothing was liquidated and every resting broker stop was left in place.
+ * The engine is still halted (no new entries).
+ */
+export const HALT_MARKET_CLOSED = "MARKET_CLOSED";
+
+/**
+ * Overall budget for the kill switch's cancel-and-wait polling across every
+ * symbol. Each symbol waits up to 5s for its stops to release (plus a retry),
+ * so without a cap a book of many positions on a slow broker could outlast a
+ * proxy timeout (Cloudflare gives up at 100s) and the UI would show an error
+ * while the halt was still running. Once the budget is spent each symbol
+ * still gets its cancel, one release poll and its sell: the budget bounds the
+ * waiting, it never skips a liquidation.
+ */
+const HALT_WAIT_BUDGET_MS = 45_000;
+
+export async function haltEngine(userId?: string): Promise<{
+  ok: boolean;
+  error?: string;
+  code?: typeof HALT_BROKER_UNRESOLVED | typeof HALT_LIQUIDATION_FAILED | typeof HALT_MARKET_CLOSED;
+  /** The account the halt acted on, when a broker client resolved. */
+  environment?: "paper" | "live";
+  /** Symbols whose liquidation (market sell) order the broker accepted. */
+  closedSymbols?: string[];
+  /** Symbols whose liquidation order could not be placed. */
+  failedSymbols?: string[];
+  /**
+   * Subset of failedSymbols whose resting stops may have been cancelled and
+   * for which no replacement stop was confirmed. These need the broker now.
+   */
+  unprotectedSymbols?: string[];
+}> {
   const engine = userId ? getEngine(userId) : getEngine();
+  // The kill switch must work on an engine that never started (for example
+  // one refused at boot after live permission was revoked), whose in-memory
+  // userId is still null. Fall back to the caller's userId in that case.
+  const haltUserId = engine.userId ?? userId ?? null;
+  let brokerUnresolved = false;
+  let environment: "paper" | "live" | undefined;
+  let marketClosed = false;
+  // Set once the halt starts touching per-symbol orders; a throw after this
+  // point is a partial liquidation, not an unreachable broker.
+  let liquidationStarted = false;
+  let haltIncomplete = false;
+  const closedSymbols: string[] = [];
+  const failedSymbols: string[] = [];
+  const unprotectedSymbols: string[] = [];
 
   // Stop the loop
   if (engine.intervalId) {
@@ -7653,47 +8829,166 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
   engine.running = false;
   engine.halted = true;
   engine.haltReason = "user_emergency_halt";
+  // Cancel any in-flight scan before the first await, exactly as stopEngine
+  // does. Without this a tactical entry loop that was mid-universe when the
+  // kill switch fired kept placing BUYs (finding #43). placeEngineOrder and
+  // canPlaceBuyOrder also refuse BUYs on a halted engine.
+  engine.scanGeneration++;
 
-  // Close all tracked positions
-  if (engine.userId) {
+  // Close all tracked positions. Protective resolver: the live-entry gates
+  // must never disable the kill switch.
+  if (haltUserId) {
     try {
-      const resolved = await resolveBrokerClient(engine.userId);
-      if (resolved) {
-        // Cancel all pending orders first — orphaned stop-loss/take-profit
-        // orders from bracket orders will block position sells
-        if (resolved.client.cancelAllOrders) {
-          try {
-            await resolved.client.cancelAllOrders();
-            log.info("Cancelled all pending orders before halt liquidation");
-          } catch (err) {
-            log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders on halt");
-          }
-        }
+      const resolved = await resolveBrokerClientForProtection(haltUserId);
+      if (!resolved) {
+        brokerUnresolved = true;
+        log.error({ userId: haltUserId }, "Emergency halt could not resolve a broker client; nothing was liquidated");
+        pushError(engine, "Halt could not reach the broker: no positions were closed. Close them at the broker directly.");
+      } else {
+        environment = resolved.environment;
+        const { client } = resolved;
 
+        // Read positions BEFORE touching any order. The halt used to call
+        // cancelAllOrders() first, which removed every resting disaster and
+        // safety stop even when no liquidation order could follow (market
+        // closed, broker rejection, or this read failing), leaving the
+        // positions with no broker-side protection at all.
+        //
         // Source positions from the broker, not the in-memory positionMap.
         // The map only contains long positions the engine is tracking; manual
         // buys outside the engine could be missed otherwise. Shorts (qty <= 0)
         // are skipped — engine is long-only and the user is responsible for
         // managing those positions on the broker directly.
-        const brokerPositions = await resolved.client.getPositions();
-        const positionMap = getPositionMap(engine.userId);
+        const brokerPositions = await client.getPositions();
+        const positionMap = getPositionMap(haltUserId);
+        const shortSymbols = new Set(brokerPositions.filter((p) => p.qty < 0).map((p) => p.symbol));
+        const longs = brokerPositions.filter((p) => {
+          if (p.qty <= 0) {
+            log.info({ symbol: p.symbol, qty: p.qty }, "Halt skipped short position (engine is long-only)");
+            return false;
+          }
+          return true;
+        });
 
-        for (const pos of brokerPositions) {
-          if (pos.qty <= 0) {
-            log.info({ symbol: pos.symbol, qty: pos.qty }, "Halt skipped short position (engine is long-only)");
+        // Stop pending entries from filling. With nothing held there is no
+        // protection to preserve, so the broker-wide cancel is safe and
+        // complete; otherwise cancel buys only and leave every sell in place.
+        if (brokerPositions.length === 0 && client.cancelAllOrders) {
+          try {
+            await client.cancelAllOrders();
+            log.info("Cancelled all pending orders on halt (no open positions)");
+          } catch (err) {
+            // A partial (207) or failed cancel-all can leave a pending BUY
+            // that fills after the halt. Fall back to cancelling buys one by one.
+            log.warn({ err: err instanceof Error ? err.message : "unknown" }, "Failed to cancel orders on halt; cancelling entries individually");
+            await cancelOpenEntryOrders(client, shortSymbols);
+          }
+        } else {
+          await cancelOpenEntryOrders(client, shortSymbols);
+        }
+
+        if (longs.length > 0 && !isMarketOpen()) {
+          // Market orders are refused while the market is closed. Leave the
+          // resting stops exactly where they are and report every long as
+          // not liquidated.
+          marketClosed = true;
+          for (const pos of longs) failedSymbols.push(pos.symbol);
+          log.error(
+            { symbols: failedSymbols, environment },
+            "Emergency halt outside market hours: nothing liquidated, existing broker-side stops left in place"
+          );
+          pushError(
+            engine,
+            `Market closed: could not liquidate ${failedSymbols.join(", ")}. Existing broker stops were left in place.`
+          );
+        }
+
+        liquidationStarted = true;
+        const waitDeadline = Date.now() + HALT_WAIT_BUDGET_MS;
+        const waitMs = () => Math.max(0, Math.min(5000, waitDeadline - Date.now()));
+        for (const pos of marketClosed ? [] : longs) {
+          // Cancel this symbol's pending orders (bracket legs, resting stops,
+          // take-profits) just before its sell, and WAIT until the broker
+          // has released them: Alpaca cancels asynchronously, and a sell sent
+          // while a stop is pending_cancel is rejected because its shares are
+          // still held (finding #42). Never a broker-wide cancel here.
+          let haltOrder: BrokerOrder;
+          const sellParams = {
+            symbol: pos.symbol,
+            side: "sell" as const,
+            qty: String(pos.qty),
+            type: "market" as const,
+            timeInForce: "day" as const,
+          };
+          // Orders of this symbol the broker refused to cancel. The sell is
+          // still attempted (a cancel that fails because the order already
+          // filled or is already cancelling does not block it), but a
+          // failure is then reported with this as its likely cause.
+          let uncancelled: string[] = [];
+          try {
+            const cancel = await cancelSymbolOrdersAndWait(client, pos.symbol, { maxMs: waitMs() });
+            uncancelled = cancel.failedOrderIds;
+            if (!cancel.released) {
+              log.warn(
+                { symbol: pos.symbol, failedOrderIds: cancel.failedOrderIds },
+                "Halt could not confirm this symbol's orders released; selling anyway"
+              );
+            }
+            try {
+              haltOrder = await placeEngineOrder(client, sellParams);
+            } catch (firstErr) {
+              if (!isInsufficientQtyError(firstErr)) throw firstErr;
+              // Shares still held: re-poll this symbol's orders (cancelling
+              // anything that appeared since and waiting on any still
+              // pending_cancel), wait at least one poll interval, and retry
+              // once.
+              log.warn(
+                { symbol: pos.symbol, err: firstErr instanceof Error ? firstErr.message : "unknown" },
+                "Halt sell rejected for held qty; re-polling orders and retrying once"
+              );
+              const retry = await cancelSymbolOrdersAndWait(client, pos.symbol, { maxMs: waitMs(), minWait: true });
+              uncancelled = [...new Set([...uncancelled, ...retry.failedOrderIds])];
+              haltOrder = await placeEngineOrder(client, sellParams);
+            }
+          } catch (err) {
+            const baseMsg = err instanceof Error ? err.message : "unknown";
+            const msg =
+              uncancelled.length > 0
+                ? `${baseMsg} (${uncancelled.length} of its orders could not be cancelled: ${uncancelled.join(", ")})`
+                : baseMsg;
+            failedSymbols.push(pos.symbol);
+            log.error(
+              { err: msg, symbol: pos.symbol },
+              "Failed to close position on halt"
+            );
+            // Its resting stops may already be cancelled. Put a safety stop
+            // back rather than leave the position bare.
+            const reprotected = await placeSafetyStopForPosition(client, haltUserId, pos);
+            if (!reprotected) unprotectedSymbols.push(pos.symbol);
+            pushError(
+              engine,
+              reprotected
+                ? `Failed to close ${pos.symbol} on halt: ${msg}. A safety stop was placed.`
+                : `Failed to close ${pos.symbol} on halt: ${msg}. Its broker stop may have been cancelled and no replacement was confirmed.`
+            );
             continue;
           }
-          try {
-            const haltOrder = await placeEngineOrder(resolved.client, {
-              symbol: pos.symbol,
-              side: "sell",
-              qty: String(pos.qty),
-              type: "market",
-              timeInForce: "day",
-            });
 
+          // The sell is submitted. Bookkeeping failures below must not be
+          // reported as a failed liquidation (or trigger a re-protect stop
+          // against shares that are being sold).
+          closedSymbols.push(pos.symbol);
+          positionMap.delete(pos.symbol);
+          try {
             const quote = await getMarketDataProvider().fetchQuote(pos.symbol);
-            const closePrice = quote?.price ?? pos.currentPrice ?? pos.avgEntryPrice;
+            // Only a positive price is a price: a 0 quote would log the whole
+            // position value as a loss.
+            const closePrice =
+              quote && quote.price > 0
+                ? quote.price
+                : pos.currentPrice > 0
+                  ? pos.currentPrice
+                  : pos.avgEntryPrice;
             const pnl = (closePrice - pos.avgEntryPrice) * pos.qty;
 
             await logTrade(
@@ -7704,36 +8999,48 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
               closePrice,
               "PENDING",
               pnl,
-              "Emergency halt — all positions closed",
+              "Emergency halt liquidation",
               haltOrder.id,
               null,
-              engine.userId
+              haltUserId
             );
-
-            positionMap.delete(pos.symbol);
 
             log.info(
               { symbol: pos.symbol, pnl: pnl.toFixed(2) },
               "Position closed on halt"
             );
           } catch (err) {
-            const msg = err instanceof Error ? err.message : "unknown";
             log.error(
-              { err: msg, symbol: pos.symbol },
-              "Failed to close position on halt"
-            );
-            pushError(
-              engine,
-              `Failed to close ${pos.symbol} on halt: ${msg}`
+              { err: err instanceof Error ? err.message : "unknown", symbol: pos.symbol, orderId: haltOrder.id },
+              "Halt liquidation submitted but trade logging failed"
             );
           }
         }
+
+        // Second entry sweep. A BUY that was already inside placeOrder when
+        // the halt started got past both entry guards, and if the broker
+        // accepted it after the first listing above, that sweep missed it.
+        // Cancel buys once more now that liquidation is done. Known residual:
+        // a BUY whose request is still in flight after this sweep can still
+        // land and fill; the halt result cannot see it.
+        await cancelOpenEntryOrders(client, shortSymbols);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "unknown";
-      log.error({ err: msg }, "Failed to resolve broker for halt");
-      pushError(engine, `Halt broker resolution failed: ${msg}`);
+      if (liquidationStarted) {
+        // The broker was reached and per-symbol orders may have been
+        // cancelled. This is a partial liquidation, not an unreachable broker.
+        haltIncomplete = true;
+        log.error({ err: msg }, "Emergency halt failed part way through liquidation");
+        pushError(engine, `Halt failed part way through liquidation: ${msg}. Check every position and its stops at the broker.`);
+      } else {
+        log.error({ err: msg }, "Failed to resolve broker for halt");
+        pushError(engine, `Halt broker resolution failed: ${msg}`);
+        brokerUnresolved = true;
+      }
     }
+  } else {
+    brokerUnresolved = true;
   }
 
   // Persist the halt to today's P&L row so autoStartIfNeeded's integrity-halt
@@ -7742,7 +9049,7 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
   // because it clears every interval no later scan would write it either — so a
   // server restart could silently auto-resume a user-halted engine.
   engine.haltContext = { reason: "user_emergency_halt", haltedAt: Date.now() };
-  void upsertDailyPnl(getETDateString(), 0, 0, 0, true, "user_emergency_halt", engine.userId).catch(() => {
+  void upsertDailyPnl(getETDateString(), 0, 0, 0, true, "user_emergency_halt", haltUserId).catch(() => {
     /* DB write failure non-blocking; in-memory halted is already true */
   });
 
@@ -7753,13 +9060,64 @@ export async function haltEngine(userId?: string): Promise<{ ok: boolean; error?
   // halt. The halt row persisted above is the source of truth for restart
   // suppression, so dropping in-memory state is safe; evictEngineState re-checks
   // running/starting, so an explicit restart in the meantime cancels it.
-  const evictUserId = engine.userId;
+  const evictUserId = haltUserId;
   if (evictUserId) {
     setTimeout(() => evictEngineState(evictUserId), ENGINE_EVICTION_DELAY_MS).unref?.();
   }
 
-  log.warn("Trading engine emergency halted");
-  return { ok: true };
+  if (brokerUnresolved) {
+    // The engine is halted, but nothing was liquidated. Say so instead of
+    // reporting success over open real-money positions.
+    log.warn("Trading engine emergency halted WITHOUT liquidation (broker unresolved)");
+    return {
+      ok: false,
+      code: HALT_BROKER_UNRESOLVED,
+      environment,
+      error:
+        "Engine halted, but the broker could not be reached, so no positions were closed and no orders were cancelled. Close them at your broker.",
+    };
+  }
+
+  const account = environment ? `${environment} account` : "account";
+  if (failedSymbols.length > 0 || haltIncomplete) {
+    // Never ok:true over a position the halt did not close: the UI treats ok
+    // as "flattened".
+    const parts = [`Engine halted, but not every position on your ${account} was closed.`];
+    if (closedSymbols.length > 0) {
+      parts.push(`Liquidation orders were submitted for: ${closedSymbols.join(", ")}.`);
+    }
+    if (marketClosed) {
+      parts.push(
+        `The market is closed, so no liquidation orders were placed for ${failedSymbols.join(", ")}. Existing broker-side stops were left in place.`
+      );
+    } else if (failedSymbols.length > 0) {
+      parts.push(`Could not place liquidation orders for: ${failedSymbols.join(", ")}.`);
+      const reprotected = failedSymbols.filter((s) => !unprotectedSymbols.includes(s));
+      if (reprotected.length > 0) parts.push(`A safety stop was placed for: ${reprotected.join(", ")}.`);
+      if (unprotectedSymbols.length > 0) {
+        parts.push(
+          `NO broker stop is confirmed for: ${unprotectedSymbols.join(", ")}. Their stops may have been cancelled.`
+        );
+      }
+    }
+    if (haltIncomplete) {
+      parts.push("The halt failed part way through, so some stops may have been cancelled. Check every position and its stops.");
+    }
+    parts.push("Close these at your broker.");
+    log.warn({ environment, failedSymbols, unprotectedSymbols, marketClosed }, "Trading engine emergency halted with positions left open");
+    return {
+      ok: false,
+      code: marketClosed && !haltIncomplete ? HALT_MARKET_CLOSED : HALT_LIQUIDATION_FAILED,
+      environment,
+      closedSymbols,
+      failedSymbols,
+      unprotectedSymbols,
+      error: parts.join(" "),
+    };
+  }
+
+  log.warn({ environment, closedSymbols }, "Trading engine emergency halted");
+  return { ok: true, environment, closedSymbols, failedSymbols, unprotectedSymbols };
 }
 
 /**
@@ -8055,6 +9413,8 @@ export function getAllEngineSnapshots(): Array<{
 /**
  * Stop every running engine on this process. Called from the SIGTERM/SIGINT handler
  * in instrumentation.ts so safety stops are placed on Alpaca before the container exits.
+ * Every engine drains in parallel under one DRAIN_BUDGET_MS deadline, which sits
+ * inside the handler's FORCE_EXIT_MS (see lib/shutdown-config.ts).
  */
 export async function shutdownAllEngines(): Promise<void> {
   if (!g.__tradingEngines) return;
@@ -8062,8 +9422,24 @@ export async function shutdownAllEngines(): Promise<void> {
   if (userIds.length === 0) return;
 
   log.info({ engines: userIds.length }, "Graceful shutdown — stopping all engines");
-  await Promise.allSettled(userIds.map(uid => stopEngine(uid)));
+  const deadline = AbortSignal.timeout(DRAIN_BUDGET_MS);
+  await Promise.allSettled(
+    userIds.map(async (uid) => {
+      // A start already inside placeDisasterStops has cancelled that user's
+      // orders and not yet re-placed the stops. Wait for the boot to finish
+      // (bounded by the deadline), then stop it like any running engine, so
+      // the drain does not return while that boot is between cancel and place.
+      const engine = g.__tradingEngines?.get(uid);
+      while (engine?.starting && !deadline.aborted) {
+        await new Promise((r) => setTimeout(r, SHUTDOWN_BOOT_POLL_MS));
+      }
+      return stopEngine(uid, deadline);
+    })
+  );
 }
+
+/** Poll interval while the shutdown drain waits for an in-flight engine start. */
+const SHUTDOWN_BOOT_POLL_MS = 100;
 
 /**
  * Peek at the engine state for a user WITHOUT auto-creating one. Returns

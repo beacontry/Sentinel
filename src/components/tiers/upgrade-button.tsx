@@ -53,9 +53,9 @@ export function UpgradeButton({
   const widthCls = fullWidth ? "w-full" : "";
   const styleCls =
     variant === "primary"
-      ? "bg-accent text-white hover:bg-accent-hover"
+      ? "bg-accent text-on-accent hover:bg-accent-hover"
       : "border border-border text-text-primary hover:border-accent hover:bg-accent/[0.06]";
-  const baseCls = `inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold transition-all duration-200 ${widthCls} ${styleCls} ${className}`;
+  const baseCls = `inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold transition-colors duration-200 ${widthCls} ${styleCls} ${className}`;
 
   // While loading current tier, show a quiet placeholder. Avoids
   // flickering between "Loading" / "Already on plan" / "Upgrade".
@@ -73,7 +73,7 @@ export function UpgradeButton({
     return (
       <button
         disabled
-        className={`inline-flex items-center justify-center gap-2 rounded-lg border border-bullish/30 bg-bullish/10 px-5 py-3 text-sm font-semibold text-bullish ${widthCls} ${className}`}
+        className={`inline-flex items-center justify-center gap-2 rounded-lg border border-bullish-line bg-bullish-fill px-5 py-3 text-sm font-semibold text-bullish ${widthCls} ${className}`}
       >
         <Check className="h-4 w-4" />
         <span>Current plan</span>
@@ -147,7 +147,7 @@ export function UpgradeButton({
         {!submitting ? <ArrowRight className="h-4 w-4" /> : null}
       </button>
       {error ? (
-        <p className="mt-2 text-[0.78rem] text-bearish text-center">
+        <p className="mt-2 text-xs text-bearish text-center">
           {error}
         </p>
       ) : null}

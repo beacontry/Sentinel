@@ -10,6 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { Toggle } from "@/components/ui/toggle";
 import { Modal, ModalHeader, ModalTitle, ModalDescription, ModalFooter } from "@/components/ui/modal";
 import { PageIntro } from "@/components/layout/page-intro";
+import { useToast } from "@/components/ui/toast";
+import { dispatchBrokerChanged } from "@/lib/broker-events";
+import { leaderboardPrefsPayload, isLeaderboardPrefs } from "@/lib/leaderboard-prefs";
 import {
   Webhook, Plus, Trash2, TestTube, Check, X, Shield,
   Link, Unlink, Pencil, CircleDot, Zap, Sliders,
@@ -20,6 +23,7 @@ import {
   type LandingPage,
 } from "@/components/display-prefs-provider";
 
+import { Segmented } from "@/components/ui/segmented";
 // ─── Types ──────────────────────────────────────────────────────────
 
 interface BrokerConnection {
@@ -111,6 +115,7 @@ const BROKER_FIELD_LABELS: Record<string, { apiKey: string; apiSecret: string; h
 // ─── Page ───────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const toast = useToast();
   const {
     pnlFormat,
     setPnlFormat,
@@ -429,22 +434,40 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleToggleBrokerActive(conn: BrokerConnection) {
-    try {
-      const res = await fetch("/api/broker/connections", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: conn.id, isActive: !conn.isActive }),
-      });
+  // Make this the one active connection. Goes through /activate, which
+  // demotes the others and refuses while the engine runs, the same path as
+  // the sidebar switcher. There is no "deactivate": switch to another one.
+  async function handleActivateBroker(conn: BrokerConnection) {
+    if (conn.isActive) return;
+    if (conn.environment === "live") {
+      const ok = confirm(
+        `Switch to LIVE trading on ${BROKER_LABELS[conn.broker] ?? conn.broker}?
 
-      if (res.ok) {
-        const data = await res.json();
-        setBrokerConnections((prev) =>
-          prev.map((c) => (c.id === conn.id ? data.connection : c))
-        );
+Any trade you place will use real money. The engine remains stopped — you must start it manually.`
+      );
+      if (!ok) return;
+    }
+    try {
+      const res = await fetch(`/api/broker/connections/${conn.id}/activate`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.toast({
+          type: "error",
+          message: typeof data.error === "string" ? data.error : "Could not switch broker.",
+        });
+        return;
       }
+      setBrokerConnections((prev) =>
+        prev.map((c) => ({ ...c, isActive: c.id === conn.id }))
+      );
+      dispatchBrokerChanged({
+        connectionId: conn.id,
+        environment: conn.environment === "live" ? "live" : "paper",
+      });
     } catch {
-      // Silent fail
+      toast.toast({ type: "error", message: "Could not switch broker." });
     }
   }
 
@@ -519,7 +542,9 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Toggle
                     checked={conn.isActive}
-                    onCheckedChange={() => handleToggleBrokerActive(conn)}
+                    disabled={conn.isActive}
+                    title={conn.isActive ? "Active. Switch by activating another connection." : "Make this the active connection"}
+                    onCheckedChange={() => handleActivateBroker(conn)}
                   />
                   <Button
                     variant="ghost"
@@ -609,16 +634,25 @@ export default function SettingsPage() {
             label="Environment"
             options={ENVIRONMENT_OPTIONS}
             value={brokerForm.environment}
+            // The active connection cannot change environment (the route
+            // refuses): that would move every order to another account.
+            disabled={editingBroker?.isActive === true}
             onChange={(value) => {
               setBrokerForm((f) => ({ ...f, environment: value }));
               setLiveConfirmText(""); // any environment change resets the confirmation
             }}
           />
+          {editingBroker?.isActive === true && (
+            <p className="text-xs text-text-muted">
+              This is the active connection, so its environment is fixed. Add a new connection for the other
+              environment, or switch to another account first.
+            </p>
+          )}
 
           {/* Live confirmation — required when newly switching to live OR creating a live connection */}
           {brokerForm.environment === "live" &&
             (!editingBroker || editingBroker.environment !== "live") && (
-              <div className="rounded-lg border border-bearish/40 bg-bearish/5 p-3 space-y-3">
+              <div className="rounded-lg border border-bearish-line bg-bearish-fill p-3 space-y-3">
                 <div className="flex items-start gap-2">
                   <span className="inline-block w-2 h-2 rounded-full bg-bearish mt-1.5 animate-pulse" />
                   <div className="text-sm">
@@ -654,8 +688,8 @@ export default function SettingsPage() {
             <div
               className={`p-3 rounded-lg border text-sm ${
                 brokerTestResult.success
-                  ? "border-bullish/20 bg-bullish/5 text-bullish"
-                  : "border-bearish/20 bg-bearish/5 text-bearish"
+                  ? "border-bullish-line bg-bullish-fill text-bullish-fg"
+                  : "border-bearish-line bg-bearish-fill text-bearish-fg"
               }`}
             >
               <div className="flex items-center gap-2 mb-1">
@@ -796,7 +830,7 @@ export default function SettingsPage() {
               <span>JSON summary</span>
             </Button>
           </div>
-          <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs text-text-secondary">
+          <div className="rounded-lg border border-warning-line bg-warning-fill p-3 text-xs text-text-secondary">
             <strong className="text-warning">Self-attested — not a tax substitute.</strong> Beacontry computes FIFO
             lots + wash-sale flags. Wash-sale rule is applied at symbol level only — substantially-identical ETF
             cross-matches (SPY↔IVV) are NOT detected. If you elected §475(f) MTM, disregard the wash-sale column.
@@ -820,42 +854,33 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* P&L format */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-text-secondary">P&L format</label>
-            <div className="flex gap-0.5 rounded-lg border border-border bg-bg-secondary p-0.5">
-              {(["dollar", "percent", "both"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setPnlFormat(v)}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors
-                    ${pnlFormat === v
-                      ? "bg-bg-elevated text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                    }`}
-                >
-                  {v === "dollar" ? "Dollars" : v === "percent" ? "Percent" : "Both"}
-                </button>
-              ))}
-            </div>
+            <p className="text-xs font-medium text-text-secondary" aria-hidden="true">P&L format</p>
+            <Segmented
+              label="P&L format"
+              fullWidth
+              value={pnlFormat}
+              onChange={setPnlFormat}
+              options={[
+                { value: "dollar", label: "Dollars" },
+                { value: "percent", label: "Percent" },
+                { value: "both", label: "Both" },
+              ]}
+            />
           </div>
 
           {/* Time format */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-text-secondary">Time format</label>
-            <div className="flex gap-0.5 rounded-lg border border-border bg-bg-secondary p-0.5">
-              {(["12h", "24h"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setTimeFormat(v)}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium uppercase tracking-wide transition-colors
-                    ${timeFormat === v
-                      ? "bg-bg-elevated text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                    }`}
-                >
-                  {v === "12h" ? "12-hour" : "24-hour"}
-                </button>
-              ))}
-            </div>
+            <p className="text-xs font-medium text-text-secondary" aria-hidden="true">Time format</p>
+            <Segmented
+              label="Time format"
+              fullWidth
+              value={timeFormat}
+              onChange={setTimeFormat}
+              options={[
+                { value: "12h", label: "12-hour" },
+                { value: "24h", label: "24-hour" },
+              ]}
+            />
           </div>
 
           {/* Default landing page */}
@@ -873,8 +898,9 @@ export default function SettingsPage() {
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-text-primary">Color-blind palette</div>
               <p className="text-xs text-text-muted mt-0.5">
-                Swap bullish/bearish to a deuteranopia-friendly blue/orange (Wong palette).
-                Affects every $/%, badge, and chart color across the app.
+                Swap bullish/bearish to a deuteranopia-friendly blue/orange (Wong palette),
+                with a yellow warning and a blue accent. Affects every $/%, badge, and chart
+                color across the app.
               </p>
             </div>
             <Toggle
@@ -1014,40 +1040,58 @@ export default function SettingsPage() {
 // ─── Phase 19 — Leaderboard opt-in settings ───────────────────────────
 
 function LeaderboardSettings() {
+  // null until a load succeeds. A failed load sets loadError instead of
+  // pretending the user is opted out: saving that fallback form would
+  // overwrite their real opt-in and handle.
   const [optIn, setOptIn] = useState<boolean | null>(null);
   const [displayName, setDisplayName] = useState("");
+  const [loadedDisplayName, setLoadedDisplayName] = useState("");
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    setOptIn(null);
+    setLoadError(false);
     fetch("/api/leaderboard/preferences")
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data) {
-          setOptIn(data.optIn ?? false);
-          setDisplayName(data.displayName ?? "");
-        } else {
-          setOptIn(false);
-        }
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data: unknown) => {
+        if (cancelled) return;
+        if (!isLeaderboardPrefs(data)) throw new Error("Unexpected response");
+        const name = data.displayName ?? "";
+        setOptIn(data.optIn);
+        setDisplayName(name);
+        setLoadedDisplayName(name);
       })
-      .catch(() => setOptIn(false));
-  }, []);
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadAttempt]);
 
   async function save() {
+    // Only a successfully loaded form can be saved.
+    if (optIn === null || loadError) return;
     setSaving(true);
     setError("");
     setSaved(false);
     try {
+      const payload = leaderboardPrefsPayload(optIn, displayName, loadedDisplayName);
       const res = await fetch("/api/leaderboard/preferences", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ optIn: optIn === true, displayName: displayName.trim() || null }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Failed" }));
         setError(data.error ?? "Failed to save");
       } else {
+        if (payload.displayName !== undefined) setLoadedDisplayName(payload.displayName ?? "");
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
       }
@@ -1056,6 +1100,17 @@ function LeaderboardSettings() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-sm text-bearish">Couldn&apos;t load your leaderboard settings.</p>
+        <Button variant="secondary" size="sm" onClick={() => setLoadAttempt((n) => n + 1)}>
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   if (optIn === null) {
@@ -1150,7 +1205,7 @@ function DigestEmailToggle() {
           notifications + Discord delivery happen regardless of this setting.
         </p>
         {loaded && delivery && (
-          <p className="text-[11px] text-text-muted mt-1">
+          <p className="text-xs text-text-muted mt-1">
             Would send to <span className="font-mono">{delivery}</span>
           </p>
         )}

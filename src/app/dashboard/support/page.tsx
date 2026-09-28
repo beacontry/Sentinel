@@ -182,7 +182,7 @@ export default function SupportPage() {
                     {isAdmin && (
                       <td className="p-3 text-text-secondary">
                         {t.authorName}
-                        <div className="text-[10px] text-text-muted">{t.authorEmail}</div>
+                        <div className="text-xs text-text-muted">{t.authorEmail}</div>
                       </td>
                     )}
                     <td className="p-3">

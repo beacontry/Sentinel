@@ -7,8 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageIntro } from "@/components/layout/page-intro";
+import { SignedValue } from "@/components/ui/signed-value";
 import { Play, BarChart3, Maximize2, Minimize2 } from "lucide-react";
 import { PaywallBanner } from "@/components/tiers/paywall-banner";
+import { getChartTheme } from "@/lib/chart-theme";
 
 interface Trade {
   id?: string;
@@ -29,6 +31,7 @@ export default function ReplayPage() {
   const [bars, setBars] = useState<{ date: string; open: number; high: number; low: number; close: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
+  const [chartError, setChartError] = useState(false);
   const [chartFullscreen, setChartFullscreen] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
 
@@ -90,13 +93,22 @@ export default function ReplayPage() {
   const loadChart = useCallback(async () => {
     if (!selectedSymbol) return;
     setChartLoading(true);
+    setChartError(false);
+    // Daily bars from the read-only /api/bars (the chart keys candles by
+    // calendar day). A failed read says so instead of an empty chart.
     try {
-      const res = await fetch(`/api/analyze?symbol=${selectedSymbol}`);
+      const res = await fetch(`/api/bars/${encodeURIComponent(selectedSymbol)}?days=180`);
       if (res.ok) {
         const data = await res.json();
         setBars(data.bars ?? []);
+      } else {
+        setBars([]);
+        setChartError(true);
       }
-    } catch { /* handled */ }
+    } catch {
+      setBars([]);
+      setChartError(true);
+    }
     setChartLoading(false);
   }, [selectedSymbol]);
 
@@ -111,6 +123,9 @@ export default function ReplayPage() {
     async function renderChart() {
       const lc = await import("lightweight-charts");
       if (!chartContainerRef.current) return;
+      // Colours come from the theme tokens, read once per render, so the
+      // light themes and colour-blind mode reach the replay candles too.
+      const palette = getChartTheme();
 
       // Clean up previous
       if (chartRef.current) {
@@ -122,24 +137,24 @@ export default function ReplayPage() {
         width: chartContainerRef.current.clientWidth,
         height: 450,
         layout: {
-          background: { type: lc.ColorType.Solid, color: "#0d0f0e" },
-          textColor: "#a3a8a5",
+          background: { type: lc.ColorType.Solid, color: palette.background },
+          textColor: palette.textColor,
           fontFamily: "var(--font-geist-mono), monospace",
         },
         grid: {
-          vertLines: { color: "#1a1d1b" },
-          horzLines: { color: "#1a1d1b" },
+          vertLines: { color: palette.gridColor },
+          horzLines: { color: palette.gridColor },
         },
         crosshair: { mode: lc.CrosshairMode.Normal },
-        timeScale: { borderColor: "#2a2d2b" },
-        rightPriceScale: { borderColor: "#2a2d2b" },
+        timeScale: { borderColor: palette.gridColor },
+        rightPriceScale: { borderColor: palette.gridColor },
       });
 
       const candleSeries = chart.addSeries(lc.CandlestickSeries, {
-        upColor: "#22c55e",
-        downColor: "#ef4444",
-        wickUpColor: "#22c55e",
-        wickDownColor: "#ef4444",
+        upColor: palette.bullish,
+        downColor: palette.bearish,
+        wickUpColor: palette.bullish,
+        wickDownColor: palette.bearish,
         borderVisible: false,
       });
 
@@ -159,7 +174,7 @@ export default function ReplayPage() {
         const isBuy = trade.action === "BUY" || trade.action === "buy";
         candleSeries.createPriceLine({
           price: trade.fillPrice,
-          color: isBuy ? "#22c55e" : "#ef4444",
+          color: isBuy ? palette.bullish : palette.bearish,
           lineWidth: 1,
           lineStyle: 2,
           axisLabelVisible: true,
@@ -221,7 +236,7 @@ export default function ReplayPage() {
         stats={[
           { label: "Total Trades", value: String(totalTrades) },
           { label: "Win Rate", value: `${winRate}%`, tone: winRate >= 50 ? "bullish" : "bearish" },
-          { label: "Best Trade", value: bestTrade ? `$${(bestTrade.pnl ?? 0).toFixed(2)}` : "--", tone: "bullish" },
+          { label: "Best Trade", value: bestTrade ? <SignedValue value={bestTrade.pnl} /> : "--" },
           { label: "Symbols", value: String(symbols.length) },
         ]}
       />
@@ -267,27 +282,36 @@ export default function ReplayPage() {
               <BarChart3 className="w-4 h-4 text-text-muted" />
               {selectedSymbol} — Price Chart with Trade Markers
             </CardTitle>
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => setChartFullscreen(!chartFullscreen)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-bg-secondary px-2.5 py-1 text-xs font-medium text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors"
               title={chartFullscreen ? "Exit fullscreen (Esc)" : "Expand chart"}
               aria-label={chartFullscreen ? "Exit fullscreen" : "Expand chart"}
             >
-              {chartFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              {chartFullscreen ? <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" /> : <Maximize2 className="w-3.5 h-3.5" aria-hidden="true" />}
               <span className="hidden sm:inline">{chartFullscreen ? "Exit" : "Expand"}</span>
-            </button>
+            </Button>
           </div>
         </CardHeader>
         {chartLoading ? (
           <Skeleton className={chartFullscreen ? "flex-1 rounded-lg" : "h-[450px] rounded-lg"} />
+        ) : chartError ? (
+          <div
+            className={`flex items-center justify-center rounded-lg border border-border text-sm text-text-muted ${
+              chartFullscreen ? "flex-1" : "h-[450px]"
+            }`}
+          >
+            Price history unavailable for {selectedSymbol}
+          </div>
         ) : (
           <div
             ref={chartContainerRef}
             className={`w-full rounded-lg overflow-hidden ${chartFullscreen ? "flex-1 min-h-0" : ""}`}
           />
         )}
-        <div className="mt-3 flex items-center gap-4 text-[10px] text-text-muted">
+        <div className="mt-3 flex items-center gap-4 text-xs text-text-muted">
           <div className="flex items-center gap-1">
             <div className="w-0 h-0 border-l-[5px] border-r-[5px] border-b-[8px] border-l-transparent border-r-transparent border-b-bullish" />
             Buy Entry

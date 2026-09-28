@@ -112,10 +112,10 @@ export function CompoundInterestCalculator() {
       </div>
 
       <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
-        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
           Final balance after {years} years
         </p>
-        <p className="mt-1 text-3xl font-mono font-semibold text-text-primary">
+        <p className="mt-1 text-2xl font-mono font-semibold text-text-primary">
           {fmt(result.final)}
         </p>
       </div>
@@ -124,19 +124,19 @@ export function CompoundInterestCalculator() {
       <div className="space-y-2">
         <div className="flex h-3 rounded-full overflow-hidden border border-border">
           <div
-            className="bg-text-muted/40 transition-all duration-500"
+            className="bg-text-muted/40 transition-[width,background-color] duration-500"
             style={{ width: `${principalPct}%` }}
             aria-label={`Principal ${principalPct.toFixed(0)}%`}
           />
           <div
-            className="bg-accent transition-all duration-500"
+            className="bg-accent transition-[width,background-color] duration-500"
             style={{ width: `${interestPct}%` }}
             aria-label={`Interest ${interestPct.toFixed(0)}%`}
           />
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-sm bg-text-muted/40" />
+            <span className="h-2 w-2 rounded bg-text-muted/40" />
             <span className="text-text-muted">
               Contributions{" "}
               <span className="font-mono text-text-primary">
@@ -146,7 +146,7 @@ export function CompoundInterestCalculator() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-sm bg-accent" />
+            <span className="h-2 w-2 rounded bg-accent" />
             <span className="text-text-muted">
               Interest{" "}
               <span className="font-mono text-text-primary">
@@ -160,20 +160,20 @@ export function CompoundInterestCalculator() {
 
       {/* Year-by-year sparkline */}
       <div className="space-y-2">
-        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-text-muted">
+        <p className="text-xs font-medium uppercase tracking-[0.08em] text-text-muted">
           Balance year by year
         </p>
         <div className="flex items-end gap-0.5 h-20">
           {result.series.map((v, i) => (
             <div
               key={i}
-              className="flex-1 bg-accent/60 hover:bg-accent transition-colors rounded-sm min-w-[2px]"
+              className="flex-1 bg-accent/60 hover:bg-accent transition-colors rounded min-w-[2px]"
               style={{ height: `${(v / seriesMax) * 100}%` }}
               title={`Year ${i + 1}: ${fmt(v)}`}
             />
           ))}
         </div>
-        <div className="flex justify-between text-[10px] text-text-muted">
+        <div className="flex justify-between text-xs text-text-muted">
           <span>Year 1</span>
           <span>Year {years}</span>
         </div>

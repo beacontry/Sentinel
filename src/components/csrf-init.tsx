@@ -227,6 +227,9 @@ export function CsrfInit() {
       if (response.status === 401 && !sessionExpiredFired) {
         if (!pathIsCsrfExempt(url)) {
           sessionExpiredFired = true;
+          // Dispatched synchronously and before the redirect delay: screens
+          // holding private data (trader, admin) clear it in their listener,
+          // so nothing stays on screen behind the 2s session-expired toast.
           window.dispatchEvent(new CustomEvent("session-expired"));
           setTimeout(() => {
             // P2 audit (2026-06-09) — preserve the current location so the

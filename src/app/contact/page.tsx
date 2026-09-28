@@ -15,7 +15,8 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Radar, Mail, MessageSquare, ExternalLink } from "lucide-react";
+import { PublicShell } from "@/components/layout/public-shell";
+import { Mail, MessageSquare, ExternalLink } from "lucide-react";
 import { LEGAL_ENTITY } from "@/lib/legal-entity";
 
 export const metadata: Metadata = {
@@ -27,30 +28,10 @@ export const metadata: Metadata = {
 
 export default function ContactPage() {
   return (
-    <div className="min-h-screen bg-bg-primary">
-      <header className="border-b border-border bg-bg-secondary">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <Link
-            href="/"
-            className="flex items-center gap-2.5 text-text-primary hover:text-accent transition-colors"
-          >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white">
-              <Radar className="h-4 w-4" />
-            </div>
-            <span className="font-semibold">Beacontry</span>
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-lg border border-border bg-bg-elevated px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors"
-          >
-            Sign in
-          </Link>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-3xl px-4 py-12 space-y-8">
+    <PublicShell>
+      <div className="mx-auto max-w-3xl space-y-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-text-primary">
+          <h1 className="text-2xl sm:text-2xl font-bold tracking-tight text-text-primary">
             Get in touch
           </h1>
           <p className="text-text-secondary mt-2 leading-relaxed">
@@ -76,7 +57,7 @@ export default function ContactPage() {
               </p>
               <a
                 href="mailto:hello@beacontry.com?subject=Beacontry%20inquiry"
-                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover transition-colors"
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-hover transition-colors"
               >
                 <Mail className="h-4 w-4" />
                 hello@beacontry.com
@@ -93,7 +74,7 @@ export default function ContactPage() {
             </div>
             <div className="flex-1">
               <h2 className="text-base font-semibold text-text-primary mb-1">
-                Support tickets <span className="text-text-muted text-[0.78rem] font-normal">— for active users</span>
+                Support tickets <span className="text-text-muted text-xs font-normal">— for active users</span>
               </h2>
               <p className="text-sm text-text-secondary leading-relaxed mb-3">
                 Signed in already? The ticket system in the dashboard
@@ -118,7 +99,7 @@ export default function ContactPage() {
           <h2 className="text-sm font-semibold text-text-primary mb-1.5">
             Security disclosures
           </h2>
-          <p className="text-[0.88rem] text-text-secondary leading-relaxed">
+          <p className="text-sm text-text-secondary leading-relaxed">
             Found a security issue? Email{" "}
             <a
               href="mailto:hello@beacontry.com?subject=Security%20disclosure"
@@ -136,7 +117,7 @@ export default function ContactPage() {
           <h2 className="text-base font-semibold text-text-primary mb-3">
             Self-serve
           </h2>
-          <ul className="grid sm:grid-cols-2 gap-2 text-[0.92rem]">
+          <ul className="grid sm:grid-cols-2 gap-2 text-base">
             <li>
               <Link href="/pricing" className="text-accent hover:text-accent-hover underline">
                 Pricing
@@ -185,7 +166,7 @@ export default function ContactPage() {
           <h2 className="text-sm font-semibold text-text-primary mb-2">
             Legal entity
           </h2>
-          <p className="text-[0.88rem] text-text-secondary leading-relaxed font-mono">
+          <p className="text-sm text-text-secondary leading-relaxed font-mono">
             {LEGAL_ENTITY.name}
             <br />
             (d/b/a {LEGAL_ENTITY.tradeName})
@@ -196,7 +177,7 @@ export default function ContactPage() {
             {LEGAL_ENTITY.address.zip}
           </p>
         </section>
-      </main>
-    </div>
+      </div>
+    </PublicShell>
   );
 }

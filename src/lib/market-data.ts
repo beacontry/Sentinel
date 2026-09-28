@@ -1,15 +1,26 @@
 import type { Bar } from "@/types";
 import { MARKET_DATA_CONFIG } from "./config";
 import { isMarketOpen } from "./market-hours";
-import { writeFile, readFile, mkdir } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
+import { isCachedBars, readJsonCache, writeJsonCache, type CachedBars } from "./bar-cache";
 
 export type BarResolution = "5m" | "1d";
 
 interface MarketDataProvider {
   fetchBars(symbol: string, days: number, resolution?: BarResolution, endDate?: Date): Promise<Bar[]>;
   fetchQuote(symbol: string): Promise<{ price: number; volume: number } | null>;
+}
+
+/** A quote is usable only when its price is a finite number above zero. A
+ *  missing price is "no quote" (null), never a $0 quote: 0 reads as a real
+ *  price to every `??` consumer and would stop a fallback provider from being
+ *  tried. `!(x > 0)` rejects 0, negatives AND NaN. */
+function isPricedQuote(
+  quote: { price: number; volume: number } | null | undefined
+): quote is { price: number; volume: number } {
+  return !!quote && Number.isFinite(quote.price) && quote.price > 0;
 }
 
 // ─── Persistent bar cache ──────────────────────────────────────────
@@ -56,31 +67,38 @@ function barCacheKey(symbol: string, resolution: string): string {
   return join(BAR_CACHE_DIR, `${symbol.replace(/[^A-Z0-9]/g, "_")}_${resolution}.json`);
 }
 
-interface CachedBars { bars: Bar[]; fetchedAt: number; days: number; }
-
+// Reads and writes go through bar-cache.ts: a corrupt, truncated or
+// wrong-shape file is logged and treated as a miss (the fetch below rewrites
+// it), and writes are temp-file-then-rename so a killed process cannot leave a
+// torn file.
 async function getCachedBars(symbol: string, resolution: string, requestedDays: number): Promise<Bar[] | null> {
   try {
     await ensureBarCacheDir();
-    const raw = await readFile(barCacheKey(symbol, resolution), "utf-8");
-    const cached: CachedBars = JSON.parse(raw);
-    const maxAge =
-      resolution === "1d"
-        ? (isMarketOpen() ? BAR_CACHE_MAX_AGE_OPEN_MS : BAR_CACHE_MAX_AGE_CLOSED_MS)
-        : BAR_CACHE_5M_MAX_AGE_MS;
-    if (Date.now() - cached.fetchedAt > maxAge) return null; // stale
-    if (cached.bars.length < 20) return null; // too few
-    // Only serve cache if it covers at least as many days as requested
-    if ((cached.days ?? 0) < requestedDays) return null;
-    return cached.bars;
-  } catch { return null; }
+  } catch {
+    return null; // cache disabled; ensureBarCacheDir already warned once
+  }
+  const cached = await readJsonCache(barCacheKey(symbol, resolution), isCachedBars, `bar-cache:${symbol}:${resolution}`);
+  if (!cached) return null;
+  const maxAge =
+    resolution === "1d"
+      ? (isMarketOpen() ? BAR_CACHE_MAX_AGE_OPEN_MS : BAR_CACHE_MAX_AGE_CLOSED_MS)
+      : BAR_CACHE_5M_MAX_AGE_MS;
+  if (Date.now() - cached.fetchedAt > maxAge) return null; // stale
+  if (cached.bars.length < 20) return null; // too few
+  // Only serve cache if it covers at least as many days as requested
+  if ((cached.days ?? 0) < requestedDays) return null;
+  return cached.bars;
 }
 
 async function setCachedBars(symbol: string, resolution: string, bars: Bar[], days: number): Promise<void> {
   if (bars.length < 20) return;
   try {
     await ensureBarCacheDir();
-    await writeFile(barCacheKey(symbol, resolution), JSON.stringify({ bars, fetchedAt: Date.now(), days }));
-  } catch { /* best effort */ }
+  } catch {
+    return; // cache disabled; ensureBarCacheDir already warned once
+  }
+  const entry: CachedBars = { bars, fetchedAt: Date.now(), days };
+  await writeJsonCache(barCacheKey(symbol, resolution), entry, isCachedBars, `bar-cache:${symbol}:${resolution}`);
 }
 
 /** Yahoo Finance provider — no API key required. */
@@ -166,8 +184,12 @@ class YahooProvider implements MarketDataProvider {
       const json = await res.json();
       const meta = json?.chart?.result?.[0]?.meta;
       if (!meta) return null;
+      // Yahoo sometimes returns a chart meta with no regularMarketPrice (halted
+      // or thin symbols, schema hiccups). That is no quote, not a $0 quote.
+      const price = meta.regularMarketPrice;
+      if (typeof price !== "number" || !Number.isFinite(price) || !(price > 0)) return null;
       return {
-        price: meta.regularMarketPrice ?? 0,
+        price,
         volume: meta.regularMarketVolume ?? 0,
       };
     } finally {
@@ -229,8 +251,9 @@ class FinnhubProvider implements MarketDataProvider {
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) return null;
       const data = await res.json();
-      if (!data.c) return null;
-      return { price: data.c, volume: data.v ?? 0 };
+      const price = data?.c;
+      if (typeof price !== "number" || !Number.isFinite(price) || !(price > 0)) return null;
+      return { price, volume: data.v ?? 0 };
     } finally {
       clearTimeout(timeout);
     }
@@ -272,7 +295,8 @@ class FallbackProvider implements MarketDataProvider {
     const start = Date.now();
     try {
       const quote = await this.primary.fetchQuote(symbol);
-      if (quote) return quote;
+      // Accept the primary only with a real price; a $0 quote falls through.
+      if (isPricedQuote(quote)) return quote;
     } catch {
       // Primary failed, fall through to secondary
     }
@@ -280,7 +304,8 @@ class FallbackProvider implements MarketDataProvider {
     if (elapsed >= this.totalBudgetMs) {
       return null; // Budget exhausted, skip secondary
     }
-    return this.secondary.fetchQuote(symbol);
+    const fallback = await this.secondary.fetchQuote(symbol);
+    return isPricedQuote(fallback) ? fallback : null;
   }
 }
 

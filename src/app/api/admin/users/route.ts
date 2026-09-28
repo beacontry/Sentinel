@@ -61,8 +61,10 @@ export async function POST(request: Request) {
   const auth = await requireAuthWithCsrf(request, ["admin"]);
   if (auth instanceof Response) return auth;
 
-  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
-  const { allowed } = rateLimit(`admin-create-user:${ip}`, 10, 60);
+  // Authenticated action: key on the admin's user id, not on a header. The
+  // raw x-forwarded-for chain is client-appendable, so rotating it gave every
+  // request a fresh bucket.
+  const { allowed } = rateLimit(`admin-create-user:${auth.userId}`, 10, 60);
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }

@@ -31,7 +31,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { BeacontryMark } from "@/components/brand/beacontry-mark";
+import { AuthShell, AuthHeading, AuthError, AuthSwitch } from "@/components/auth/auth-shell";
 import { displayPrice, type Cadence } from "@/lib/billing-prices";
 
 type PaidPlan = "trader" | "premium";
@@ -48,9 +48,9 @@ export default function RegisterPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
-          <div className="h-8 w-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-        </div>
+        <AuthShell>
+          <p role="status" className="text-sm text-text-secondary">Loading sign-up…</p>
+        </AuthShell>
       }
     >
       <RegisterForm />
@@ -157,194 +157,154 @@ function RegisterForm() {
   // Invite token present but still validating it
   if (token && validating) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
-        <div className="text-center text-text-secondary">Validating invite...</div>
-      </div>
+      <AuthShell>
+        <AuthHeading title="Create account" />
+        <p role="status" className="mt-4 text-sm text-text-secondary">
+          Checking your invite…
+        </p>
+      </AuthShell>
     );
   }
 
   // Invite token present but invalid / expired
   if (token && !inviteValid && error) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
-        <div className="w-full max-w-sm text-center">
-          <div className="mb-8">
-            <Link href="/" className="inline-flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
-                <BeacontryMark variant="full" className="h-6 w-6" aria-label="Beacontry" />
-              </div>
-              <span className="text-xl font-semibold text-text-primary">Beacontry</span>
-            </Link>
-          </div>
-          <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
-            <h1 className="text-xl font-semibold text-text-primary">Invalid Invite</h1>
-            <p className="mt-2 text-sm text-bearish">{error}</p>
-            <p className="mt-4 text-center text-sm text-text-muted">
-              Already have an account?{" "}
-              <Link href="/login" className="font-medium text-accent hover:text-accent-hover">
-                Sign in
-              </Link>
-            </p>
-            <p className="mt-2 text-center text-sm text-text-muted">
-              Or{" "}
-              <Link href="/register" className="font-medium text-accent hover:text-accent-hover">
-                sign up free
-              </Link>
-              {" "}without an invite.
-            </p>
-          </div>
-        </div>
-      </div>
+      <AuthShell>
+        <AuthHeading title="This invite cannot be used" />
+        <p role="alert" className="mt-4 rounded-lg border border-bearish-line bg-bearish-fill px-3 py-2 text-sm text-bearish-fg">
+          {error}
+        </p>
+        <p className="mt-5 text-sm text-text-secondary">
+          You can{" "}
+          <Link href="/register" className="font-semibold text-accent hover:underline">
+            sign up free
+          </Link>{" "}
+          without an invite.
+        </p>
+        <AuthSwitch prompt="Already have an account?" href="/login" label="Sign in" />
+      </AuthShell>
     );
   }
 
   const isInvitePath = !!token;
+  const planName = planIntent ? (planIntent.plan === "trader" ? "Trader" : "Premium") : null;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg-primary p-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white">
-              <BeacontryMark variant="full" className="h-6 w-6" aria-label="Beacontry" />
-            </div>
-            <span className="text-xl font-semibold text-text-primary">Beacontry</span>
-          </Link>
+    <AuthShell>
+      <AuthHeading
+        title={isInvitePath ? "Create account" : planName ? `Start your ${planName} trial` : "Sign up for free"}
+      >
+        {isInvitePath
+          ? "Set up your trading workspace."
+          : planIntent && planPrice
+            ? "We will create your account, then take you to secure checkout."
+            : "Education, glossary, calculators, Congress trades, daily digest and watchlists. Upgrade when you want the engine."}
+      </AuthHeading>
+      {planIntent && planPrice ? (
+        <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 rounded-lg bg-bg-surface px-4 py-3 text-sm">
+          <dt className="text-text-muted">Plan</dt>
+          <dd className="font-semibold text-text-primary">
+            {planName} {planIntent.cadence === "year" ? "annual" : "monthly"}
+          </dd>
+          <dt className="text-text-muted">Price</dt>
+          <dd className="text-text-primary">{planPrice.label} after a 7-day free trial</dd>
+          <dt className="text-text-muted">Cancel</dt>
+          <dd className="text-text-primary">Anytime</dd>
+        </dl>
+      ) : null}
+
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <AuthError id="register-error" error={error} />
+        <Input
+          label="Name"
+          placeholder="Your name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          error={fieldErrors.name}
+          required
+          autoComplete="name"
+          autoFocus
+        />
+        <Input
+          label="Email"
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          error={fieldErrors.email}
+          required
+          autoComplete="email"
+          // Lock email field on invite path so users can't bypass the
+          // "email must match invite" server check by tweaking it.
+          disabled={isInvitePath}
+        />
+        <Input
+          label="Password"
+          type="password"
+          placeholder="Min 8 characters"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          error={fieldErrors.password}
+          required
+          autoComplete="new-password"
+        />
+        <Input
+          label="Confirm password"
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          error={fieldErrors.confirmPassword}
+          required
+          autoComplete="new-password"
+          enterKeyHint="go"
+        />
+
+        {/* Honeypot: off-screen, aria-hidden, tabIndex=-1 and
+            autocomplete=off so real users never trip it. Bots that fill
+            every form field populate it; the server returns 201 silently. */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: "-10000px",
+            top: "auto",
+            width: "1px",
+            height: "1px",
+            overflow: "hidden",
+          }}
+        >
+          <label htmlFor="website">Website (leave empty)</label>
+          <input
+            type="text"
+            id="website"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            value={website}
+            onChange={(e) => setWebsite(e.target.value)}
+          />
         </div>
 
-        <div className="rounded-xl border border-border bg-bg-secondary p-6 shadow-lg">
-          <h1 className="text-xl font-semibold text-text-primary">
-            {isInvitePath
-              ? "Create account"
-              : planIntent
-                ? `Start your ${planIntent.plan === "trader" ? "Trader" : "Premium"} trial`
-                : "Sign up for free"}
-          </h1>
-          <p className="mt-1 text-sm text-text-secondary">
-            {isInvitePath
-              ? "Set up your trading workspace."
-              : planIntent && planPrice
-                ? `${planPrice.label} after the 7-day free trial. We'll create your account and take you to secure checkout next.`
-                : "Free tier — education, glossary, calculators, Congress trades, daily digest, watchlists. Upgrade later when you want the engine."}
-          </p>
-          {planIntent && planPrice ? (
-            <div className="mt-4 rounded-lg border border-accent/30 bg-accent/[0.06] px-3 py-2 text-[0.82rem] text-text-secondary">
-              <span className="font-semibold text-accent">
-                {planIntent.plan === "trader" ? "Trader" : "Premium"}{" "}
-                {planIntent.cadence === "year" ? "Annual" : "Monthly"}
-              </span>{" "}
-              · {planPrice.label} · 7-day free trial, cancel anytime
-            </div>
-          ) : null}
+        <Button type="submit" loading={loading} className="w-full">
+          {isInvitePath ? "Create account" : planIntent ? "Continue to checkout" : "Create free account"}
+        </Button>
 
-          <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-            {error && (
-              <div className="rounded-lg border border-bearish/25 bg-bearish/10 px-3 py-2 text-sm text-bearish">
-                {error}
-              </div>
-            )}
-            <Input
-              label="Name"
-              placeholder="Your name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              error={fieldErrors.name}
-              required
-              autoComplete="name"
-              autoFocus
-            />
-            <Input
-              label="Email"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              error={fieldErrors.email}
-              required
-              autoComplete="email"
-              // Lock email field on invite path so users can't bypass the
-              // "email must match invite" server check by tweaking it.
-              disabled={isInvitePath}
-            />
-            <Input
-              label="Password"
-              type="password"
-              placeholder="Min 8 characters"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              error={fieldErrors.password}
-              required
-              autoComplete="new-password"
-            />
-            <Input
-              label="Confirm Password"
-              type="password"
-              placeholder="Repeat password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              error={fieldErrors.confirmPassword}
-              required
-              autoComplete="new-password"
-            />
-
-            {/* Honeypot — absolutely-positioned off-screen + aria-hidden +
-                tabIndex=-1 + autocomplete=off so real users never trip it.
-                Bots that auto-fill every visible form field will populate
-                it; the server returns 201 silently on hit. */}
-            <div
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                left: "-10000px",
-                top: "auto",
-                width: "1px",
-                height: "1px",
-                overflow: "hidden",
-              }}
-            >
-              <label htmlFor="website">Website (leave empty)</label>
-              <input
-                type="text"
-                id="website"
-                name="website"
-                tabIndex={-1}
-                autoComplete="off"
-                value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-              />
-            </div>
-
-            <Button type="submit" loading={loading} className="w-full">
-              {isInvitePath
-                ? "Create Account"
-                : planIntent
-                  ? "Continue to checkout"
-                  : "Create free account"}
-            </Button>
-
-            {!isInvitePath && (
-              <p className="text-center text-[0.78rem] text-text-muted">
-                By signing up you agree to our{" "}
-                <Link href="/terms" className="underline hover:text-text-secondary">
-                  Terms
-                </Link>{" "}
-                and{" "}
-                <Link href="/risk" className="underline hover:text-text-secondary">
-                  Risk Disclosure
-                </Link>
-                . Beacontry is a research + journaling tool, not investment advice.
-              </p>
-            )}
-          </form>
-
-          <p className="mt-4 text-center text-sm text-text-muted">
-            Already have an account?{" "}
-            <Link href="/login" className="font-medium text-accent hover:text-accent-hover">
-              Sign in
+        {!isInvitePath && (
+          <p className="text-xs text-text-muted">
+            By signing up you agree to the{" "}
+            <Link href="/terms" className="underline hover:text-text-secondary">
+              Terms
+            </Link>{" "}
+            and{" "}
+            <Link href="/risk" className="underline hover:text-text-secondary">
+              Risk Disclosure
             </Link>
+            . Beacontry is a research and journaling tool, not investment advice.
           </p>
-        </div>
-      </div>
-    </div>
+        )}
+      </form>
+
+      <AuthSwitch prompt="Already have an account?" href="/login" label="Sign in" />
+    </AuthShell>
   );
 }

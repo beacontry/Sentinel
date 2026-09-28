@@ -44,7 +44,8 @@ export async function GET(
     const enrichedPositions = await Promise.all(
       details.positions.map(async (pos) => {
         const quote = await provider.fetchQuote(pos.symbol);
-        const currentPrice = quote?.price ?? pos.entryPrice;
+        // A $0 quote is no quote; `??` would keep it and value the lot at 0.
+        const currentPrice = quote && quote.price > 0 ? quote.price : pos.entryPrice;
         const marketValue = currentPrice * pos.quantity;
         const unrealizedPnl = (currentPrice - pos.entryPrice) * pos.quantity;
         const unrealizedPct = ((currentPrice - pos.entryPrice) / pos.entryPrice) * 100;

@@ -188,8 +188,11 @@ describe("createWebhookSchema", () => {
 // ─── placeBrokerOrderSchema ─────────────────────────────────────
 
 describe("placeBrokerOrderSchema", () => {
+  const CONNECTION_ID = "5d0c7a3e-2b4f-4c1d-9e8a-7f6b5a4c3d2e";
+
   it("accepts valid market order", () => {
     const result = placeBrokerOrderSchema.safeParse({
+      expectedConnectionId: CONNECTION_ID,
       symbol: "aapl",
       side: "buy",
       qty: "10",
@@ -203,6 +206,7 @@ describe("placeBrokerOrderSchema", () => {
 
   it("accepts limit order with price", () => {
     const result = placeBrokerOrderSchema.safeParse({
+      expectedConnectionId: CONNECTION_ID,
       symbol: "MSFT",
       side: "sell",
       qty: "5",
@@ -214,9 +218,50 @@ describe("placeBrokerOrderSchema", () => {
 
   it("rejects invalid side", () => {
     const result = placeBrokerOrderSchema.safeParse({
+      expectedConnectionId: CONNECTION_ID,
       symbol: "AAPL",
       side: "short",
       qty: "10",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("keeps a UUID clientOrderId (the ticket's idempotency key)", () => {
+    const id = "3f6c1a52-8b1e-4c7a-9d2e-5b7f0a1c2d3e";
+    const result = placeBrokerOrderSchema.safeParse({
+      expectedConnectionId: CONNECTION_ID,
+      symbol: "AAPL",
+      side: "buy",
+      qty: "10",
+      clientOrderId: id,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.clientOrderId).toBe(id);
+  });
+
+  it("requires expectedConnectionId, the account the ticket showed", () => {
+    const result = placeBrokerOrderSchema.safeParse({ symbol: "AAPL", side: "buy", qty: "10" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an expectedEnvironment other than paper or live", () => {
+    const result = placeBrokerOrderSchema.safeParse({
+      expectedConnectionId: CONNECTION_ID,
+      expectedEnvironment: "sandbox",
+      symbol: "AAPL",
+      side: "buy",
+      qty: "10",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a clientOrderId that is not a UUID", () => {
+    const result = placeBrokerOrderSchema.safeParse({
+      expectedConnectionId: CONNECTION_ID,
+      symbol: "AAPL",
+      side: "buy",
+      qty: "10",
+      clientOrderId: "retry-1",
     });
     expect(result.success).toBe(false);
   });

@@ -116,23 +116,23 @@ export default function PublicToolsPage() {
             <Link
               key={tool.slug}
               href={`/tools/${tool.slug}`}
-              className="group flex flex-col rounded-2xl border border-ld-border bg-ld-card p-6 transition-all duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-[0_22px_60px_rgba(0,0,0,0.32)]"
+              className="group flex flex-col rounded-xl border border-ld-border bg-ld-card p-6 transition-[background-color,border-color,color,translate,box-shadow] duration-200 hover:-translate-y-1 hover:border-ld-accent/30 hover:bg-ld-card-hover hover:shadow-pop"
             >
               <div className="flex items-center gap-3 mb-3">
                 <div className="grid h-10 w-10 place-items-center rounded-lg bg-ld-accent/[0.16] text-ld-accent">
                   <Icon className="h-5 w-5" />
                 </div>
-                <span className="font-mono text-[10px] uppercase tracking-wider text-ld-text-muted">
+                <span className="font-mono text-xs uppercase tracking-wider text-ld-text-muted">
                   {tool.category}
                 </span>
               </div>
               <h3 className="text-lg font-bold leading-tight mb-2 group-hover:text-ld-accent transition-colors">
                 {tool.name}
               </h3>
-              <p className="text-[0.9rem] leading-relaxed text-ld-text-secondary mb-4 flex-1">
+              <p className="text-base leading-relaxed text-ld-text-secondary mb-4 flex-1">
                 {tool.desc}
               </p>
-              <span className="inline-flex items-center gap-1 text-[0.85rem] text-ld-accent group-hover:gap-2 transition-all">
+              <span className="inline-flex items-center gap-1 text-sm text-ld-accent group-hover:gap-2 transition-[background-color,border-color,color,gap]">
                 Open <ArrowRight className="h-3.5 w-3.5" />
               </span>
             </Link>
@@ -141,7 +141,7 @@ export default function PublicToolsPage() {
       </div>
 
       {/* Sign-up CTA */}
-      <section className="mt-16 rounded-2xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
+      <section className="mt-16 rounded-xl border border-ld-accent/30 bg-ld-accent/[0.06] p-8 text-center">
         <h2 className="text-xl font-bold mb-2">More tools when you sign up</h2>
         <p className="text-ld-text-secondary mb-5 max-w-[520px] mx-auto">
           Beacontry users get backtest, risk simulator, portfolio aggregator, and
@@ -149,7 +149,7 @@ export default function PublicToolsPage() {
         </p>
         <Link
           href="/register"
-          className="inline-flex items-center gap-2 rounded-[10px] bg-ld-accent px-6 py-3 text-[0.94rem] font-semibold text-white hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-[0_10px_34px_rgba(16,185,129,0.16)] transition-all"
+          className="inline-flex items-center gap-2 rounded-lg bg-ld-accent px-6 py-3 text-base font-semibold text-ld-on-accent hover:-translate-y-0.5 hover:bg-ld-accent-dim hover:shadow-pop transition-[background-color,border-color,color,translate,box-shadow]"
         >
           Sign up free
           <ArrowRight className="h-4 w-4" />

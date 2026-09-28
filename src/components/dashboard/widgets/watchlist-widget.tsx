@@ -1,92 +1,78 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
+import { Eye } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SymbolLink } from "@/components/ui/symbol-link";
-import { Eye, ArrowRight } from "lucide-react";
-import Link from "next/link";
+import { SignedPercent } from "@/components/ui/signed-value";
+import { fetchQuotes, type QuoteView } from "@/lib/quotes-client";
+import { fetchWidgetJson } from "@/lib/widget-load";
+import { formatUsd } from "@/lib/format-pnl";
+import { useWidgetLoad } from "./use-widget-load";
+import { WidgetBody, WidgetList, WidgetRow, WidgetRowsSkeleton } from "./widget-body";
 
+const SHOWN = 6;
+
+interface WatchlistData {
+  symbols: string[];
+  quotes: Record<string, QuoteView | null>;
+}
+
+/**
+ * The default watchlist's first six symbols with their last close and day
+ * change, read in one batch from the read-only /api/quotes (the same read
+ * the Watchlists page uses). A symbol whose price could not be read says
+ * "Unavailable". It was a column of "Watching" badges with no prices, and
+ * its links pointed back at the dashboard itself.
+ */
 export function WatchlistWidget() {
-  const [symbols, setSymbols] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch("/api/watchlist");
-        if (!res.ok) throw new Error("Failed to load");
-        const data = await res.json();
-        setSymbols(data.symbols ?? []);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="space-y-1.5">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-7 w-full" rounded="md" />
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <p className="text-sm text-text-muted py-4 text-center">
-        Unable to load watchlist
-      </p>
-    );
-  }
-
-  if (symbols.length === 0) {
-    return (
-      <div className="py-5 text-center">
-        <Eye className="mx-auto mb-2 h-7 w-7 text-text-muted" />
-        <p className="text-sm text-text-muted">No symbols in watchlist</p>
-        <Link
-          href="/dashboard"
-          className="text-xs text-accent hover:text-accent-hover mt-1 inline-block"
-        >
-          Add symbols
-        </Link>
-      </div>
-    );
-  }
+  const load = useWidgetLoad<WatchlistData>(async (signal) => {
+    const body = await fetchWidgetJson<{ symbols?: string[] }>("/api/watchlist", signal);
+    const symbols = body.symbols ?? [];
+    const quotes = symbols.length > 0 ? await fetchQuotes(symbols.slice(0, SHOWN)) : {};
+    return { symbols, quotes };
+  });
 
   return (
-    <div className="space-y-1">
-      {symbols.slice(0, 6).map((sym) => (
-        <div
-          key={sym}
-          className="flex items-center justify-between rounded-[10px] px-2.5 py-1.5
-            bg-bg-elevated hover:bg-bg-hover transition-colors"
-        >
-          <SymbolLink symbol={sym} className="text-[13px] font-medium">
-            {sym}
-          </SymbolLink>
-          <Badge variant="neutral">Watching</Badge>
-        </div>
-      ))}
-      {symbols.length > 6 && (
-        <p className="pt-0.5 text-center text-[11px] uppercase tracking-[0.16em] text-text-muted">
-          +{symbols.length - 6} more
-        </p>
+    <WidgetBody
+      load={load}
+      label="your watchlist"
+      skeleton={<WidgetRowsSkeleton rows={SHOWN} />}
+      isEmpty={(d) => d.symbols.length === 0}
+      empty={
+        <EmptyState
+          compact
+          icon={<Eye />}
+          title="Your watchlist is empty"
+          description="Add symbols to follow their price here."
+          action={{ label: "Add symbols", href: "/dashboard/watchlists" }}
+        />
+      }
+    >
+      {({ symbols, quotes }) => (
+        <>
+          <WidgetList>
+            {symbols.slice(0, SHOWN).map((sym) => {
+              const q = quotes[sym];
+              return (
+                <WidgetRow key={sym}>
+                  <SymbolLink symbol={sym} className="text-sm font-semibold after:absolute after:inset-0" />
+                  {q ? (
+                    <span className="flex items-baseline gap-4 text-sm">
+                      <span className="font-mono tabular-nums text-text-primary">{formatUsd(q.price)}</span>
+                      <SignedPercent value={q.change} className="min-w-[4.75rem] justify-end" />
+                    </span>
+                  ) : (
+                    <span className="text-sm text-text-muted">Unavailable</span>
+                  )}
+                </WidgetRow>
+              );
+            })}
+          </WidgetList>
+          {symbols.length > SHOWN && (
+            <p className="mt-2 text-xs text-text-muted">{symbols.length - SHOWN} more on the Watchlists page</p>
+          )}
+        </>
       )}
-      <Link
-        href="/dashboard"
-        className="flex min-h-[36px] items-center justify-center gap-1 pt-1.5 text-[11px] uppercase
-          tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
-      >
-        View All <ArrowRight className="w-3 h-3" />
-      </Link>
-    </div>
+    </WidgetBody>
   );
 }
