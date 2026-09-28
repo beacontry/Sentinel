@@ -146,14 +146,59 @@ jobs:
             echo "Logging out of ghcr.io..."
             sudo -u sn-deploy -i podman logout ghcr.io || true
 
-            echo "Replacing container..."
-            # -t 30: the SIGTERM drain places safety stops on the broker and may
-            # take up to FORCE_EXIT_MS (src/lib/shutdown-config.ts); the default
-            # 10s grace would SIGKILL it mid-drain.
-            sudo -u sn-deploy -i podman stop -t 30 sentinel-app 2>/dev/null || true
-            sudo -u sn-deploy -i podman rm sentinel-app 2>/dev/null || true
-            sudo -u sn-deploy -i bash -c 'mkdir -p /opt/apps/sentinel/cache'
-            sudo -u sn-deploy -i podman run -d --name sentinel-app --network=host --env-file /opt/apps/sentinel/.env -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache -v /opt/apps/sentinel/cache:/data/cache:Z --restart always -m 2g "$IMAGE_LC"
+            # The container is owned by ONE systemd user unit (sentinel.service),
+            # which runs it with `podman run --replace` from the :latest tag we just
+            # pulled. A deploy is a unit restart, so boot and deploy never fight
+            # over the container, and no unit pins a container ID. (The old
+            # per-container unit from `podman generate systemd` pinned the ID of
+            # the container it was made from; after the next `podman run` here a
+            # reboot would have waited on a PID file that no longer existed. See
+            # Guardcyber README step 8 and the Keycloak wedge of 2026-09-23.)
+            echo "Installing sentinel.service and restarting it on the new image..."
+            sudo -u sn-deploy -i bash -s -- "$IMAGE_LC" <<'UNIT'
+            set -euo pipefail
+            IMAGE_LC=$1
+            U=$(id -u); export XDG_RUNTIME_DIR=/run/user/$U DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$U/bus
+            mkdir -p /opt/apps/sentinel/cache ~/.config/systemd/user
+            UD=~/.config/systemd/user
+            # One-time migration from the per-container unit. It is inactive
+            # (the running container was started by an earlier deploy), so
+            # disabling it does not stop anything; it is kept for reference.
+            if [ -f "$UD/container-sentinel-app.service" ]; then
+              systemctl --user disable container-sentinel-app.service >/dev/null 2>&1 || true
+              mv "$UD/container-sentinel-app.service" "$UD/container-sentinel-app.service.retired"
+            fi
+            cat > "$UD/sentinel.service" <<EOF
+            [Unit]
+            Description=Sentinel (systemd-owned container)
+            Wants=network-online.target
+            After=network-online.target
+
+            [Service]
+            Environment=PODMAN_SYSTEMD_UNIT=%n
+            Restart=always
+            TimeoutStartSec=180
+            TimeoutStopSec=70
+            ExecStart=/usr/bin/podman run --cidfile=%t/%n.ctr-id --cgroups=no-conmon --rm --sdnotify=conmon -d --replace --name sentinel-app --network=host --env-file /opt/apps/sentinel/.env -e NODE_ENV=production -e HOSTNAME=0.0.0.0 -e PORT=3010 -e NEXT_TELEMETRY_DISABLED=1 -e CACHE_DIR=/data/cache -v /opt/apps/sentinel/cache:/data/cache:Z -m 2g $IMAGE_LC
+            # -t 30 is CONTAINER_STOP_GRACE_S from src/lib/shutdown-config.ts,
+            # which must exceed FORCE_EXIT_MS (20s) or SIGKILL lands mid-drain
+            # and the safety stops never reach the broker. It matters more here
+            # than it did in the deploy job: systemd now owns every stop, so a
+            # reboot and a `systemctl restart` take this path too, not just a
+            # deploy. TimeoutStopSec must stay above it.
+            ExecStop=/usr/bin/podman stop -t 30 --ignore --cidfile=%t/%n.ctr-id
+            ExecStopPost=/usr/bin/podman rm -f -t 30 --ignore --cidfile=%t/%n.ctr-id
+            Type=notify
+            NotifyAccess=all
+
+            [Install]
+            WantedBy=default.target
+            EOF
+            sed -i 's/^            //' "$UD/sentinel.service"
+            systemctl --user daemon-reload
+            systemctl --user enable sentinel.service >/dev/null
+            systemctl --user restart sentinel.service
+            UNIT
             echo "Container started"
 
             # Health check — wait for app to be ready
