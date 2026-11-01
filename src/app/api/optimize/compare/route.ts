@@ -15,6 +15,7 @@ import {
   type OptimizableParams,
 } from "@/lib/optimizer";
 import { SP500_SYMBOLS, getSP500MembershipResolver } from "@/lib/sp500";
+import { getDynamicTrailingPct } from "@/lib/trading-engine";
 import type { Bar } from "@/types";
 import { checkTier } from "@/lib/tiers-server";
 
@@ -103,8 +104,8 @@ function simulateSignalStrategy(
       if (bar.high > pos.peakPrice) pos.peakPrice = bar.high;
 
       let exit = false;
-      const pPct = (pos.peakPrice - pos.entryPrice) / pos.entryPrice;
-      const dynT = pPct > 0 ? 0.02 + (params.trailingStopPct - 0.02) * Math.exp(-3 * pPct) : params.trailingStopPct;
+      // The live engine's v1 trail (2026-11-01) — one formula, not a third copy.
+      const dynT = getDynamicTrailingPct(pos.entryPrice, pos.peakPrice, params.trailingStopPct);
       const fixedStop = pos.entryPrice * (1 - params.stopLossPct);
       const trailStop = pos.peakPrice * (1 - dynT);
       if (bar.low <= Math.max(fixedStop, trailStop)) exit = true;

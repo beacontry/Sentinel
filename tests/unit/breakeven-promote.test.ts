@@ -190,7 +190,10 @@ describe("getBreakevenLadderMode — per-engine-mode defaults", () => {
   const cases: [string, BreakevenLadderMode][] = [
     ["conservative", "full"],
     ["moderate", "full"],
-    ["optimized", "full"],
+    // MODE_LADDER_DEFAULT still says "full", but optimized runs the
+    // "backtested" exit model (2026-11-01) and the optimizer never scored a
+    // ladder, so the resolver answers "disabled". See exit-model.test.ts.
+    ["optimized", "disabled"],
     ["aggressive", "full"],
     ["tactical", "disabled"],
     ["tactical-smart", "breakeven_only"],

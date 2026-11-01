@@ -8,16 +8,26 @@ import { BACKTEST_COSTS } from "./config";
 // two backtesters stay in parity (see config.ts § BACKTEST_COSTS).
 const SLIP = BACKTEST_COSTS.slippageBps / 10000; // per-side slippage fraction
 const COMMISSION = BACKTEST_COSTS.commissionPerFill;
-// Trailing-stop floor — mirrors the live engine's TRAIL_FLOOR (2%). Used as the
-// asymptote of the profit-based decay; the decay range is clamped at 0 so a
-// sub-floor base trail can't be widened toward it (audit #39).
-const TRAIL_FLOOR = 0.02;
+import { ATR } from "./indicators/atr";
+import { RSI } from "./indicators/rsi";
 import {
   type EngineMode,
+  type ExitModel,
+  type BreakevenLadderMode,
   getGraduationMode,
   shouldGraduateExit,
   promoteToGraduationFloor,
   isTrailActive,
+  // Exit math is the live engine's own functions, not a mirror of them
+  // (2026-11-01). The mirror had drifted: it never carried the ATR base,
+  // the regime floor, the RSI decay rate, drawdown tightening or the
+  // breakeven ladder, so every mode on the adaptive exit model was being
+  // scored on exits it did not run.
+  getDynamicTrailingPct,
+  trailOptionsFor,
+  maybePromoteBreakeven,
+  getBreakevenLadderMode,
+  getExitModel,
 } from "./trading-engine";
 
 // Re-export so existing test imports (`import { isTrailActive } from "@/lib/backtester"`)
@@ -131,6 +141,77 @@ const DEFAULT_CONFIG: BacktestConfig = {
 };
 
 
+export interface BacktestStopInputs {
+  /** The peak as of the PRIOR bar (audit #9/#10 — never this bar's high). */
+  peakForTrail: number;
+  baseTrailingPct: number;
+  exitModel: ExitModel;
+  ladderMode: BreakevenLadderMode;
+  /** ATR(14) in dollars as of the prior bar; drives the adaptive base trail. */
+  atr?: number;
+  /** RSI(14) as of the prior bar; drives the adaptive decay rate. */
+  rsi?: number;
+  /** VIX close on this bar when market context was supplied; drives the adaptive floor. */
+  vix?: number;
+  /**
+   * This bar's low — the price the stop is tested against, and so the price
+   * drawdown-from-peak tightening reads, exactly as the live 1-min check
+   * reads the same tick it tests.
+   */
+  barLow: number;
+  positionAgeBars: number;
+  trailActivationBars?: number;
+  trailActivationProfitPct?: number;
+}
+
+export interface BacktestStopResolution {
+  dynTrailPct: number;
+  trailingStop: number;
+  effectiveStop: number;
+  /** True when the breakeven ladder raised position.stopLoss on this bar. */
+  promoted: boolean;
+}
+
+/**
+ * One bar's stop resolution, shared by runBacktest and the unit tests. Runs
+ * the exact live-engine functions in the live order: ladder promotion first
+ * (the engine promotes before it tests the stop, so a fast round-trip can
+ * promote and exit on the same bar), then the dynamic trail under the
+ * mode's exit model, then the delayed-trail gate. Mutates position.stopLoss
+ * the way TrackedPosition.stopLoss is mutated live.
+ */
+export function resolveBacktestStop(
+  position: { entryPrice: number; stopLoss: number },
+  inp: BacktestStopInputs
+): BacktestStopResolution {
+  const promoted = maybePromoteBreakeven(position, inp.peakForTrail, inp.ladderMode);
+  const dynTrailPct = getDynamicTrailingPct(
+    position.entryPrice,
+    inp.peakForTrail,
+    inp.baseTrailingPct,
+    trailOptionsFor(inp.exitModel, {
+      atr: inp.atr,
+      vix: inp.vix,
+      rsi: inp.rsi,
+      currentPrice: inp.barLow,
+    })
+  );
+  const peakProfitPct = (inp.peakForTrail - position.entryPrice) / position.entryPrice;
+  const trailActive = isTrailActive({
+    positionAgeBars: inp.positionAgeBars,
+    peakProfitPct,
+    trailActivationBars: inp.trailActivationBars,
+    trailActivationProfitPct: inp.trailActivationProfitPct,
+  });
+  const trailingStop = trailActive ? inp.peakForTrail * (1 - dynTrailPct) : 0;
+  return {
+    dynTrailPct,
+    trailingStop,
+    effectiveStop: Math.max(position.stopLoss, trailingStop),
+    promoted,
+  };
+}
+
 /**
  * Run a backtest that mirrors the live trader's risk rules:
  * - Long-only (BUY opens, SELL closes existing position)
@@ -212,6 +293,17 @@ export function runBacktest(
     stopLoss: number;
   } | null = null;
 
+  // Per-bar ATR(14) / RSI(14) for modes on the adaptive exit model (ATR base
+  // trail, RSI decay rate). Warmed through the bar before the loop starts and
+  // advanced at the END of each iteration, so bar i's exit reads both as of
+  // bar i−1 — the same no-look-ahead rule the trail peak follows.
+  const atrInd = new ATR(14);
+  const rsiInd = new RSI(14);
+  for (let i = 0; i < Math.min(windowSize, bars.length); i++) {
+    atrInd.update(bars[i]);
+    rsiInd.update(bars[i]);
+  }
+
   for (let i = windowSize; i < bars.length; i++) {
     const bar = bars[i];
 
@@ -266,36 +358,33 @@ export function runBacktest(
       let exitPrice: number | null = null;
       let exitReason = "";
 
-      // Profit-based trailing stop — exponential decay toward the 2% floor.
-      // Uses activeCfg so adaptive's per-bar config swap actually drives the
-      // trail and stop on adaptive backtests.
-      const profitPct = (peakForTrail - position.entryPrice) / position.entryPrice;
-      // Trail-floor fix (audit #39): clamp the decay range at 0 (Math.max(0,…))
-      // so a base trail tighter than the 2% floor can't be WIDENED toward it as
-      // profit grows. Matches the live engine's getDynamicTrailingPct, which
-      // uses `range = Math.max(0, base - floor)`. The old
-      // `0.02 + (base - 0.02)*exp(-3·profit)` inverted for base < 2%: the trail
-      // loosened (rose toward 2%) as the trade worked — the opposite of intent.
-      const dynTrailPct = profitPct > 0
-        ? TRAIL_FLOOR + Math.max(0, activeCfg.trailingStopPct - TRAIL_FLOOR) * Math.exp(-3 * profitPct)
-        : activeCfg.trailingStopPct;
-
-      // Delayed-trail activation gate (post-2026-06-11). Both knobs default
-      // to 0 (always-active = legacy behavior). When set, the trail stays
-      // dormant until conditions are met; the fixed disaster stop still
-      // catches catastrophic moves from bar 0.
-      const positionAgeBars = i - position.entryIdx;
-      const trailActive = isTrailActive({
-        positionAgeBars,
-        peakProfitPct: profitPct,
+      // Stop resolution (2026-11-01): the live engine's own exit math under
+      // the mode's exit model (trading-engine.ts getExitModel). A mode on
+      // the "backtested" model (optimized) gets the v1 trail only — the
+      // formula the GA scores. A mode on the "adaptive" model gets the ATR
+      // base, the regime floor (when vixBars were supplied), the RSI decay
+      // rate, drawdown-from-peak tightening and the breakeven ladder, in the
+      // live order. With no mode (the generic config API) the legacy v1
+      // path is unchanged. Uses activeCfg so adaptive's per-bar config swap
+      // drives the trail; the delayed-trail gate (post-2026-06-11) sits
+      // inside, both knobs default to 0 = always-active.
+      const modeForExits: EngineMode | null =
+        mode === "adaptive"
+          ? (lastEffectiveMode ?? "moderate") // fallback before first regime swap
+          : (mode ?? null);
+      const { trailingStop, effectiveStop } = resolveBacktestStop(position, {
+        peakForTrail,
+        baseTrailingPct: activeCfg.trailingStopPct,
+        exitModel: modeForExits ? getExitModel(modeForExits) : "backtested",
+        ladderMode: modeForExits ? getBreakevenLadderMode(modeForExits) : "disabled",
+        atr: atrInd.value() ?? undefined,
+        rsi: rsiInd.value() ?? undefined,
+        vix: vixByDate.get(bar.date)?.close,
+        barLow: bar.low,
+        positionAgeBars: i - position.entryIdx,
         trailActivationBars: activeCfg.trailActivationBars,
         trailActivationProfitPct: activeCfg.trailActivationProfitPct,
       });
-      // position.stopLoss can be promoted above the entry-time fixed floor
-      // by take-profit graduation (see below). Always uses the higher of
-      // (a) the position's current stop and (b) the dynamic trail.
-      const trailingStop = trailActive ? peakForTrail * (1 - dynTrailPct) : 0;
-      const effectiveStop = Math.max(position.stopLoss, trailingStop);
 
       // Resolve which mode's MODE_GRADUATION_DEFAULT applies. For adaptive,
       // use the currently-active base mode (the same getActiveMode pattern
@@ -455,6 +544,11 @@ export function runBacktest(
     // portfolioBacktest) makes the daily-return assumption real.
     const equity = cash + (position ? position.shares * bar.close : 0);
     equityCurve.push({ date: bar.date, value: equity });
+
+    // Advance the exit-model indicators AFTER this bar's decisions (see the
+    // warm-up note above the loop).
+    atrInd.update(bar);
+    rsiInd.update(bar);
   }
 
   // Close any remaining position at end of data (liquidate at the last close,
