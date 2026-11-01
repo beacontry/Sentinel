@@ -4,6 +4,19 @@ Dated retrospectives extracted from CLAUDE.md. Day-to-day "when did X land" ques
 
 ---
 
+## 2026-11-01 — Finnhub budget: layers only where they can change a decision
+
+**Finding.** The second optimized account's scans ran 7.7 to 15+ minutes on a 15-minute tick (26 starts, 24 completions on 2026-10-30; two overridden as stalled), the daily 10:03 ET stall alert and 705 stall alerts since August. `api_usage_log` showed the cause: about 17,000 Finnhub calls a day from one engine (23,650 a day with two, which is the 60/min ceiling across the session), 8% of them 429s since 2026-10-22 and 1 to 2% before. Each scan ran the sentiment and analyst layers for all ~550 symbols; news caches for 5 minutes so every scan refetched it, and the hourly recommendation refresh doubled the calls on that scan. 9 minutes of limiter wait per scan, 18 on the hourly one, 25+ on the first of the day. The key is valid; a probe that reported 401 had mangled it.
+
+**Change.**
+- `HybridPipelineOptions.skipLayersOnHold`: on a technical HOLD, `analyzeHybrid` runs no sentiment, options, analyst or AI layer. `reevaluateSignal` only re-grades BUY and SELL and the AI layer refuses HOLD → anything, so the skipped layers could not have changed a trade; `runScan` sets it. The screener and analyze routes do not, and still show the layers for HOLDs. Tactical-smart's two `analyzeHybrid` calls are unchanged (its score reads HOLD confidence; no account runs it).
+- `finnhub.ts`: on a 429, or `x-ratelimit-remaining: 0` on a success, the limiter pauses every caller until the reset named in `retry-after` or `x-ratelimit-reset` (`throttlePauseMs`, clamped 1 to 65 s, only ever extends). On a 401 the client opens a 10-minute circuit (`FINNHUB_AUTH_BREAKER_MS`): requests fail fast, the two Finnhub layers return null through `isAvailable` without a per-symbol warning, one error line names the rotation. 403 does not trip it (plan-scoped per endpoint).
+- `hybrid-skip-on-hold.test.ts` (5) and `finnhub-budget.test.ts` (9).
+
+**Expected on Monday.** Finnhub calls per scan fall from ~550 to the count of actionable technicals plus held names (tens), scans complete in a few minutes, the stall alert stops, `api_usage_log.request_count` drops by an order of magnitude and `error_count` to near zero. If the layers are wanted on HOLDs again for display inside the engine, set the option off at the one call site.
+
+---
+
 ## 2026-11-01 — Exit model per mode: optimized runs the exits the GA scored
 
 **Forensics.** Prod since 2026-07-15 (post-incident engine, both optimized accounts): the admin book lost about $2,100 realized (Aug +1,185, Sep −1,238, Oct −1,523; profit factor 0.21 and 0.22 in Sep and Oct) and halted on `consecutive_losses` 2026-10-22 with $1,293 unrealized; the second account lost about $460 over the same span. The active GA preset (`c57932bb`, promoted 2026-09-18) said `trailingStopPct 0.144`, `stopLossPct 0.12`. The log said the broker stops were being synced at `trailPct 3.7` to `4.9`. The 14.4% trail never ran.

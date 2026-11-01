@@ -6106,14 +6106,22 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
   //   - Premium+: everything ON (default — no overrides)
   // The hybrid pipeline defaults read HYBRID_CONFIG which has AI scoring on;
   // we only override to OFF for non-Premium users to skip the Groq call.
+  //
+  // skipLayersOnHold: this loop acts on BUY/STRONG_BUY (entries) and
+  // SELL/STRONG_SELL (held-position tighten), and no layer can turn a
+  // technical HOLD into either. Running them on every HOLD was ~470 Finnhub
+  // calls per scan on a 60/min budget: 9 minutes of limiter wait per scan,
+  // 18 on the hourly analyst refresh, which is why the 15-minute tick kept
+  // finding the previous scan still in flight (705 stall alerts Aug–Oct 2026,
+  // one every trading day at the first scan). Layers still run for every
+  // actionable technical signal, so the signals that place orders are
+  // graded exactly as before.
   const isPremium = userHasTier(engine.userTier ?? "trader", "premium");
-  const hybridOpts: import("@/types").HybridPipelineOptions | undefined =
-    !isPremium || optSignalParams
-      ? {
-          ...(optSignalParams ? { signalParams: optSignalParams } : {}),
-          ...(isPremium ? {} : { enableAiScoring: false }),
-        }
-      : undefined;
+  const hybridOpts: import("@/types").HybridPipelineOptions = {
+    skipLayersOnHold: true,
+    ...(optSignalParams ? { signalParams: optSignalParams } : {}),
+    ...(isPremium ? {} : { enableAiScoring: false }),
+  };
 
   // 4. Get current broker positions + run live-trading safeguard checks
   let brokerPositions: Awaited<ReturnType<BrokerClient["getPositions"]>> = [];

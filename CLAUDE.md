@@ -38,7 +38,7 @@ Positions come from the broker, not the DB: `client.getPositions()` on every sca
 
 ### Signal Pipeline (Unified)
 All components share `analyzeBars()` (`src/lib/indicators/analyzer.ts`):
-- **Engine** — `analyzeHybrid()` → `analyzeBars(symbol, bars, signalParams?)`, passing optimizer-tuned params in "optimized" mode.
+- **Engine** — `analyzeHybrid()` → `analyzeBars(symbol, bars, signalParams?)`, passing optimizer-tuned params in "optimized" mode. The scan passes `skipLayersOnHold: true`: a technical HOLD runs no Finnhub or AI layer, because none of them can lift a HOLD, so the 60/min Finnhub budget goes to the actionable signals (2026-11-01; before that the layers on ~470 HOLDs per scan were the whole budget and every scan overran the 15-minute tick).
 - **Optimizer** — `analyzeSignalOnly()`, a lightweight same-logic variant accepting tunable `SignalParams`.
 - **Screener** — `analyzeHybrid()` with hybrid layers off (pure technicals); the engine re-applies hybrid layers on the pushed signal, so trade quality is unchanged.
 - **Multi-Timeframe** — `analyzeBars()` at 5m + 1d, computes confluence.
@@ -292,7 +292,7 @@ User alert rules (`alert_rules` table) are evaluated by a **scheduled cron**, no
 
 **Audit:** every save emits a hash-chained `SYSTEM_CONFIG_UPDATED` row recording `{key, hadOldValue, valueLength}` — never the value. **Test-before-save:** the [Test] button calls `POST /api/admin/system-config/test` (1-token live-provider ping with the candidate key; not persisted, only [Save] writes). **Known keys** (allow-list in API + helper): `GROQ_API_KEY`, `FINNHUB_API_KEY`, `ANTHROPIC_API_KEY` — anything else rejected.
 
-**Caveat — Finnhub:** the Finnhub client (`src/lib/finnhub.ts`) reads its key once at process boot, so rotating `FINNHUB_API_KEY` via the admin UI needs an app restart to take effect. The LLM path (`getLlmApiKey()`) picks up changes on the next call after the 60s cache window.
+**Caveat — Finnhub:** the Finnhub client (`src/lib/finnhub.ts`) reads its key once at process boot, so rotating `FINNHUB_API_KEY` via the admin UI needs an app restart to take effect. The LLM path (`getLlmApiKey()`) picks up changes on the next call after the 60s cache window. On a 401 the client opens a 10-minute circuit (`FINNHUB_AUTH_BREAKER_MS`): requests fail fast, the sentiment and analyst layers return null with no per-symbol log line, and one error-level line names the rotation. On a 429, or `x-ratelimit-remaining: 0`, the limiter pauses every caller until the reset Finnhub names in its headers (`throttlePauseMs`, clamped 1 to 65 s).
 
 ## Security & Route Patterns
 
