@@ -2533,12 +2533,68 @@ const MODE_LADDER_DEFAULT: Record<EngineMode, BreakevenLadderMode> = {
   adaptive: "full", // resolves to effective mode at call time; this key is for type completeness
 };
 
+// ─── Exit model (2026-11-01) ────────────────────────────────────────────────
+//
+// Which exit stack a mode runs live:
+//
+//   "backtested" — exactly what the GA optimizer and backtester simulate:
+//                  the preset/GA trailingStopPct decaying toward the 2%
+//                  floor, the fixed stop, hold period, graduation. No ATR
+//                  base, no VIX floor, no RSI rate, no drawdown-from-peak
+//                  tightening, no breakeven ladder.
+//   "adaptive"   — the v2/v2.5/v3 layers on top: ATR-relative base trail,
+//                  regime floor, momentum decay, drawdown tightening and the
+//                  tiered breakeven ladder.
+//
+// Why this exists: the 2026-11-01 forensics (docs/changelog.md) found the
+// optimized book trading an exit stack the optimizer never scored. The GA
+// picks trailingStopPct ≈ 14% because wide trails win in the backtest; live,
+// the ATR base replaced it with 2.5 × ATR ≈ 4% and the +2% ladder rung sat
+// the stop at entry × 1.001 — 57 of 204 closed trades round-tripped to zero
+// and the −6..−2.5% band was the largest loss bucket. Optimized mode now
+// runs the exits its parameters were tuned against; the other modes keep
+// the adaptive layers, and the backtester models them (runBacktest).
+//
+// Per-mode env override for a rollback without a deploy:
+//   ENGINE_EXIT_MODEL_OPTIMIZED=adaptive   (hyphens → underscores, upper-case)
+export type ExitModel = "backtested" | "adaptive";
+
+const MODE_EXIT_MODEL_DEFAULT: Record<EngineMode, ExitModel> = {
+  conservative: "adaptive",
+  moderate: "adaptive",
+  optimized: "backtested",
+  aggressive: "adaptive",
+  tactical: "adaptive",
+  "tactical-smart": "adaptive",
+  adaptive: "adaptive", // resolves to effective mode at call time; this key is for type completeness
+};
+
+export function getExitModel(activeMode: EngineMode): ExitModel {
+  const key = `ENGINE_EXIT_MODEL_${activeMode.toUpperCase().replace(/-/g, "_")}`;
+  const override = process.env[key];
+  if (override === "backtested" || override === "adaptive") return override;
+  return MODE_EXIT_MODEL_DEFAULT[activeMode];
+}
+
+/**
+ * The trail options a mode is allowed to pass into getDynamicTrailingPct.
+ * Under "backtested" the answer is none: the function then returns the
+ * v1 formula the optimizer scored. Every live caller routes through here
+ * so the model is decided in one place.
+ */
+export function trailOptionsFor(model: ExitModel, opts: TrailOptions): TrailOptions | undefined {
+  return model === "backtested" ? undefined : opts;
+}
+
 /**
  * Resolve the ladder mode for the engine's currently-active mode.
  * Handles adaptive by reading the effective mode (post regime
- * resolution).
+ * resolution). A mode on the "backtested" exit model has no ladder at
+ * all, whatever MODE_LADDER_DEFAULT says — the optimizer never modelled
+ * one.
  */
 export function getBreakevenLadderMode(activeMode: EngineMode): BreakevenLadderMode {
+  if (getExitModel(activeMode) === "backtested") return "disabled";
   return MODE_LADDER_DEFAULT[activeMode];
 }
 
@@ -2997,7 +3053,7 @@ interface TrailOptions {
   currentPrice?: number;
 }
 
-function getDynamicTrailingPct(
+export function getDynamicTrailingPct(
   entryPrice: number,
   peakPrice: number,
   baseTrailingPct: number,
@@ -3601,16 +3657,18 @@ async function runExitCheck(engineUserId?: string): Promise<void> {
       // broker reconciliation (syncBrokerStops) AND breakeven promotions
       // from this and prior scans; recomputing would silently undo both.
       const fixedStop = pos.stopLoss;
+      // Exit model (2026-11-01): a "backtested" mode passes no options and
+      // gets the v1 formula the optimizer scored. See getExitModel.
       const dynTrailPct = getDynamicTrailingPct(
         pos.entryPrice,
         pos.peakPrice,
         params.trailingStopPct,
-        {
+        trailOptionsFor(getExitModel(getActiveMode(engine)), {
           atr: pos.atr,
           vix: engine.adaptiveRegime?.vix,
           rsi: pos.rsi,
           currentPrice,
-        }
+        })
       );
       // Delayed-trail activation gate (post-2026-06-11). Trail is disabled
       // until conditions are met — fixed disaster stop + breakeven ladder
@@ -6297,16 +6355,18 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         const regimeVix = engine.adaptiveRegime?.vix;
 
         const strategy = await resolveStrategy(engine.userId, symbol);
+        // Exit model (2026-11-01): a "backtested" mode passes no options and
+        // gets the v1 formula the optimizer scored. See getExitModel.
         const dynTrail = getDynamicTrailingPct(
           heldPosition.entryPrice,
           heldPosition.peakPrice,
           strategy.trailingStopPct,
-          {
+          trailOptionsFor(getExitModel(getActiveMode(engine)), {
             atr: heldPosition.atr,
             vix: regimeVix,
             rsi: typeof heldRsi === "number" ? heldRsi : undefined,
             currentPrice,
-          }
+          })
         );
         // Delayed-trail activation gate (post-2026-06-11). Trail is dormant
         // until conditions are met; fixed stop + breakeven ladder still
@@ -7978,11 +8038,14 @@ async function syncBrokerStops(userId: string | null): Promise<void> {
       // on a live price tick. The drawdown-tightening logic only makes
       // sense in the exit-decision context (runExitCheck + main scan).
       const strategy = await resolveStrategy(userId, symbol);
+      // Exit model (2026-11-01): the resting broker stop follows the same
+      // model as the exit decisions, or the broker fires a trail the engine
+      // itself would never have used.
       const dynTrailPct = getDynamicTrailingPct(
         pos.entryPrice,
         pos.peakPrice,
         strategy.trailingStopPct,
-        { atr: pos.atr, vix: regimeVix, rsi: pos.rsi }
+        trailOptionsFor(getExitModel(getActiveMode(engine)), { atr: pos.atr, vix: regimeVix, rsi: pos.rsi })
       );
       // Honor the delayed-trail activation gate exactly as runExitCheck/runScan
       // do (audit #18): while the trail is dormant the broker stop falls back to

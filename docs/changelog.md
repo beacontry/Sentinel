@@ -4,6 +4,26 @@ Dated retrospectives extracted from CLAUDE.md. Day-to-day "when did X land" ques
 
 ---
 
+## 2026-11-01 — Exit model per mode: optimized runs the exits the GA scored
+
+**Forensics.** Prod since 2026-07-15 (post-incident engine, both optimized accounts): the admin book lost about $2,100 realized (Aug +1,185, Sep −1,238, Oct −1,523; profit factor 0.21 and 0.22 in Sep and Oct) and halted on `consecutive_losses` 2026-10-22 with $1,293 unrealized; the second account lost about $460 over the same span. The active GA preset (`c57932bb`, promoted 2026-09-18) said `trailingStopPct 0.144`, `stopLossPct 0.12`. The log said the broker stops were being synced at `trailPct 3.7` to `4.9`. The 14.4% trail never ran.
+
+**Cause.** Three layers in `trading-engine.ts` overrode the tuned exits, and none of them existed in `optimizer.ts` or `backtester.ts`:
+- the ATR base in `getDynamicTrailingPct` (`2.5 × ATR / price`, about 3.5% to 5% on an S&P name) replaces the GA parameter whenever `pos.atr` is cached, and the main scan always caches it;
+- the breakeven ladder promotes the stop to entry × 1.001 the moment a 1-minute print touches +2%;
+- the calm-regime floor of 1% and drawdown-from-peak tightening (`currentPrice` passed by both exit checks).
+
+Exits bucketed by distance from entry, both optimized accounts, Jul 15 to Oct 30: the −6% to −2.5% band held 21 admin exits for −$2,639 (28 for −$582 on the second account), every one a broker-side stop at −3.4% to −4.4% within one to ten days; the flat band (±0.5%) held 26 and 31 exits, 57 of 204 closed trades round-tripped to zero; the three admin trades allowed past +3% made $1,686, more than every other winning bucket combined. The weekly auto-optimizer kept re-validating parameters that never executed. `docs/patterns-trading.md` had claimed "same breakeven-ladder" and "ladder math coded identically" for months.
+
+**Change.**
+- `MODE_EXIT_MODEL_DEFAULT` + `getExitModel(mode)`: `backtested` for optimized (the v1 trail with the preset or GA base and the 2% floor, no ladder), `adaptive` for every other mode. `trailOptionsFor(model, opts)` strips the options under `backtested`; `getBreakevenLadderMode()` answers `disabled` under `backtested`. All three live callers (`runExitCheck`, `runScan`, `syncBrokerStops`) route through them. Env rollback per mode: `ENGINE_EXIT_MODEL_OPTIMIZED=adaptive`.
+- `backtester.ts` no longer mirrors the trail: `resolveBacktestStop` calls the live `maybePromoteBreakeven` and `getDynamicTrailingPct` under the mode's exit model, with per-bar ATR(14)/RSI(14) (advanced after each bar's decisions, no look-ahead) and the VIX close when `marketContext` is supplied. Mode-compare therefore scores conservative/moderate/aggressive on the exits they actually run. `optimizer.ts` and the compare route call `getDynamicTrailingPct` with no options, which is what optimized now runs; the GA's picture of its own exits is finally the live picture.
+- `exit-model.test.ts` (13 tests) pins the defaults, the env override, the ladder resolution and the two models' stop resolution on the same bar; `breakeven-promote.test.ts` updated for optimized → `disabled`.
+
+**Not changed, on purpose.** Sell-signal stop-tighten (2026-07-14) stays live and the backtester still exits on SELL at step boundaries; the auto-optimizer still runs on `top50` while the engine scans the S&P 500. Both are known divergences, neither drove the P&L. Also seen and not fixed here: the second account's scan flag sits past 10 minutes on every 15-minute stop-sync cycle (705 stall alerts since August, one every trading day at 10:03 ET).
+
+**Operator follow-up.** The admin engine is halted and disconnected since 2026-10-22; it restarts only from Start on `/dashboard/trader`. Deploy at rest (the change lands on a Sunday). Watch the first fortnight's exits: the expected shape is fewer flat round-trips, a wider loss band on the trades that fail, and the winners running past +3%.
+
 ## 2026-07-23 (later) — Autonomous auto-optimizer with margin-gated promotion
 
 The GA optimizer was manual (admin clicks Run, reviews, clicks Save-Preset). The per-symbol/global params had gone stale (predated the June fitness changes), which is the systematic half of the churn story. New `GET /api/cron/auto-optimize` closes the loop with no human in the loop.

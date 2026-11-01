@@ -38,7 +38,7 @@ export const TOP_150 = [
 ];
 import { STRATEGY_PRESETS } from "./strategy-presets";
 import { BACKTEST_COSTS } from "./config";
-import { shouldGraduateExit, promoteToGraduationFloor } from "./trading-engine";
+import { shouldGraduateExit, promoteToGraduationFloor, getDynamicTrailingPct } from "./trading-engine";
 import { db } from "./db";
 import {
   optimizationRuns,
@@ -193,10 +193,6 @@ const PARAM_RANGES: Record<keyof OptimizableParams, ParamRange> = {
 // Per-side slippage as a fraction (5 bps → 0.0005). See BACKTEST_COSTS.
 const SLIP = BACKTEST_COSTS.slippageBps / 10000;
 const COMMISSION = BACKTEST_COSTS.commissionPerFill;
-// Trailing-stop floor — mirrors the live engine's TRAIL_FLOOR (2%) and
-// backtester.ts. The profit-based decay range is clamped at 0 so a sub-floor
-// base trail can't be widened toward it (audit #39).
-const TRAIL_FLOOR = 0.02;
 
 // Fixed position sizing for backtesting (user risk profiles control live sizing)
 const BACKTEST_POSITION_PCT = 0.10;
@@ -605,12 +601,14 @@ export function portfolioBacktest(
       // fixed-stop floor (mirrors the live engine's TrackedPosition.stopLoss).
       // Initialized to entry × (1 - stopLossPct), promoted upward by take-
       // profit graduation to entry × 1.30 when graduation gate fires below.
-      const profitPct = (peakForTrail - pos.entryPrice) / pos.entryPrice;
-      // Trail-floor clamp (audit #39): Math.max(0, base - floor) so a base
-      // trail tighter than the 2% floor isn't widened toward it as profit grows
-      // (the old `0.02 + (base - 0.02)*exp(…)` inverted for base < 2%). Matches
-      // the live engine's getDynamicTrailingPct and backtester.ts.
-      const dynTrail = profitPct > 0 ? TRAIL_FLOOR + Math.max(0, params.trailingStopPct - TRAIL_FLOOR) * Math.exp(-3 * profitPct) : params.trailingStopPct;
+      // The live engine's own v1 trail (2026-11-01) — the formula optimized
+      // mode runs under the "backtested" exit model (trading-engine.ts
+      // getExitModel). Calling the function instead of mirroring it keeps
+      // the audit #39 floor clamp and anything added later in one place. The
+      // GA tunes optimized mode only; if that mode is ever moved to the
+      // adaptive model, this loop must grow the ATR/RSI/VIX inputs that
+      // runBacktest already carries.
+      const dynTrail = getDynamicTrailingPct(pos.entryPrice, peakForTrail, params.trailingStopPct);
       const trailStop = peakForTrail * (1 - dynTrail);
 
       // Take-profit graduation (PR 14 parity, 2026-05-26). The GA tunes

@@ -86,7 +86,7 @@ All conditions evaluated per stock at each scan interval:
 
 Positions are closed when ANY of these trigger:
 
-1. **Fixed stop loss** — price drops below `pos.stopLoss`. Initialized at entry × (1 − stopLossPct); ratcheted up to entry × 1.001 once unrealized profit crosses +2% (see Breakeven-Promote below)
+1. **Fixed stop loss** — price drops below `pos.stopLoss`. Initialized at entry × (1 − stopLossPct); in modes on the `adaptive` exit model it is ratcheted up to entry × 1.001 once unrealized profit crosses +2% (see Breakeven-Promote below). Optimized runs the `backtested` model and has no ladder (see Exit Model per Mode)
 2. **Dynamic trailing stop** — price drops below peak × (1 - dynTrailPct)
 3. **Take profit** — price exceeds entry × (1 + takeProfitPct)
 4. **Sell signal → stop-tighten, NOT exit** (2026-07-14) — a SELL/STRONG_SELL from technical analysis no longer market-exits. It raises `pos.stopLoss` to `price × (1 − dynTrail × f)` where f = 1/2 (SELL) or 1/3 (STRONG_SELL), floored at a 1% trail, never lowering an existing stop (`tightenStopOnSellSignal`). Rationale: all-time prod data showed 30 signal exits / 1 winner / −$2,717 while trailing stops made +$2,814 on the same book — the signal lags and exited at local bottoms. A genuine breakdown now exits via the tightened stop; a whipsaw survives. `syncBrokerStops` pushes the raised stop to the broker the same scan.
@@ -98,7 +98,22 @@ Positions are closed when ANY of these trigger:
 
 **Dual cadence:** Exits run twice — every 15 min in the main scan (uses last-bar close), and every 1 min in `runExitCheck()` using a live quote. The 1-min loop runs in **every mode**, not just intraday — this is what keeps trailing stops tracking the live peak instead of yesterday's close. A `pendingExits: Set<symbol>` on engine state guards against the two intervals double-selling the same position.
 
+### Exit Model per Mode (2026-11-01)
+
+Two exit stacks exist, and `MODE_EXIT_MODEL_DEFAULT` (`getExitModel()` in `trading-engine.ts`) says which one a mode runs:
+
+| Exit model | What runs | Modes |
+|---|---|---|
+| `backtested` | Exactly what the GA optimizer and `runBacktest` score: the preset or GA `trailingStopPct` decaying toward the 2% floor, the fixed stop, hold period, take-profit graduation, sell-signal stop-tighten. No ATR base, no regime floor, no RSI decay rate, no drawdown-from-peak tightening, **no breakeven ladder** | optimized |
+| `adaptive` | The v2/v2.5/v3 layers on top of that: ATR-relative base trail, VIX regime floor, momentum decay rate, drawdown tightening and the tiered breakeven ladder (the next two sections) | conservative, moderate, aggressive, tactical, tactical-smart, adaptive (resolves to its effective mode) |
+
+Why: the 2026-11-01 forensics (`docs/changelog.md`) found the optimized book running an exit stack the optimizer had never scored. The GA picks `trailingStopPct` near 14% because a wide trail wins the backtest; live, the ATR base replaced it with roughly 4% and the +2% ladder rung sat the stop at entry × 1.001. Of 204 closed trades on the two optimized accounts, 57 round-tripped to within half a percent of entry and the −6% to −2.5% band was the largest loss bucket. Every live caller (`runExitCheck`, `runScan`, `syncBrokerStops`) now routes its trail options through `trailOptionsFor(model, …)` and the ladder resolver through `getBreakevenLadderMode()`, so the model is decided in one place; the backtester calls the same functions under the same model, so what `runBacktest` scores for a mode is what that mode runs.
+
+Rollback without a deploy: `ENGINE_EXIT_MODEL_OPTIMIZED=adaptive` in the container env (any mode, hyphen spelled as underscore, upper-case). Anything other than `backtested` or `adaptive` is ignored. Moving optimized back to `adaptive` re-opens the gap this section closes, because `portfolioBacktest` models the backtested stack only.
+
 ### Dynamic Trailing Stop (Exponential Decay)
+
+**Applies in full to modes on the `adaptive` exit model.** Under `backtested` only the formula below runs, with the preset or GA base and the 2% floor; the regime floor, ATR base, momentum rate and drawdown tightening further down are off.
 
 ```
 trail = floor + (baseTrail - floor) × e^(-3 × profitPct)
@@ -152,7 +167,8 @@ The ladder is one-way: `pos.stopLoss` only moves up. If a position skips interme
 
 | Engine mode | Ladder mode | Why |
 |---|---|---|
-| conservative / moderate / aggressive / optimized | `full` | All four tiers active. Locking gains progressively matches the strategy intent |
+| conservative / moderate / aggressive | `full` | All four tiers active. Locking gains progressively matches the strategy intent |
+| optimized | `disabled` (by exit model) | `MODE_LADDER_DEFAULT` still lists `full`, but the resolver answers `disabled` for any mode on the `backtested` exit model: the optimizer never scored a ladder, and live the +2% rung was round-tripping winners to zero (see § Exit Model per Mode) |
 | tactical-smart | `breakeven_only` | Only the +2% tier fires. Higher tiers would prematurely exit positions that the strategy expects to hold for 30%+ moves |
 | tactical | `disabled` | Pure SPY-driven; individual position management contradicts "all in / all out" philosophy |
 | adaptive | resolves to effective mode at scan time | (the current effective mode's default applies) |
@@ -233,9 +249,10 @@ Exit logic varies dramatically between mode families. Signal-based modes (like O
 |--------|---|---|---|
 | **Exit scope** | Individual position + post-exit redeploy | Portfolio-wide + individual swaps | Portfolio-wide only |
 | **Primary exit** | First of 5 conditions fires | SPY < 20-SMA for 3 days | SPY < 20-SMA for 3 days |
-| **Stop loss** | ~8.5% initial → 4-tier ladder (+2/+5/+10/+15%) locks in 0.1 / 2.5 / 5 / 7.5% | 12% initial → +2% tier only (breakeven_only) | None (SPY-driven exits) |
+| **Exit model** | `backtested` (what the GA scores) | `adaptive` | `adaptive` |
+| **Stop loss** | GA-tuned fixed stop (12% on the active preset), no ladder | 12% initial → +2% tier only (breakeven_only) | None (SPY-driven exits) |
 | **Take profit** | ATR × mult or % (GA-tuned, **graduates instead of exits** in both 15-min scan and 1-min poll) | 50% (graduates to +30% floor in both 15-min scan and 1-min poll) | None (SPY-driven exits) |
-| **Trailing stop** | ~12.6% base, tightens with profit | 11.7% base, tightens with profit | None (SPY-driven exits) |
+| **Trailing stop** | GA `trailingStopPct` (14.4% on the active preset) decaying toward 2%; no ATR base, no regime floor | 11.7% base or 2.5 × ATR, tightens with profit, regime floor | None (SPY-driven exits) |
 | **Hold period** | ~33 days (GA-tuned) | 999 days (effectively never) | None (SPY-driven exits) |
 | **Sell signal** | SELL/STRONG_SELL → tighten stop (1/2 or 1/3 of trail; demoted from exit 2026-07-14) | SELL/STRONG_SELL → swap for stronger stock | Not used |
 | **Universe** | SCAN_UNIVERSE + top-50 screener externals (by confidence) | SCAN_UNIVERSE + top-50 screener externals | SCAN_UNIVERSE only |

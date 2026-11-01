@@ -62,13 +62,15 @@ All components share `analyzeBars()` (`src/lib/indicators/analyzer.ts`):
 **Per-mode opt-in maps:**
 | Map | Optimized | Tactical-smart | Others |
 |---|---|---|---|
-| `MODE_LADDER_DEFAULT` (breakeven promote) | `full` | `breakeven_only` | `full`/`disabled` per mode |
+| `MODE_EXIT_MODEL_DEFAULT` (which exit stack runs live, 2026-11-01) | `backtested` (the v1 trail the GA scores; no ATR base, regime floor, RSI rate, drawdown tightening or ladder) | `adaptive` | `adaptive` |
+| `MODE_LADDER_DEFAULT` (breakeven promote) | `full`, but **inert**: `getBreakevenLadderMode()` answers `disabled` for any mode on the `backtested` exit model | `breakeven_only` | `full`/`disabled` per mode |
 | `MODE_GRADUATION_DEFAULT` (take-profit graduation) | `enabled` | `enabled` | `disabled` |
 | `MODE_SWAP_SELL_DEFAULT` (post-exit redeploy) | `enabled` | `disabled` (uses own pair-wise) | `disabled` |
 
 **Implementation notes** (full PR-by-PR rationale in `docs/changelog.md`):
 - **Graduation gates BOTH scan paths** — `runScan` (15-min) and `runExitCheck` (1-min) both gate on graduation mode, else 1-min poll exits before 15-min scan can graduate.
 - **Backtester graduation parity** — `runBacktest` + `portfolioBacktest` simulate graduation; swap-sell parity NOT yet mirrored (single-symbol backtest lacks candidate pool).
+- **Backtester exit parity (2026-11-01)** — `runBacktest` calls the live engine's own `getDynamicTrailingPct` / `maybePromoteBreakeven` under the mode's exit model (`resolveBacktestStop`), with per-bar ATR(14)/RSI(14) and the VIX close when `marketContext` is supplied; `portfolioBacktest` and the compare route call `getDynamicTrailingPct` with no options, which IS the `backtested` model optimized runs. Never mirror the trail formula inline again: the mirror is what drifted. Rollback env: `ENGINE_EXIT_MODEL_<MODE>=adaptive|backtested`.
 - **Stop-sync hung-scan recovery** — scheduler runs sync when scan age > `STALE_SCAN_OVERRIDE_MS` (10 min) instead of skipping on stale `scan_in_flight` flag.
 - **Cooperative scan cancellation** — each scan holds `myGeneration`; override bumps `engine.scanGeneration` and stale scan throws `ScanCancelledError` at yield points.
 - **Engine state persistence** — `src/lib/engine-snapshot.ts` writes position map + risk counters to `trader_engine_snapshot` (migration `0040`) per `runScan`; hydrated in `startEngine`, discarded if older than 60 min.
