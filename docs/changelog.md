@@ -4,6 +4,21 @@ Dated retrospectives extracted from CLAUDE.md. Day-to-day "when did X land" ques
 
 ---
 
+## 2026-11-02 — Layer gate widened to "could a BUY reach this symbol"; tactical exits cancel their own stop
+
+**Finding.** First open after the HOLD skip shipped. The market gapped down below SPY's SMA(20), so ~70% of the universe was a technical BUY or STRONG_BUY (7a7baf10: 463 STRONG_BUY, 214 BUY, 192 HOLD in the first half hour), every entry was refused ("SPY below SMA(20) — buy signals blocked", 695 skips), and the layers ran for all of them anyway. Finnhub sat at its 60/min ceiling from the bell, both optimized scans overran the 10-minute override three times in a row, and each override unwound the orphan through 488 "Error processing symbol" lines that were only the cancellation firing at every remaining symbol. Separately the tactical engine's SPY-exit market sell of AES was refused by Alpaca (403 40310000, shares `held_for_orders`) because the position's own protective stop, placed pre-market under the backtested model, held the shares.
+
+**Change.**
+- `layersCanMatter(facts)` (exported, pure) decides per symbol before `analyzeHybrid`: run the layers for a held symbol, or for one a BUY could reach this scan (market healthy, engine running, no 150-minute cooldown, not in the wash-sale or losing-re-entry set, no pending buy, under the STRONG_BUY hard cap unless swap-sell is enabled). Everything else passes `skipLayers: true` (new explicit `HybridPipelineOptions` flag; `skipLayersOnHold` stays). Technical analysis still runs and is logged for every symbol. The two re-entry sets are refreshed once before the loop so the gate and `canPlaceBuyOrder` read the same sets.
+- Both tactical exit paths call `cancelPendingOrdersForSymbol` before the market sell, as `runScan`'s exit already did.
+- The scan loop's catch rethrows `ScanCancelledError` so a superseded scan logs "Scan exited early" once instead of one error line per remaining symbol.
+- Finnhub's throttle pause logs at warn only when the pause is 5 s or more; the routine 1 s pause (reset header on the next second) is debug.
+- Tests: `layers-can-matter.test.ts` (6), `hybrid-skip-on-hold.test.ts` +1.
+
+**Expected.** On a day when buying is blocked, Finnhub calls per scan fall to the held count; on a healthy day, to the reachable candidates. Scans should complete well inside the tick in both cases. If they still do not, the remaining cost is bar fetching, not Finnhub.
+
+---
+
 ## 2026-11-01 — Finnhub budget: layers only where they can change a decision
 
 **Finding.** The second optimized account's scans ran 7.7 to 15+ minutes on a 15-minute tick (26 starts, 24 completions on 2026-10-30; two overridden as stalled), the daily 10:03 ET stall alert and 705 stall alerts since August. `api_usage_log` showed the cause: about 17,000 Finnhub calls a day from one engine (23,650 a day with two, which is the 60/min ceiling across the session), 8% of them 429s since 2026-10-22 and 1 to 2% before. Each scan ran the sentiment and analyst layers for all ~550 symbols; news caches for 5 minutes so every scan refetched it, and the hourly recommendation refresh doubled the calls on that scan. 9 minutes of limiter wait per scan, 18 on the hourly one, 25+ on the first of the day. The key is valid; a probe that reported 401 had mangled it.

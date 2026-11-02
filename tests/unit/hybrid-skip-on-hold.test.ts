@@ -85,6 +85,16 @@ describe("analyzeHybrid skipLayersOnHold", () => {
     expect(analystMock).toHaveBeenCalledTimes(1);
   });
 
+  it("skipLayers skips every layer on any signal, including a STRONG_BUY", async () => {
+    analyzeBarsMock.mockReturnValue(technical("STRONG_BUY", 0.8));
+    const r = await analyzeHybrid("TEST", [], { ...ALL_ON, skipLayers: true });
+    expect(sentimentMock).not.toHaveBeenCalled();
+    expect(analystMock).not.toHaveBeenCalled();
+    expect(aiMock).not.toHaveBeenCalled();
+    expect(r.signal).toBe("STRONG_BUY");
+    expect(r.hybrid?.layers).toEqual(["technical"]);
+  });
+
   it("runs the layers on a HOLD when the option is unset (screener / analyze routes)", async () => {
     analyzeBarsMock.mockReturnValue(technical("HOLD"));
     await analyzeHybrid("TEST", [], ALL_ON);

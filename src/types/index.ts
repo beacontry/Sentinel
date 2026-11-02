@@ -163,6 +163,14 @@ export interface HybridPipelineOptions {
    * because they display the layers for every symbol.
    */
   skipLayersOnHold?: boolean;
+  /**
+   * Skip every non-technical layer outright, whatever the technical signal.
+   * The engine sets this per symbol when no layer result could change what
+   * the loop does with it: not held, and no BUY is possible this scan
+   * (market unhealthy, cap reached with swap-sell off, cooldown, wash-sale or
+   * losing-re-entry block, pending buy). See `layersCanMatter`.
+   */
+  skipLayers?: boolean;
 }
 
 // ─── Watchlist ────────────────────────────────────────────────────

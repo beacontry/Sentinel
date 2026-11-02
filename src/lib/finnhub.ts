@@ -320,7 +320,10 @@ class FinnhubClient {
     const now = Date.now();
     const pauseMs = throttlePauseMs(headers, now);
     if (this.rateLimiter.pauseUntil(now + pauseMs)) {
-      log.warn(
+      // Finnhub's reset header usually names the next second, so a 1 s pause
+      // is routine (49 lines in the first half hour of 2026-11-02); only a
+      // real window wait is worth a warn line.
+      log[pauseMs >= 5_000 ? "warn" : "debug"](
         { status, pauseMs, remaining: headers.get("x-ratelimit-remaining") },
         "Finnhub throttled — pausing every request until the window resets"
       );
