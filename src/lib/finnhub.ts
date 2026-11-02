@@ -231,6 +231,12 @@ class RateLimiter {
   }
 
   private async acquireOne(): Promise<void> {
+    // Upstream said stop (429, or remaining hit 0): every queued caller waits
+    // out the window instead of each spending a token on a guaranteed 429.
+    const pauseMs = this.pausedUntil - Date.now();
+    if (pauseMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, pauseMs));
+    }
     this.refill();
     if (this.tokens < 1) {
       const waitMs = ((1 - this.tokens) / this.refillRate) * 1000;
@@ -238,6 +244,21 @@ class RateLimiter {
       this.refill();
     }
     this.tokens -= 1;
+  }
+
+  private pausedUntil = 0;
+
+  /** Hold every acquire until `untilMs` (epoch ms). Only ever extends. */
+  pauseUntil(untilMs: number): boolean {
+    if (untilMs <= this.pausedUntil) return false;
+    this.pausedUntil = untilMs;
+    // The local bucket is also wrong by definition when upstream throttled.
+    this.tokens = 0;
+    return true;
+  }
+
+  get pausedUntilMs(): number {
+    return this.pausedUntil;
   }
 
   private refill(): void {
@@ -248,15 +269,62 @@ class RateLimiter {
   }
 }
 
+/** Longest pause a 429 / remaining=0 can impose; the free-tier window is 60 s. */
+export const FINNHUB_THROTTLE_PAUSE_MAX_MS = 65_000;
+/** Shortest pause, so a reset header already in the past still backs off. */
+export const FINNHUB_THROTTLE_PAUSE_MIN_MS = 1_000;
+/** How long a 401 (invalid key) silences the client. Nothing short of a new
+ *  key fixes a 401, so retrying per symbol only burns the limiter. */
+export const FINNHUB_AUTH_BREAKER_MS = 10 * 60 * 1000;
+
+/**
+ * Pause to apply after a throttled response, from Finnhub's own headers.
+ * `retry-after` is seconds; `x-ratelimit-reset` is epoch seconds. Falls back
+ * to the window length when neither parses. Clamped to [min, max].
+ */
+export function throttlePauseMs(headers: Headers, nowMs: number): number {
+  const retryAfter = Number(headers.get("retry-after"));
+  const reset = Number(headers.get("x-ratelimit-reset"));
+  let ms: number;
+  if (Number.isFinite(retryAfter) && retryAfter > 0) ms = retryAfter * 1000;
+  else if (Number.isFinite(reset) && reset > 0) ms = reset * 1000 - nowMs;
+  else ms = 60_000;
+  return Math.min(FINNHUB_THROTTLE_PAUSE_MAX_MS, Math.max(FINNHUB_THROTTLE_PAUSE_MIN_MS, ms));
+}
+
 class FinnhubClient {
   private readonly apiKey: string;
   private readonly baseUrl = "https://finnhub.io/api/v1";
   private readonly cache = new Map<string, CacheEntry<unknown>>();
   private readonly rateLimiter: RateLimiter;
+  // Circuit breaker for an invalid key: open (non-zero) means every request
+  // fails fast without touching the limiter, until this epoch ms.
+  private authBreakerUntil = 0;
 
   constructor() {
     this.apiKey = FINNHUB_CONFIG.apiKey;
     this.rateLimiter = new RateLimiter(FINNHUB_CONFIG.rateLimit);
+  }
+
+  /** False while the auth breaker is open; layers return null without logging. */
+  get isAvailable(): boolean {
+    return Date.now() >= this.authBreakerUntil;
+  }
+
+  /** Epoch ms until which the limiter is paused by upstream throttling (0 = none). */
+  get throttledUntil(): number {
+    return this.rateLimiter.pausedUntilMs;
+  }
+
+  private onThrottled(status: number, headers: Headers): void {
+    const now = Date.now();
+    const pauseMs = throttlePauseMs(headers, now);
+    if (this.rateLimiter.pauseUntil(now + pauseMs)) {
+      log.warn(
+        { status, pauseMs, remaining: headers.get("x-ratelimit-remaining") },
+        "Finnhub throttled — pausing every request until the window resets"
+      );
+    }
   }
 
   private getCached<T>(key: string): T | null {
@@ -287,6 +355,11 @@ class FinnhubClient {
     if (!this.apiKey) {
       throw new Error("FINNHUB_API_KEY is not configured");
     }
+    if (!this.isAvailable) {
+      throw new Error(
+        `Finnhub circuit open until ${new Date(this.authBreakerUntil).toISOString()} (invalid API key)`
+      );
+    }
 
     await this.rateLimiter.acquire();
 
@@ -301,7 +374,26 @@ class FinnhubClient {
         import("./api-usage")
           .then((m) => m.recordApiUsage("finnhub", { error: true }))
           .catch((err) => log.warn({ err: err?.message }, "Finnhub usage tracking failed"));
+        if (res.status === 429) {
+          this.onThrottled(res.status, res.headers);
+        } else if (res.status === 401) {
+          // Invalid key. 403 is deliberately NOT here: Finnhub answers 403 for
+          // an endpoint outside the plan, which is per-call, not per-key.
+          const wasOpen = !this.isAvailable;
+          this.authBreakerUntil = Date.now() + FINNHUB_AUTH_BREAKER_MS;
+          if (!wasOpen) {
+            log.error(
+              { path: path.split("?")[0], breakerMs: FINNHUB_AUTH_BREAKER_MS },
+              "Finnhub rejected the API key (401) — circuit open, layers degrade to no data until it is rotated"
+            );
+          }
+        }
         throw new Error(`Finnhub API error: ${res.status} ${res.statusText}`);
+      }
+      // Proactive: the window is spent, so hold the next callers until it
+      // resets rather than letting them collect the 429 one by one.
+      if (res.headers.get("x-ratelimit-remaining") === "0") {
+        this.onThrottled(res.status, res.headers);
       }
       const data: T = await res.json();
       this.setCache(cacheKey, data, cacheTtl);

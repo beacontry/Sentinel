@@ -78,7 +78,9 @@ export async function applyAnalystLayer(
   }
 
   const client = getFinnhubClient();
-  if (!client.isConfigured) return null;
+  // isAvailable: the auth breaker is open after a 401, so the whole scan
+  // degrades to technicals quietly instead of logging one failure per symbol.
+  if (!client.isConfigured || !client.isAvailable) return null;
 
   try {
     const recommendations = await client.getRecommendations(symbol);

@@ -48,15 +48,21 @@ export async function analyzeHybrid(
   const technicalSignal = technicalResult.signal;
   const technicalConfidence = technicalResult.confidence;
 
-  // Determine which layers to run
+  // Determine which layers to run. A technical HOLD stays HOLD through every
+  // layer below (reevaluateSignal only re-grades BUY/SELL; the AI layer's
+  // isDirectionFlip guard refuses HOLD → anything), so a caller that only
+  // acts on signals can skip the Finnhub round-trips on HOLDs outright. On
+  // the S&P 500 scan that is ~85% of the universe every 15 minutes, and it
+  // was the whole of the 60/min Finnhub budget (2026-11-01).
+  const skipLayers = options?.skipLayersOnHold === true && technicalSignal === "HOLD";
   const runSentiment =
-    (options?.enableSentiment ?? HYBRID_CONFIG.sentimentEnabled) === true;
+    !skipLayers && (options?.enableSentiment ?? HYBRID_CONFIG.sentimentEnabled) === true;
   const runOptions =
-    (options?.enableOptionsFlow ?? HYBRID_CONFIG.optionsFlowEnabled) === true;
+    !skipLayers && (options?.enableOptionsFlow ?? HYBRID_CONFIG.optionsFlowEnabled) === true;
   const runAnalyst =
-    (options?.enableAnalyst ?? HYBRID_CONFIG.analystEnabled) === true;
+    !skipLayers && (options?.enableAnalyst ?? HYBRID_CONFIG.analystEnabled) === true;
   const runAi =
-    (options?.enableAiScoring ?? HYBRID_CONFIG.aiScoringEnabled) === true;
+    !skipLayers && (options?.enableAiScoring ?? HYBRID_CONFIG.aiScoringEnabled) === true;
 
   const layers: string[] = ["technical"];
   let sentiment: SentimentLayer | null = null;

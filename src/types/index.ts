@@ -154,6 +154,15 @@ export interface HybridPipelineOptions {
   aiScoringTimeout?: number;
   /** Tuned EMA/RSI params from optimizer — omit to use defaults */
   signalParams?: import("@/lib/indicators/analyzer").SignalParams;
+  /**
+   * Skip every non-technical layer when the technical signal is HOLD. The
+   * layers only move confidence, and `reevaluateSignal` never lifts a HOLD
+   * (the AI layer's direction-flip guard holds the same line), so on a HOLD
+   * they cost Finnhub budget and change nothing a trading loop acts on. The
+   * engine's scan sets this; the screener and the analyze routes do not,
+   * because they display the layers for every symbol.
+   */
+  skipLayersOnHold?: boolean;
 }
 
 // ─── Watchlist ────────────────────────────────────────────────────

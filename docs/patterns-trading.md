@@ -259,6 +259,10 @@ Network hangs block the scan loop indefinitely. `brokerFetch` wraps every broker
 
 **Audit:** Finnhub's `RateLimiter` (finnhub.ts) had TOCTOU bug: two concurrent callers could both see token, both await same delay, both decrement, overshooting 60/min cap. **Fix:** serialize via promise chain: each `acquire` enqueues onto `this.chain` promise, ensuring check-then-decrement atomic per caller.
 
+### A free-tier budget is a scan-duration ceiling; spend it only where it can change a decision
+
+**Finding (2026-11-01):** one engine made about 17,000 Finnhub calls a day against a 60/min limit (23,650 a day at saturation with two engines scanning), 8% of them 429s. The hybrid layers ran for all ~550 scanned symbols every 15 minutes, but a technical HOLD cannot be lifted by any layer, so roughly 85% of the calls could not have changed a trade. Each scan sat 9 minutes in the limiter, 18 on the hourly analyst refresh, and the 15-minute tick found the previous scan still running: 705 stall alerts over three months, one at the first scan of every trading day. The alerts said the scan had stalled; `api_usage_log` said the budget was spent. The limiter was correct the whole time, which is why the limiter never looked like the problem. **Rule:** before adding a per-symbol upstream call to a universe loop, compute calls per cycle against the limit and compare with the tick, then gate the call on whether its result can change what the loop does (`skipLayersOnHold`). **And honour the upstream's own signal:** on 429 or `x-ratelimit-remaining: 0` pause the whole client until the reset the headers name, never a per-caller retry; on 401 open a circuit, because nothing but a new key fixes it and the per-symbol retries only burn the limiter. Reading the key out of `.env` with `tr -d "\x27"` also deletes every `x`, `2` and `7` in it; a probe that says 401 against a key the app uses successfully is a mangled probe, not a dead key.
+
 ---
 
 ## Tax Engine
