@@ -54,7 +54,9 @@ export async function analyzeHybrid(
   // acts on signals can skip the Finnhub round-trips on HOLDs outright. On
   // the S&P 500 scan that is ~85% of the universe every 15 minutes, and it
   // was the whole of the 60/min Finnhub budget (2026-11-01).
-  const skipLayers = options?.skipLayersOnHold === true && technicalSignal === "HOLD";
+  const skipLayers =
+    options?.skipLayers === true ||
+    (options?.skipLayersOnHold === true && technicalSignal === "HOLD");
   const runSentiment =
     !skipLayers && (options?.enableSentiment ?? HYBRID_CONFIG.sentimentEnabled) === true;
   const runOptions =

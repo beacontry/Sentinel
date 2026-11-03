@@ -2598,6 +2598,48 @@ export function getBreakevenLadderMode(activeMode: EngineMode): BreakevenLadderM
   return MODE_LADDER_DEFAULT[activeMode];
 }
 
+/** Same window as the entry check's signal cooldown (150 min). */
+export const SIGNAL_COOLDOWN_MS = 150 * 60 * 1000;
+
+export interface LayerGateFacts {
+  /** The symbol is an open position: a SELL/STRONG_SELL tightens its stop. */
+  held: boolean;
+  /** SPY above SMA(20); below it every BUY is refused this scan. */
+  marketHealthy: boolean;
+  /** Engine halted or not running: no BUY can be placed. */
+  halted: boolean;
+  /** Entry cooldown still running for this symbol. */
+  cooldownActive: boolean;
+  /** Wash-sale or losing-re-entry set names the symbol (and that gate is on). */
+  reentryBlocked: boolean;
+  /** A BUY for this symbol is already pending from this or a prior scan. */
+  pendingBuy: boolean;
+  /** positionMap.size + unconfirmed BUYs this scan. */
+  heldCount: number;
+  /** STRONG_BUY hard cap (maxPositions × 1.5), the widest cap any BUY can use. */
+  hardCap: number;
+  /** Swap-sell mode: when enabled, a capped candidate can still be bought post-loop. */
+  swapMode: SwapSellMode;
+}
+
+/**
+ * Whether any Finnhub/AI layer result could change what the scan loop does
+ * with this symbol. The layers only re-grade BUY↔STRONG_BUY↔HOLD and
+ * SELL↔STRONG_SELL↔HOLD, so they matter for a held symbol (sell-side
+ * tighten) or for a symbol a BUY could actually reach this scan. Everything
+ * else is Finnhub budget spent on a decision already made: on 2026-11-02 the
+ * market opened below SMA(20), ~70% of the universe was a technical BUY, and
+ * the layers ran for all of them while every entry was refused, so the scans
+ * overran the 10-minute override all morning.
+ */
+export function layersCanMatter(f: LayerGateFacts): boolean {
+  if (f.held) return true;
+  if (f.halted || !f.marketHealthy) return false;
+  if (f.cooldownActive || f.reentryBlocked || f.pendingBuy) return false;
+  if (f.heldCount >= f.hardCap && f.swapMode !== "enabled") return false;
+  return true;
+}
+
 // ─── Take-profit graduation ─────────────────────────────────────────────────
 //
 // At entry × (1 + takeProfitPct) (typically +50% for tactical-smart) the
@@ -5094,6 +5136,10 @@ async function runTacticalScanInner(engine: EngineState, myGeneration: number): 
     for (const pos of currentPositions) {
       if (pos.qty <= 0) continue;
       try {
+        // The position's own protective stop holds the shares; a market sell
+        // on top of it is refused (Alpaca 403 40310000 "insufficient qty
+        // available", AES 2026-11-02). Cancel it first, as runScan's exit does.
+        await cancelPendingOrdersForSymbol(client, pos.symbol);
         const texitOrder = await placeEngineOrder(client, { symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
         await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "PENDING", pos.unrealizedPnl, "Tactical exit: SPY below SMA", texitOrder.id, null, engine.userId);
         recordOrderPlacement(engine, "sell", 0);
@@ -5433,6 +5479,7 @@ async function runTacticalSmartScanInner(engine: EngineState, myGeneration: numb
     for (const pos of currentPositions) {
       if (pos.qty <= 0) continue;
       try {
+        await cancelPendingOrdersForSymbol(client, pos.symbol); // see the tactical exit above
         const tsExitOrder = await placeEngineOrder(client, { symbol: pos.symbol, side: "sell", qty: String(pos.qty), type: "market", timeInForce: "day" });
         await logTrade(pos.symbol, "tactical_exit", "SELL", pos.qty, pos.currentPrice, "PENDING", pos.unrealizedPnl, "Tactical Smart exit", tsExitOrder.id, null, engine.userId);
         recordOrderPlacement(engine, "sell", 0);
@@ -6288,6 +6335,13 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
   // the exposure check and the swap-sell planner as if placed.
   const unconfirmedBuys: UnconfirmedBuyTally = { count: 0, notional: 0 };
 
+  // Refresh the two re-entry block sets once here (each has its own age
+  // check, so this is free when hot) so the per-symbol layer gate below reads
+  // the same sets canPlaceBuyOrder will read after analysis.
+  await maybeRefreshWashSaleSet(engine);
+  await maybeRefreshLosingReentrySet(engine);
+  const layerHardCap = Math.floor(riskLimits.maxPositions * 1.5);
+
   // 5. Scan each symbol
   for (const symbol of symbols) {
     try {
@@ -6308,7 +6362,24 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
       }
 
       // Use hybrid pipeline (technical + sentiment + analyst + options) for signal decisions
-      const analysis = await analyzeHybrid(symbol, bars, hybridOpts);
+      // Spend Finnhub budget only where a layer could change the outcome:
+      // held symbols (sell-side tighten) and symbols a BUY could reach this
+      // scan. Technical analysis still runs and is still logged for all.
+      const lastBuyForGate = engine.cooldowns.get(symbol);
+      const runLayers = layersCanMatter({
+        held: positionMap.has(symbol),
+        marketHealthy,
+        halted: engine.halted || !engine.running,
+        cooldownActive: !!lastBuyForGate && Date.now() - lastBuyForGate < SIGNAL_COOLDOWN_MS,
+        reentryBlocked:
+          (engine.washSaleProtectionEnabled && engine.washSaleBlockedSymbols.has(symbol)) ||
+          (engine.losingReentryCooldownEnabled && engine.losingReentryBlockedSymbols.has(symbol)),
+        pendingBuy: pendingBuySymbols.has(symbol),
+        heldCount: positionMap.size + unconfirmedBuys.count,
+        hardCap: layerHardCap,
+        swapMode,
+      });
+      const analysis = await analyzeHybrid(symbol, bars, runLayers ? hybridOpts : { ...hybridOpts, skipLayers: true });
       const currentPrice = analysis.price;
       // Guard a bad bar (price 0/negative/NaN) before any sizing or exit math.
       // `!(x > 0)` also rejects NaN (which `<= 0` would let through). Without
@@ -6907,6 +6978,10 @@ async function runScanInner(barResolution: "1d" | "5m", engine: EngineState, myG
         }
       }
     } catch (err) {
+      // A superseded scan throws at the next yield of every remaining symbol;
+      // that is the cancellation working, not ~500 symbol errors (2026-11-02:
+      // 488 error lines per override). Let the outer handler log it once.
+      if (err instanceof ScanCancelledError) throw err;
       const msg = err instanceof Error ? err.message : "unknown";
       log.error({ err: msg, symbol }, "Error processing symbol");
       pushError(engine, `Error scanning ${symbol}: ${msg}`);
